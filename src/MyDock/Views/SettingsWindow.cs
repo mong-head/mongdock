@@ -466,7 +466,7 @@ internal sealed class SettingsWindow : Window
             Row("윈도우 기본 알림 팝업 숨기기", "몽독 배너로 보여 준 알림만 숨깁니다. 알람·전화처럼 직접 눌러야 하는 알림은 그대로 뜹니다. 알림 기록은 그대로 남습니다.",
                 Toggle(_services.Settings.Current.Notifications.HideWindowsToastPopups,
                     on => Commit(() => _services.Settings.Current.Notifications.HideWindowsToastPopups = on))),
-            Row("알림 소리", "윈도우 알림 소리를 바꿉니다. 모든 앱 알림에 같이 적용되고, 몽독을 꺼도 유지됩니다. ‘원래대로’로 되돌릴 수 있어요.",
+            Row("알림 소리", "윈도우 알림 소리를 바꿉니다. 모든 앱 알림에 같이 적용되고, 몽독을 꺼도 유지됩니다. 처음 한 번은 다시 로그인한 뒤부터 적용돼요. ‘원래대로’로 되돌릴 수 있어요.",
                 NotificationSoundDropdown())));
     }
 
