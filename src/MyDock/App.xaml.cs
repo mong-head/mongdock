@@ -18,6 +18,7 @@ public partial class App : Application
     private readonly Dictionary<string, TopBarWindow> _topBars = new(StringComparer.OrdinalIgnoreCase);
     private bool _exiting;
     private TrayController? _tray;
+    private SpotlightHotkeyController? _spotlightHotkey;
     private const string ResumeEventName = @"Local\mongdock.Resume";
     private EventWaitHandle? _resumeEvent;
     private RegisteredWaitHandle? _resumeWait;
@@ -97,6 +98,7 @@ public partial class App : Application
         _services.Settings.SettingsChanged += OnSettingsChanged;
         SyncTopBars();
         _tray = new TrayController(_services);
+        _spotlightHotkey = new SpotlightHotkeyController(_services);
         Log.Info($"{AppInfo.Name} 시작");
     }
 
@@ -201,6 +203,8 @@ public partial class App : Application
         if (_services is not null) Log.Info($"{AppInfo.Name} 종료");
         // 트레이 아이콘을 내리고, 숨겨 둔 작업 표시줄을 복원한다.
         _tray?.Dispose();
+        // 전역 키보드 훅 해제
+        _spotlightHotkey?.Dispose();
         // 창을 닫아야 AppBar 가 해제된다.
         _exiting = true;
         if (_services is not null)

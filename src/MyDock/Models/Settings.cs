@@ -41,6 +41,19 @@ public enum SearchMode
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SpotlightHotkey
+{
+    /// <summary>Win+Space (맥 ⌘+Space 자리). 윈도우 입력 언어 전환과 겹침 — 몽독이 가로챔.</summary>
+    WinSpace,
+    /// <summary>Alt+Space. 창 메뉴(시스템 메뉴) 대신 Spotlight.</summary>
+    AltSpace,
+    /// <summary>Ctrl+Space.</summary>
+    CtrlSpace,
+    /// <summary>단축키 없음.</summary>
+    None,
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TopBarColorMode
 {
     /// <summary>완전 투명 — 바탕화면이 비침. 글자/아이콘 색은 그 아래 배경화면 밝기에 따라 검정/흰색 자동.</summary>
@@ -144,6 +157,8 @@ public sealed class TopBarSettings
     public bool ShowOnAllMonitors { get; set; } = true;
     /// <summary>검색 버튼 동작.</summary>
     public SearchMode SearchMode { get; set; } = SearchMode.Spotlight;
+    /// <summary>Spotlight 검색창을 여는 전역 단축키 (맥 ⌘+Space 처럼). None 이면 끔.</summary>
+    public SpotlightHotkey SpotlightHotkey { get; set; } = SpotlightHotkey.WinSpace;
 }
 
 public sealed class Settings

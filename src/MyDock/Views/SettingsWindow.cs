@@ -461,7 +461,27 @@ internal sealed class SettingsWindow : Window
         body.Children.Add(Group(
             Row("검색 버튼", null, Segmented(t.SearchMode,
                 new[] { (SearchMode.Spotlight, "몽독 검색 (화면 가운데)"), (SearchMode.Windows, "윈도우 검색") },
-                v => Commit(() => T().SearchMode = v)))));
+                v => Commit(() => T().SearchMode = v))),
+            Row("검색 단축키", "Win+Space 는 윈도우 입력 언어 전환과 겹칩니다. 언어가 여러 개면 다른 키를 고르세요",
+                SpotlightHotkeyDropdown(t.SpotlightHotkey))));
+    }
+
+    private UIElement SpotlightHotkeyDropdown(SpotlightHotkey current)
+    {
+        var options = new[]
+        {
+            (SpotlightHotkey.WinSpace, "Win + Space"),
+            (SpotlightHotkey.AltSpace, "Alt + Space"),
+            (SpotlightHotkey.CtrlSpace, "Ctrl + Space"),
+            (SpotlightHotkey.None, "사용 안 함"),
+        };
+        string label = options.FirstOrDefault(o => o.Item1 == current).Item2 ?? options[0].Item2;
+        return Dropdown(label, () =>
+        {
+            var cur = _services.Settings.Current.TopBar.SpotlightHotkey;
+            return options.Select(o => (o.Item2, o.Item1 == cur,
+                (Action)(() => Commit(() => _services.Settings.Current.TopBar.SpotlightHotkey = o.Item1, rebuild: true))));
+        });
     }
 
     private UIElement ColorModeDropdown(TopBarColorMode current)
