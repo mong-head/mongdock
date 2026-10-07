@@ -1411,6 +1411,8 @@ public partial class DockWindow : Window
     private void BuildEmptyAreaMenu(ContextMenu menu)
     {
         var dock = _services.Settings.Current.Dock;
+        menu.Items.Add(DockMenus.SettingsWindow(_services, $"{AppInfo.Name} 설정…"));
+        menu.Items.Add(new Separator());
         menu.Items.Add(Item("구분선 추가", () => ModifyPins(p => p.Add(new PinItem { Kind = PinKind.Separator, Name = "" }))));
         menu.Items.Add(new Separator());
         menu.Items.Add(DockMenus.DockPosition(_services));

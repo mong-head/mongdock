@@ -119,6 +119,10 @@ internal static class DockMenus
         return Item("윈도우 작업 표시줄 숨기기", () => Update(services, () => services.Settings.Current.HideWindowsTaskbar = !on), isChecked: on);
     }
 
+    /// <summary>설정 창 열기 (클릭으로 바꾸는 설정 화면). 이미 열려 있으면 앞으로.</summary>
+    public static MenuItem SettingsWindow(AppServices services, string header = "설정…")
+        => Item(header, () => Views.SettingsWindow.Open(services));
+
     public static MenuItem OpenSettings(AppServices services)
         => Item("설정 파일 열기", () => services.Launcher.OpenFile(services.Settings.SettingsPath));
 
