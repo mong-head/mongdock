@@ -278,7 +278,9 @@ public partial class TopBarWindow : Window
     {
         var s = _services.Settings.Current.TopBar;
         _colorTimer.Stop();
-        Bar.BorderBrush = Brushes.Transparent; // 구분선은 Fixed 모드에서만
+        // 구분선은 Fixed 모드에서만. 다른 모드에서 투명 브러시로 두면 그 1 DIP 줄이 비어 배경화면이 선처럼 비치므로 두께 자체를 0 으로
+        Bar.BorderBrush = Brushes.Transparent;
+        Bar.BorderThickness = new Thickness(0);
         UiTheme.Apply(_services.Settings.Current);
         SetWallpaperWatch(s.Enabled && s.ColorMode == TopBarColorMode.Transparent);
 
@@ -311,6 +313,7 @@ public partial class TopBarWindow : Window
                 SetBarColor(bg, animate: false);
                 SetTextColors(AutoText(bg), AutoText(bg));
                 // 아주 옅은 하단 구분선 (흰 바 기준 #14000000)
+                Bar.BorderThickness = new Thickness(0, 0, 0, 1);
                 Bar.BorderBrush = BrushParser.Frozen(BrushParser.Luminance(bg) > 0.45
                     ? BrushParser.Hex("#14000000") : BrushParser.Hex("#14FFFFFF"));
                 break;
