@@ -465,7 +465,63 @@ internal sealed class SettingsWindow : Window
                     on => Commit(() => _services.Settings.Current.Notifications.ShowNotificationBanners = on))),
             Row("윈도우 기본 알림 팝업 숨기기", "몽독 배너로 보여 준 알림만 숨깁니다. 알람·전화처럼 직접 눌러야 하는 알림은 그대로 뜹니다. 알림 기록은 그대로 남습니다.",
                 Toggle(_services.Settings.Current.Notifications.HideWindowsToastPopups,
-                    on => Commit(() => _services.Settings.Current.Notifications.HideWindowsToastPopups = on)))));
+                    on => Commit(() => _services.Settings.Current.Notifications.HideWindowsToastPopups = on))),
+            Row("알림 소리", "윈도우 알림 소리를 바꿉니다. 모든 앱 알림에 같이 적용되고, 몽독을 꺼도 유지됩니다. ‘원래대로’로 되돌릴 수 있어요.",
+                NotificationSoundDropdown())));
+    }
+
+    /// <summary>알림 소리: 고르면 한 번 미리 들려 주고 바로 적용 (NotificationSoundService).</summary>
+    private UIElement NotificationSoundDropdown()
+    {
+        var n = _services.Settings.Current.Notifications;
+        string? effective = NotificationSoundService.GetEffectiveSound(n);
+        string? winDefault = NotificationSoundService.GetWindowsDefault();
+        bool managed = NotificationSoundService.IsManagedActive();
+
+        bool Is(string path) => effective is not null &&
+            (path.Length == 0 ? effective.Length == 0 : effective.Length > 0 && NotificationSoundService.SamePath(effective, path));
+
+        string label = effective is null ? "알 수 없음"
+            : !managed && winDefault is not null && Is(winDefault) ? "윈도우 기본값"
+            : NotificationSoundService.Describe(effective);
+
+        void Pick(string path)
+        {
+            NotificationSoundService.Preview(path);
+            Commit(() =>
+            {
+                if (!NotificationSoundService.Apply(_services.Settings.Current.Notifications, path))
+                    MessageBox.Show(this, "알림 소리를 바꾸지 못했습니다. 로그를 확인해 주세요.", Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+            }, rebuild: true);
+        }
+
+        return Dropdown(label, () =>
+        {
+            var items = new List<(string, bool, Action)>();
+            var nn = _services.Settings.Current.Notifications;
+            if (nn.OriginalSound is not null && nn.Sound is not null)
+                items.Add(("원래대로", false, () =>
+                {
+                    NotificationSoundService.Preview(Environment.ExpandEnvironmentVariables(nn.OriginalSound));
+                    Commit(() => NotificationSoundService.Restore(_services.Settings.Current.Notifications), rebuild: true);
+                }));
+            if (winDefault is not null)
+                items.Add(("윈도우 기본값", !managed && Is(winDefault), () => Pick(winDefault)));
+            items.Add(("무음", Is(""), () => Pick("")));
+            foreach (var o in NotificationSoundService.GetCandidates())
+                items.Add((o.Label, managed && Is(o.Path), () => Pick(o.Path)));
+            items.Add(("직접 고르기…", false, () =>
+            {
+                var dlg = new Microsoft.Win32.OpenFileDialog
+                {
+                    Title = "알림 소리 고르기",
+                    Filter = "소리 파일 (*.wav)|*.wav",
+                    InitialDirectory = NotificationSoundService.MediaDirectory,
+                };
+                if (dlg.ShowDialog(this) == true) Pick(dlg.FileName);
+            }));
+            return items;
+        });
     }
 
     private UIElement SpotlightHotkeyDropdown(SpotlightHotkey current)

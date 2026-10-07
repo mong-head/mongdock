@@ -174,6 +174,15 @@ public sealed class NotificationSettings
     /// 방해 금지(DND)·레지스트리(ShowBanner/NOC_GLOBAL_SETTING_TOASTS_ENABLED)는 쓰지 않음: 실시간 반영이 안 되거나 알림 자체가 꺼짐.
     /// </summary>
     public bool HideWindowsToastPopups { get; set; }
+
+    /// <summary>
+    /// 사용자가 고른 윈도우 알림 소리(원본 wav 경로, "" = 무음). null = 몽독이 손대지 않음.
+    /// 실제로는 이 파일 내용을 %APPDATA%\mongdock\sounds\notification.wav 로 복사하고 레지스트리가 그 파일을 가리킴 (NotificationSoundService).
+    /// </summary>
+    public string? Sound { get; set; }
+
+    /// <summary>몽독이 처음 알림 소리를 바꾸기 전의 레지스트리 값(원본 그대로, "" = 무음). 한 번만 저장. null = 아직 바꾼 적 없음.</summary>
+    public string? OriginalSound { get; set; }
 }
 
 public sealed class Settings
