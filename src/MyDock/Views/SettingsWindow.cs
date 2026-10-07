@@ -464,6 +464,12 @@ internal sealed class SettingsWindow : Window
                 v => Commit(() => T().SearchMode = v))),
             Row("검색 단축키", "Win+Space 는 윈도우 입력 언어 전환과 겹칩니다. 언어가 여러 개면 다른 키를 고르세요",
                 SpotlightHotkeyDropdown(t.SpotlightHotkey))));
+
+        body.Children.Add(SectionTitle("알림"));
+        body.Children.Add(Group(
+            Row("알림 배너", "윈도우 알림이 오면 상단바 아래 오른쪽에 맥처럼 표시합니다.",
+                Toggle(_services.Settings.Current.Notifications.ShowNotificationBanners,
+                    on => Commit(() => _services.Settings.Current.Notifications.ShowNotificationBanners = on)))));
     }
 
     private UIElement SpotlightHotkeyDropdown(SpotlightHotkey current)

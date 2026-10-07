@@ -161,10 +161,20 @@ public sealed class TopBarSettings
     public SpotlightHotkey SpotlightHotkey { get; set; } = SpotlightHotkey.WinSpace;
 }
 
+public sealed class NotificationSettings
+{
+    /// <summary>윈도우 알림이 오면 맥처럼 상단바 아래 오른쪽에 몽독 배너를 띄움 (윈도우 알림 DB 를 읽기만 함).</summary>
+    public bool ShowNotificationBanners { get; set; } = true;
+    // HideWindowsToastPopups(윈도우 기본 토스트 숨기기)는 구현하지 않음: 방해 금지(DND)를 켜는 공개 API 가 없고
+    // (FocusSessionManager.TryStartFocusSession 은 Limited Access Feature), 레지스트리 NOC_GLOBAL_SETTING_TOASTS_ENABLED=0 은
+    // 알림 자체를 꺼서 DB 에도 쌓이지 않음. NotificationService 주석 참고.
+}
+
 public sealed class Settings
 {
     public DockSettings Dock { get; set; } = new();
     public TopBarSettings TopBar { get; set; } = new();
+    public NotificationSettings Notifications { get; set; } = new();
     public List<PinItem> Pins { get; set; } = new();
     /// <summary>상단바·메뉴·패널·독 말풍선 글꼴. "Pretendard" = 앱에 내장된 Pretendard(맥 느낌). 설치된 글꼴 이름을 쓰면 그 글꼴. 쉼표로 대체 글꼴 나열 가능.</summary>
     public string FontFamily { get; set; } = "Pretendard";

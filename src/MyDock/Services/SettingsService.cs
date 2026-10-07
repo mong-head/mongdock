@@ -212,6 +212,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
         // 수동 편집으로 null 이 들어와도 UI 가 죽지 않게 보정.
         s.Dock ??= new DockSettings();
         s.TopBar ??= new TopBarSettings();
+        s.Notifications ??= new NotificationSettings();
         s.Pins ??= new List<PinItem>();
         s.Pins.RemoveAll(p => p is null);
         foreach (var p in s.Pins)

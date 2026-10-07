@@ -19,6 +19,7 @@ public partial class App : Application
     private bool _exiting;
     private TrayController? _tray;
     private SpotlightHotkeyController? _spotlightHotkey;
+    private IDisposable? _banners;
     private const string ResumeEventName = @"Local\mongdock.Resume";
     private EventWaitHandle? _resumeEvent;
     private RegisteredWaitHandle? _resumeWait;
@@ -72,10 +73,11 @@ public partial class App : Application
 
         var settings = new SettingsService();
         var tracker = new WindowTracker();
+        var launcher = new AppLauncher(tracker);
         _services = new AppServices(
             settings,
             tracker,
-            new AppLauncher(tracker),
+            launcher,
             new IconService(),
             new DesktopWindowService(),
             new VirtualDesktopService(),
@@ -84,7 +86,8 @@ public partial class App : Application
             new StatusService(),
             new MediaService(),
             new AppMenuService(settings),
-            new StartupService());
+            new StartupService(),
+            new NotificationService(tracker, launcher));
 
         InitializePinsOnce(settings);
 
@@ -99,6 +102,8 @@ public partial class App : Application
         SyncTopBars();
         _tray = new TrayController(_services);
         _spotlightHotkey = new SpotlightHotkeyController(_services);
+        _banners = NotificationBannerWindow.Attach(_services);
+        _services.Notifications.Start();
         Log.Info($"{AppInfo.Name} 시작");
     }
 
@@ -219,12 +224,14 @@ public partial class App : Application
         }
         _topBars.Clear();
         _dock?.Close();
+        _banners?.Dispose();
         if (_services is not null)
         {
+            _services.Notifications.Stop();
             _services.Windows.Stop();
             _services.Status.Stop();
             _services.Media.Stop();
-            object[] all = [_services.Settings, _services.Windows, _services.DesktopWindows, _services.VirtualDesktops, _services.Ime, _services.Status, _services.Media];
+            object[] all = [_services.Settings, _services.Windows, _services.DesktopWindows, _services.VirtualDesktops, _services.Ime, _services.Status, _services.Media, _services.Notifications];
             foreach (var disposable in all.OfType<IDisposable>())
             {
                 try { disposable.Dispose(); }
