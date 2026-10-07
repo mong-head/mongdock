@@ -75,10 +75,18 @@
             <!-- 왼쪽: 로고 메뉴 · 가상 데스크톱 버튼 · 현재 앱 이름 (버튼은 앱 이름 길이와 무관하게 고정 위치) -->
             <StackPanel x:Name="LeftSection" HorizontalAlignment="Left" Orientation="Horizontal" Margin="10,0,0,0">
                 <Button x:Name="LogoButton" Style="{StaticResource BarButton}" Padding="9,0" Click="OnLogoClick">
-                    <!-- 윈도우 11 로고: 정사각형 4개 + 작은 틈, 단색 -->
-                    <Path Width="19" Height="19" Stretch="Uniform"
-                          Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                          Data="M0,0 H7.4 V7.4 H0 Z M8.6,0 H16 V7.4 H8.6 Z M0,8.6 H7.4 V16 H0 Z M8.6,8.6 H16 V16 H8.6 Z" />
+                    <!-- 윈도우 로고: 둥근 모서리 타일 4개, 단색 -->
+                    <Path Width="18" Height="18" Stretch="Uniform"
+                          Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}">
+                        <Path.Data>
+                            <GeometryGroup>
+                                <RectangleGeometry Rect="0,0,7.2,7.2" RadiusX="2.2" RadiusY="2.2" />
+                                <RectangleGeometry Rect="8.8,0,7.2,7.2" RadiusX="2.2" RadiusY="2.2" />
+                                <RectangleGeometry Rect="0,8.8,7.2,7.2" RadiusX="2.2" RadiusY="2.2" />
+                                <RectangleGeometry Rect="8.8,8.8,7.2,7.2" RadiusX="2.2" RadiusY="2.2" />
+                            </GeometryGroup>
+                        </Path.Data>
+                    </Path>
                 </Button>
                 <StackPanel x:Name="DesktopButtons" Orientation="Horizontal">
                     <Button Style="{StaticResource BarIconButton}" FontSize="15" Content="&#xE76B;" Click="OnPreviousDesktop" />
