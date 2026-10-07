@@ -113,6 +113,28 @@ public static class KoreanHolidays
         return result;
     }
 
+    /// <summary>
+    /// 양력 → 음력 (달력 선택 날 정보 줄용). Month 는 실제 월(1~12), 윤달이면 Leap = true.
+    /// KoreanLunisolarCalendar 지원 범위 밖이면 null.
+    /// </summary>
+    public static (int Month, int Day, bool Leap)? ToLunar(DateTime date)
+    {
+        try
+        {
+            if (date < Lunar.MinSupportedDateTime || date > Lunar.MaxSupportedDateTime) return null;
+            int year = Lunar.GetYear(date);
+            int index = Lunar.GetMonth(date); // 윤달이 있는 해는 13개월 인덱스
+            int leap = Lunar.GetLeapMonth(year); // 0 = 윤달 없음, 그 외 = 윤달의 인덱스 (윤4월이면 5)
+            bool isLeap = leap > 0 && index == leap;
+            int month = leap > 0 && index >= leap ? index - 1 : index;
+            return (month, Lunar.GetDayOfMonth(date), isLeap);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>음력(평달) year/month/day → 양력. 윤달이 있는 해는 윤달 뒤의 달 인덱스를 1 올려 보정.</summary>
     private static DateTime? FromLunar(int year, int month, int day)
     {

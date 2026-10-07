@@ -455,6 +455,10 @@ internal sealed class SettingsWindow : Window
             Row("한/영", null, Toggle(t.ShowImeToggle, on => Commit(() => T().ShowImeToggle = on))),
             Row("네트워크 속도", null, Toggle(t.ShowNetworkSpeed, on => Commit(() => T().ShowNetworkSpeed = on)))));
 
+        body.Children.Add(Group(
+            Row("캘린더 앱", "시계 달력에서 날짜를 두 번 누르거나 '캘린더에서 열기' 를 누르면 엽니다. 웹은 기본 브라우저로 그 날짜를 엽니다.",
+                CalendarAppDropdown())));
+
         body.Children.Add(SectionTitle("알림"));
         body.Children.Add(Group(
             Row("알림 배너", "윈도우 알림이 오면 상단바 아래 오른쪽에 맥처럼 표시합니다.",
@@ -607,6 +611,58 @@ internal sealed class SettingsWindow : Window
                 if (dlg.ShowDialog(this) == true) Pick(dlg.FileName);
             }));
             return items;
+        });
+    }
+
+    /// <summary>
+    /// 캘린더 앱: 웹 3개는 항상, 데스크톱 앱은 펼칠 때 설치 감지 — 없으면 회색(선택 불가) + 오른쪽 "설치" 링크(스토어 ID 를 아는 것만).
+    /// "메일 및 일정" 은 지원 종료라 감지될 때만 보인다.
+    /// </summary>
+    private UIElement CalendarAppDropdown()
+    {
+        var current = _services.Settings.Current.TopBar.CalendarApp;
+        return DropdownMenu(CalendarApps.DisplayName(current), menu =>
+        {
+            var cur = _services.Settings.Current.TopBar.CalendarApp;
+            foreach (var app in CalendarApps.All)
+            {
+                bool installed = CalendarApps.IsInstalled(app);
+                if (app == CalendarApp.WindowsCalendar && !installed) continue;
+                string label = CalendarApps.DisplayName(app);
+                if (installed)
+                {
+                    menu.Items.Add(DockMenus.Item(label, () => Commit(() => _services.Settings.Current.TopBar.CalendarApp = app, rebuild: true),
+                        isChecked: app == cur));
+                    continue;
+                }
+                // 설치 안 됨: 이름 회색 + "설치 안 됨" (+ 스토어 링크). 항목 자체를 눌러도 아무 일 없음
+                var header = new DockPanel { LastChildFill = true, MinWidth = 200 };
+                string? install = CalendarApps.InstallUri(app);
+                if (install != null)
+                {
+                    var link = new TextBlock
+                    {
+                        Text = "설치",
+                        Foreground = _p.Accent,
+                        Cursor = System.Windows.Input.Cursors.Hand,
+                        Margin = new Thickness(16, 0, 0, 0),
+                        ToolTip = "Microsoft Store 에서 설치",
+                    };
+                    link.MouseEnter += (_, _) => link.TextDecorations = TextDecorations.Underline;
+                    link.MouseLeave += (_, _) => link.TextDecorations = null;
+                    link.PreviewMouseLeftButtonUp += (_, ev) =>
+                    {
+                        ev.Handled = true;
+                        menu.IsOpen = false;
+                        try { using (System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(install) { UseShellExecute = true })) { } }
+                        catch (Exception ex) { Log.Error("스토어 열기 실패", ex); }
+                    };
+                    DockPanel.SetDock(link, Dock.Right);
+                    header.Children.Add(link);
+                }
+                header.Children.Add(new TextBlock { Text = label + " (설치 안 됨)", Foreground = _p.Disabled });
+                menu.Items.Add(new MenuItem { Header = header, StaysOpenOnClick = true });
+            }
         });
     }
 
@@ -803,6 +859,14 @@ internal sealed class SettingsWindow : Window
 
     /// <summary>드롭다운: 버튼 클릭 → 앱 공통 메뉴(Themes/Menus.xaml) 로 선택지. 항목은 열 때마다 새로 만듦.</summary>
     private Button Dropdown(string label, Func<IEnumerable<(string Label, bool Checked, Action Pick)>> items)
+        => DropdownMenu(label, menu =>
+        {
+            foreach (var (text, isChecked, pick) in items())
+                menu.Items.Add(DockMenus.Item(text, pick, isChecked: isChecked));
+        });
+
+    /// <summary>드롭다운 (메뉴 항목을 직접 채움 — 회색 항목·링크 같은 특수 항목용).</summary>
+    private Button DropdownMenu(string label, Action<ContextMenu> fill)
     {
         var content = new StackPanel { Orientation = Orientation.Horizontal };
         content.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = ControlWidth });
@@ -832,8 +896,7 @@ internal sealed class SettingsWindow : Window
                 Placement = PlacementMode.Bottom,
                 HorizontalOffset = -10, // 카드 그림자 여백
             };
-            foreach (var (text, isChecked, pick) in items())
-                menu.Items.Add(DockMenus.Item(text, pick, isChecked: isChecked));
+            fill(menu);
             menu.IsOpen = true;
         };
         return button;
