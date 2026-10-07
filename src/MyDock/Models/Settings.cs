@@ -185,6 +185,37 @@ public sealed class NotificationSettings
     public string? OriginalSound { get; set; }
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum WebSearchEngine { Google, Naver, Bing }
+
+/// <summary>Spotlight 검색창의 검색 항목 (설정 창 "검색" 페이지).</summary>
+public sealed class SearchSettings
+{
+    /// <summary>응용 프로그램 (시작 메뉴의 모든 앱).</summary>
+    public bool Apps { get; set; } = true;
+    /// <summary>윈도우 설정 페이지 (ms-settings:).</summary>
+    public bool Settings { get; set; } = true;
+    /// <summary>수식을 입력하면 맨 위에 계산 결과.</summary>
+    public bool Calculator { get; set; } = true;
+    // 아래 넷은 윈도우 검색 색인(Windows Search)에서 파일 이름으로 찾음
+    public bool Folders { get; set; } = true;
+    public bool Documents { get; set; } = true;
+    /// <summary>사진·동영상·음악.</summary>
+    public bool Media { get; set; } = true;
+    public bool OtherFiles { get; set; } = true;
+    /// <summary>결과 맨 아래 "웹에서 검색".</summary>
+    public bool WebSearch { get; set; } = true;
+    /// <summary>결과 맨 아래 "Windows 검색에서 찾기".</summary>
+    public bool WindowsSearch { get; set; } = true;
+    /// <summary>파일·폴더를 찾을 위치 (하위 폴더 포함). 기본: 사용자 프로필 폴더.</summary>
+    public List<string> FileSearchFolders { get; set; } = new() { DefaultFileSearchFolder };
+    /// <summary>카테고리마다 보여 줄 최대 개수 (3~10).</summary>
+    public int MaxPerCategory { get; set; } = 5;
+    public WebSearchEngine WebSearchEngine { get; set; } = WebSearchEngine.Google;
+
+    public static string DefaultFileSearchFolder => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+}
+
 public sealed class Settings
 {
     /// <summary>settings.json 형식 버전. 이관은 파일에 적힌 버전이 이보다 낮을 때만 한 번 (SettingsService.Migrate).</summary>
@@ -198,6 +229,8 @@ public sealed class Settings
     public DockSettings Dock { get; set; } = new();
     public TopBarSettings TopBar { get; set; } = new();
     public NotificationSettings Notifications { get; set; } = new();
+    /// <summary>Spotlight 검색 항목·파일 검색 위치·웹 검색 엔진.</summary>
+    public SearchSettings Search { get; set; } = new();
     public List<PinItem> Pins { get; set; } = new();
     /// <summary>상단바·메뉴·패널·독 말풍선 글꼴. "Pretendard" = 앱에 내장된 Pretendard(맥 느낌). 설치된 글꼴 이름을 쓰면 그 글꼴. 쉼표로 대체 글꼴 나열 가능.</summary>
     public string FontFamily { get; set; } = "Pretendard";

@@ -27,8 +27,8 @@ public static class SpotlightMatcher
         return map;
     }
 
-    /// <summary>검색 결과 (최대 <see cref="MaxResults"/>개). 검색어가 비면 최근 실행한 앱.</summary>
-    public static IReadOnlyList<SpotlightApp> Search(IReadOnlyList<SpotlightApp> apps, string query, IReadOnlyList<string> recents)
+    /// <summary>검색 결과 (최대 max 개, 기본 <see cref="MaxResults"/>). 검색어가 비면 최근 실행한 앱.</summary>
+    public static IReadOnlyList<SpotlightApp> Search(IReadOnlyList<SpotlightApp> apps, string query, IReadOnlyList<string> recents, int max = MaxResults)
     {
         var recentRank = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         for (int i = 0; i < recents.Count; i++) recentRank.TryAdd(recents[i], i);
@@ -39,7 +39,7 @@ public static class SpotlightMatcher
             return apps.Where(a => recentRank.ContainsKey(a.ParsingName))
                        .GroupBy(a => a.ParsingName, StringComparer.OrdinalIgnoreCase).Select(g => g.First())
                        .OrderBy(a => recentRank[a.ParsingName])
-                       .Take(MaxResults).ToList();
+                       .Take(max).ToList();
         }
 
         var hits = new List<(SpotlightApp App, int Tier, int Recent)>();
@@ -54,7 +54,7 @@ public static class SpotlightMatcher
                    .ThenBy(h => h.App.Name.Length)
                    .ThenBy(h => h.App.Name, StringComparer.CurrentCultureIgnoreCase)
                    .Select(h => h.App)
-                   .Take(MaxResults).ToList();
+                   .Take(max).ToList();
     }
 
     /// <summary>순위 0(이름 시작)/1(단어 시작)/2(포함), 일치하지 않으면 -1.</summary>

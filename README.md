@@ -62,10 +62,15 @@ powershell -ExecutionPolicy Bypass -File build-release.ps1 -Version v0.2.0
 
 상단바 검색 버튼이나 전역 단축키로 화면 가운데에 맥 Spotlight 같은 검색창이 뜬다.
 
-- 앱을 이름으로 찾는다. 한글 초성 검색 가능 (예 `ㅋㅋㅇㅌ` → 카카오톡)
-- 결과 맨 아래 "Windows 검색에서 찾기" / "웹에서 검색" 으로 같은 검색어를 넘길 수 있다
+- 결과는 카테고리별(최상위 히트 · 응용 프로그램 · 시스템 설정 · 폴더 · 문서 · 사진·동영상·음악 · 기타 파일)로 묶여 나온다
+- **앱**: 이름으로 찾는다. 한글 초성 검색 가능 (예 `ㅋㅋㅇㅌ` → 카카오톡)
+- **윈도우 설정**: 블루투스·디스플레이·소리·Wi-Fi·배경화면 같은 설정 페이지 약 50개 (예 `ㅂㄹㅌㅅ`, `해상도`)
+- **계산기**: `12*3+4`, `200*15%`, `2^10` 처럼 입력하면 맨 위에 결과. Enter 로 결과를 복사
+- **파일·폴더**: 윈도우 검색 색인에서 파일 이름으로 찾는다(최근 수정순). Enter 로 열고, Ctrl+Enter(또는 마우스를 올리면 나오는 "폴더에서 보기")로 탐색기에서 위치를 연다. 색인 서비스가 꺼져 있으면 파일 결과만 빠진다
+- 결과 맨 아래 "Windows 검색에서 찾기" / "웹에서 검색"(Google·네이버·Bing) 으로 같은 검색어를 넘길 수 있다
+- 설정 → **검색** 에서 항목별 켜기/끄기, 파일 검색 위치(폴더 추가/빼기), 카테고리별 최대 개수(3~10), 웹 검색 엔진을 고른다
 - 단축키: **자동**(기본 — 입력 언어가 1개면 Win+Space, 여러 개면 언어 전환과 겹치지 않게 Alt+Space) / Win+Space / Alt+Space / Ctrl+Space / 사용 안 함
-- 검색 버튼을 윈도우 검색으로 바꿀 수도 있다 (설정 → 상단바 → 검색 버튼)
+- 검색 버튼을 윈도우 검색으로 바꿀 수도 있다 (설정 → 검색 → 검색 버튼)
 
 ### 알림
 
@@ -141,6 +146,7 @@ zip 으로 썼다면:
 | 상단바 색·표시 항목 | `topBar.colorMode` (`Fixed`/`Auto`/`Transparent`/`Blur`), `topBar.background`, `topBar.showAppMenus` … |
 | 상단바 모니터 | `topBar.showOnAllMonitors` — `false` 면 주 모니터에만 |
 | 검색 | `topBar.searchMode` (`Spotlight`/`Windows`), `topBar.spotlightHotkey` (`Auto`/`WinSpace`/`AltSpace`/`CtrlSpace`/`None`) |
+| 검색 항목 | `search.apps` · `settings` · `calculator` · `folders` · `documents` · `media` · `otherFiles` · `webSearch` · `windowsSearch` (기본 모두 `true`), `search.fileSearchFolders`, `search.maxPerCategory` (기본 5), `search.webSearchEngine` (`Google`/`Naver`/`Bing`) |
 | 알림 | `notifications.showNotificationBanners` (기본 `true`), `notifications.hideWindowsToastPopups` (기본 `false`) |
 | 글꼴 | `fontFamily` — 기본 `"Pretendard"`(내장), 설치된 글꼴 이름도 가능 |
 | 앱 메뉴 직접 정의 | `appMenus` — 키는 exe 이름(예 `"chrome.exe"`), 항목마다 `text` 와 `keys`(예 `"Ctrl+Shift+T"`) |

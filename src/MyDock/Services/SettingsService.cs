@@ -226,6 +226,10 @@ public sealed class SettingsService : ISettingsService, IDisposable
         s.Dock ??= new DockSettings();
         s.TopBar ??= new TopBarSettings();
         s.Notifications ??= new NotificationSettings();
+        s.Search ??= new SearchSettings();
+        s.Search.FileSearchFolders ??= new List<string>();
+        s.Search.FileSearchFolders.RemoveAll(string.IsNullOrWhiteSpace);
+        s.Search.MaxPerCategory = Math.Clamp(s.Search.MaxPerCategory, 3, 10);
         s.FontFamily ??= "Pretendard";
         s.AppMenus ??= new Dictionary<string, List<AppMenuDef>>();
         s.Pins ??= new List<PinItem>();
@@ -352,7 +356,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
     }
 
     /// <summary>
-    /// 외부 편집으로 다시 읽은 값을 현재 객체에 반영. 하위 설정 객체(Dock/TopBar/Notifications)와 Pins 리스트는
+    /// 외부 편집으로 다시 읽은 값을 현재 객체에 반영. 하위 설정 객체(Dock/TopBar/Notifications/Search)와 Pins 리스트는
     /// 참조를 유지한 채 값만 복사하고, 나머지 최상위 속성(FontFamily, HideWindowsTaskbar, AppMenus, 앞으로 추가될 것 포함)은 그대로 대입.
     /// 빠진 속성이 있으면 다음 Save 가 외부 편집을 되돌리므로 리플렉션으로 전부 다룬다.
     /// </summary>
@@ -361,12 +365,13 @@ public sealed class SettingsService : ISettingsService, IDisposable
         CopyProperties(src.Dock, dst.Dock);
         CopyProperties(src.TopBar, dst.TopBar);
         CopyProperties(src.Notifications, dst.Notifications);
+        CopyProperties(src.Search, dst.Search);
         dst.Pins.Clear();
         dst.Pins.AddRange(src.Pins);
         foreach (var p in typeof(Settings).GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
         {
             if (!p.CanRead || !p.CanWrite || p.GetIndexParameters().Length != 0) continue;
-            if (p.Name is nameof(Settings.Dock) or nameof(Settings.TopBar) or nameof(Settings.Notifications) or nameof(Settings.Pins)) continue;
+            if (p.Name is nameof(Settings.Dock) or nameof(Settings.TopBar) or nameof(Settings.Notifications) or nameof(Settings.Search) or nameof(Settings.Pins)) continue;
             p.SetValue(dst, p.GetValue(src));
         }
     }

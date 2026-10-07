@@ -9,13 +9,14 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using MyDock.Models;
 using MyDock.Services;
+using MyDock.Services.Search;
 using MyDock.ViewModels;
 using Ellipse = System.Windows.Shapes.Ellipse;
 
 namespace MyDock.Views;
 
 /// <summary>
-/// 맥 "시스템 설정" 같은 설정 창: 왼쪽 사이드바(일반/독/상단바/정보) + 오른쪽 내용.
+/// 맥 "시스템 설정" 같은 설정 창: 왼쪽 사이드바(일반/독/상단바/검색/정보) + 오른쪽 내용.
 /// - 독·상단바와 달리 일반 창 (포커스를 받아도 됨, 작업 표시줄에 보임). 한 개만 열림 → <see cref="Open"/>.
 /// - 원격(StarDesk)에서 마우스만으로: 토글·세그먼트·드롭다운(메뉴)·슬라이더만 쓰고 키보드 입력 칸은 없다.
 /// - 바꾸면 바로 Settings.Save() → SettingsChanged 로 독·상단바에 즉시 반영 (DockMenus 와 같은 경로).
@@ -24,7 +25,7 @@ namespace MyDock.Views;
 /// </summary>
 internal sealed class SettingsWindow : Window
 {
-    private enum Page { General, Dock, TopBar, About }
+    private enum Page { General, Dock, TopBar, Search, About }
 
     private const string GitHubUrl = "https://github.com/mong-head/mongdock";
     private const double SidebarWidth = 200;
@@ -184,6 +185,7 @@ internal sealed class SettingsWindow : Window
             case Page.General: BuildGeneral(body); break;
             case Page.Dock: BuildDock(body); break;
             case Page.TopBar: BuildTopBar(body); break;
+            case Page.Search: BuildSearch(body); break;
             default: BuildAbout(body); break;
         }
         _scroll = new ScrollViewer
@@ -209,6 +211,7 @@ internal sealed class SettingsWindow : Window
         Page.General => "일반",
         Page.Dock => "독",
         Page.TopBar => "상단바",
+        Page.Search => "검색",
         _ => "정보",
     };
 
@@ -226,6 +229,7 @@ internal sealed class SettingsWindow : Window
         panel.Children.Add(SidebarItem(Page.General, "\uE713", Color.FromRgb(0x8E, 0x8E, 0x93)));
         panel.Children.Add(SidebarItem(Page.Dock, "\uE8A9", Color.FromRgb(0x0A, 0x84, 0xFF)));
         panel.Children.Add(SidebarItem(Page.TopBar, "\uE700", Color.FromRgb(0x5E, 0x5C, 0xE6)));
+        panel.Children.Add(SidebarItem(Page.Search, "\uE721", Color.FromRgb(0xFF, 0x9F, 0x0A)));
         panel.Children.Add(SidebarItem(Page.About, "\uE946", Color.FromRgb(0x34, 0xC7, 0x59)));
         return panel;
     }
@@ -451,13 +455,6 @@ internal sealed class SettingsWindow : Window
             Row("한/영", null, Toggle(t.ShowImeToggle, on => Commit(() => T().ShowImeToggle = on))),
             Row("네트워크 속도", null, Toggle(t.ShowNetworkSpeed, on => Commit(() => T().ShowNetworkSpeed = on)))));
 
-        body.Children.Add(Group(
-            Row("검색 버튼", null, Segmented(t.SearchMode,
-                new[] { (SearchMode.Spotlight, "몽독 검색 (화면 가운데)"), (SearchMode.Windows, "윈도우 검색") },
-                v => Commit(() => T().SearchMode = v))),
-            Row("검색 단축키", "기본값 '자동': 입력 언어가 1개면 Win+Space, 여러 개면 언어 전환과 겹치지 않게 Alt+Space 를 씁니다.",
-                SpotlightHotkeyDropdown(t.SpotlightHotkey))));
-
         body.Children.Add(SectionTitle("알림"));
         body.Children.Add(Group(
             Row("알림 배너", "윈도우 알림이 오면 상단바 아래 오른쪽에 맥처럼 표시합니다.",
@@ -469,6 +466,95 @@ internal sealed class SettingsWindow : Window
             Row("알림 소리", "윈도우 알림 소리를 바꿉니다. 모든 앱 알림에 같이 적용되고, 몽독을 꺼도 유지됩니다. 처음 한 번은 다시 로그인한 뒤부터 적용돼요. ‘원래대로’로 되돌릴 수 있어요.",
                 NotificationSoundDropdown())));
     }
+
+    // ───────────────────────── 페이지: 검색 ─────────────────────────
+
+    private void BuildSearch(Panel body)
+    {
+        var t = _services.Settings.Current.TopBar;
+        TopBarSettings T() => _services.Settings.Current.TopBar;
+        var s = _services.Settings.Current.Search;
+        SearchSettings S() => _services.Settings.Current.Search; // 외부 다시 로드로 객체가 바뀌어도 최신 것에 씀
+
+        body.Children.Add(Group(
+            Row("검색 버튼", null, Segmented(t.SearchMode,
+                new[] { (SearchMode.Spotlight, "몽독 검색 (화면 가운데)"), (SearchMode.Windows, "윈도우 검색") },
+                v => Commit(() => T().SearchMode = v))),
+            Row("검색 단축키", "기본값 '자동': 입력 언어가 1개면 Win+Space, 여러 개면 언어 전환과 겹치지 않게 Alt+Space 를 씁니다.",
+                SpotlightHotkeyDropdown(t.SpotlightHotkey))));
+
+        body.Children.Add(SectionTitle("검색 결과에 표시할 항목"));
+        body.Children.Add(Group(
+            Row("계산기", "수식(예 12*3+4)을 입력하면 맨 위에 결과. Enter 로 복사합니다.",
+                Toggle(s.Calculator, on => Commit(() => S().Calculator = on))),
+            Row("응용 프로그램", null, Toggle(s.Apps, on => Commit(() => S().Apps = on))),
+            Row("시스템 설정", "블루투스·디스플레이·소리 같은 윈도우 설정 페이지", Toggle(s.Settings, on => Commit(() => S().Settings = on)))));
+
+        bool indexing = WindowsIndexSearch.IsIndexServiceRunning();
+        var fileRows = new List<UIElement>();
+        if (!indexing)
+            fileRows.Add(Row("윈도우 검색 색인이 꺼져 있어요",
+                "색인 서비스(Windows Search)가 실행 중이 아니어서 파일·폴더를 찾지 못합니다.",
+                ActionButton("색인 옵션 열기", OpenIndexingOptions)));
+        fileRows.Add(Row("폴더", null, Toggle(s.Folders, on => Commit(() => S().Folders = on))));
+        fileRows.Add(Row("문서", null, Toggle(s.Documents, on => Commit(() => S().Documents = on))));
+        fileRows.Add(Row("사진·동영상·음악", null, Toggle(s.Media, on => Commit(() => S().Media = on))));
+        fileRows.Add(Row("기타 파일", null, Toggle(s.OtherFiles, on => Commit(() => S().OtherFiles = on))));
+        body.Children.Add(Group(fileRows.ToArray()));
+
+        body.Children.Add(Group(
+            Row("Windows 검색에서 찾기", "결과 맨 아래에 같은 검색어를 윈도우 검색으로 넘기는 항목",
+                Toggle(s.WindowsSearch, on => Commit(() => S().WindowsSearch = on))),
+            Row("웹에서 검색", "결과 맨 아래에 웹 검색 항목", Toggle(s.WebSearch, on => Commit(() => S().WebSearch = on))),
+            Row("웹 검색 엔진", null, Segmented(s.WebSearchEngine,
+                new[] { (WebSearchEngine.Google, "Google"), (WebSearchEngine.Naver, "네이버"), (WebSearchEngine.Bing, "Bing") },
+                v => Commit(() => S().WebSearchEngine = v))),
+            Row("카테고리별 최대 개수", null,
+                ValueSlider(s.MaxPerCategory, 3, 10, 1, v => $"{v:0}개", v => S().MaxPerCategory = (int)Math.Round(v)))));
+
+        // 파일 검색 위치: 각 행 오른쪽 "빼기", 맨 아래 "폴더 추가…" (폴더 고르기 창 — 마우스만으로)
+        body.Children.Add(SectionTitle("파일 검색 위치"));
+        var folderRows = new List<UIElement>();
+        var folders = (s.FileSearchFolders ?? new List<string>()).ToList();
+        foreach (string folder in folders)
+        {
+            string f = folder;
+            folderRows.Add(Row(Path.GetFileName(f.TrimEnd('\\')) is { Length: > 0 } name ? name : f, f,
+                ActionButton("빼기", () => Commit(() => S().FileSearchFolders.RemoveAll(x => string.Equals(x, f, StringComparison.OrdinalIgnoreCase)), rebuild: true))));
+        }
+        if (folders.Count == 0)
+            folderRows.Add(Row("위치 없음", "추가한 폴더가 없으면 파일·폴더를 찾지 않습니다.",
+                ActionButton("기본값 (사용자 폴더)", () => Commit(() => S().FileSearchFolders = new List<string> { SearchSettings.DefaultFileSearchFolder }, rebuild: true))));
+        folderRows.Add(Row("폴더 추가…", "하위 폴더까지 찾습니다. 윈도우 검색 색인에 포함된 위치만 결과에 나옵니다.",
+            ActionButton("추가", AddSearchFolder)));
+        folderRows.Add(Row("색인 옵션", "윈도우 검색이 색인할 위치를 바꿉니다 (제어판).", ActionButton("열기", OpenIndexingOptions)));
+        body.Children.Add(Group(folderRows.ToArray()));
+    }
+
+    private void AddSearchFolder()
+    {
+        var dlg = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "검색할 폴더 고르기",
+            Multiselect = true,
+            InitialDirectory = SearchSettings.DefaultFileSearchFolder,
+        };
+        if (dlg.ShowDialog(this) != true) return;
+        Commit(() =>
+        {
+            var list = _services.Settings.Current.Search.FileSearchFolders ??= new List<string>();
+            foreach (string folder in dlg.FolderNames)
+            {
+                if (string.IsNullOrWhiteSpace(folder)) continue;
+                if (!list.Any(x => string.Equals(x.TrimEnd('\\'), folder.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)))
+                    list.Add(folder);
+            }
+        }, rebuild: true);
+    }
+
+    /// <summary>제어판 "색인 옵션" (색인 위치 추가·색인 다시 만들기).</summary>
+    private static void OpenIndexingOptions()
+        => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("control.exe", "srchadmin.dll") { UseShellExecute = true })?.Dispose();
 
     /// <summary>알림 소리: 고르면 한 번 미리 들려 주고 바로 적용 (NotificationSoundService).</summary>
     private UIElement NotificationSoundDropdown()
