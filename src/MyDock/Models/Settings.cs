@@ -106,13 +106,13 @@ public sealed class DockSettings
 public sealed class TopBarSettings
 {
     public bool Enabled { get; set; } = true;
-    public double Height { get; set; } = 32;
+    public double Height { get; set; } = 26;
     public TopBarColorMode ColorMode { get; set; } = TopBarColorMode.Fixed;
     /// <summary>Fixed 모드의 배경색 / Blur 모드의 틴트.</summary>
     public string Background { get; set; } = "#FFFFFFFF";
     /// <summary>"" 이면 배경 밝기에 따라 검정/흰색 자동.</summary>
     public string Foreground { get; set; } = "";
-    public double FontSize { get; set; } = 14;
+    public double FontSize { get; set; } = 13;
     public string ClockFormat { get; set; } = "ddd tt h:mm";
     public bool ShowDesktopButtons { get; set; } = true;
     /// <summary>앱 이름 오른쪽에 그 앱의 메뉴(파일·편집·보기…) 표시 (맥 메뉴바처럼).</summary>

@@ -86,10 +86,10 @@ public partial class TopBarWindow
     private Button MakeTitleButton(string text) => new()
     {
         Style = (Style)FindResource("BarButton"),
-        Padding = new Thickness(8, 0, 8, 0),
-        Margin = new Thickness(0, 4, 0, 4),
+        Padding = new Thickness(7, 0, 7, 0),
+        Margin = new Thickness(0, 3, 0, 3),
         MinWidth = 0,
-        Content = new TextBlock { Text = text, FontSize = 14.5, Margin = new Thickness(0, 0, 0, 1) },
+        Content = new TextBlock { Text = text, FontSize = 13, Margin = new Thickness(0, 0, 0, 1) },
     };
 
     /// <summary>오른쪽 구역과 겹치지 않을 만큼만 제목을 보이고 나머지는 » 로.</summary>

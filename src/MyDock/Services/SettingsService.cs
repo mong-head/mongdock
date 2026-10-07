@@ -128,12 +128,15 @@ public sealed class SettingsService : ISettingsService, IDisposable
     private const string OldDockIndicator = "#E0FFFFFF";
     private const string OldTopBarForeground = "#FFF2F2F2";
     private const string OldTopBarBackground = "#C0161618";
+    private const double OldTopBarHeight = 32;
+    private const double OldTopBarFontSize = 14;
 
     /// <summary>
     /// 이전 버전 settings.json 을 새 형식으로 1회 이관. 원본 JSON 키를 먼저 검사한다.
     /// - dock.reserveSpace: true → Mode=Reserve, false → Overlay (dock.mode 키가 이미 있으면 mode 우선)
     /// - dock.background/borderColor/indicatorColor 가 이전 기본값과 정확히 같으면 "" (테마 기본값)
     /// - topBar.foreground 가 "#FFF2F2F2" 면 "", topBar.background 가 "#C0161618" 이면 새 기본값
+    /// - topBar.height 32 / fontSize 14 (옛 기본값) 이면 새 기본값 26 / 13
     /// 바뀐 게 있으면 true (호출자가 저장).
     /// </summary>
     internal static bool Migrate(string text, Settings s)
@@ -166,6 +169,9 @@ public sealed class SettingsService : ISettingsService, IDisposable
                     s.TopBar.Background = new TopBarSettings().Background;
                     notes.Add($"topBar.background → {s.TopBar.Background}");
                 }
+                // 상단바를 맥 메뉴바 크기로 줄임 (32/14 → 26/13): 옛 기본값 그대로인 경우만
+                if (NumberIs(top, "height", OldTopBarHeight)) { s.TopBar.Height = new TopBarSettings().Height; notes.Add($"topBar.height → {s.TopBar.Height}"); }
+                if (NumberIs(top, "fontSize", OldTopBarFontSize)) { s.TopBar.FontSize = new TopBarSettings().FontSize; notes.Add($"topBar.fontSize → {s.TopBar.FontSize}"); }
             }
         }
         catch (Exception ex)
@@ -180,6 +186,9 @@ public sealed class SettingsService : ISettingsService, IDisposable
     private static bool ResetIfOld(JsonElement obj, string name, string oldValue) =>
         TryGetProp(obj, name, out var v) && v.ValueKind == JsonValueKind.String &&
         string.Equals(v.GetString(), oldValue, StringComparison.Ordinal);
+
+    private static bool NumberIs(JsonElement obj, string name, double oldValue) =>
+        TryGetProp(obj, name, out var v) && v.ValueKind == JsonValueKind.Number && v.GetDouble() == oldValue;
 
     /// <summary>대소문자 무시 속성 찾기 (camelCase/PascalCase 모두).</summary>
     private static bool TryGetProp(JsonElement obj, string name, out JsonElement value)

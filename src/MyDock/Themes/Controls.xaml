@@ -5,6 +5,9 @@
     <FontFamily x:Key="UiFont">Segoe UI Variable Text, Malgun Gothic</FontFamily>
     <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
 
+    <!-- 상단바 아이콘 축소: BarIcons 좌표는 20 DIP 아이콘 기준(Stretch=None)이라 크기 대신 배율로 줄임 -->
+    <ScaleTransform x:Key="BarIconScale" ScaleX="0.8" ScaleY="0.8" />
+
     <!-- 상단바 버튼: 포커스 없음, 호버 시 글자색을 옅게 깐 둥근 배경 (밝은/어두운 바 모두 자연스럽게).
          글자색은 구역(왼쪽/오른쪽 StackPanel)의 TextElement.Foreground 를 따름 → 배경 밝기별 자동 색 -->
     <Style x:Key="BarButton" TargetType="Button">
@@ -13,10 +16,10 @@
         <Setter Property="Foreground" Value="{Binding (TextElement.Foreground), RelativeSource={RelativeSource AncestorType=StackPanel}}" />
         <Setter Property="FontFamily" Value="{Binding FontFamily, RelativeSource={RelativeSource AncestorType=Window}}" />
         <Setter Property="FontSize" Value="{Binding FontSize, RelativeSource={RelativeSource AncestorType=Window}}" />
-        <Setter Property="Padding" Value="7,0" />
-        <Setter Property="Margin" Value="1,4" />
+        <Setter Property="Padding" Value="6,0" />
+        <Setter Property="Margin" Value="1,3" />
         <Setter Property="VerticalAlignment" Value="Stretch" />
-        <Setter Property="MinWidth" Value="24" />
+        <Setter Property="MinWidth" Value="20" />
         <Setter Property="Cursor" Value="Arrow" />
         <Setter Property="Template">
             <Setter.Value>
@@ -45,8 +48,8 @@
     <!-- 상단바 아이콘 버튼 (Segoe Fluent Icons / MDL2 글리프, 단색) -->
     <Style x:Key="BarIconButton" TargetType="Button" BasedOn="{StaticResource BarButton}">
         <Setter Property="FontFamily" Value="{StaticResource IconFont}" />
-        <Setter Property="FontSize" Value="20" />
-        <Setter Property="Padding" Value="9,0" />
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="Padding" Value="7,0" />
     </Style>
 
     <!-- 상태 카드: 텍스트 링크형 버튼 ("사운드 설정…") -->

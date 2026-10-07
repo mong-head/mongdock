@@ -181,9 +181,9 @@ public partial class TopBarWindow : Window
         if (!_initialized) return;
         UiFonts.Apply(_services.Settings.Current);
         var s = _services.Settings.Current.TopBar;
-        double height = Math.Clamp(double.IsNaN(s.Height) ? 32 : s.Height, 16, 80);
+        double height = Math.Clamp(double.IsNaN(s.Height) ? 26 : s.Height, 16, 80);
 
-        FontSize = Math.Clamp(double.IsNaN(s.FontSize) ? 14 : s.FontSize, 8, 32);
+        FontSize = Math.Clamp(double.IsNaN(s.FontSize) ? 13 : s.FontSize, 8, 32);
         LogoButton.Visibility = Vis(s.ShowLogo);
         AppNameButton.Visibility = Vis(s.ShowActiveAppName);
         AppMenuBar.Visibility = Vis(s.ShowAppMenus);
