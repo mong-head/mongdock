@@ -38,8 +38,11 @@ public sealed class NativeToastSuppressor : IDisposable
     private const uint MONITOR_DEFAULTTONEAREST = 2;
     /// <summary>토스트가 뜬 시점보다 이만큼 전의 배너까지 "이 토스트의 배너" 로 인정 (DB 가 먼저 갱신된 경우).</summary>
     private const long LookbackMs = 2500;
-    /// <summary>뜬 뒤 이 시간 안에 배너가 확인되지 않으면 셸 팝업을 원래 자리로 복원.</summary>
-    private const long ConfirmTimeoutMs = 600;
+    /// <summary>
+    /// 뜬 뒤 이 시간 안에 배너가 확인되지 않으면 셸 팝업을 원래 자리로 복원.
+    /// 디스코드·Claude 등은 DB 반영이 셸 창보다 ~700ms 늦으므로 여유 있게 (그동안 팝업은 화면 밖이라 보이지 않음).
+    /// </summary>
+    private const long ConfirmTimeoutMs = 1500;
 
     // SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_ASYNCWINDOWPOS (셸 스레드가 바빠도 몽독이 막히지 않게)
     private const uint MoveFlags = 0x0001 | 0x0004 | 0x0010 | 0x0200 | 0x4000;
@@ -283,16 +286,9 @@ public sealed class NativeToastSuppressor : IDisposable
                 break;
             case State.Hidden:
                 if (offscreen) break;
-                // 셸이 다시 화면 안으로 배치: 높이가 바뀌었으면 새 토스트가 쌓인 것 → 다시 확인, 아니면 그냥 다시 숨김
-                bool grew = r.Height != _lastHeight;
+                // 셸이 다시 화면 안으로 배치 → 그냥 다시 숨김. 높이가 바뀌는 것만으로는 새 토스트로 보지 않는다
+                // (디스코드 등은 같은 토스트를 뜬 뒤 다시 배치함). 새 토스트가 쌓였는지는 DB 의 새 행(OnToastActivity)으로 판단.
                 MoveOffscreen(hwnd);
-                if (grew)
-                {
-                    _sessionTick = Environment.TickCount64;
-                    _state = State.Pending;
-                    _notifications?.RequestReadNow();
-                    if (!Evaluate()) _confirmTimer.Start();
-                }
                 break;
             case State.Shown:
                 if (!offscreen) _lastHeight = r.Height;
@@ -323,6 +319,12 @@ public sealed class NativeToastSuppressor : IDisposable
         {
             // 숨긴 뒤에 들어온 사용자 조작 필요 토스트 → 보여 줌
             Show("사용자 조작이 필요한 알림");
+        }
+        else if (_state == State.Hidden && _notifications is not null)
+        {
+            // 숨긴 셸 창에 토스트가 더 쌓이거나 같은 토스트가 갱신됨(디스코드 등, 같은 태그라 배너 생략)
+            // → 계속 숨김. 새 배너가 나갔으면 그 배너는 이 창 몫으로 소비.
+            _usedBannerTick = Math.Max(_usedBannerTick, _notifications.LastBannerTick);
         }
     }
 
