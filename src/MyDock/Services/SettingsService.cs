@@ -132,21 +132,25 @@ public sealed class SettingsService : ISettingsService, IDisposable
     private const double OldTopBarFontSize = 14;
 
     /// <summary>
-    /// 이전 버전 settings.json 을 새 형식으로 1회 이관. 원본 JSON 키를 먼저 검사한다.
+    /// 이전 버전 settings.json 을 새 형식으로 이관. 원본 JSON 을 검사한다 (속성 기본값과 헷갈리지 않게).
+    /// 키 기반(몇 번이든 안전):
     /// - dock.reserveSpace: true → Mode=Reserve, false → Overlay (dock.mode 키가 이미 있으면 mode 우선)
+    /// 파일의 settingsVersion(없으면 0) 이 2 미만일 때만 한 번 (그 뒤 사용자가 같은 값을 골라도 다시 바꾸지 않음):
     /// - dock.background/borderColor/indicatorColor 가 이전 기본값과 정확히 같으면 "" (테마 기본값)
     /// - topBar.foreground 가 "#FFF2F2F2" 면 "", topBar.background 가 "#C0161618" 이면 새 기본값
     /// - topBar.height 32 / fontSize 14 (옛 기본값) 이면 새 기본값 26 / 13
-    /// 바뀐 게 있으면 true (호출자가 저장).
+    /// 끝나면 SettingsVersion = 현재 버전. 바뀐 게 있거나 버전을 올렸으면 true (호출자가 저장).
     /// </summary>
     internal static bool Migrate(string text, Settings s)
     {
         var notes = new List<string>();
+        int version;
         try
         {
             using var doc = JsonDocument.Parse(text, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object) return false;
+            version = TryGetProp(root, "settingsVersion", out var ver) && ver.ValueKind == JsonValueKind.Number && ver.TryGetInt32(out int v) ? v : 0;
 
             if (TryGetProp(root, "dock", out var dock) && dock.ValueKind == JsonValueKind.Object)
             {
@@ -156,12 +160,12 @@ public sealed class SettingsService : ISettingsService, IDisposable
                     s.Dock.Mode = rs.GetBoolean() ? DockMode.Reserve : DockMode.Overlay;
                     notes.Add($"dock.reserveSpace={rs.GetBoolean()} → mode={s.Dock.Mode}");
                 }
-                if (ResetIfOld(dock, "background", OldDockBackground)) { s.Dock.Background = ""; notes.Add("dock.background → \"\""); }
-                if (ResetIfOld(dock, "borderColor", OldDockBorder)) { s.Dock.BorderColor = ""; notes.Add("dock.borderColor → \"\""); }
-                if (ResetIfOld(dock, "indicatorColor", OldDockIndicator)) { s.Dock.IndicatorColor = ""; notes.Add("dock.indicatorColor → \"\""); }
+                if (version < 2 && ResetIfOld(dock, "background", OldDockBackground)) { s.Dock.Background = ""; notes.Add("dock.background → \"\""); }
+                if (version < 2 && ResetIfOld(dock, "borderColor", OldDockBorder)) { s.Dock.BorderColor = ""; notes.Add("dock.borderColor → \"\""); }
+                if (version < 2 && ResetIfOld(dock, "indicatorColor", OldDockIndicator)) { s.Dock.IndicatorColor = ""; notes.Add("dock.indicatorColor → \"\""); }
             }
 
-            if (TryGetProp(root, "topBar", out var top) && top.ValueKind == JsonValueKind.Object)
+            if (version < 2 && TryGetProp(root, "topBar", out var top) && top.ValueKind == JsonValueKind.Object)
             {
                 if (ResetIfOld(top, "foreground", OldTopBarForeground)) { s.TopBar.Foreground = ""; notes.Add("topBar.foreground → \"\""); }
                 if (ResetIfOld(top, "background", OldTopBarBackground))
@@ -169,7 +173,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
                     s.TopBar.Background = new TopBarSettings().Background;
                     notes.Add($"topBar.background → {s.TopBar.Background}");
                 }
-                // 상단바를 맥 메뉴바 크기로 줄임 (32/14 → 26/13): 옛 기본값 그대로인 경우만
+                // 상단바를 맥 메뉴바 크기로 줄임 (32/14 → 26/13): 옛 기본값 그대로인 경우만, 한 번만
                 if (NumberIs(top, "height", OldTopBarHeight)) { s.TopBar.Height = new TopBarSettings().Height; notes.Add($"topBar.height → {s.TopBar.Height}"); }
                 if (NumberIs(top, "fontSize", OldTopBarFontSize)) { s.TopBar.FontSize = new TopBarSettings().FontSize; notes.Add($"topBar.fontSize → {s.TopBar.FontSize}"); }
             }
@@ -178,6 +182,15 @@ public sealed class SettingsService : ISettingsService, IDisposable
         {
             Log.Error("설정 이관 검사 실패", ex);
             return false;
+        }
+        if (version < Settings.CurrentVersion)
+        {
+            s.SettingsVersion = Settings.CurrentVersion;
+            notes.Add($"settingsVersion {version} → {Settings.CurrentVersion}");
+        }
+        else
+        {
+            s.SettingsVersion = version; // 더 새 버전이 쓴 파일이면 그대로 둠
         }
         if (notes.Count > 0) Log.Info("설정 이관: " + string.Join(", ", notes));
         return notes.Count > 0;
@@ -213,6 +226,8 @@ public sealed class SettingsService : ISettingsService, IDisposable
         s.Dock ??= new DockSettings();
         s.TopBar ??= new TopBarSettings();
         s.Notifications ??= new NotificationSettings();
+        s.FontFamily ??= "Pretendard";
+        s.AppMenus ??= new Dictionary<string, List<AppMenuDef>>();
         s.Pins ??= new List<PinItem>();
         s.Pins.RemoveAll(p => p is null);
         foreach (var p in s.Pins)
@@ -336,14 +351,24 @@ public sealed class SettingsService : ISettingsService, IDisposable
         });
     }
 
+    /// <summary>
+    /// 외부 편집으로 다시 읽은 값을 현재 객체에 반영. 하위 설정 객체(Dock/TopBar/Notifications)와 Pins 리스트는
+    /// 참조를 유지한 채 값만 복사하고, 나머지 최상위 속성(FontFamily, HideWindowsTaskbar, AppMenus, 앞으로 추가될 것 포함)은 그대로 대입.
+    /// 빠진 속성이 있으면 다음 Save 가 외부 편집을 되돌리므로 리플렉션으로 전부 다룬다.
+    /// </summary>
     private static void CopyInto(Settings src, Settings dst)
     {
         CopyProperties(src.Dock, dst.Dock);
         CopyProperties(src.TopBar, dst.TopBar);
+        CopyProperties(src.Notifications, dst.Notifications);
         dst.Pins.Clear();
         dst.Pins.AddRange(src.Pins);
-        dst.StartWithWindows = src.StartWithWindows;
-        dst.ImportedFromMyDockFinder = src.ImportedFromMyDockFinder;
+        foreach (var p in typeof(Settings).GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+        {
+            if (!p.CanRead || !p.CanWrite || p.GetIndexParameters().Length != 0) continue;
+            if (p.Name is nameof(Settings.Dock) or nameof(Settings.TopBar) or nameof(Settings.Notifications) or nameof(Settings.Pins)) continue;
+            p.SetValue(dst, p.GetValue(src));
+        }
     }
 
     /// <summary>public 읽기/쓰기 속성을 얕게 복사 (DockSettings/TopBarSettings 는 값 타입·문자열 속성만 가짐).</summary>

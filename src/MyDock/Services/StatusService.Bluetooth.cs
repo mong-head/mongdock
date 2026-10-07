@@ -276,6 +276,9 @@ public sealed partial class StatusService
                 .Where(g => g != Guid.Empty)
                 .Distinct()
                 .ToList();
+            // 오디오 필터가 있는 컨테이너(이어폰의 클래식 오디오 쪽)에만 보냄. 하나도 없을 때만(아직 조사 전 등) 전부 시도.
+            var audio = containers.Where(_btAudioContainers.Contains).ToList();
+            if (audio.Count > 0) containers = audio;
         }
         if (containers.Count == 0)
         {
@@ -289,8 +292,9 @@ public sealed partial class StatusService
                     .Select(c => BluetoothAudioControl.Send(c, connect, m => Log.Warn(m)))
                     .ToList())
                 .WaitAsync(BtRequestTimeout).ConfigureAwait(false);
-            foreach (var (o, detail) in outcomes)
-                Log.Info($"블루투스 {(connect ? "연결" : "해제")} 요청 '{name}': {o} ({detail})");
+            // 요청당 한 줄 요약 (컨테이너별 결과는 결과 종류만 묶어서)
+            string summary = string.Join(", ", outcomes.Select(o => o.Detail is { Length: > 0 } d ? $"{o.Outcome}({d})" : o.Outcome.ToString()));
+            Log.Info($"블루투스 {(connect ? "연결" : "해제")} 요청 '{name}' 컨테이너 {containers.Count}개: {summary}");
             if (outcomes.Any(o => o.Outcome == BluetoothAudioControl.Outcome.Sent)) return BluetoothConnectResult.Requested;
             if (outcomes.Any(o => o.Outcome == BluetoothAudioControl.Outcome.Failed)) return BluetoothConnectResult.Failed;
             return BluetoothConnectResult.NotSupported;

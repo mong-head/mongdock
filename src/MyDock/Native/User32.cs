@@ -178,6 +178,18 @@ internal static class User32
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
 
+    /// <summary>창 제목을 커널 쪽 사본에서 읽음 — 대상 창에 WM_GETTEXT 를 보내지 않으므로 다른 프로세스 창이 바빠도 막히지 않음.</summary>
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int InternalGetWindowText(IntPtr hWnd, StringBuilder pString, int cchMaxCount);
+
+    /// <summary>메시지를 보내지 않는 제목 읽기 (최대 255자).</summary>
+    public static string GetWindowTitleNoMessage(IntPtr hwnd)
+    {
+        var sb = new StringBuilder(256);
+        int n = InternalGetWindowText(hwnd, sb, sb.Capacity);
+        return n > 0 ? sb.ToString() : "";
+    }
+
     [DllImport("user32.dll", SetLastError = true)]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
@@ -302,11 +314,13 @@ internal static class User32
         };
     }
 
-    /// <summary>입력 배열을 한 번의 SendInput 으로 보냄 (중간에 다른 입력이 끼어들지 않게).</summary>
+    /// <summary>입력 배열을 한 번의 SendInput 으로 보냄 (중간에 다른 입력이 끼어들지 않게). 실패하면 <see cref="LastSendError"/> 갱신.</summary>
     public static bool Send(params INPUT[] inputs)
     {
         uint sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
-        return sent == inputs.Length;
+        bool ok = sent == inputs.Length;
+        _lastSendError = ok ? 0 : Marshal.GetLastWin32Error();
+        return ok;
     }
 
     public const uint INPUT_MOUSE = 0;
@@ -337,10 +351,11 @@ internal static class User32
             inputs[i] = KeyInput(keys[i], up: false, IsExtendedKey(keys[i]));
             inputs[inputs.Length - 1 - i] = KeyInput(keys[i], up: true, IsExtendedKey(keys[i]));
         }
-        bool ok = Send(inputs);
-        if (!ok) LastSendError = Marshal.GetLastWin32Error();
-        return ok;
+        return Send(inputs);
     }
 
-    public static int LastSendError { get; private set; }
+    [ThreadStatic] private static int _lastSendError;
+
+    /// <summary>이 스레드에서 마지막으로 실패한 <see cref="Send"/>/<see cref="SendChord"/> 의 Win32 오류 (성공하면 0).</summary>
+    public static int LastSendError => _lastSendError;
 }

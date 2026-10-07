@@ -12,19 +12,14 @@ internal static class Sqlite
     private const string Dll = "winsqlite3.dll";
 
     public const int SQLITE_OK = 0;
-    public const int SQLITE_BUSY = 5;
-    public const int SQLITE_LOCKED = 6;
     public const int SQLITE_ROW = 100;
     public const int SQLITE_DONE = 101;
 
     public const int SQLITE_OPEN_READONLY = 0x00000001;
-    public const int SQLITE_OPEN_URI = 0x00000040;
     public const int SQLITE_OPEN_NOMUTEX = 0x00008000;
 
     public const int SQLITE_INTEGER = 1;
-    public const int SQLITE_FLOAT = 2;
     public const int SQLITE_TEXT = 3;
-    public const int SQLITE_BLOB = 4;
     public const int SQLITE_NULL = 5;
 
     [DllImport(Dll, EntryPoint = "sqlite3_open_v2", ExactSpelling = true)]
@@ -48,9 +43,6 @@ internal static class Sqlite
     [DllImport(Dll, EntryPoint = "sqlite3_bind_int64", ExactSpelling = true)]
     public static extern int sqlite3_bind_int64(IntPtr stmt, int index, long value);
 
-    [DllImport(Dll, EntryPoint = "sqlite3_column_count", ExactSpelling = true)]
-    public static extern int sqlite3_column_count(IntPtr stmt);
-
     [DllImport(Dll, EntryPoint = "sqlite3_column_type", ExactSpelling = true)]
     public static extern int sqlite3_column_type(IntPtr stmt, int col);
 
@@ -65,9 +57,6 @@ internal static class Sqlite
 
     [DllImport(Dll, EntryPoint = "sqlite3_column_bytes", ExactSpelling = true)]
     public static extern int sqlite3_column_bytes(IntPtr stmt, int col);
-
-    [DllImport(Dll, EntryPoint = "sqlite3_column_name", ExactSpelling = true)]
-    public static extern IntPtr sqlite3_column_name(IntPtr stmt, int col);
 
     [DllImport(Dll, EntryPoint = "sqlite3_errmsg", ExactSpelling = true)]
     public static extern IntPtr sqlite3_errmsg(IntPtr db);
@@ -146,8 +135,6 @@ internal readonly struct SqliteRow
     private readonly IntPtr _stmt;
     public SqliteRow(IntPtr stmt) => _stmt = stmt;
 
-    public int ColumnCount => Sqlite.sqlite3_column_count(_stmt);
-    public string? ColumnName(int i) => Sqlite.PtrToUtf8(Sqlite.sqlite3_column_name(_stmt, i));
     public int Type(int i) => Sqlite.sqlite3_column_type(_stmt, i);
     public bool IsNull(int i) => Type(i) == Sqlite.SQLITE_NULL;
     public long Int64(int i) => Sqlite.sqlite3_column_int64(_stmt, i);

@@ -76,11 +76,6 @@ public interface IDesktopWindowService
 {
     /// <summary>WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW 적용 (포커스 안 뺏고 Alt+Tab 에서 숨김). SourceInitialized 이후 호출.</summary>
     void MakeOverlay(Window window);
-    /// <summary>독 공간 예약(Reserve 모드). 숨은 도우미 AppBar 창으로 가장자리 띠만 예약하고 보이는 창은 움직이지 않음.
-    /// Top 이면 상단바 아래에 쌓임. Dispose 하면 해제. 탐색기 재시작 시 자동 재등록.</summary>
-    IEdgeReservation ReserveEdge(DockEdge edge, double thickness);
-    /// <summary>상단바 AppBar (창 위치까지 맞춤). 탐색기 재시작 시 자동 재등록.</summary>
-    void RegisterTopAppBar(Window window, double thickness);
     void UnregisterAppBar(Window window);
     /// <summary>주 모니터 작업 영역이 아닌 전체 화면 영역 (DIP).</summary>
     Rect GetPrimaryScreenBounds();
@@ -95,16 +90,11 @@ public interface IDesktopWindowService
     /// (물리 px / 그 모니터 배율 — 그 모니터 위 창의 화면 DIP 와 비교 가능; 주 모니터면 기존과 같음). 어느 모니터에도 없으면 null.
     /// 구독자가 있을 때만 훅을 설치 — NOACTIVATE 창의 메뉴·패널 "바깥 클릭 시 닫기"용. 폴링은 짧은 탭(원격 트랙패드)을 놓침.</summary>
     event EventHandler<Point?>? GlobalMouseDown;
-    /// <summary>화면 영역(DIP)의 대표 색 (최빈/중앙값). 읽을 수 없으면 null. 상단바 자동 색용.</summary>
-    Color? SampleScreenColor(Rect areaDip);
-    /// <summary>바탕화면 배경(월페이퍼)만의 해당 영역(DIP) 평균 색 — 우리 창·다른 창 제외. 투명 상단바 글자색 결정용. 실패 시 null.
-    /// SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 는 원격(StarDesk) 화면에서도 창이 사라지므로 사용 금지.</summary>
-    Task<Color?> SampleWallpaperColorAsync(Rect areaDip);
     // 구독자가 있을 때만 배경 감시 폴링을 돌림 (Transparent 모드가 아니면 UI 는 구독 해제).
     /// <summary>배경화면이 바뀜 (설정 변경, 가상 데스크톱 전환으로 데스크톱별 배경이 바뀐 경우 포함).</summary>
     event EventHandler? WallpaperChanged;
     /// <summary>전체 화면 앱이 켜짐(true)/꺼짐(false) — 어느 모니터든. 이때 그 모니터의 독·상단바는 Topmost 해제·숨김
-    /// (어느 모니터인지는 <see cref="FullscreenMonitor"/>/<see cref="IsFullscreenOn"/>). 다른 모니터로 옮겨 가도 true 로 다시 발생.</summary>
+    /// (어느 모니터인지는 <see cref="IsFullscreenOn"/>). 다른 모니터로 옮겨 가도 true 로 다시 발생.</summary>
     event EventHandler<bool>? FullscreenAppChanged;
     /// <summary>해상도·DPI·작업 영역 변경, 모니터 연결/분리, 탐색기 재시작 후 (300ms 디바운스). UI 는 배치를 다시 계산.</summary>
     event EventHandler? DisplayChanged;
@@ -121,15 +111,19 @@ public interface IDesktopWindowService
     IReadOnlyList<MonitorInfo> GetMonitors();
     /// <summary>장치 이름(Dock.Monitor 등)의 모니터. "" 이거나 연결 안 됐으면 주 모니터.</summary>
     MonitorInfo ResolveMonitor(string? deviceName);
-    /// <summary>독 공간 예약을 지정 모니터에 (null/""/분리됨 → 주 모니터, 다시 연결되면 자동 복귀).</summary>
+    /// <summary>독 공간 예약(Reserve 모드)을 지정 모니터에 (null/""/분리됨 → 주 모니터, 다시 연결되면 자동 복귀).
+    /// 숨은 도우미 AppBar 창으로 가장자리 띠만 예약하고 보이는 창은 움직이지 않음. Top 이면 상단바 아래에 쌓임.
+    /// Dispose 하면 해제. 탐색기 재시작 시 자동 재등록.</summary>
     IEdgeReservation ReserveEdge(DockEdge edge, double thickness, string? monitor);
-    /// <summary>상단바 AppBar 를 지정 모니터 맨 위에 (null/"" → 주 모니터). 그 모니터가 분리되면 재배치하지 않음 — 창을 닫을 것.</summary>
+    /// <summary>상단바 AppBar 를 지정 모니터 맨 위에 (null/"" → 주 모니터, 창 위치까지 맞춤). 그 모니터가 분리되면 재배치하지 않음 — 창을 닫을 것.
+    /// 탐색기 재시작 시 자동 재등록.</summary>
     void RegisterTopAppBar(Window window, double thickness, string? monitor);
     /// <summary>커서가 monitor 위에 있으면 그 모니터 기준 DIP, 아니면 null.</summary>
     Point? GetCursorPosition(MonitorInfo monitor);
-    /// <summary>monitor 기준 DIP 영역의 화면 대표 색 (그 모니터 밖은 잘라냄).</summary>
+    /// <summary>monitor 기준 DIP 영역의 화면 대표 색 (최빈/중앙값, 그 모니터 밖은 잘라냄). 읽을 수 없으면 null. 상단바 자동 색용.</summary>
     Color? SampleScreenColor(Rect areaDip, MonitorInfo monitor);
-    /// <summary>monitor 기준 DIP 영역의 배경화면 색 (그 모니터의 배경).</summary>
+    /// <summary>monitor 기준 DIP 영역의 배경화면(월페이퍼)만의 평균 색 — 우리 창·다른 창 제외. 투명 상단바 글자색 결정용. 실패 시 null.
+    /// SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 는 원격(StarDesk) 화면에서도 창이 사라지므로 사용 금지.</summary>
     Task<Color?> SampleWallpaperColorAsync(Rect areaDip, MonitorInfo monitor);
     /// <summary>
     /// 창의 DPI 가 monitor 와 다르고 다른 모니터에 있으면 물리 픽셀(SetWindowPos)로 그 모니터로 옮겨 DPI 를 맞춘다
@@ -137,8 +131,6 @@ public interface IDesktopWindowService
     /// 핸들이 없으면 아무것도 안 함 — 새 창은 WPF 가 Left/Top 이 속한 모니터에 만든다.
     /// </summary>
     bool EnsureOnMonitor(Window window, MonitorInfo monitor);
-    /// <summary>전체 화면 앱이 있는 모니터의 장치 이름 (없으면 null). <see cref="FullscreenAppChanged"/> 는 이 값이 바뀔 때 발생.</summary>
-    string? FullscreenMonitor { get; }
     /// <summary>해당 모니터(null/"" = 주 모니터)에 전체 화면 앱이 있는지.</summary>
     bool IsFullscreenOn(string? deviceName);
 }
@@ -341,6 +333,8 @@ public interface INotificationService
     void Hide(NotificationItem item);
     /// <summary>앱의 현재 알림을 몽독 목록에서 모두 숨김 ("모두 숨기기").</summary>
     void HideApp(string aumid);
+    /// <summary>현재 목록의 모든 알림을 몽독 목록에서 숨김 ("모두 지우기"). 숨김 파일 저장·Changed 는 한 번만.</summary>
+    void HideAll();
     void Start();
     void Stop();
 }

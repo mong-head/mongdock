@@ -12,7 +12,14 @@ internal sealed record ToastContent(
     string? Attribution,
     string? AppLogoPath,
     bool AppLogoCircle,
-    string? ImagePath);
+    string? ImagePath,
+    string? Scenario = null)
+{
+    /// <summary>사용자 조작이 필요한 토스트 (알람·미리 알림·전화·긴급) — 윈도우 팝업을 숨기면 안 됨.</summary>
+    public bool IsInteractiveScenario => Scenario is { } s &&
+        (s.Equals("reminder", StringComparison.OrdinalIgnoreCase) || s.Equals("alarm", StringComparison.OrdinalIgnoreCase) ||
+         s.Equals("incomingCall", StringComparison.OrdinalIgnoreCase) || s.Equals("urgent", StringComparison.OrdinalIgnoreCase));
+}
 
 /// <summary>
 /// wpndatabase.db Notification.Payload (토스트 XML) 파서. 예외를 던지지 않고 실패 시 null.
@@ -85,7 +92,9 @@ internal static class ToastPayload
 
             if (texts.Count == 0 && attribution is null) return null;
             string? title = texts.Count > 0 ? texts[0] : null;
-            return new ToastContent(title, texts.Skip(1).ToList(), attribution, logo, circle, image);
+            string? scenario = ((string?)root.Attribute("scenario"))?.Trim();
+            return new ToastContent(title, texts.Skip(1).ToList(), attribution, logo, circle, image,
+                string.IsNullOrEmpty(scenario) ? null : scenario);
         }
         catch
         {

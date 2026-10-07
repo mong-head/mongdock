@@ -181,9 +181,28 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
 
     // ───────────────────────── 여러 모니터 ─────────────────────────
 
-    public IReadOnlyList<MonitorInfo> GetMonitors() => Monitors.GetAll();
+    /// <summary>
+    /// 모니터 목록 캐시 — 독 자동 숨김 폴링처럼 자주 부르는 곳이 매번 모든 모니터를 열거하지 않게.
+    /// 갱신: 1초 구성 확인(CheckMonitorMetrics 가 어차피 열거한 결과 재사용)과 DisplayChanged 직전.
+    /// 그래서 DisplayChanged 구독자는 항상 새 값을 본다.
+    /// </summary>
+    private volatile IReadOnlyList<MonitorInfo> _monitorCache = Monitors.GetAll();
 
-    public MonitorInfo ResolveMonitor(string? deviceName) => Monitors.Resolve(deviceName);
+    public IReadOnlyList<MonitorInfo> GetMonitors() => _monitorCache;
+
+    public MonitorInfo ResolveMonitor(string? deviceName)
+    {
+        var all = _monitorCache;
+        if (!string.IsNullOrWhiteSpace(deviceName))
+        {
+            string name = deviceName.Trim();
+            foreach (var m in all)
+                if (string.Equals(m.DeviceName, name, StringComparison.OrdinalIgnoreCase)) return m;
+        }
+        foreach (var m in all)
+            if (m.IsPrimary) return m;
+        return all.Count > 0 ? all[0] : Monitors.GetPrimary();
+    }
 
     /// <summary>커서가 monitor 영역(물리 px) 안이면 그 모니터 기준 DIP.</summary>
     public Point? GetCursorPosition(MonitorInfo monitor)
@@ -223,19 +242,19 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     // ───────────────────────── 전역 마우스 누름 (WH_MOUSE_LL) ─────────────────────────
 
     private EventHandler<Point?>? _globalMouseDown;
-    private IntPtr _mouseHook;
-    private DesktopApi.LowLevelMouseProc? _mouseProc; // GC 방지용으로 필드 보관
+    private LowLevelHookThread? _mouseHook;
 
     /// <summary>
     /// 화면 어디서든 왼/오/가운데 버튼이 눌린 순간 (UI 스레드). 인자는 눌린 곳 모니터 기준 DIP 위치(어느 모니터에도 없으면 null).
-    /// 첫 구독 때 WH_MOUSE_LL 훅 설치, 마지막 해제 때 제거 (UI 스레드에서 구독/해제할 것 — 훅은 설치한 스레드의 메시지 루프로 호출됨).
+    /// 첫 구독 때 WH_MOUSE_LL 훅 설치, 마지막 해제 때 제거. 훅은 전용 백그라운드 스레드에서 돌고(UI 가 바빠도 시스템 마우스가 늦지 않음)
+    /// 눌림만 Dispatcher 로 넘긴다. 구독/해제는 UI 스레드에서.
     /// </summary>
     public event EventHandler<Point?>? GlobalMouseDown
     {
         add
         {
             _globalMouseDown += value;
-            if (_globalMouseDown is not null && _mouseHook == IntPtr.Zero && !_disposed) InstallMouseHook();
+            if (_globalMouseDown is not null && !_disposed) InstallMouseHook();
         }
         remove
         {
@@ -246,40 +265,23 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
 
     private void InstallMouseHook()
     {
-        _mouseProc ??= MouseHookProc;
-        IntPtr hMod = DesktopApi.GetModuleHandle(null);
-        _mouseHook = DesktopApi.SetWindowsHookEx(DesktopApi.WH_MOUSE_LL, _mouseProc, hMod, 0);
-        if (_mouseHook == IntPtr.Zero)
-        {
-            hMod = DesktopApi.GetModuleHandle("user32.dll");
-            _mouseHook = DesktopApi.SetWindowsHookEx(DesktopApi.WH_MOUSE_LL, _mouseProc, hMod, 0);
-        }
-        if (_mouseHook == IntPtr.Zero) Log.Error($"WH_MOUSE_LL 설치 실패 err={Marshal.GetLastWin32Error()}");
-        else Log.Info("전역 마우스 훅 설치");
+        _mouseHook ??= new LowLevelHookThread(KeyboardHookApi.WH_MOUSE_LL, "전역 마우스", MouseHookProc);
+        if (!_mouseHook.IsRunning) _mouseHook.Start();
     }
 
-    private void RemoveMouseHook()
-    {
-        if (_mouseHook == IntPtr.Zero) return;
-        DesktopApi.UnhookWindowsHookEx(_mouseHook);
-        _mouseHook = IntPtr.Zero;
-        Log.Info("전역 마우스 훅 해제");
-    }
+    private void RemoveMouseHook() => _mouseHook?.Stop();
 
-    /// <summary>LL 훅 콜백: 좌표만 읽어 넘기고 즉시 CallNextHookEx (시간 초과 방지 — 변환·이벤트는 Dispatcher 에서).</summary>
-    private IntPtr MouseHookProc(int nCode, IntPtr wParam, IntPtr lParam)
+    /// <summary>LL 훅 콜백 (훅 스레드): 좌표만 읽어 넘기고 즉시 반환 (변환·이벤트는 Dispatcher 에서). 삼키지 않음.</summary>
+    private bool MouseHookProc(int nCode, IntPtr wParam, IntPtr lParam)
     {
-        if (nCode >= 0)
+        int m = (int)wParam.ToInt64();
+        if (m is DesktopApi.WM_LBUTTONDOWN or DesktopApi.WM_RBUTTONDOWN or DesktopApi.WM_MBUTTONDOWN)
         {
-            int m = (int)wParam.ToInt64();
-            if (m is DesktopApi.WM_LBUTTONDOWN or DesktopApi.WM_RBUTTONDOWN or DesktopApi.WM_MBUTTONDOWN)
-            {
-                // MSLLHOOKSTRUCT.pt = 처음 두 int (물리 px)
-                var pt = new POINT { X = Marshal.ReadInt32(lParam, 0), Y = Marshal.ReadInt32(lParam, 4) };
-                _dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => RaiseGlobalMouseDown(pt)));
-            }
+            // MSLLHOOKSTRUCT.pt = 처음 두 int (물리 px)
+            var pt = new POINT { X = Marshal.ReadInt32(lParam, 0), Y = Marshal.ReadInt32(lParam, 4) };
+            _dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => RaiseGlobalMouseDown(pt)));
         }
-        return DesktopApi.CallNextHookEx(_mouseHook, nCode, wParam, lParam);
+        return false;
     }
 
     private void RaiseGlobalMouseDown(POINT p)
@@ -472,9 +474,8 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     /// <summary>
     /// 화면 DC 에서 BitBlt(SRCCOPY) 로 영역을 읽어 최빈색(채널당 4비트 양자화 → 최빈 버킷의 실제 평균)을 반환.
     /// 비용을 줄이려고 높이는 최대 4px 로 자르고 가로는 최대 ~480 샘플. 영역이 화면 밖이면 null.
+    /// areaDip 은 monitor 기준 DIP (그 모니터 밖은 잘라냄).
     /// </summary>
-    public Color? SampleScreenColor(Rect areaDip) => SampleScreenColorCore(areaDip, PrimaryScale, PrimaryBoundsPx);
-
     public Color? SampleScreenColor(Rect areaDip, MonitorInfo monitor) =>
         SampleScreenColorCore(areaDip, monitor.Scale, monitor.BoundsRect);
 
@@ -547,12 +548,8 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
 
     /// <summary>
     /// 바탕화면 배경 그림만으로 계산한 영역 평균 색 (화면 캡처 아님 → 우리 창/다른 창 영향 없음).
-    /// IDesktopWallpaper(파일·맞춤 방식·배경색) → 그림을 맞춤 방식대로 주 모니터에 매핑.
-    /// 디코드·계산은 백그라운드 스레드. 캐시 적중이면 즉시 완료된 Task. 결과의 연속 작업은 호출한 컨텍스트(UI)로 돌아온다.
+    /// monitor 기준 DIP 영역 → 물리 px → 그 영역이 있는 모니터의 배경으로 계산. 디코드는 백그라운드.
     /// </summary>
-    public Task<Color?> SampleWallpaperColorAsync(Rect areaDip) => SampleWallpaperCore(areaDip, PrimaryScale);
-
-    /// <summary>monitor 기준 DIP 영역 → 물리 px → 그 영역이 있는 모니터의 배경으로 계산.</summary>
     public Task<Color?> SampleWallpaperColorAsync(Rect areaDip, MonitorInfo monitor) => SampleWallpaperCore(areaDip, monitor.Scale);
 
     private Task<Color?> SampleWallpaperCore(Rect areaDip, double scale)
@@ -690,8 +687,6 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     private static bool SameDevice(string? a, string? b) =>
         a is null ? b is null : b is not null && string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
-    public string? FullscreenMonitor => _fullscreenDevice;
-
     public bool IsFullscreenOn(string? deviceName)
     {
         if (_fullscreenDevice is null) return false;
@@ -715,7 +710,9 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     {
         try
         {
-            string sig = Monitors.Signature(Monitors.GetAll());
+            var all = Monitors.GetAll();
+            _monitorCache = all;
+            string sig = Monitors.Signature(all);
             if (_lastMonitors is null) { _lastMonitors = sig; return; }
             if (sig == _lastMonitors) return;
             Log.Info($"모니터 구성/DPI 변경 {_lastMonitors} → {sig}");
@@ -793,8 +790,10 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
                 _displayQueued = false;
                 // 어느 경로로 왔든 기준값을 맞춰 두어 DPI 폴링이 같은 변경으로 한 번 더 발생시키지 않게
                 var monitors = Monitors.GetAll();
+                _monitorCache = monitors;
                 _lastMonitors = Monitors.Signature(monitors);
                 foreach (var s in _slots.ToList()) Reposition(s);
+                _mouseHook?.Restart("DisplayChanged"); // 조용히 빠졌을 경우 대비 (켜져 있을 때만)
                 Log.Info($"DisplayChanged (모니터 {monitors.Count}개: {string.Join(" / ", monitors)}; 주 모니터 DIP {GetPrimaryScreenBounds()})");
                 DisplayChanged?.Invoke(this, EventArgs.Empty);
             }
@@ -811,10 +810,8 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     /// <summary>
     /// 숨은 도우미 창을 AppBar 로 등록해 가장자리 띠만 예약 (보이는 독 창은 움직이지 않음).
     /// Top 이면 상단바 아래에 쌓이고, 좌/우도 상단바 아래에서 시작한다. Dispose 하면 ABM_REMOVE.
+    /// 지정 모니터(장치 이름)에 예약. 없거나 분리되면 주 모니터 — 배치할 때마다 다시 찾으므로 다시 연결되면 복귀.
     /// </summary>
-    public IEdgeReservation ReserveEdge(DockEdge edge, double thickness) => ReserveEdge(edge, thickness, null);
-
-    /// <summary>지정 모니터(장치 이름)에 예약. 없거나 분리되면 주 모니터 — 배치할 때마다 다시 찾으므로 다시 연결되면 복귀.</summary>
     public IEdgeReservation ReserveEdge(DockEdge edge, double thickness, string? monitor)
     {
         var res = new EdgeReservation(this);
@@ -841,10 +838,10 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         return res;
     }
 
-    /// <summary>상단바 AppBar — 창을 시스템이 정한 상단 띠로 직접 배치. 다시 호출하면 두께만 갱신.</summary>
-    public void RegisterTopAppBar(Window window, double thickness) => RegisterTopAppBar(window, thickness, null);
-
-    /// <summary>지정 모니터(장치 이름, null/"" = 주 모니터) 맨 위 상단바. 그 모니터가 없으면 배치하지 않음(창을 닫을 것).</summary>
+    /// <summary>
+    /// 상단바 AppBar — 창을 시스템이 정한 상단 띠로 직접 배치. 다시 호출하면 두께만 갱신.
+    /// 지정 모니터(장치 이름, null/"" = 주 모니터) 맨 위. 그 모니터가 없으면 배치하지 않음(창을 닫을 것).
+    /// </summary>
     public void RegisterTopAppBar(Window window, double thickness, string? monitor)
     {
         try
@@ -944,6 +941,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         if (!_slots.Remove(slot)) return;
         try { if (slot.Hook is not null) slot.Source.RemoveHook(slot.Hook); } catch { /* 이미 파괴 */ }
         Unregister(slot);
+        _monitorCache = Monitors.GetAll(); // 작업 영역 복원 반영
         if (slot.OwnsSource)
         {
             try { slot.Source.Dispose(); } catch { }
@@ -1079,6 +1077,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
             ApplyThickness(ref abd.rc, slot.Edge, px);
             Shell32.SHAppBarMessage(Shell32.ABM_SETPOS, ref abd);
             ApplyThickness(ref abd.rc, slot.Edge, px);
+            _monitorCache = Monitors.GetAll(); // 작업 영역이 바뀌었을 수 있음 (WM_SETTINGCHANGE 보다 먼저 캐시 갱신)
 
             RECT rc = abd.rc;
             bool changed = rc.Left != slot.LastRect.Left || rc.Top != slot.LastRect.Top ||
@@ -1245,7 +1244,8 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         if (_disposed) return;
         _disposed = true;
         RestoreTaskbar("Dispose");
-        RemoveMouseHook();
+        _mouseHook?.Dispose();
+        _mouseHook = null;
         _globalMouseDown = null;
         _fullscreenTimer.Stop();
         _wallpaperPoll.Dispose();
