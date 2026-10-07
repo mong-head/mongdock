@@ -29,6 +29,10 @@ public sealed class UiPalette
     public Brush SliderTrack { get; private init; } = Brushes.LightGray;
     public Brush SliderFill { get; private init; } = Brushes.White;
     public Brush SliderBorder { get; private init; } = Brushes.Gray;
+    // 설정 창 (맥 "시스템 설정" 느낌: 사이드바 + 내용 + 둥근 그룹 카드)
+    public Brush WindowBackground { get; private init; } = Brushes.White;
+    public Brush SidebarBackground { get; private init; } = Brushes.WhiteSmoke;
+    public Brush GroupBackground { get; private init; } = Brushes.White;
 
     public static readonly UiPalette Light = new()
     {
@@ -50,6 +54,9 @@ public sealed class UiPalette
         SliderTrack = F("#FFE6E6E8"),
         SliderFill = F("#FFFFFFFF"),
         SliderBorder = F("#24000000"),
+        WindowBackground = F("#FFF5F5F7"),
+        SidebarBackground = F("#FFE9E9EC"),
+        GroupBackground = F("#FFFFFFFF"),
     };
 
     public static readonly UiPalette Dark = new()
@@ -72,6 +79,9 @@ public sealed class UiPalette
         SliderTrack = F("#FF4A4A4D"),
         SliderFill = F("#FFE8E8EA"),
         SliderBorder = F("#33FFFFFF"),
+        WindowBackground = F("#FF1E1E20"),
+        SidebarBackground = F("#FF2A2A2C"),
+        GroupBackground = F("#FF2C2C2E"),
     };
 
     private static SolidColorBrush F(string hex) => BrushParser.Frozen(BrushParser.Hex(hex));

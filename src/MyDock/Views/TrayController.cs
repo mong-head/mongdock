@@ -89,6 +89,8 @@ public sealed class TrayController : IDisposable
         UiFonts.Apply(_services.Settings.Current);
 
         var menu = new ContextMenu();
+        menu.Items.Add(DockMenus.SettingsWindow(_services));
+        menu.Items.Add(new Separator());
         menu.Items.Add(DockMenus.ShowDock(_services));
         menu.Items.Add(DockMenus.ShowTopBar(_services));
         menu.Items.Add(new Separator());

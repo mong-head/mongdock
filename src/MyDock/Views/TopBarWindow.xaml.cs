@@ -899,7 +899,10 @@ public partial class TopBarWindow : Window
             "지금 로그아웃할까요?", "열려 있는 앱이 모두 닫혀요.", "로그아웃", shell.SignOut)));
         menu.Items.Add(new Separator());
 
+        menu.Items.Add(DockMenus.SettingsWindow(_services, $"{AppInfo.Name} 설정…"));
         var mydock = new MenuItem { Header = AppInfo.Name };
+        mydock.Items.Add(DockMenus.SettingsWindow(_services));
+        mydock.Items.Add(new Separator());
         mydock.Items.Add(DockMenus.DockPosition(_services));
         mydock.Items.Add(DockMenus.DockBehavior(_services));
         mydock.Items.Add(DockMenus.DockThemeMenu(_services));
@@ -931,6 +934,7 @@ public partial class TopBarWindow : Window
         {
             _panel?.Close();
             menu.Items.Clear();
+            menu.Items.Add(DockMenus.SettingsWindow(_services, $"{AppInfo.Name} 설정…"));
             menu.Items.Add(DockMenus.TopBarColor(_services));
             menu.Items.Add(new Separator());
             menu.Items.Add(DockMenus.OpenSettings(_services));
