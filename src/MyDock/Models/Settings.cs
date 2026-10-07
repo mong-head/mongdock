@@ -82,7 +82,7 @@ public sealed class DockSettings
     public double IconSize { get; set; } = 52;
     public double IconSpacing { get; set; } = 5;
     /// <summary>마우스 오버 확대 배율. 1.0 이면 확대 없음.</summary>
-    public double HoverScale { get; set; } = 1.36;
+    public double HoverScale { get; set; } = 1.8;
     // 아래 색들은 "" 이면 Theme 기본값 사용. "#AARRGGBB" 로 지정하면 그 색.
     public string Background { get; set; } = "";
     public string BorderColor { get; set; } = "";
