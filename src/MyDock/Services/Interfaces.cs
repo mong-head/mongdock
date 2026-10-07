@@ -339,6 +339,75 @@ public interface INotificationService
     void Stop();
 }
 
+public enum TrayMouseButton { Left, Right, Middle }
+
+/// <summary>
+/// 다른 앱의 알림 영역(트레이) 아이콘 하나 (불변 스냅숏 — 바뀌면 새 객체). <see cref="Key"/> 는 아이콘 수명 동안 같음.
+/// </summary>
+public sealed class TrayIconInfo
+{
+    internal TrayIconInfo(string key, IntPtr ownerHwnd, uint uid, Guid guid, uint callbackMessage, uint version,
+        System.Windows.Media.Imaging.BitmapSource? icon, string tooltip, bool isHidden, uint processId, string processName)
+    {
+        Key = key;
+        OwnerHwnd = ownerHwnd;
+        Uid = uid;
+        Guid = guid;
+        CallbackMessage = callbackMessage;
+        Version = version;
+        Icon = icon;
+        Tooltip = tooltip;
+        IsHidden = isHidden;
+        ProcessId = processId;
+        ProcessName = processName;
+    }
+
+    /// <summary>아이콘 식별자 (GUID 가 있으면 GUID, 아니면 소유 창 + uID).</summary>
+    public string Key { get; }
+    /// <summary>아이콘을 등록한 창 (콜백 메시지를 받는 창).</summary>
+    public IntPtr OwnerHwnd { get; }
+    public uint Uid { get; }
+    /// <summary>NIF_GUID 로 등록된 경우의 GUID (없으면 Guid.Empty).</summary>
+    public Guid Guid { get; }
+    public uint CallbackMessage { get; }
+    /// <summary>NIM_SETVERSION 값 (0, 3, 4).</summary>
+    public uint Version { get; }
+    public bool IsVersion4 => Version >= 4;
+    /// <summary>아이콘 그림 (원본 HICON 의 복사본, Freeze 됨). 아이콘이 없으면 null.</summary>
+    public System.Windows.Media.Imaging.BitmapSource? Icon { get; }
+    public string Tooltip { get; }
+    /// <summary>NIS_HIDDEN — 앱이 숨겨 둔 아이콘. UI 는 보통 표시하지 않음.</summary>
+    public bool IsHidden { get; }
+    public uint ProcessId { get; }
+    /// <summary>예: "kakaotalk.exe" (모르면 "").</summary>
+    public string ProcessName { get; }
+}
+
+/// <summary>
+/// 다른 앱의 트레이 아이콘을 모아 상단바에 보여 주기 위한 서비스 (ManagedShell/RetroBar 방식).
+/// 몽독이 숨은 "Shell_TrayWnd" 창을 explorer 의 것보다 Z 순서 위에 두어 Shell_NotifyIcon 메시지를 먼저 받고,
+/// 받은 메시지는 모두 explorer 로 그대로 전달한다(작업 표시줄 트레이도 그대로 유지).
+/// 이벤트는 UI 스레드. 몽독 자신의 트레이 아이콘은 목록에서 제외.
+/// </summary>
+public interface ITrayIconService
+{
+    /// <summary>가로채기 창이 동작 중인지.</summary>
+    bool IsActive { get; }
+    /// <summary>등록 순서대로의 아이콘 (숨김 아이콘 포함 — UI 가 IsHidden 으로 거름).</summary>
+    IReadOnlyList<TrayIconInfo> Icons { get; }
+    /// <summary><see cref="Icons"/> 가 바뀜 (UI 스레드, 몰아서 한 번).</summary>
+    event EventHandler? Changed;
+    /// <summary>켜기/끄기 (상단바 표시 + ShowTrayIcons + 일시 정지 아님일 때만 켤 것). 끄면 목록이 비고 앱들은 explorer 로 보낸다.</summary>
+    void SetEnabled(bool enabled);
+    /// <summary>
+    /// 아이콘 클릭을 앱에 전달 (탐색기와 같은 메시지 순서). <paramref name="iconScreenRect"/> 는 화면 물리 픽셀 —
+    /// 앱이 Shell_NotifyIconGetRect 로 아이콘 위치를 물으면 이 사각형을 알려 줘 팝업이 상단바 근처에 뜬다.
+    /// </summary>
+    void Click(TrayIconInfo icon, TrayMouseButton button, bool doubleClick, Rect iconScreenRect);
+    /// <summary>마우스가 아이콘 위에 올라옴 (WM_MOUSEMOVE — 일부 앱은 이때 툴팁 내용을 갱신).</summary>
+    void Hover(TrayIconInfo icon, Rect iconScreenRect);
+}
+
 /// <summary>App.xaml.cs 에서 만들어 창들에 넘겨주는 서비스 묶음.</summary>
 public sealed record AppServices(
     ISettingsService Settings,
@@ -353,4 +422,5 @@ public sealed record AppServices(
     IMediaService Media,
     IAppMenuService AppMenus,
     IStartupService Startup,
-    INotificationService Notifications);
+    INotificationService Notifications,
+    ITrayIconService TrayIcons);

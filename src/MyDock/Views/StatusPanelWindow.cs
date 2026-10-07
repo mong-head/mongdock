@@ -12,7 +12,7 @@ using MyDock.ViewModels;
 
 namespace MyDock.Views;
 
-internal enum StatusPanelKind { Volume, Wifi, Bluetooth, ControlCenter, Calendar }
+internal enum StatusPanelKind { Volume, Wifi, Bluetooth, ControlCenter, Calendar, Tray }
 
 /// <summary>
 /// 상단바 상태 아이콘(Wi-Fi·사운드·블루투스·제어센터)·시계(달력)를 눌렀을 때 아래로 뜨는 MyDockFinder/맥 스타일 카드.
@@ -59,18 +59,24 @@ internal sealed partial class StatusPanelWindow : Window
 
         _card = new Border
         {
-            Width = kind switch { StatusPanelKind.Volume => 352, StatusPanelKind.ControlCenter => 352, StatusPanelKind.Calendar => 316, _ => 300 },
+            Width = kind switch { StatusPanelKind.Volume => 352, StatusPanelKind.ControlCenter => 352, StatusPanelKind.Calendar => 316, StatusPanelKind.Tray => TrayCardWidth(), _ => 300 },
             CornerRadius = new CornerRadius(12),
             BorderThickness = new Thickness(0.75),
             Background = _p.CardBackground,
             BorderBrush = _p.CardBorder,
-            Padding = kind == StatusPanelKind.ControlCenter ? new Thickness(12) : new Thickness(17, 15, 17, 10),
+            Padding = kind switch
+            {
+                StatusPanelKind.ControlCenter => new Thickness(12),
+                StatusPanelKind.Tray => new Thickness(TrayCardPadding),
+                _ => new Thickness(17, 15, 17, 10),
+            },
             Child = kind switch
             {
                 StatusPanelKind.Volume => BuildVolume(),
                 StatusPanelKind.Wifi => BuildWifi(),
                 StatusPanelKind.Bluetooth => BuildBluetooth(),
                 StatusPanelKind.Calendar => BuildCalendar(),
+                StatusPanelKind.Tray => BuildTray(),
                 _ => BuildControlCenter(),
             },
         };

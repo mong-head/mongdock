@@ -109,6 +109,7 @@ public partial class TopBarWindow : Window
         _services.Status.Changed += OnStatusChanged;
         _services.VirtualDesktops.Changed += OnDesktopChanged;
         AppState.Changed += OnSettingsChanged; // 일시 정지/해제
+        _services.TrayIcons.Changed += OnTrayIconsChanged;
         _subscribed = true;
 
         ApplySettings();
@@ -137,6 +138,7 @@ public partial class TopBarWindow : Window
             _services.Status.Changed -= OnStatusChanged;
             _services.VirtualDesktops.Changed -= OnDesktopChanged;
             AppState.Changed -= OnSettingsChanged;
+            _services.TrayIcons.Changed -= OnTrayIconsChanged;
             _subscribed = false;
         }
         UnregisterIfNeeded();
@@ -227,6 +229,7 @@ public partial class TopBarWindow : Window
 
         bool active = s.Enabled && !AppState.Paused; // 일시 정지 중이면 꺼진 것처럼
         SetStatusPolling(active && s.ShowNetworkSpeed, active && s.ShowStatusIcons);
+        SyncTrayIcons();
 
         if (!active)
         {

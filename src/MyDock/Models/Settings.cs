@@ -152,6 +152,13 @@ public sealed class TopBarSettings
     public bool ShowQuickButtons { get; set; } = true;
     /// <summary>와이파이·블루투스·볼륨 아이콘 (MyDockFinder 처럼). 클릭 시 작은 패널(볼륨 슬라이더, 블루투스 토글, 설정 열기).</summary>
     public bool ShowStatusIcons { get; set; } = true;
+    /// <summary>
+    /// 다른 앱의 트레이(알림 영역) 아이콘 — 카카오톡·디스코드 등 (작업 표시줄을 숨겨도 접근 가능하게).
+    /// 켜져 있으면 몽독이 트레이 메시지를 먼저 받아 explorer 로 그대로 전달한다 (TrayIconService).
+    /// </summary>
+    public bool ShowTrayIcons { get; set; } = true;
+    /// <summary>상단바에 바로 보일 트레이 아이콘 수. 넘치면 "⌃" 버튼 하나로 묶어 누르면 아래 패널에 나머지.</summary>
+    public int TrayIconsVisibleCount { get; set; } = 6;
     /// <summary>네트워크 업/다운 속도 (2줄 작은 글씨).</summary>
     public bool ShowNetworkSpeed { get; set; } = false;
     public bool ReserveSpace { get; set; } = true;

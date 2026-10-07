@@ -1218,7 +1218,8 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     private static List<IntPtr> FindTaskbars()
     {
         var list = new List<IntPtr>();
-        IntPtr main = User32.FindWindowEx(IntPtr.Zero, IntPtr.Zero, "Shell_TrayWnd", null);
+        // 트레이 아이콘 가로채기(TrayIconService) 중이면 몽독의 숨은 Shell_TrayWnd 가 먼저 잡히므로 explorer 것만
+        IntPtr main = TrayApi.FindExplorerTray();
         if (main != IntPtr.Zero) list.Add(main);
         IntPtr after = IntPtr.Zero;
         for (int i = 0; i < 16; i++)
