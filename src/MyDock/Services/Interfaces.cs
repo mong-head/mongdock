@@ -56,23 +56,49 @@ public interface IAppLauncher
 public interface IIconService
 {
     /// <summary>핀 아이콘. IconPath 가 있으면 그것, 없으면 exe/패키지 아이콘. 실패 시 기본 아이콘. Frozen.</summary>
-    ImageSource GetIcon(PinItem pin);
-    ImageSource GetIcon(AppWindowInfo window);
+    ImageSource GetIcon(PinItem pin, IconStyle style);
+    ImageSource GetIcon(AppWindowInfo window, IconStyle style);
 }
 
 public interface IDesktopWindowService
 {
     /// <summary>WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW 적용 (포커스 안 뺏고 Alt+Tab 에서 숨김). SourceInitialized 이후 호출.</summary>
     void MakeOverlay(Window window);
-    /// <summary>AppBar 로 등록하고 창 위치/크기를 시스템이 정해준 영역으로 맞춤. thickness 는 DIP. edge=Top 이면 상단바 아래에 쌓임.</summary>
-    void RegisterAppBar(Window window, DockEdge edge, double thickness);
-    /// <summary>상단 AppBar.</summary>
+    /// <summary>독 공간 예약(Reserve 모드). 숨은 도우미 AppBar 창으로 가장자리 띠만 예약하고 보이는 창은 움직이지 않음.
+    /// Top 이면 상단바 아래에 쌓임. Dispose 하면 해제. 탐색기 재시작 시 자동 재등록.</summary>
+    IEdgeReservation ReserveEdge(DockEdge edge, double thickness);
+    /// <summary>상단바 AppBar (창 위치까지 맞춤). 탐색기 재시작 시 자동 재등록.</summary>
     void RegisterTopAppBar(Window window, double thickness);
     void UnregisterAppBar(Window window);
     /// <summary>주 모니터 작업 영역이 아닌 전체 화면 영역 (DIP).</summary>
     Rect GetPrimaryScreenBounds();
     /// <summary>주 모니터 작업 영역 (DIP). ReserveSpace=false 일 때 배치용.</summary>
     Rect GetPrimaryWorkArea();
+    /// <summary>창 전체에 아크릴 블러 배경 적용. tint 의 알파가 진하기. 창은 AllowsTransparency=False 여야 할 수 있음 — 구현 쪽 주석 참고.</summary>
+    void EnableBlur(Window window, Color tint);
+    void DisableBlur(Window window);
+    /// <summary>창 모양을 둥근 사각형으로 자름 (블러 창용). 창 크기가 바뀌면 자동 재적용. radius 0 이면 해제.</summary>
+    void SetRoundedRegion(Window window, double radiusDip);
+    /// <summary>현재 마우스 커서 위치 (화면 좌표, DIP).</summary>
+    Point GetCursorPosition();
+    /// <summary>화면 영역(DIP)의 대표 색 (최빈/중앙값). 읽을 수 없으면 null. 상단바 자동 색용.</summary>
+    Color? SampleScreenColor(Rect areaDip);
+    /// <summary>바탕화면 배경(월페이퍼)만의 해당 영역(DIP) 평균 색 — 우리 창·다른 창 제외. 투명 상단바 글자색 결정용. 실패 시 null.
+    /// SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 는 원격(StarDesk) 화면에서도 창이 사라지므로 사용 금지.</summary>
+    Color? SampleWallpaperColor(Rect areaDip);
+    /// <summary>배경화면이 바뀜 (설정 변경, 가상 데스크톱 전환으로 데스크톱별 배경이 바뀐 경우 포함).</summary>
+    event EventHandler? WallpaperChanged;
+    /// <summary>전체 화면 앱이 켜짐(true)/꺼짐(false). 이때 독·상단바는 Topmost 해제·숨김.</summary>
+    event EventHandler<bool>? FullscreenAppChanged;
+    /// <summary>해상도·DPI·작업 영역 변경, 탐색기 재시작 후. UI 는 배치를 다시 계산.</summary>
+    event EventHandler? DisplayChanged;
+}
+
+public interface IEdgeReservation : IDisposable
+{
+    /// <summary>시스템이 확정한 예약 영역 (DIP).</summary>
+    Rect Bounds { get; }
+    event EventHandler? BoundsChanged;
 }
 
 public interface IVirtualDesktopService
@@ -92,18 +118,41 @@ public interface IShellActions
     void OpenTaskView();         // Win+Tab
 }
 
+public enum WifiState { Unknown, Disconnected, Connected, Ethernet }
+
+/// <summary>상단바 상태 아이콘(와이파이·블루투스·볼륨·네트워크 속도). 값이 바뀌면 Changed (UI 스레드).</summary>
+public interface IStatusService
+{
+    WifiState Wifi { get; }
+    /// <summary>와이파이 신호 0~100 (Connected 일 때).</summary>
+    int WifiSignal { get; }
+    string? WifiName { get; }
+    /// <summary>블루투스 라디오 켜짐 여부. 어댑터 없거나 알 수 없으면 null.</summary>
+    bool? BluetoothOn { get; }
+    /// <summary>기본 출력 장치 볼륨 0~1.</summary>
+    double Volume { get; }
+    bool Muted { get; }
+    /// <summary>초당 바이트 (모든 활성 어댑터 합계, 1초 주기).</summary>
+    long UploadBytesPerSec { get; }
+    long DownloadBytesPerSec { get; }
+    event EventHandler? Changed;
+    void SetVolume(double volume);
+    void SetMuted(bool muted);
+    /// <summary>블루투스 라디오 켜기/끄기. 권한 없거나 실패하면 false.</summary>
+    Task<bool> SetBluetoothAsync(bool on);
+    void OpenWifiSettings();      // ms-settings:network-wifi
+    void OpenBluetoothSettings(); // ms-settings:bluetooth
+    void OpenSoundSettings();     // ms-settings:sound
+    void Start();
+    void Stop();
+}
+
 public interface IImeService
 {
     /// <summary>포그라운드 창이 한글 입력 모드면 true, 영문이면 false, 알 수 없으면 null.</summary>
     bool? IsHangulMode();
     /// <summary>포그라운드 창 기준으로 한/영 전환 (VK_HANGUL 전송).</summary>
     void ToggleHangul();
-}
-
-public interface IMyDockFinderImporter
-{
-    /// <summary>ico.ini(UTF-16) 를 읽어 핀 목록으로 변환. 아이콘 png 는 ISettingsService.ImportIcon 으로 복사.</summary>
-    List<PinItem> Import(string iniPath);
 }
 
 public interface IStartupService
@@ -122,4 +171,5 @@ public sealed record AppServices(
     IVirtualDesktopService VirtualDesktops,
     IShellActions Shell,
     IImeService Ime,
+    IStatusService Status,
     IStartupService Startup);

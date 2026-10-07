@@ -46,11 +46,13 @@ public partial class App : Application
             new VirtualDesktopService(),
             new ShellActions(),
             new ImeService(),
+            new StatusService(),
             new StartupService());
 
         ImportMyDockFinderPinsOnce(settings);
 
         tracker.Start();
+        _services.Status.Start();
         _dock = new DockWindow(_services);
         _dock.Show();
         _topBar = new TopBarWindow(_services);
@@ -89,7 +91,17 @@ public partial class App : Application
         // 창을 닫아야 AppBar 가 해제된다.
         _topBar?.Close();
         _dock?.Close();
-        _services?.Windows.Stop();
+        if (_services is not null)
+        {
+            _services.Windows.Stop();
+            _services.Status.Stop();
+            object[] all = [_services.Settings, _services.Windows, _services.DesktopWindows, _services.Ime, _services.Status];
+            foreach (var disposable in all.OfType<IDisposable>())
+            {
+                try { disposable.Dispose(); }
+                catch (Exception ex) { Log.Error("종료 정리 실패", ex); }
+            }
+        }
         _singleInstance?.Dispose();
         base.OnExit(e);
     }

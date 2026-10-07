@@ -1,48 +1,84 @@
 using System.Windows.Controls;
 using MyDock.Models;
 using MyDock.Services;
-using MyDock.ViewModels;
 
 namespace MyDock.Views;
 
-/// <summary>독과 상단바가 같이 쓰는 메뉴 항목.</summary>
+/// <summary>독과 상단바가 같이 쓰는 메뉴 항목. 설정을 바꾸면 Save() → SettingsChanged 로 모든 창에 반영된다.</summary>
 internal static class DockMenus
 {
-    public static MenuItem Item(string header, Action action, bool enabled = true)
+    public static MenuItem Item(string header, Action action, bool enabled = true, bool? isChecked = null)
     {
         var mi = new MenuItem { Header = header, IsEnabled = enabled };
+        if (isChecked.HasValue) mi.IsChecked = isChecked.Value;
         mi.Click += (_, _) =>
         {
             try { action(); }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[MyDock] menu '{header}' failed: {ex}"); }
+            catch (Exception ex) { Log.Error($"메뉴 '{header}' 실행 실패", ex); }
         };
         return mi;
     }
 
-    /// <summary>"독 위치 ▸ 왼쪽/오른쪽/아래/위" 하위 메뉴. 현재 위치에 체크.</summary>
-    public static MenuItem DockPosition(AppServices services)
+    private static MenuItem Choice<T>(string header, IEnumerable<(T Value, string Label)> options, T current, Action<T> set)
+        where T : struct, Enum
     {
-        var parent = new MenuItem { Header = "독 위치" };
-        var current = services.Settings.Current.Dock.Edge;
-        foreach (var (edge, label) in new[]
-                 {
-                     (DockEdge.Left, "왼쪽"), (DockEdge.Right, "오른쪽"),
-                     (DockEdge.Bottom, "아래"), (DockEdge.Top, "위"),
-                 })
-        {
-            var mi = Item(label, () => SetDockEdge(services, edge));
-            mi.IsChecked = edge == current;
-            parent.Items.Add(mi);
-        }
+        var parent = new MenuItem { Header = header };
+        foreach (var (value, label) in options)
+            parent.Items.Add(Item(label, () => set(value), isChecked: EqualityComparer<T>.Default.Equals(value, current)));
         return parent;
     }
 
-    public static void SetDockEdge(AppServices services, DockEdge edge)
+    /// <summary>"독 위치 ▸ 왼쪽/오른쪽/아래/위".</summary>
+    public static MenuItem DockPosition(AppServices services)
     {
         var dock = services.Settings.Current.Dock;
-        if (dock.Edge == edge) return;
-        dock.Edge = edge;
-        services.Settings.Save();
+        return Choice("독 위치",
+            new[] { (DockEdge.Left, "왼쪽"), (DockEdge.Right, "오른쪽"), (DockEdge.Bottom, "아래"), (DockEdge.Top, "위") },
+            dock.Edge, v => Update(services, () => services.Settings.Current.Dock.Edge = v));
+    }
+
+    /// <summary>"독 동작 ▸ 자동 숨김 / 항상 표시 / 공간 차지".</summary>
+    public static MenuItem DockBehavior(AppServices services)
+    {
+        var dock = services.Settings.Current.Dock;
+        return Choice("독 동작",
+            new[] { (DockMode.AutoHide, "자동 숨김"), (DockMode.Overlay, "항상 표시"), (DockMode.Reserve, "공간 차지") },
+            dock.Mode, v => Update(services, () => services.Settings.Current.Dock.Mode = v));
+    }
+
+    /// <summary>"테마 ▸ 시스템 / 라이트 / 다크".</summary>
+    public static MenuItem DockThemeMenu(AppServices services)
+    {
+        var dock = services.Settings.Current.Dock;
+        return Choice("독 테마",
+            new[] { (DockTheme.System, "시스템"), (DockTheme.Light, "라이트"), (DockTheme.Dark, "다크") },
+            dock.Theme, v => Update(services, () => services.Settings.Current.Dock.Theme = v));
+    }
+
+    /// <summary>"상단바 색 ▸ 투명 / 앱 색에 맞춤 / 블러 / 고정 색".</summary>
+    public static MenuItem TopBarColor(AppServices services)
+    {
+        var top = services.Settings.Current.TopBar;
+        return Choice("상단바 색",
+            new[]
+            {
+                (TopBarColorMode.Transparent, "투명"), (TopBarColorMode.Auto, "앱 색에 맞춤"),
+                (TopBarColorMode.Blur, "블러"), (TopBarColorMode.Fixed, "고정 색"),
+            },
+            top.ColorMode, v => Update(services, () => services.Settings.Current.TopBar.ColorMode = v));
+    }
+
+    /// <summary>"로그인 시 자동 실행" (체크). 설정 저장 + 시작 프로그램 등록/해제.</summary>
+    public static MenuItem StartWithWindows(AppServices services)
+    {
+        bool on = services.Settings.Current.StartWithWindows;
+        return Item("로그인 시 자동 실행", () =>
+        {
+            bool next = !services.Settings.Current.StartWithWindows;
+            services.Startup.SetEnabled(next);
+            services.Settings.Current.StartWithWindows = next;
+            services.Settings.Save();
+        }, isChecked: on);
     }
 
     public static MenuItem OpenSettings(AppServices services)
@@ -50,4 +86,10 @@ internal static class DockMenus
 
     public static MenuItem Quit()
         => Item("MyDock 종료", () => System.Windows.Application.Current.Shutdown());
+
+    private static void Update(AppServices services, Action change)
+    {
+        change();
+        services.Settings.Save();
+    }
 }

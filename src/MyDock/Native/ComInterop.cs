@@ -98,12 +98,33 @@ internal class ApplicationActivationManager
 {
 }
 
+/// <summary>IDesktopWallpaper — 읽기 전용으로만 사용 (GetPosition 까지 vtable 순서대로 선언, Set* 은 호출하지 않음).</summary>
+[ComImport, Guid("B92B56A9-8B55-4E14-9A89-0199BBB6F93B"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IDesktopWallpaper
+{
+    void SetWallpaper([MarshalAs(UnmanagedType.LPWStr)] string? monitorID, [MarshalAs(UnmanagedType.LPWStr)] string wallpaper);
+    [return: MarshalAs(UnmanagedType.LPWStr)]
+    string GetWallpaper([MarshalAs(UnmanagedType.LPWStr)] string? monitorID);
+    [return: MarshalAs(UnmanagedType.LPWStr)]
+    string GetMonitorDevicePathAt(uint monitorIndex);
+    uint GetMonitorDevicePathCount();
+    RECT GetMonitorRECT([MarshalAs(UnmanagedType.LPWStr)] string monitorID);
+    void SetBackgroundColor(uint color);
+    uint GetBackgroundColor();
+    void SetPosition(int position);
+    int GetPosition();
+}
+
+[ComImport, Guid("C2CF3110-460E-4fc1-B9D0-8A1C0C9CC4BD")]
+internal class DesktopWallpaperClass
+{
+}
+
 internal static class ShellConst
 {
     public const uint SIGDN_NORMALDISPLAY = 0x00000000;
     public const uint SIGDN_PARSINGNAME = 0x80058000;
 
-    public const int SIIGBF_RESIZETOFIT = 0x00;
     public const int SIIGBF_BIGGERSIZEOK = 0x01;
     public const int SIIGBF_ICONONLY = 0x04;
 

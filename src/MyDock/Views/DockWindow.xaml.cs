@@ -1,7 +1,11 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Microsoft.Win32;
+using MyDock.Converters;
 using MyDock.Models;
 using MyDock.Services;
 using MyDock.ViewModels;
@@ -9,19 +13,26 @@ using MyDock.ViewModels;
 namespace MyDock.Views;
 
 /// <summary>
-/// 맥 스타일 독. 창은 화면 한쪽 가장자리 전체 길이, 실제 패널은 가운데에 가장자리 쪽으로 붙어 있고
-/// 나머지는 투명(클릭 통과). 포커스를 뺏지 않는다(MakeOverlay = WS_EX_NOACTIVATE).
+/// 맥 스타일 독.
+/// - 이 창(투명 레이어드)은 아이콘·점·테두리·확대만 그리고, 크기는 "패널 + 확대 여유"뿐이다.
+/// - 블러 배경은 패널과 같은 위치·크기의 <see cref="DockBackdropWindow"/> (이 창의 owner → 항상 바로 아래).
+/// - 모드: AutoHide(가장자리에 커서가 닿으면 슬라이드 인) / Overlay(항상 보임) / Reserve(기본 두께만 공간 예약).
+/// 포커스를 뺏지 않는다(MakeOverlay = WS_EX_NOACTIVATE).
 /// </summary>
 public partial class DockWindow : Window
 {
+    private static readonly Brush HitBrush = BrushParser.Frozen(Color.FromArgb(1, 0, 0, 0));
+    private static readonly Brush PanelHitBrush = BrushParser.Frozen(Color.FromArgb(1, 255, 255, 255));
+
     private readonly AppServices _services;
     private DockLayout _layout;
+    private readonly DockBackdropWindow _backdrop;
+    private DockLabelWindow? _label;
+    private DockGhostWindow? _ghost;
+    private bool _subscribed;
+    private bool _closed;
 
-    // AppBar 등록 상태 (설정 변경 시 재등록 판단용)
-    private bool _appBarRegistered;
-    private DockEdge _registeredEdge;
-    private double _registeredThickness;
-
+    // 항목
     private List<DockItemViewModel> _items = new();
     private readonly Dictionary<string, DockItemView> _views = new();
     /// <summary>알림(깜빡임) 받은 창들. 항목의 알림 점 = 그 항목 창 중 하나라도 여기 있으면.</summary>
@@ -29,25 +40,46 @@ public partial class DockWindow : Window
     /// <summary>창별 마지막 활성화 순번 (클릭 시 "가장 최근 창" 선택용).</summary>
     private readonly Dictionary<IntPtr, long> _lastActive = new();
     private long _activationCounter;
-    /// <summary>핀 아닌 실행 중 앱의 표시 순서 (z-order 로 순서가 흔들리지 않게 처음 본 순서 유지).</summary>
+    /// <summary>핀 아닌 실행 중 앱의 표시 순서 (처음 본 순서 유지).</summary>
     private readonly List<string> _runningOrder = new();
 
-    private DockLabelWindow? _label;
-    private bool _subscribed;
+    // 배치
+    private Rect _screen = new(0, 0, 1920, 1080);
+    private Rect _shownRect;           // 보일 때의 이 창 위치 (DIP)
+    private double _baseLength;        // 확대 전 패널 길이
+    private IEdgeReservation? _reservation;
+    private DockEdge _reservedEdge;
+    private double _reservedThickness;
+
+    // 자동 숨김 / 슬라이드
+    private readonly DispatcherTimer _pollTimer;
+    private const double SlideMs = 180;
+    private double _hide;              // 0 = 보임, 1 = 숨김
+    private double _hideFrom, _hideTo;
+    private readonly Stopwatch _slideClock = new();
+    private bool _sliding;
+    private bool _windowsHidden;
+    private long _lastInsideTicks;
+    private bool _fullscreen;
+
+    // 확대
+    private double? _cursorAlong;      // 패널 중심 기준 커서의 독 방향 좌표 (패널 위가 아니면 null)
+    private bool _magnifying;
+    private TimeSpan _lastFrame;
+    private bool _renderHooked;
 
     public DockWindow(AppServices services)
     {
         _services = services;
-        _layout = DockLayout.From(services.Settings.Current.Dock);
+        _layout = DockLayout.From(services.Settings.Current.Dock, SystemTheme.AppsUseLightTheme());
         InitializeComponent();
 
         PanelBorder.ContextMenu = new ContextMenu();
         PanelBorder.ContextMenuOpening += OnPanelContextMenuOpening;
+        PanelBorder.SizeChanged += (_, _) => SyncBackdrop();
 
-        // 패널 길이(호버 확대 포함)나 창 크기/위치가 바뀌면 Offset 위치 다시 계산
-        PanelBorder.SizeChanged += (_, _) => UpdatePanelPosition();
-        Root.SizeChanged += (_, _) => UpdatePanelPosition();
-        LocationChanged += (_, _) => UpdatePanelPosition();
+        Root.MouseMove += OnRootMouseMove;
+        Root.MouseLeave += OnRootMouseLeave;
 
         // 빈 영역/구분선 드래그 → 독 이동
         PanelBorder.MouseLeftButtonDown += OnPanelMouseDown;
@@ -55,7 +87,16 @@ public partial class DockWindow : Window
         PanelBorder.MouseLeftButtonUp += OnPanelMouseUp;
         PanelBorder.LostMouseCapture += OnPanelLostCapture;
 
+        _pollTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(60) };
+        _pollTimer.Tick += OnPoll;
+
+        // 블러 배경 창: 먼저 띄우고 이 창의 owner 로 → z-order 가 항상 바로 아래
+        _backdrop = new DockBackdropWindow(services);
+        _backdrop.Show();
+        Owner = _backdrop;
+
         SourceInitialized += OnSourceInitialized;
+        Loaded += (_, _) => ApplyMode(initial: true);
         Closed += OnClosed;
     }
 
@@ -64,39 +105,42 @@ public partial class DockWindow : Window
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
         _services.DesktopWindows.MakeOverlay(this);
-        ApplyLayout();
-        ApplyPlacement();
 
         _services.Windows.WindowsChanged += OnWindowsChanged;
         _services.Windows.WindowFlashed += OnWindowFlashed;
         _services.Windows.WindowActivated += OnWindowActivated;
         _services.Settings.SettingsChanged += OnSettingsChanged;
+        _services.DesktopWindows.DisplayChanged += OnDisplayChanged;
+        _services.DesktopWindows.FullscreenAppChanged += OnFullscreenChanged;
+        SystemTheme.Changed += OnSystemThemeChanged;
         _subscribed = true;
 
-        RefreshItems();
+        ApplyAll();
     }
 
     private void OnClosed(object? sender, EventArgs e)
     {
+        _closed = true;
+        _pollTimer.Stop();
+        UnhookRender();
         if (_subscribed)
         {
             _services.Windows.WindowsChanged -= OnWindowsChanged;
             _services.Windows.WindowFlashed -= OnWindowFlashed;
             _services.Windows.WindowActivated -= OnWindowActivated;
             _services.Settings.SettingsChanged -= OnSettingsChanged;
+            _services.DesktopWindows.DisplayChanged -= OnDisplayChanged;
+            _services.DesktopWindows.FullscreenAppChanged -= OnFullscreenChanged;
+            SystemTheme.Changed -= OnSystemThemeChanged;
             _subscribed = false;
         }
-        if (_appBarRegistered)
-        {
-            _services.DesktopWindows.UnregisterAppBar(this);
-            _appBarRegistered = false;
-        }
+        ReleaseReservation();
+        DockState.VisiblePanel = Rect.Empty;
         _label?.Close();
-        _label = null;
         _ghost?.Close();
-        _ghost = null;
         foreach (var v in _views.Values) v.Detach();
         _views.Clear();
+        _backdrop.Close();
     }
 
     // ───────────────────────── 서비스 이벤트 ─────────────────────────
@@ -114,145 +158,191 @@ public partial class DockWindow : Window
     private void OnWindowActivated(object? sender, IntPtr hwnd)
     {
         _lastActive[hwnd] = ++_activationCounter;
-        // 그 앱의 알림 점 제거 (같은 앱의 다른 창 알림도 함께)
         var item = _items.FirstOrDefault(i => i.Windows.Any(w => w.Hwnd == hwnd));
         if (item != null) ClearNotification(item);
         else _flashed.Remove(hwnd);
         UpdateStates();
     }
 
-    private void OnSettingsChanged(object? sender, EventArgs e) => ReapplySettings();
+    private void OnSettingsChanged(object? sender, EventArgs e) => ApplyAll();
 
-    /// <summary>설정 전체 재적용: 레이아웃/색/크기/위치 + 항목 다시 만들기.</summary>
-    private void ReapplySettings()
+    private void OnDisplayChanged(object? sender, EventArgs e) => Place();
+
+    private void OnSystemThemeChanged(object? sender, EventArgs e)
     {
-        CancelDrag();
-        _layout = DockLayout.From(_services.Settings.Current.Dock);
-        _label?.Hide();
-        ApplyLayout();
-        ApplyPlacement();
-        RefreshItems(rebuildViews: true);
+        // SystemEvents 는 다른 스레드에서 올 수 있음
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (!_closed && _services.Settings.Current.Dock.Theme == DockTheme.System) ApplyAll();
+        });
     }
 
-    // ───────────────────────── 레이아웃 / 위치 ─────────────────────────
+    private void OnFullscreenChanged(object? sender, bool fullscreen)
+    {
+        _fullscreen = fullscreen;
+        Topmost = !fullscreen;
+        _backdrop.Topmost = !fullscreen;
+        if (fullscreen)
+        {
+            StopSlide();
+            _hide = _hideTo = 1;
+            HideWindows();
+        }
+        else
+        {
+            ApplyMode(initial: true);
+        }
+    }
+
+    // ───────────────────────── 전체 적용 ─────────────────────────
+
+    /// <summary>설정 전체 재적용: 레이아웃/색/크기 → 항목 → 공간 예약 → 위치 → 모드.</summary>
+    private void ApplyAll()
+    {
+        if (_closed) return;
+        CancelDrag();
+        _layout = DockLayout.From(_services.Settings.Current.Dock, SystemTheme.AppsUseLightTheme());
+        _label?.Hide();
+        _cursorAlong = null;
+        Root.Background = null;
+        ApplyLayout();
+        RefreshItems(rebuildViews: true, place: false);
+        UpdateReservation();
+        Place();
+        ApplyMode(initial: false);
+    }
 
     private void ApplyLayout()
     {
         var l = _layout;
-        PanelBorder.Background = l.Background;
         PanelBorder.BorderBrush = l.Border;
         PanelBorder.CornerRadius = new CornerRadius(l.CornerRadius);
         PanelBorder.Padding = new Thickness(l.Padding);
         ItemsHost.Orientation = l.IsVertical ? Orientation.Vertical : Orientation.Horizontal;
 
-        // 가장자리 쪽 정렬 + 독 방향은 시작 정렬 (실제 위치는 UpdatePanelPosition 이 Margin 으로 결정)
+        // 가장자리 쪽에 붙이고, 독 방향은 가운데 (창이 패널 중심에 맞춰 놓이므로 확대가 양쪽으로 고르게 퍼짐)
+        double m = l.EdgeMargin;
         switch (l.Edge)
         {
             case DockEdge.Left:
                 PanelBorder.HorizontalAlignment = HorizontalAlignment.Left;
-                PanelBorder.VerticalAlignment = VerticalAlignment.Top;
+                PanelBorder.VerticalAlignment = VerticalAlignment.Center;
+                PanelBorder.Margin = new Thickness(m, 0, 0, 0);
                 break;
             case DockEdge.Bottom:
-                PanelBorder.HorizontalAlignment = HorizontalAlignment.Left;
+                PanelBorder.HorizontalAlignment = HorizontalAlignment.Center;
                 PanelBorder.VerticalAlignment = VerticalAlignment.Bottom;
+                PanelBorder.Margin = new Thickness(0, 0, 0, m);
                 break;
             case DockEdge.Top:
-                PanelBorder.HorizontalAlignment = HorizontalAlignment.Left;
+                PanelBorder.HorizontalAlignment = HorizontalAlignment.Center;
                 PanelBorder.VerticalAlignment = VerticalAlignment.Top;
+                PanelBorder.Margin = new Thickness(0, m, 0, 0);
                 break;
             default:
                 PanelBorder.HorizontalAlignment = HorizontalAlignment.Right;
-                PanelBorder.VerticalAlignment = VerticalAlignment.Top;
+                PanelBorder.VerticalAlignment = VerticalAlignment.Center;
+                PanelBorder.Margin = new Thickness(0, 0, m, 0);
                 break;
         }
-        UpdatePanelPosition();
 
-        _label?.SetColors(l.Background, l.Border);
-    }
-
-    private Rect _screen = new(0, 0, 1920, 1080);
-
-    /// <summary>
-    /// Offset(0~1, 화면 전체 길이 기준)에 맞춰 패널을 가장자리를 따라 배치하고, 창 밖으로 안 나가게 클램프.
-    /// 화면 기준으로 계산하므로 드래그 고스트 위치와 실제 위치가 일치한다.
-    /// </summary>
-    private void UpdatePanelPosition()
-    {
-        var l = _layout;
-        double windowLen = l.IsVertical ? Root.ActualHeight : Root.ActualWidth;
-        double panelLen = l.IsVertical ? PanelBorder.ActualHeight : PanelBorder.ActualWidth;
-        if (windowLen <= 0 || PresentationSource.FromVisual(this) == null) return;
-
-        double offset = ClampOffset(_services.Settings.Current.Dock.Offset);
-        var origin = ToScreenDip(new Point(0, 0)); // 창 시작점의 화면 좌표(DIP)
-        double windowStart = l.IsVertical ? origin.Y : origin.X;
-        double screenCenter = l.IsVertical
-            ? _screen.Top + offset * _screen.Height
-            : _screen.Left + offset * _screen.Width;
-        double start = screenCenter - windowStart - panelLen / 2;
-        start = Math.Round(Math.Clamp(start, 0, Math.Max(0, windowLen - panelLen)));
-
-        double m = l.EdgeMargin;
-        var margin = l.Edge switch
+        if (l.Blur)
         {
-            DockEdge.Left => new Thickness(m, start, 0, 0),
-            DockEdge.Bottom => new Thickness(start, 0, 0, m),
-            DockEdge.Top => new Thickness(start, m, 0, 0),
-            _ => new Thickness(0, start, m, 0),
-        };
-        if (PanelBorder.Margin != margin) PanelBorder.Margin = margin;
-    }
-
-    private static double ClampOffset(double v) => double.IsNaN(v) ? 0.5 : Math.Clamp(v, 0, 1);
-
-    private void ApplyPlacement()
-    {
-        var dock = _services.Settings.Current.Dock;
-        double t = _layout.Thickness;
-        _screen = _services.DesktopWindows.GetPrimaryScreenBounds();
-
-        if (_appBarRegistered && (!dock.ReserveSpace || _registeredEdge != _layout.Edge || _registeredThickness != t))
-        {
-            _services.DesktopWindows.UnregisterAppBar(this);
-            _appBarRegistered = false;
-        }
-
-        if (dock.ReserveSpace)
-        {
-            if (!_appBarRegistered)
-            {
-                _services.DesktopWindows.RegisterAppBar(this, _layout.Edge, t);
-                _appBarRegistered = true;
-                _registeredEdge = _layout.Edge;
-                _registeredThickness = t;
-            }
+            PanelBorder.Background = PanelHitBrush; // 클릭은 받되 보이지 않게 (배경은 블러 창)
+            _backdrop.Apply(l.Tint);
+            if (!_windowsHidden && IsVisible && !_backdrop.IsVisible) _backdrop.Show();
         }
         else
         {
-            // AppBar 없이 작업 영역 가장자리에 직접 배치
-            var a = GetPlacementArea();
-            switch (_layout.Edge)
+            PanelBorder.Background = l.SolidBackground;
+            _backdrop.Disable();
+            _backdrop.Hide();
+        }
+
+        _label?.SetColors(l.LabelBackground, l.LabelForeground, l.LabelBorder);
+    }
+
+    // ───────────────────────── 공간 예약 / 위치 ─────────────────────────
+
+    private void UpdateReservation()
+    {
+        var l = _layout;
+        bool want = l.Mode == DockMode.Reserve;
+        double t = l.ReserveThickness;
+        if (_reservation != null && (!want || _reservedEdge != l.Edge || Math.Abs(_reservedThickness - t) > 0.5))
+            ReleaseReservation();
+
+        if (want && _reservation == null)
+        {
+            try
             {
-                case DockEdge.Left:
-                    SetBounds(a.Left, a.Top, t, a.Height);
-                    break;
-                case DockEdge.Bottom:
-                    SetBounds(a.Left, a.Bottom - t, a.Width, t);
-                    break;
-                case DockEdge.Top:
-                    SetBounds(a.Left, a.Top, a.Width, t);
-                    break;
-                default:
-                    SetBounds(a.Right - t, a.Top, t, a.Height);
-                    break;
+                _reservation = _services.DesktopWindows.ReserveEdge(l.Edge, t);
+                _reservation.BoundsChanged += OnReservationBoundsChanged;
+                _reservedEdge = l.Edge;
+                _reservedThickness = t;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("독 공간 예약 실패", ex);
+                _reservation = null;
             }
         }
-        UpdatePanelPosition();
+    }
+
+    private void ReleaseReservation()
+    {
+        if (_reservation == null) return;
+        _reservation.BoundsChanged -= OnReservationBoundsChanged;
+        try { _reservation.Dispose(); }
+        catch (Exception ex) { Log.Error("독 공간 예약 해제 실패", ex); }
+        _reservation = null;
+    }
+
+    private void OnReservationBoundsChanged(object? sender, EventArgs e) => Place();
+
+    /// <summary>
+    /// 가장자리 기준선과 독 방향 범위. Reserve 는 예약 영역, 그 외는 작업 영역(상단바 아래).
+    /// forGhost 면 드래그 미리보기용(예약 영역이 없는 가장자리일 수 있으므로 작업 영역 + 자기 예약분).
+    /// </summary>
+    private void GetFrame(DockEdge edge, bool forGhost, out double edgeLine, out double alongStart, out double alongEnd)
+    {
+        Rect a;
+        var res = _reservation?.Bounds ?? Rect.Empty;
+        if (!forGhost && _layout.Mode == DockMode.Reserve && !res.IsEmpty && res.Width > 0 && res.Height > 0)
+        {
+            a = res;
+        }
+        else
+        {
+            a = GetPlacementArea();
+            if (forGhost && _reservation != null)
+            {
+                // 작업 영역에서 빠져 있는 독 자신의 예약 공간을 되돌림
+                double t = _reservedThickness;
+                a = _reservedEdge switch
+                {
+                    DockEdge.Left => new Rect(a.Left - t, a.Top, a.Width + t, a.Height),
+                    DockEdge.Right => new Rect(a.Left, a.Top, a.Width + t, a.Height),
+                    DockEdge.Top => new Rect(a.Left, a.Top - t, a.Width, a.Height + t),
+                    _ => new Rect(a.Left, a.Top, a.Width, a.Height + t),
+                };
+            }
+        }
+
+        edgeLine = edge switch
+        {
+            DockEdge.Left => a.Left,
+            DockEdge.Top => a.Top,
+            DockEdge.Bottom => a.Bottom,
+            _ => a.Right,
+        };
+        bool vertical = edge is DockEdge.Left or DockEdge.Right;
+        alongStart = vertical ? a.Top : a.Left;
+        alongEnd = vertical ? a.Bottom : a.Right;
     }
 
     /// <summary>
-    /// AppBar 없이 놓을 때 쓰는 영역: 작업 영역(작업표시줄/다른 AppBar 제외).
-    /// 상단바가 공간 예약을 안 하면 상단바 높이만큼 내린다.
+    /// 작업 영역(작업표시줄/다른 AppBar 제외). 상단바가 공간 예약을 안 하면 상단바 높이만큼 내린다.
     /// </summary>
     private Rect GetPlacementArea()
     {
@@ -271,160 +361,356 @@ public partial class DockWindow : Window
         return a;
     }
 
-    private void SetBounds(double left, double top, double width, double height)
+    /// <summary>패널 중심의 독 방향 화면 좌표 (Offset 은 화면 전체 길이 기준, 범위 안으로 클램프).</summary>
+    private double PanelCenter(DockEdge edge, double offset, double length, double alongStart, double alongEnd)
     {
-        Left = left;
-        Top = top;
-        Width = width;
-        Height = height;
+        bool vertical = edge is DockEdge.Left or DockEdge.Right;
+        double c = vertical ? _screen.Top + offset * _screen.Height : _screen.Left + offset * _screen.Width;
+        double min = alongStart + length / 2, max = alongEnd - length / 2;
+        return min > max ? (alongStart + alongEnd) / 2 : Math.Clamp(c, min, max);
     }
 
-    private Point ToScreenDip(Point local)
+    private double ComputeBaseLength()
     {
-        var source = PresentationSource.FromVisual(this);
-        var p = PointToScreen(local);
-        return source?.CompositionTarget?.TransformFromDevice.Transform(p) ?? p;
+        double len = _layout.Padding * 2 + 2;
+        foreach (var v in _views.Values) len += v.BaseLength;
+        return len;
     }
 
-    // ───────────────────────── 드래그로 독 이동 ─────────────────────────
-
-    private const double DragThreshold = 6;
-    private bool _dragArmed;
-    private bool _dragging;
-    private Point _dragStart;          // 화면 DIP
-    private double _dragGrabDelta;     // 커서와 패널 중심의 독 방향 거리 (같은 방향 가장자리면 유지)
-    private DockEdge _dragEdge;
-    private double _dragOffset;
-    private DockGhostWindow? _ghost;
-
-    private void OnPanelMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    /// <summary>창(아이콘 영역)을 보일 위치에 배치하고 슬라이드 상태를 반영.</summary>
+    private void Place()
     {
-        // 아이콘은 자체 처리(e.Handled) → 여기 오는 건 빈 영역/패딩/구분선
-        _dragStart = ToScreenDip(e.GetPosition(this));
-        var panelCenter = ToScreenDip(PanelBorder.TranslatePoint(
-            new Point(PanelBorder.ActualWidth / 2, PanelBorder.ActualHeight / 2), this));
-        _dragGrabDelta = _layout.IsVertical ? _dragStart.Y - panelCenter.Y : _dragStart.X - panelCenter.X;
-        _dragging = false;
-        // NOACTIVATE(백그라운드) 창이어도 버튼을 이 창 위에서 누른 상태라 SetCapture 가 창 밖까지 유지된다
-        _dragArmed = PanelBorder.CaptureMouse();
-        e.Handled = true;
-    }
+        if (_closed) return;
+        var l = _layout;
+        _screen = _services.DesktopWindows.GetPrimaryScreenBounds();
+        _baseLength = ComputeBaseLength();
 
-    private void OnPanelMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
-    {
-        if (!_dragArmed) return;
-        if (e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
+        GetFrame(l.Edge, false, out double edgeLine, out double start, out double end);
+        double center = PanelCenter(l.Edge, ClampOffset(_services.Settings.Current.Dock.Offset), _baseLength, start, end);
+        double len = _baseLength + l.GrowthRoom * 2;
+        double t = l.WindowThickness;
+
+        _shownRect = l.Edge switch
         {
-            CancelDrag();
+            DockEdge.Left => new Rect(edgeLine, center - len / 2, t, len),
+            DockEdge.Bottom => new Rect(center - len / 2, edgeLine - t, len, t),
+            DockEdge.Top => new Rect(center - len / 2, edgeLine, len, t),
+            _ => new Rect(edgeLine - t, center - len / 2, t, len),
+        };
+        ApplySlidePosition();
+    }
+
+    private static double ClampOffset(double v) => double.IsNaN(v) ? 0.5 : Math.Clamp(v, 0, 1);
+
+    /// <summary>슬라이드 진행도(_hide)에 따라 창 위치 갱신 + 블러 창 동기화.</summary>
+    private void ApplySlidePosition()
+    {
+        var l = _layout;
+        double dist = l.EdgeMargin + l.PanelCross + 6;
+        var (vx, vy) = l.Edge switch
+        {
+            DockEdge.Left => (-1.0, 0.0),
+            DockEdge.Bottom => (0.0, 1.0),
+            DockEdge.Top => (0.0, -1.0),
+            _ => (1.0, 0.0),
+        };
+        double k = _hide * dist; // _hide 는 이미 easing 적용된 진행도
+        var r = _shownRect;
+        Left = Math.Round(r.Left + vx * k);
+        Top = Math.Round(r.Top + vy * k);
+        if (Width != r.Width) Width = r.Width;
+        if (Height != r.Height) Height = r.Height;
+        // 위쪽 독은 상단바 아래로 미끄러져 들어가는 대신 흐려지며 사라짐
+        Opacity = l.Edge == DockEdge.Top ? 1 - _hide : 1;
+        SyncBackdrop();
+    }
+
+    /// <summary>블러 창을 패널 영역에 정확히 맞춤 (+ 상단바 샘플링용 공유 영역 갱신).</summary>
+    private void SyncBackdrop()
+    {
+        if (_closed || PanelBorder.ActualWidth <= 0) return;
+        var p = PanelBorder.TranslatePoint(new Point(0, 0), Root);
+        var rect = new Rect(Left + p.X, Top + p.Y, PanelBorder.ActualWidth, PanelBorder.ActualHeight);
+        if (_layout.Blur && !_windowsHidden)
+        {
+            _backdrop.SetRect(rect);
+            _backdrop.Opacity = Opacity;
+        }
+        DockState.VisiblePanel = _windowsHidden || _hide > 0.99 ? Rect.Empty : rect;
+    }
+
+    // ───────────────────────── 모드 / 자동 숨김 ─────────────────────────
+
+    private void ApplyMode(bool initial)
+    {
+        if (_closed || !IsLoaded) return;
+        if (_fullscreen)
+        {
+            HideWindows();
             return;
         }
 
-        var p = ToScreenDip(e.GetPosition(this));
-        if (!_dragging)
+        if (_layout.Mode == DockMode.AutoHide)
         {
-            if (Math.Abs(p.X - _dragStart.X) < DragThreshold && Math.Abs(p.Y - _dragStart.Y) < DragThreshold) return;
-            _dragging = true;
-            _label?.Hide();
-        }
-
-        ComputeDragTarget(p, out _dragEdge, out _dragOffset);
-        _ghost ??= new DockGhostWindow(_services);
-        _ghost.ShowAt(GhostRect(_dragEdge, _dragOffset), _layout);
-    }
-
-    private void OnPanelMouseUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        if (!_dragArmed) return;
-        bool commit = _dragging;
-        var edge = _dragEdge;
-        double offset = _dragOffset;
-        CancelDrag();
-        e.Handled = true;
-        if (!commit) return;
-
-        var dock = _services.Settings.Current.Dock;
-        if (dock.Edge == edge && Math.Abs(dock.Offset - offset) < 0.0005) return;
-        dock.Edge = edge;
-        dock.Offset = Math.Round(offset, 4);
-        // 저장 → LocalChanged → ReapplySettings 에서 AppBar 를 놓을 때 한 번만 재등록
-        _services.Settings.Save();
-    }
-
-    private void OnPanelLostCapture(object sender, System.Windows.Input.MouseEventArgs e)
-    {
-        // 놓기 전에 캡처를 잃으면(다른 창 활성화 등) 취소
-        if (_dragArmed) CancelDrag();
-    }
-
-    private void CancelDrag()
-    {
-        bool wasArmed = _dragArmed;
-        _dragArmed = false;
-        _dragging = false;
-        _ghost?.Hide();
-        if (wasArmed && PanelBorder.IsMouseCaptured) PanelBorder.ReleaseMouseCapture();
-    }
-
-    /// <summary>커서에서 가장 가까운 화면 가장자리 + 그 가장자리를 따라 패널 중심 위치(0~1).</summary>
-    private void ComputeDragTarget(Point p, out DockEdge edge, out double offset)
-    {
-        var s = _screen;
-        double dl = p.X - s.Left, dr = s.Right - p.X, dt = p.Y - s.Top, db = s.Bottom - p.Y;
-        double min = Math.Min(Math.Min(dl, dr), Math.Min(dt, db));
-        edge = min == dr ? DockEdge.Right : min == dl ? DockEdge.Left : min == db ? DockEdge.Bottom : DockEdge.Top;
-
-        bool vertical = edge is DockEdge.Left or DockEdge.Right;
-        // 같은 방향 가장자리면 잡은 지점 유지, 방향이 바뀌면 커서 = 패널 중심
-        double delta = vertical == _layout.IsVertical ? _dragGrabDelta : 0;
-        offset = vertical
-            ? (p.Y - delta - s.Top) / Math.Max(1, s.Height)
-            : (p.X - delta - s.Left) / Math.Max(1, s.Width);
-        offset = ClampOffset(offset);
-    }
-
-    /// <summary>놓았을 때 패널이 차지할 화면 영역(DIP) 추정.</summary>
-    private Rect GhostRect(DockEdge edge, double offset)
-    {
-        var l = _layout;
-        var s = _screen;
-        var a = GetPlacementArea();
-        if (_appBarRegistered)
-        {
-            // 작업 영역에서 빠져 있는 독 자신의 예약 공간을 되돌림
-            double t = _registeredThickness;
-            a = _registeredEdge switch
+            if (initial)
             {
-                DockEdge.Left => new Rect(a.Left - t, a.Top, a.Width + t, a.Height),
-                DockEdge.Right => new Rect(a.Left, a.Top, a.Width + t, a.Height),
-                DockEdge.Top => new Rect(a.Left, a.Top - t, a.Width, a.Height + t),
-                _ => new Rect(a.Left, a.Top, a.Width, a.Height + t),
-            };
-        }
-        double len = l.IsVertical ? PanelBorder.ActualHeight : PanelBorder.ActualWidth;
-        double cross = l.PanelCross;
-        double m = l.EdgeMargin;
-
-        if (edge is DockEdge.Left or DockEdge.Right)
-        {
-            double top = Math.Clamp(s.Top + offset * s.Height - len / 2, a.Top, Math.Max(a.Top, a.Bottom - len));
-            double left = edge == DockEdge.Left ? a.Left + m : a.Right - m - cross;
-            return new Rect(left, top, cross, len);
+                // 시작 시에는 숨긴 상태
+                StopSlide();
+                _hide = _hideTo = 1;
+                HideWindows();
+            }
+            _lastInsideTicks = Environment.TickCount64;
+            _pollTimer.Start();
         }
         else
         {
-            double left = Math.Clamp(s.Left + offset * s.Width - len / 2, a.Left, Math.Max(a.Left, a.Right - len));
-            double top = edge == DockEdge.Top ? a.Top + m : a.Bottom - m - cross;
-            return new Rect(left, top, len, cross);
+            _pollTimer.Stop();
+            SetHidden(false, animate: !initial);
         }
+    }
+
+    private void OnPoll(object? sender, EventArgs e)
+    {
+        if (_closed || _fullscreen || _layout.Mode != DockMode.AutoHide) return;
+        bool menuOpen = PanelBorder.ContextMenu?.IsOpen == true;
+        if (_dragArmed || menuOpen)
+        {
+            _lastInsideTicks = Environment.TickCount64;
+            return;
+        }
+
+        Point c;
+        try { c = _services.DesktopWindows.GetCursorPosition(); }
+        catch { return; }
+
+        if (_hideTo >= 1)
+        {
+            if (InTriggerZone(c)) SetHidden(false, animate: true);
+            return;
+        }
+
+        var inside = _shownRect;
+        inside.Inflate(4, 4);
+        if (inside.Contains(c) || IsMouseOver)
+            _lastInsideTicks = Environment.TickCount64;
+        else if (Environment.TickCount64 - _lastInsideTicks > Math.Max(0, _services.Settings.Current.Dock.AutoHideDelayMs))
+            SetHidden(true, animate: true);
+    }
+
+    /// <summary>커서가 독 가장자리 2px 이내 + 패널 길이 범위(±여유)에 있는지.</summary>
+    private bool InTriggerZone(Point c)
+    {
+        const double edgeBand = 2, slack = 24;
+        var s = _screen;
+        var r = _shownRect;
+        bool vertical = _layout.IsVertical;
+        double center = vertical ? r.Top + r.Height / 2 : r.Left + r.Width / 2;
+        double along = vertical ? c.Y : c.X;
+        if (Math.Abs(along - center) > _baseLength / 2 + slack) return false;
+
+        return _layout.Edge switch
+        {
+            DockEdge.Left => c.X <= s.Left + edgeBand,
+            DockEdge.Bottom => c.Y >= s.Bottom - 1 - edgeBand,
+            DockEdge.Top => c.Y <= s.Top + edgeBand,
+            _ => c.X >= s.Right - 1 - edgeBand,
+        };
+    }
+
+    private void SetHidden(bool hidden, bool animate)
+    {
+        double target = hidden ? 1 : 0;
+        if (!animate)
+        {
+            StopSlide();
+            _hide = _hideTo = target;
+            if (hidden) HideWindows();
+            else
+            {
+                ShowWindows();
+                ApplySlidePosition();
+            }
+            return;
+        }
+        if (_hideTo == target && (_sliding || _hide == target)) return;
+
+        if (!hidden)
+        {
+            _lastInsideTicks = Environment.TickCount64;
+            ShowWindows();
+        }
+        else
+        {
+            _label?.Hide();
+            ResetMagnification();
+        }
+        _hideFrom = _hide;
+        _hideTo = target;
+        _slideClock.Restart();
+        _sliding = true;
+        HookRender();
+    }
+
+    private void StopSlide()
+    {
+        _sliding = false;
+        _slideClock.Reset();
+    }
+
+    private void ShowWindows()
+    {
+        if (!_windowsHidden && IsVisible) return;
+        _windowsHidden = false;
+        ApplySlidePosition();
+        if (_layout.Blur && !_backdrop.IsVisible) _backdrop.Show();
+        if (!IsVisible) Show();
+        SyncBackdrop();
+    }
+
+    private void HideWindows()
+    {
+        _windowsHidden = true;
+        _label?.Hide();
+        ResetMagnification();
+        if (_backdrop.IsVisible) _backdrop.Hide();
+        if (IsVisible) Hide();
+        DockState.VisiblePanel = Rect.Empty;
+    }
+
+    // ───────────────────────── 렌더 루프 (슬라이드 + 확대) ─────────────────────────
+
+    private void HookRender()
+    {
+        if (_renderHooked) return;
+        _renderHooked = true;
+        _lastFrame = TimeSpan.Zero;
+        CompositionTarget.Rendering += OnRendering;
+    }
+
+    private void UnhookRender()
+    {
+        if (!_renderHooked) return;
+        _renderHooked = false;
+        CompositionTarget.Rendering -= OnRendering;
+    }
+
+    private void OnRendering(object? sender, EventArgs e)
+    {
+        var now = (e as RenderingEventArgs)?.RenderingTime ?? TimeSpan.Zero;
+        double dt = _lastFrame == TimeSpan.Zero ? 1 / 60.0 : Math.Clamp((now - _lastFrame).TotalSeconds, 0, 0.05);
+        if (now == _lastFrame && _lastFrame != TimeSpan.Zero) return; // 같은 프레임 중복 호출
+        _lastFrame = now;
+
+        bool active = false;
+
+        if (_sliding)
+        {
+            double t = Math.Min(1, _slideClock.Elapsed.TotalMilliseconds / SlideMs);
+            double eased = 1 - Math.Pow(1 - t, 3); // ease-out, 바운스 없음
+            _hide = _hideFrom + (_hideTo - _hideFrom) * eased;
+            ApplySlidePosition();
+            if (t >= 1)
+            {
+                _sliding = false;
+                _hide = _hideTo;
+                if (_hideTo >= 1) HideWindows();
+            }
+            else active = true;
+        }
+
+        if (_magnifying)
+        {
+            _magnifying = StepMagnification(dt);
+            active |= _magnifying;
+        }
+
+        if (!active) UnhookRender();
+    }
+
+    // ───────────────────────── 확대 (맥식 물결) ─────────────────────────
+
+    private void OnRootMouseMove(object sender, MouseEventArgs e)
+    {
+        if (_dragArmed || _windowsHidden || _hideTo >= 1) return;
+        var p = e.GetPosition(PanelBorder);
+        double along = _layout.IsVertical ? p.Y - PanelBorder.ActualHeight / 2 : p.X - PanelBorder.ActualWidth / 2;
+
+        // 패널 밖(확대 영역)에서 처음 들어온 건 무시: 확대는 패널에 들어온 뒤부터
+        if (_cursorAlong == null && !PanelBorder.IsMouseOver) return;
+        _cursorAlong = along;
+        Root.Background = HitBrush; // 확대 중에는 튀어나온 아이콘 위도 독 영역으로
+        _lastInsideTicks = Environment.TickCount64;
+        _magnifying = true;
+        HookRender();
+    }
+
+    private void OnRootMouseLeave(object sender, MouseEventArgs e)
+    {
+        if (_dragArmed) return;
+        ResetMagnification(animate: true);
+    }
+
+    private void ResetMagnification(bool animate = false)
+    {
+        _cursorAlong = null;
+        Root.Background = null;
+        if (animate)
+        {
+            _magnifying = true;
+            HookRender();
+        }
+        else
+        {
+            foreach (var v in _views.Values) v.ApplyScale(1);
+        }
+    }
+
+    /// <summary>목표 배율로 부드럽게 수렴. 아직 움직이는 중이면 true.</summary>
+    private bool StepMagnification(double dt)
+    {
+        var l = _layout;
+        double k = 1 - Math.Exp(-dt * 20);
+        bool moving = false;
+
+        // 확대 전 기준 위치(패널 중심 기준)로 각 아이콘 중심 계산 → 확대에 따라 흔들리지 않음
+        double pos = -(_baseLength - l.Padding * 2 - 2) / 2;
+        foreach (UIElement child in ItemsHost.Children)
+        {
+            if (child is not DockItemView v) continue;
+            double c = pos + v.BaseLength / 2;
+            pos += v.BaseLength;
+            if (v.Item.IsSeparator) continue;
+
+            double target = 1;
+            if (_cursorAlong is double cur && l.HoverScale > 1)
+            {
+                double d = Math.Abs(cur - c);
+                if (l.Wave)
+                {
+                    double r = l.WaveRadius;
+                    target = 1 + (l.HoverScale - 1) * Math.Max(0, Math.Cos(Math.PI * Math.Min(d, r) / (2 * r)));
+                }
+                else if (d <= v.BaseLength / 2)
+                {
+                    target = l.HoverScale;
+                }
+            }
+
+            double next = v.Scale + (target - v.Scale) * k;
+            if (Math.Abs(target - next) < 0.002) next = target;
+            else moving = true;
+            v.ApplyScale(next);
+        }
+        return moving;
     }
 
     // ───────────────────────── 항목 구성 ─────────────────────────
 
-    private void RefreshItems(bool rebuildViews = false)
+    private void RefreshItems(bool rebuildViews = false, bool place = true)
     {
         var settings = _services.Settings.Current;
-        var tracker = _services.Windows;
-        var windows = tracker.Windows;
+        var windows = _services.Windows.Windows;
+        var style = settings.Dock.IconStyle;
         var old = rebuildViews ? new Dictionary<string, DockItemViewModel>() : _items.ToDictionary(i => i.Id);
         var list = new List<DockItemViewModel>();
         var matched = new HashSet<IntPtr>();
@@ -448,7 +734,7 @@ public partial class DockWindow : Window
             string id = $"pin:{i}:{pin.Kind}:{pin.Target}:{pin.IconPath}";
             var vm = old.GetValueOrDefault(id);
             if (vm == null || !ReferenceEquals(vm.Pin, pin))
-                vm = new DockItemViewModel(id, pin, false, PinDisplayName(pin), SafeIcon(() => _services.Icons.GetIcon(pin)));
+                vm = new DockItemViewModel(id, pin, false, PinDisplayName(pin), SafeIcon(() => _services.Icons.GetIcon(pin, style)));
             vm.Windows = pinWindows;
             list.Add(vm);
         }
@@ -478,7 +764,7 @@ public partial class DockWindow : Window
                     var wins = groups[key];
                     string id = "app:" + key;
                     var vm = old.GetValueOrDefault(id)
-                             ?? new DockItemViewModel(id, null, false, AppNames.Get(wins[0]), SafeIcon(() => _services.Icons.GetIcon(wins[0])));
+                             ?? new DockItemViewModel(id, null, false, AppNames.Get(wins[0]), SafeIcon(() => _services.Icons.GetIcon(wins[0], style)));
                     vm.Windows = wins;
                     list.Add(vm);
                 }
@@ -497,7 +783,11 @@ public partial class DockWindow : Window
         bool structureChanged = rebuildViews || !list.Select(i => i.Id).SequenceEqual(_items.Select(i => i.Id));
         _items = list;
         UpdateStates();
-        if (structureChanged) RebuildViews(rebuildViews);
+        if (structureChanged)
+        {
+            RebuildViews(rebuildViews);
+            if (place) Place();
+        }
     }
 
     private void UpdateStates()
@@ -564,7 +854,11 @@ public partial class DockWindow : Window
     private static ImageSource? SafeIcon(Func<ImageSource> get)
     {
         try { return get(); }
-        catch { return null; }
+        catch (Exception ex)
+        {
+            Log.Error("독 아이콘 로드 실패", ex);
+            return null;
+        }
     }
 
     // ───────────────────────── 클릭 ─────────────────────────
@@ -604,7 +898,7 @@ public partial class DockWindow : Window
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[MyDock] dock click failed: {ex}");
+            Log.Error("독 아이콘 클릭 처리 실패", ex);
         }
     }
 
@@ -618,34 +912,150 @@ public partial class DockWindow : Window
     private void OnItemHoverStarted(object? sender, EventArgs e)
     {
         if (sender is not DockItemView view || string.IsNullOrEmpty(view.Item.Name)) return;
-        if (PanelBorder.ContextMenu?.IsOpen == true || _dragArmed) return;
+        if (PanelBorder.ContextMenu?.IsOpen == true || _dragArmed || _hideTo >= 1) return;
 
         var source = PresentationSource.FromVisual(this);
         if (source?.CompositionTarget == null) return;
-        var fromDevice = source.CompositionTarget.TransformFromDevice;
-        const double gap = 8;
+        const double gap = 6;
 
-        // 창 안 좌표에서 기준점 계산 → 화면 물리 픽셀 → DIP
+        // 확대된 아이콘이 들어가는 창의 안쪽 끝에서 조금 더 바깥
         var center = view.TranslatePoint(new Point(view.ActualWidth / 2, view.ActualHeight / 2), this);
         Point local = _layout.Edge switch
         {
-            // 확대된 아이콘이 들어가는 창의 안쪽 끝에서 조금 더 바깥
             DockEdge.Left => new Point(ActualWidth + gap, center.Y),
             DockEdge.Bottom => new Point(center.X, -gap),
             DockEdge.Top => new Point(center.X, ActualHeight + gap),
             _ => new Point(-gap, center.Y),
         };
-        var screen = fromDevice.Transform(PointToScreen(local));
+        var screen = source.CompositionTarget.TransformFromDevice.Transform(PointToScreen(local));
 
         if (_label == null)
         {
             _label = new DockLabelWindow(_services);
-            _label.SetColors(_layout.Background, _layout.Border);
+            _label.SetColors(_layout.LabelBackground, _layout.LabelForeground, _layout.LabelBorder);
         }
         _label.ShowAt(view.Item.Name, screen, _layout.Edge);
     }
 
     private void OnItemHoverEnded(object? sender, EventArgs e) => _label?.Hide();
+
+    // ───────────────────────── 드래그로 독 이동 ─────────────────────────
+
+    private const double DragThreshold = 6;
+    private bool _dragArmed;
+    private bool _dragging;
+    private Point _dragStart;          // 화면 DIP
+    private double _dragGrabDelta;     // 커서와 패널 중심의 독 방향 거리 (같은 방향 가장자리면 유지)
+    private DockEdge _dragEdge;
+    private double _dragOffset;
+
+    private Point ToScreenDip(Point local)
+    {
+        var source = PresentationSource.FromVisual(this);
+        var p = PointToScreen(local);
+        return source?.CompositionTarget?.TransformFromDevice.Transform(p) ?? p;
+    }
+
+    private void OnPanelMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        // 아이콘은 자체 처리(e.Handled) → 여기 오는 건 빈 영역/패딩/구분선
+        _dragStart = ToScreenDip(e.GetPosition(this));
+        var panelCenter = ToScreenDip(PanelBorder.TranslatePoint(
+            new Point(PanelBorder.ActualWidth / 2, PanelBorder.ActualHeight / 2), this));
+        _dragGrabDelta = _layout.IsVertical ? _dragStart.Y - panelCenter.Y : _dragStart.X - panelCenter.X;
+        _dragging = false;
+        // 버튼을 이 창 위에서 누른 상태라 NOACTIVATE 창이어도 캡처가 창 밖까지 유지된다 (실측 확인)
+        _dragArmed = PanelBorder.CaptureMouse();
+        e.Handled = true;
+    }
+
+    private void OnPanelMouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_dragArmed) return;
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            CancelDrag();
+            return;
+        }
+
+        var p = ToScreenDip(e.GetPosition(this));
+        if (!_dragging)
+        {
+            if (Math.Abs(p.X - _dragStart.X) < DragThreshold && Math.Abs(p.Y - _dragStart.Y) < DragThreshold) return;
+            _dragging = true;
+            _label?.Hide();
+            ResetMagnification();
+        }
+
+        ComputeDragTarget(p, out _dragEdge, out _dragOffset);
+        _ghost ??= new DockGhostWindow(_services);
+        _ghost.ShowAt(GhostRect(_dragEdge, _dragOffset), _layout);
+    }
+
+    private void OnPanelMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_dragArmed) return;
+        bool commit = _dragging;
+        var edge = _dragEdge;
+        double offset = _dragOffset;
+        CancelDrag();
+        e.Handled = true;
+        if (!commit) return;
+
+        var dock = _services.Settings.Current.Dock;
+        if (dock.Edge == edge && Math.Abs(dock.Offset - offset) < 0.0005) return;
+        dock.Edge = edge;
+        dock.Offset = Math.Round(offset, 4);
+        // 저장 → SettingsChanged → ApplyAll 에서 공간 예약을 놓을 때 한 번만 갱신
+        _services.Settings.Save();
+    }
+
+    private void OnPanelLostCapture(object sender, MouseEventArgs e)
+    {
+        if (_dragArmed) CancelDrag();
+    }
+
+    private void CancelDrag()
+    {
+        bool wasArmed = _dragArmed;
+        _dragArmed = false;
+        _dragging = false;
+        _ghost?.Hide();
+        if (wasArmed && PanelBorder.IsMouseCaptured) PanelBorder.ReleaseMouseCapture();
+    }
+
+    /// <summary>커서에서 가장 가까운 화면 가장자리 + 그 가장자리를 따라 패널 중심 위치(0~1).</summary>
+    private void ComputeDragTarget(Point p, out DockEdge edge, out double offset)
+    {
+        var s = _screen;
+        double dl = p.X - s.Left, dr = s.Right - p.X, dt = p.Y - s.Top, db = s.Bottom - p.Y;
+        double min = Math.Min(Math.Min(dl, dr), Math.Min(dt, db));
+        edge = min == dr ? DockEdge.Right : min == dl ? DockEdge.Left : min == db ? DockEdge.Bottom : DockEdge.Top;
+
+        bool vertical = edge is DockEdge.Left or DockEdge.Right;
+        double delta = vertical == _layout.IsVertical ? _dragGrabDelta : 0;
+        offset = vertical
+            ? (p.Y - delta - s.Top) / Math.Max(1, s.Height)
+            : (p.X - delta - s.Left) / Math.Max(1, s.Width);
+        offset = ClampOffset(offset);
+    }
+
+    /// <summary>놓았을 때 패널이 차지할 화면 영역(DIP).</summary>
+    private Rect GhostRect(DockEdge edge, double offset)
+    {
+        var l = _layout;
+        GetFrame(edge, true, out double edgeLine, out double start, out double end);
+        double len = _baseLength;
+        double c = PanelCenter(edge, offset, len, start, end);
+        double cross = l.PanelCross, m = l.EdgeMargin;
+        return edge switch
+        {
+            DockEdge.Left => new Rect(edgeLine + m, c - len / 2, cross, len),
+            DockEdge.Bottom => new Rect(c - len / 2, edgeLine - m - cross, len, cross),
+            DockEdge.Top => new Rect(c - len / 2, edgeLine + m, len, cross),
+            _ => new Rect(edgeLine - m - cross, c - len / 2, cross, len),
+        };
+    }
 
     // ───────────────────────── 오른쪽 클릭 메뉴 ─────────────────────────
 
@@ -688,19 +1098,14 @@ public partial class DockWindow : Window
                 menu.Items.Add(Item("창 닫기", () => CloseAll(item)));
             menu.Items.Add(new Separator());
             menu.Items.Add(Item("아이콘 변경…", () => ChangeIcon(pin)));
-            var reset = Item("기본 아이콘으로", () => ModifyPins(_ => pin.IconPath = null));
-            reset.IsEnabled = pin.IconPath != null;
-            menu.Items.Add(reset);
+            menu.Items.Add(DockMenus.Item("기본 아이콘으로", () => ModifyPins(_ => pin.IconPath = null), enabled: pin.IconPath != null));
             menu.Items.Add(new Separator());
         }
 
         bool vertical = _layout.IsVertical;
-        var up = Item(vertical ? "위로 이동" : "왼쪽으로 이동", () => MovePin(pin, -1));
-        up.IsEnabled = index > 0;
-        var down = Item(vertical ? "아래로 이동" : "오른쪽으로 이동", () => MovePin(pin, +1));
-        down.IsEnabled = index >= 0 && index < pins.Count - 1;
-        menu.Items.Add(up);
-        menu.Items.Add(down);
+        menu.Items.Add(DockMenus.Item(vertical ? "위로 이동" : "왼쪽으로 이동", () => MovePin(pin, -1), enabled: index > 0));
+        menu.Items.Add(DockMenus.Item(vertical ? "아래로 이동" : "오른쪽으로 이동", () => MovePin(pin, +1),
+            enabled: index >= 0 && index < pins.Count - 1));
         menu.Items.Add(new Separator());
         menu.Items.Add(Item(item.IsSeparator ? "구분선 제거" : "독에서 제거", () => ModifyPins(p => p.Remove(pin))));
     }
@@ -719,16 +1124,19 @@ public partial class DockWindow : Window
 
     private void BuildEmptyAreaMenu(ContextMenu menu)
     {
+        var dock = _services.Settings.Current.Dock;
         menu.Items.Add(Item("구분선 추가", () => ModifyPins(p => p.Add(new PinItem { Kind = PinKind.Separator, Name = "" }))));
         menu.Items.Add(new Separator());
         menu.Items.Add(DockMenus.DockPosition(_services));
-        var dock = _services.Settings.Current.Dock;
+        menu.Items.Add(DockMenus.DockBehavior(_services));
+        menu.Items.Add(DockMenus.DockThemeMenu(_services));
         menu.Items.Add(DockMenus.Item("가운데로 정렬", () =>
         {
             _services.Settings.Current.Dock.Offset = 0.5;
             _services.Settings.Save();
         }, enabled: Math.Abs(dock.Offset - 0.5) > 0.0005));
         menu.Items.Add(new Separator());
+        menu.Items.Add(DockMenus.StartWithWindows(_services));
         menu.Items.Add(DockMenus.OpenSettings(_services));
         menu.Items.Add(DockMenus.Quit());
     }
@@ -761,17 +1169,15 @@ public partial class DockWindow : Window
             Filter = "아이콘 이미지 (*.png;*.ico)|*.png;*.ico|모든 파일 (*.*)|*.*",
             CheckFileExists = true,
         };
-        // 독 창은 NOACTIVATE 라 owner 로 쓰지 않음 (대화상자가 독 뒤에 숨는 것 방지용으로 Topmost 아님)
         if (dlg.ShowDialog() != true) return;
         string copied = _services.Settings.ImportIcon(dlg.FileName);
         ModifyPins(_ => pin.IconPath = copied);
     }
 
-    /// <summary>핀 목록 수정 → 저장 → 즉시 다시 그림 (SettingsChanged 가 와도 같은 결과라 무해).</summary>
+    /// <summary>핀 목록 수정 → 저장. Save 가 SettingsChanged 를 올려 ApplyAll 로 다시 그려진다.</summary>
     private void ModifyPins(Action<List<PinItem>> change)
     {
         change(_services.Settings.Current.Pins);
         _services.Settings.Save();
-        RefreshItems(rebuildViews: true);
     }
 }

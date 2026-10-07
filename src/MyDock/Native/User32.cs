@@ -109,7 +109,6 @@ internal static class User32
     public const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
     public const uint KEYEVENTF_KEYUP = 0x0002;
 
-    public const ushort VK_MENU = 0x12;
     public const ushort VK_LWIN = 0x5B;
     public const ushort VK_LCONTROL = 0xA2;
     public const ushort VK_LEFT = 0x25;
@@ -125,7 +124,6 @@ internal static class User32
     public const int SM_CYSCREEN = 1;
 
     public const int GCLP_HICON = -14;
-    public const int GCLP_HICONSM = -34;
 
     // ── 창 열거/정보 ──
     [DllImport("user32.dll", SetLastError = true)]
@@ -196,7 +194,7 @@ internal static class User32
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -300,6 +298,16 @@ internal static class User32
         uint sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
         return sent == inputs.Length;
     }
+
+    public const uint INPUT_MOUSE = 0;
+    public const uint MOUSEEVENTF_MOVE = 0x0001;
+
+    /// <summary>이동량 0 의 마우스 입력 (포그라운드 잠금 해제용, 화면에 영향 없음).</summary>
+    public static INPUT EmptyMouseInput() => new()
+    {
+        type = INPUT_MOUSE,
+        u = new InputUnion { mi = new MOUSEINPUT { dx = 0, dy = 0, dwFlags = MOUSEEVENTF_MOVE } },
+    };
 
     /// <summary>VK 코드 중 확장 키 플래그가 필요한 것 (화살표, Win 등).</summary>
     public static bool IsExtendedKey(ushort vk) => vk is

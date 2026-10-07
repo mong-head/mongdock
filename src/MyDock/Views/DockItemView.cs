@@ -1,8 +1,8 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using MyDock.Models;
 using MyDock.ViewModels;
@@ -10,25 +10,28 @@ using MyDock.ViewModels;
 namespace MyDock.Views;
 
 /// <summary>
-/// 독 항목 하나의 화면 (코드로 구성). 아이콘 + 실행 중 점(가장자리 쪽) + 알림 점(아이콘 모서리).
-/// 호버 시 아이콘은 가장자리 반대쪽으로 확대되고, 슬롯은 독 방향으로 늘어나 이웃 아이콘과 겹치지 않는다.
-/// 바운스/흔들림 애니메이션은 없다.
+/// 독 항목 하나의 화면 (코드로 구성). 아이콘 + 실행 중 점(아이콘 아래 = 가장자리 쪽) + 알림 점(아이콘 모서리).
+/// 확대는 DockWindow 가 매 프레임 <see cref="ApplyScale"/> 로 지정 — 아이콘은 가장자리 반대쪽으로 커지고
+/// 슬롯은 독 방향으로 늘어나 이웃과 겹치지 않는다. 바운스/흔들림 없음.
 /// </summary>
 internal sealed class DockItemView : Grid
 {
-    private static readonly Duration HoverDuration = new(TimeSpan.FromMilliseconds(110));
-
     private readonly DockLayout _layout;
     private readonly ScaleTransform? _scale;
     private readonly Ellipse? _runningDot;
     private readonly Ellipse? _notifyDot;
+    private bool _pressed;
 
     public DockItemViewModel Item { get; }
 
-    /// <summary>호버 시작/종료 (이름 말풍선 표시용).</summary>
+    /// <summary>현재 확대 배율 (1 = 기본).</summary>
+    public double Scale { get; private set; } = 1;
+
+    /// <summary>확대 전 독 방향 길이 (여백 포함).</summary>
+    public double BaseLength { get; }
+
     public event EventHandler? HoverStarted;
     public event EventHandler? HoverEnded;
-    /// <summary>왼쪽 클릭.</summary>
     public event EventHandler? Clicked;
 
     public DockItemView(DockItemViewModel item, DockLayout layout)
@@ -40,24 +43,31 @@ internal sealed class DockItemView : Grid
 
         if (item.IsSeparator)
         {
-            BuildSeparator();
+            double gap = Math.Max(5, layout.Spacing + 4);
+            var line = new Rectangle { Fill = layout.Separator, IsHitTestVisible = false, SnapsToDevicePixels = true };
+            if (layout.IsVertical)
+            {
+                line.Width = layout.IconSize * 0.72;
+                line.Height = 1;
+                Margin = new Thickness(0, gap, 0, gap);
+            }
+            else
+            {
+                line.Width = 1;
+                line.Height = layout.IconSize * 0.72;
+                Margin = new Thickness(gap, 0, gap, 0);
+            }
+            Children.Add(line);
+            BaseLength = 1 + gap * 2;
             return;
         }
 
         double icon = layout.IconSize;
         double half = layout.Spacing / 2;
-        if (layout.IsVertical)
-        {
-            Width = icon;
-            Height = icon;
-            Margin = new Thickness(0, half, 0, half);
-        }
-        else
-        {
-            Width = icon;
-            Height = icon;
-            Margin = new Thickness(half, 0, half, 0);
-        }
+        Width = icon;
+        Height = icon;
+        Margin = layout.IsVertical ? new Thickness(0, half, 0, half) : new Thickness(half, 0, half, 0);
+        BaseLength = icon + layout.Spacing;
 
         // 확대되는 아이콘 묶음 (아이콘 + 알림 점)
         var iconHost = new Grid
@@ -72,6 +82,7 @@ internal sealed class DockItemView : Grid
         _scale = new ScaleTransform(1, 1);
         iconHost.RenderTransform = _scale;
 
+        // 맥 스타일 아이콘은 여백·그림자까지 포함되어 오므로 슬롯 크기 그대로 그린다 (추가 가공 없음)
         var image = new Image { Source = item.Icon, Stretch = Stretch.Uniform };
         RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
         iconHost.Children.Add(image);
@@ -82,20 +93,17 @@ internal sealed class DockItemView : Grid
             Width = n,
             Height = n,
             Fill = layout.Notification,
-            Stroke = layout.Background,
-            StrokeThickness = 1,
             VerticalAlignment = VerticalAlignment.Top,
-            // 왼쪽 독은 가장자리 쪽(왼쪽 위), 그 외는 오른쪽 위
             HorizontalAlignment = layout.Edge == DockEdge.Left ? HorizontalAlignment.Left : HorizontalAlignment.Right,
-            Margin = new Thickness(-n * 0.15),
+            Margin = new Thickness(icon * 0.04),
             Visibility = Visibility.Collapsed,
         };
         iconHost.Children.Add(_notifyDot);
         Children.Add(iconHost);
 
-        // 실행 중 표시 점: 패딩 영역 가운데 (가장자리 쪽)
+        // 실행 중 점: 맥처럼 아이콘 아래(가장자리 쪽) 패딩 안의 작은 원
         double d = layout.IndicatorSize;
-        double offset = -(layout.Padding / 2 + d / 2);
+        double offset = -Math.Max(d / 2 + 0.5, layout.Padding / 2 + d / 2 - 0.5);
         _runningDot = new Ellipse
         {
             Width = d,
@@ -131,32 +139,10 @@ internal sealed class DockItemView : Grid
 
         UpdateDots();
         item.PropertyChanged += OnItemPropertyChanged;
-        Unloaded += (_, _) => SetHover(false, animate: false);
     }
 
     /// <summary>뷰를 버릴 때 VM 구독 해제.</summary>
     public void Detach() => Item.PropertyChanged -= OnItemPropertyChanged;
-
-    private void BuildSeparator()
-    {
-        double icon = _layout.IconSize;
-        double gap = Math.Max(4, _layout.Spacing + 2);
-        var line = new Rectangle { Fill = _layout.Border, IsHitTestVisible = false, SnapsToDevicePixels = true };
-        if (_layout.IsVertical)
-        {
-            line.Width = icon * 0.7;
-            line.Height = 1;
-            Margin = new Thickness(0, gap, 0, gap);
-        }
-        else
-        {
-            line.Width = 1;
-            line.Height = icon * 0.7;
-            Margin = new Thickness(gap, 0, gap, 0);
-        }
-        // 구분선도 오른쪽 클릭(제거/이동) 가능하도록 위아래 여백 포함 영역을 히트 영역으로
-        Children.Add(line);
-    }
 
     private void OnItemPropertyChanged(object? sender, PropertyChangedEventArgs e) => UpdateDots();
 
@@ -166,25 +152,30 @@ internal sealed class DockItemView : Grid
         if (_notifyDot != null) _notifyDot.Visibility = Item.HasNotification ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    protected override void OnMouseEnter(System.Windows.Input.MouseEventArgs e)
+    /// <summary>확대 배율 적용: 아이콘은 RenderTransform, 슬롯은 독 방향 길이만 늘림.</summary>
+    public void ApplyScale(double s)
+    {
+        if (_scale == null || Math.Abs(s - Scale) < 0.0005) return;
+        Scale = s;
+        _scale.ScaleX = _scale.ScaleY = s;
+        double len = _layout.IconSize * s;
+        if (_layout.IsVertical) Height = len;
+        else Width = len;
+    }
+
+    protected override void OnMouseEnter(MouseEventArgs e)
     {
         base.OnMouseEnter(e);
-        if (Item.IsSeparator) return;
-        SetHover(true, animate: true);
-        HoverStarted?.Invoke(this, EventArgs.Empty);
+        if (!Item.IsSeparator) HoverStarted?.Invoke(this, EventArgs.Empty);
     }
 
-    protected override void OnMouseLeave(System.Windows.Input.MouseEventArgs e)
+    protected override void OnMouseLeave(MouseEventArgs e)
     {
         base.OnMouseLeave(e);
-        if (Item.IsSeparator) return;
-        SetHover(false, animate: true);
-        HoverEnded?.Invoke(this, EventArgs.Empty);
+        if (!Item.IsSeparator) HoverEnded?.Invoke(this, EventArgs.Empty);
     }
 
-    private bool _pressed;
-
-    protected override void OnMouseLeftButtonDown(System.Windows.Input.MouseButtonEventArgs e)
+    protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonDown(e);
         // 구분선은 처리하지 않음 → 패널로 올라가 독 드래그 이동 시작점이 됨
@@ -193,37 +184,12 @@ internal sealed class DockItemView : Grid
         e.Handled = true;
     }
 
-    protected override void OnMouseLeftButtonUp(System.Windows.Input.MouseButtonEventArgs e)
+    protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonUp(e);
         if (Item.IsSeparator) return;
         if (_pressed && IsMouseOver) Clicked?.Invoke(this, EventArgs.Empty);
         _pressed = false;
         e.Handled = true;
-    }
-
-    /// <summary>확대/복원. 아이콘은 RenderTransform, 슬롯은 독 방향 길이만 늘림.</summary>
-    public void SetHover(bool on, bool animate)
-    {
-        if (_scale == null) return;
-        double s = on ? _layout.HoverScale : 1.0;
-        double len = _layout.IconSize * s;
-        var lengthProp = _layout.IsVertical ? HeightProperty : WidthProperty;
-
-        if (!animate || _layout.HoverScale <= 1.0)
-        {
-            _scale.BeginAnimation(ScaleTransform.ScaleXProperty, null);
-            _scale.BeginAnimation(ScaleTransform.ScaleYProperty, null);
-            BeginAnimation(lengthProp, null);
-            _scale.ScaleX = _scale.ScaleY = s;
-            SetValue(lengthProp, len);
-            return;
-        }
-
-        var ease = new QuadraticEase { EasingMode = EasingMode.EaseOut };
-        var scaleAnim = new DoubleAnimation(s, HoverDuration) { EasingFunction = ease };
-        _scale.BeginAnimation(ScaleTransform.ScaleXProperty, scaleAnim);
-        _scale.BeginAnimation(ScaleTransform.ScaleYProperty, scaleAnim);
-        BeginAnimation(lengthProp, new DoubleAnimation(len, HoverDuration) { EasingFunction = ease });
     }
 }

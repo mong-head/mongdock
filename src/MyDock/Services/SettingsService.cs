@@ -147,8 +147,10 @@ public sealed class SettingsService : ISettingsService, IDisposable
 
     // ───────────────────────── 저장 ─────────────────────────
 
+    /// <summary>원자적으로 저장하고 SettingsChanged 를 UI 스레드에서 발생 (자기 저장으로 인한 파일 변경은 다시 로드하지 않음).</summary>
     public void Save()
     {
+        bool saved = false;
         lock (_gate)
         {
             string text = JsonSerializer.Serialize(Current, JsonOptions);
@@ -173,6 +175,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
                 {
                     File.Move(tmp, SettingsPath);
                 }
+                saved = true;
             }
             catch (Exception ex)
             {
@@ -182,7 +185,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
         }
 
         // 독 ↔ 상단바처럼 UI 안에서 바꾼 설정도 다른 창에 반영되게 알림.
-        RunOnUi(() => SettingsChanged?.Invoke(this, EventArgs.Empty));
+        if (saved) RunOnUi(() => SettingsChanged?.Invoke(this, EventArgs.Empty));
     }
 
     // ───────────────────────── 감시 ─────────────────────────

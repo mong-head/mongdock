@@ -125,9 +125,17 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
         // 짧은 지연 후 한 번만 (생성 직후엔 제목/스타일이 아직 안 정해진 경우가 있음)
         _dispatcher.InvokeAsync(async () =>
         {
-            await Task.Delay(120);
-            _refreshQueued = false;
-            Refresh(force: false);
+            try
+            {
+                await Task.Delay(120);
+                _refreshQueued = false;
+                Refresh(force: false);
+            }
+            catch (Exception ex)
+            {
+                _refreshQueued = false;
+                Log.Error("창 목록 갱신 실패", ex);
+            }
         }, DispatcherPriority.Background);
     }
 
@@ -196,10 +204,10 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
             return true;
         }, IntPtr.Zero);
 
-        // 사라진 프로세스 캐시 정리
-        if (_procCache.Count > 256)
-            foreach (var pid in _procCache.Keys.Where(k => !seenPids.Contains(k)).ToList())
-                _procCache.Remove(pid);
+        // 이번 열거에서 안 보인 PID 는 캐시에서 제거 (PID 재사용으로 다른 프로세스 정보가 남는 것 방지).
+        // 창이 남아 있는 동안 같은 PID 가 재사용될 수는 없으므로, 보이는 PID 의 캐시는 안전하다.
+        foreach (var pid in _procCache.Keys.Where(k => !seenPids.Contains(k)).ToList())
+            _procCache.Remove(pid);
         return result;
     }
 

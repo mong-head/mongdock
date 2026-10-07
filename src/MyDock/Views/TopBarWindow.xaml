@@ -14,43 +14,42 @@
         TextOptions.TextFormattingMode="Display"
         FontFamily="{StaticResource BarFont}"
         Width="800" Height="28">
+    <!-- 맥 메뉴바처럼 하단 경계선 없음. 투명 모드에서도 Bar 배경은 알파 1 → 빈 곳 클릭/오른쪽 클릭을 바가 받음 -->
     <Border x:Name="Bar">
+        <!-- 두 구역을 한 칸에 겹쳐 왼쪽/오른쪽 정렬: 각 구역이 항상 바 전체 폭으로 측정됨
+             (열/도킹 레이아웃에서 오른쪽 구역이 처음 측정된 좁은 폭에 갇혀 시계가 잘리던 문제 회피) -->
         <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
 
-            <!-- 왼쪽: 로고 메뉴 · 가상 데스크톱 버튼 · 현재 앱 이름 (버튼은 앱 이름 길이와 무관하게 고정 위치) -->
-            <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="8,0,0,0">
-                <Button x:Name="LogoButton" Style="{StaticResource BarButton}" Padding="9,0" Click="OnLogoClick">
-                    <!-- 단순한 독 심볼: 둥근 창 + 아래쪽 독 막대 -->
-                    <Path Width="15" Height="14" Stretch="Uniform"
-                          Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Window}}"
-                          Data="M3,0 L13,0 C14.66,0 16,1.34 16,3 L16,8 C16,9.66 14.66,11 13,11 L3,11 C1.34,11 0,9.66 0,8 L0,3 C0,1.34 1.34,0 3,0 Z
-                                M2.5,2 L13.5,2 C13.78,2 14,2.22 14,2.5 L14,3.5 L2,3.5 L2,2.5 C2,2.22 2.22,2 2.5,2 Z
-                                M4,12.5 L12,12.5 C12.55,12.5 13,12.95 13,13.5 C13,14.05 12.55,14.5 12,14.5 L4,14.5 C3.45,14.5 3,14.05 3,13.5 C3,12.95 3.45,12.5 4,12.5 Z" />
-                </Button>
-                <StackPanel x:Name="DesktopButtons" Orientation="Horizontal">
-                    <Button Style="{StaticResource BarIconButton}" Content="&#xE76B;" Click="OnPreviousDesktop" />
-                    <Button Style="{StaticResource BarIconButton}" Content="&#xE76C;" Click="OnNextDesktop" />
-                    <Button Style="{StaticResource BarIconButton}" Content="&#xE710;" Click="OnNewDesktop" />
+            <!-- 오른쪽 (MyDockFinder 순서): 네트워크 속도 · 블루투스 · 와이파이 · 볼륨 · 검색 · 제어센터 · 알림 · 한/영 · 시계 -->
+            <StackPanel x:Name="RightSection" HorizontalAlignment="Right" Orientation="Horizontal" Margin="0,0,8,0">
+                <StackPanel x:Name="NetSpeed" VerticalAlignment="Center" Margin="0,0,6,0" Width="62">
+                    <TextBlock x:Name="UpSpeed" FontSize="9" LineHeight="10" LineStackingStrategy="BlockLineHeight"
+                               TextAlignment="Right" Text="↑ 0KB/s" />
+                    <TextBlock x:Name="DownSpeed" FontSize="9" LineHeight="10" LineStackingStrategy="BlockLineHeight"
+                               TextAlignment="Right" Text="↓ 0KB/s" />
                 </StackPanel>
-                <TextBlock x:Name="AppName" FontWeight="Bold" FontFamily="Segoe UI, Malgun Gothic" VerticalAlignment="Center"
-                           Margin="10,0,10,0" TextTrimming="CharacterEllipsis" MaxWidth="420" />
-            </StackPanel>
 
-            <!-- 오른쪽: 빠른 버튼 · 한/영 배지 · 시계 -->
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,8,0">
+                <StackPanel x:Name="StatusIcons" Orientation="Horizontal">
+                    <Button x:Name="BluetoothButton" Style="{StaticResource BarIconButton}" Content="&#xE702;" Click="OnBluetoothClick" />
+                    <Button x:Name="WifiButton" Style="{StaticResource BarIconButton}" Click="OnWifiClick">
+                        <Grid>
+                            <!-- 신호 칸: 흐린 전체 부채꼴 위에 현재 칸 수만큼 진하게 -->
+                            <TextBlock x:Name="WifiBack" Text="&#xE701;" Opacity="0.3" />
+                            <TextBlock x:Name="WifiFront" Text="&#xE701;" />
+                        </Grid>
+                    </Button>
+                    <Button x:Name="VolumeButton" Style="{StaticResource BarIconButton}" Content="&#xE995;"
+                            Click="OnVolumeClick" MouseWheel="OnVolumeWheel" />
+                </StackPanel>
+
                 <StackPanel x:Name="QuickButtons" Orientation="Horizontal">
-                    <!-- 검색 -->
-                    <Button Style="{StaticResource BarIconButton}" Content="&#xE721;" Click="OnSearch" />
-                    <!-- 제어 센터 (빠른 설정: 와이파이/볼륨/블루투스) : 토글 두 개 -->
-                    <Button Style="{StaticResource BarButton}" Click="OnQuickSettings">
+                    <Button Style="{StaticResource BarIconButton}" FontSize="13" Content="&#xE721;" Click="OnSearch" />
+                    <!-- 제어 센터 (빠른 설정) : 토글 두 개 -->
+                    <Button x:Name="QuickSettingsButton" Style="{StaticResource BarButton}" Click="OnQuickSettings">
                         <Viewbox Width="15" Height="13">
                             <Canvas Width="16" Height="14">
                                 <Path StrokeThickness="1.3"
-                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Window}}">
+                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}">
                                     <Path.Data>
                                         <GeometryGroup>
                                             <RectangleGeometry Rect="0.65,0.65,14.7,5.2" RadiusX="2.6" RadiusY="2.6" />
@@ -58,7 +57,7 @@
                                         </GeometryGroup>
                                     </Path.Data>
                                 </Path>
-                                <Path Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Window}}">
+                                <Path Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}">
                                     <Path.Data>
                                         <GeometryGroup>
                                             <EllipseGeometry Center="12.5,3.25" RadiusX="1.55" RadiusY="1.55" />
@@ -69,12 +68,11 @@
                             </Canvas>
                         </Viewbox>
                     </Button>
-                    <!-- 알림 센터 -->
-                    <Button Style="{StaticResource BarIconButton}" Content="&#xEA8F;" Click="OnNotifications" />
+                    <Button Style="{StaticResource BarIconButton}" FontSize="13" Content="&#xEA8F;" Click="OnNotifications" />
                 </StackPanel>
 
-                <!-- 한/영 배지: "한" = 채운 흰 배경, "A" = 테두리만 -->
-                <Button x:Name="ImeButton" Style="{StaticResource BarButton}" Padding="5,0" Margin="4,3,2,3" Click="OnImeToggle">
+                <!-- 한/영 배지: "한" = 글자색으로 채운 배경 + 반전 글자, "A" = 테두리만 -->
+                <Button x:Name="ImeButton" Style="{StaticResource BarButton}" Padding="5,0" Margin="3,3,2,3" Click="OnImeToggle">
                     <Border x:Name="ImeBadge" CornerRadius="3.5" BorderThickness="1.2" MinWidth="19" Height="17" Padding="3,0">
                         <TextBlock x:Name="ImeText" Text="–" FontWeight="SemiBold" FontSize="11.5"
                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -83,6 +81,27 @@
 
                 <TextBlock x:Name="Clock" VerticalAlignment="Center" Margin="8,0,4,0" />
             </StackPanel>
+
+            <!-- 왼쪽: 로고 메뉴 · 가상 데스크톱 버튼 · 현재 앱 이름 (버튼은 앱 이름 길이와 무관하게 고정 위치) -->
+            <StackPanel x:Name="LeftSection" HorizontalAlignment="Left" Orientation="Horizontal" Margin="8,0,0,0">
+                <Button x:Name="LogoButton" Style="{StaticResource BarButton}" Padding="9,0" Click="OnLogoClick">
+                    <!-- 단순한 독 심볼: 둥근 창 + 아래쪽 독 막대 -->
+                    <Path Width="15" Height="14" Stretch="Uniform"
+                          Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                          Data="M3,0 L13,0 C14.66,0 16,1.34 16,3 L16,8 C16,9.66 14.66,11 13,11 L3,11 C1.34,11 0,9.66 0,8 L0,3 C0,1.34 1.34,0 3,0 Z
+                                M2.5,2 L13.5,2 C13.78,2 14,2.22 14,2.5 L14,3.5 L2,3.5 L2,2.5 C2,2.22 2.22,2 2.5,2 Z
+                                M4,12.5 L12,12.5 C12.55,12.5 13,12.95 13,13.5 C13,14.05 12.55,14.5 12,14.5 L4,14.5 C3.45,14.5 3,14.05 3,13.5 C3,12.95 3.45,12.5 4,12.5 Z" />
+                </Button>
+                <StackPanel x:Name="DesktopButtons" Orientation="Horizontal">
+                    <Button Style="{StaticResource BarIconButton}" FontSize="12" Content="&#xE76B;" Click="OnPreviousDesktop" />
+                    <Button Style="{StaticResource BarIconButton}" FontSize="12" Content="&#xE76C;" Click="OnNextDesktop" />
+                    <Button Style="{StaticResource BarIconButton}" FontSize="12" Content="&#xE710;" Click="OnNewDesktop" />
+                </StackPanel>
+                <TextBlock x:Name="AppName" FontWeight="Bold" FontFamily="Segoe UI, Malgun Gothic" VerticalAlignment="Center"
+                           Margin="10,0,10,0" TextTrimming="CharacterEllipsis" MaxWidth="420" />
+            </StackPanel>
+
+
         </Grid>
     </Border>
 </Window>

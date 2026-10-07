@@ -51,7 +51,6 @@ internal static class Shell32
     public const uint ABE_RIGHT = 2;
     public const uint ABE_BOTTOM = 3;
 
-    public const int ABN_STATECHANGE = 0;
     public const int ABN_POSCHANGED = 1;
     public const int ABN_FULLSCREENAPP = 2;
 
@@ -70,7 +69,6 @@ internal static class Shell32
     public const uint SHGFI_SYSICONINDEX = 0x000004000;
 
     // SHGetImageList
-    public const int SHIL_EXTRALARGE = 0x2;
     public const int SHIL_JUMBO = 0x4;
     public const int ILD_TRANSPARENT = 0x1;
 

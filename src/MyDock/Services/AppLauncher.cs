@@ -122,15 +122,22 @@ public sealed class AppLauncher : IAppLauncher
         try
         {
             if (hwnd == IntPtr.Zero || !User32.IsWindow(hwnd)) return;
-            if (User32.IsIconic(hwnd)) User32.ShowWindow(hwnd, User32.SW_RESTORE);
+            // 응답 없는 창에 동기 호출을 하면 UI 스레드가 멈추므로 비동기 ShowWindowAsync 사용
+            if (User32.IsIconic(hwnd)) User32.ShowWindowAsync(hwnd, User32.SW_RESTORE);
 
             if (TrySetForeground(hwnd)) return;
 
-            // 1) 포그라운드 스레드에 입력 큐를 붙여서 재시도
+            // 1) 빈 입력 이벤트: "마지막 입력을 받은 프로세스" 조건을 만족시켜 포그라운드 잠금을 푼다.
+            //    (예전 Alt 키 트릭은 대상 앱의 메뉴바를 활성화할 수 있어 0 이동 마우스 입력으로 대체)
+            User32.Send(User32.EmptyMouseInput());
+            if (TrySetForeground(hwnd)) return;
+
+            // 2) 포그라운드 스레드에 입력 큐를 붙여서 재시도 — 응답 없는 창이 관련되면 UI 스레드가 멈출 수 있어 건너뜀
             IntPtr fg = User32.GetForegroundWindow();
             uint fgThread = fg != IntPtr.Zero ? User32.GetWindowThreadProcessId(fg, out _) : 0;
             uint myThread = Kernel32.GetCurrentThreadId();
-            if (fgThread != 0 && fgThread != myThread)
+            bool hung = (fg != IntPtr.Zero && DesktopApi.IsHungAppWindow(fg)) || DesktopApi.IsHungAppWindow(hwnd);
+            if (!hung && fgThread != 0 && fgThread != myThread)
             {
                 bool attached = User32.AttachThreadInput(myThread, fgThread, true);
                 try
@@ -142,17 +149,6 @@ public sealed class AppLauncher : IAppLauncher
                 {
                     if (attached) User32.AttachThreadInput(myThread, fgThread, false);
                 }
-            }
-
-            // 2) Alt 키 트릭: 마지막 입력 이벤트를 이 프로세스가 받은 것으로 만들어 잠금 해제
-            User32.Send(User32.KeyInput(User32.VK_MENU, up: false));
-            try
-            {
-                if (TrySetForeground(hwnd)) return;
-            }
-            finally
-            {
-                User32.Send(User32.KeyInput(User32.VK_MENU, up: true));
             }
             Log.Warn($"SetForegroundWindow 실패 hwnd=0x{hwnd.ToInt64():X}");
         }
@@ -177,7 +173,7 @@ public sealed class AppLauncher : IAppLauncher
             if (fg == IntPtr.Zero) fg = _tracker.ForegroundWindow; // 전환 중 등 일시적으로 0 일 때
             if (fg == hwnd && !User32.IsIconic(hwnd))
             {
-                User32.ShowWindow(hwnd, User32.SW_MINIMIZE);
+                User32.ShowWindowAsync(hwnd, User32.SW_MINIMIZE);
                 return;
             }
             Activate(hwnd);

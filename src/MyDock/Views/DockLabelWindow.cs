@@ -40,7 +40,7 @@ internal sealed class DockLabelWindow : Window
         };
         _bubble = new Border
         {
-            CornerRadius = new CornerRadius(6),
+            CornerRadius = new CornerRadius(7),
             Padding = new Thickness(9, 4, 9, 5),
             BorderThickness = new Thickness(1),
             Child = _text,
@@ -50,18 +50,11 @@ internal sealed class DockLabelWindow : Window
         SourceInitialized += (_, _) => services.DesktopWindows.MakeOverlay(this);
     }
 
-    public void SetColors(Brush background, Brush border)
+    public void SetColors(Brush background, Brush foreground, Brush border)
     {
-        // 독 배경이 너무 투명하면 글자가 안 보이므로 말풍선은 불투명도를 최소 0xE0 로
-        if (background is SolidColorBrush sb && sb.Color.A < 0xE0)
-        {
-            var c = sb.Color;
-            var b = new SolidColorBrush(Color.FromArgb(0xE0, c.R, c.G, c.B));
-            b.Freeze();
-            background = b;
-        }
         _bubble.Background = background;
         _bubble.BorderBrush = border;
+        _text.Foreground = foreground;
     }
 
     /// <summary>anchor(DIP, 화면 좌표) 기준으로 표시. 세로 독은 anchor 가 말풍선의 가장자리 쪽 세로 중앙, 가로 독은 가장자리 쪽 가로 중앙.</summary>

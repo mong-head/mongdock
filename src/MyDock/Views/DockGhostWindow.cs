@@ -35,7 +35,7 @@ internal sealed class DockGhostWindow : Window
 
     public void ShowAt(Rect rect, DockLayout layout)
     {
-        _box.Background = layout.Background;
+        _box.Background = layout.SolidBackground;
         _box.BorderBrush = Brushes.White;
         _box.CornerRadius = new CornerRadius(layout.CornerRadius);
         Left = rect.Left;

@@ -13,7 +13,7 @@ namespace MyDock.Services;
 /// - realpath(버전 포함 WindowsApps 경로)는 절대 저장하지 않음
 /// 원본 ini 는 읽기만 한다 (FileAccess.Read).
 /// </summary>
-public sealed class MyDockFinderImporter : IMyDockFinderImporter
+public sealed class MyDockFinderImporter
 {
     private readonly ISettingsService _settings;
 

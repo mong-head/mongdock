@@ -25,11 +25,15 @@ public sealed class IconService : IIconService
     private ImageSource? _default;
     private ImageSource? _launchpad;
 
-    public ImageSource GetIcon(PinItem pin)
+    public ImageSource GetIcon(PinItem pin, IconStyle style)
     {
-        if (pin is null) return DefaultIcon;
-        string key = $"pin|{pin.Kind}|{pin.Target}|{pin.IconPath}";
-        return GetOrAdd(key, () =>
+        if (pin is null) return Fallback(style);
+        bool launchpad = pin.Kind == PinKind.Special && pin.Target.Equals("launchpad", StringComparison.OrdinalIgnoreCase)
+                         && string.IsNullOrWhiteSpace(pin.IconPath);
+        if (launchpad) return style == IconStyle.Mac ? MacLaunchpadIcon : LaunchpadIcon;
+
+        string rawKey = $"pin|{pin.Kind}|{pin.Target}|{pin.IconPath}";
+        return Styled(rawKey, style, () =>
         {
             if (!string.IsNullOrWhiteSpace(pin.IconPath))
             {
@@ -40,31 +44,43 @@ public sealed class IconService : IIconService
             {
                 PinKind.Aumid => FromShellItem(AppsFolder.ShellPathOf(pin.Target.Trim())),
                 PinKind.Exe => FromFile(Environment.ExpandEnvironmentVariables(pin.Target.Trim().Trim('"'))),
-                PinKind.Special when pin.Target.Equals("launchpad", StringComparison.OrdinalIgnoreCase) => LaunchpadIcon,
                 _ => null,
             };
         });
     }
 
-    public ImageSource GetIcon(AppWindowInfo window)
+    public ImageSource GetIcon(AppWindowInfo window, IconStyle style)
     {
-        if (window is null) return DefaultIcon;
+        if (window is null) return Fallback(style);
         bool packaged = !string.IsNullOrEmpty(window.Aumid) && AppsFolder.IsWindowsAppsPath(window.ProcessPath);
-        string key = packaged ? "aumid|" + window.Aumid
-                   : window.ProcessPath.Length > 0 ? "exe|" + window.ProcessPath
-                   : "hwnd|" + window.Hwnd.ToInt64();
-        // hwnd 기반 키는 캐시하면 창이 사라져도 남으니 캐시하지 않음
-        if (key.StartsWith("hwnd|", StringComparison.Ordinal)) return FromWindowHandle(window.Hwnd) ?? DefaultIcon;
-
-        return GetOrAdd(key, () =>
+        if (!packaged && window.ProcessPath.Length == 0)
+        {
+            // hwnd 기반은 창이 사라져도 캐시에 남으니 캐시하지 않음
+            var raw = FromWindowHandle(window.Hwnd);
+            return raw is null ? Fallback(style) : style == IconStyle.Mac ? (MacIconRenderer.Normalize(raw) ?? Fallback(style)) : raw;
+        }
+        string rawKey = packaged ? "aumid|" + window.Aumid : "exe|" + window.ProcessPath;
+        return Styled(rawKey, style, () =>
             (packaged ? FromShellItem(AppsFolder.ShellPathOf(window.Aumid!)) : null)
             ?? FromFile(window.ProcessPath)
             ?? FromWindowHandle(window.Hwnd));
     }
 
+    /// <summary>원본은 rawKey 로, 맥 스타일은 "mac|rawKey" 로 따로 캐시.</summary>
+    private ImageSource Styled(string rawKey, IconStyle style, Func<ImageSource?> loadRaw)
+    {
+        ImageSource raw = GetOrAdd("orig|" + rawKey, loadRaw, DefaultIcon);
+        if (style != IconStyle.Mac) return raw;
+        return GetOrAdd("mac|" + rawKey, () =>
+            raw is BitmapSource bs && !ReferenceEquals(raw, _default) ? MacIconRenderer.Normalize(bs) : null,
+            MacDefaultIcon);
+    }
+
+    private ImageSource Fallback(IconStyle style) => style == IconStyle.Mac ? MacDefaultIcon : DefaultIcon;
+
     // ───────────────────────── 캐시 ─────────────────────────
 
-    private ImageSource GetOrAdd(string key, Func<ImageSource?> factory)
+    private ImageSource GetOrAdd(string key, Func<ImageSource?> factory, ImageSource fallback)
     {
         lock (_gate)
         {
@@ -79,7 +95,7 @@ public sealed class IconService : IIconService
         ImageSource? img = null;
         try { img = factory(); }
         catch (Exception ex) { Log.Error($"아이콘 로드 실패: {key}", ex); }
-        img ??= DefaultIcon;
+        img ??= fallback;
         if (img.CanFreeze && !img.IsFrozen) img.Freeze();
 
         lock (_gate)
@@ -311,6 +327,14 @@ public sealed class IconService : IIconService
     private ImageSource DefaultIcon => _default ??= CreateDefaultIcon();
 
     private ImageSource LaunchpadIcon => _launchpad ??= CreateLaunchpadIcon();
+
+    private ImageSource? _macDefault, _macLaunchpad;
+
+    /// <summary>맥 스타일 기본 아이콘: 밝은 판 위에 시스템 기본 앱 아이콘.</summary>
+    private ImageSource MacDefaultIcon => _macDefault ??=
+        (DefaultIcon is BitmapSource b ? MacIconRenderer.Plate(b) : MacIconRenderer.Plate(null));
+
+    private ImageSource MacLaunchpadIcon => _macLaunchpad ??= MacIconRenderer.Launchpad();
 
     private static ImageSource CreateDefaultIcon()
     {

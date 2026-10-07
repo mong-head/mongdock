@@ -12,7 +12,8 @@
         Focusable="False"
         UseLayoutRounding="True"
         Width="90" Height="600">
-    <!-- 루트는 배경 없음 → 투명 영역은 클릭이 아래 창으로 통과 -->
+    <!-- 아이콘·점·테두리만 그리는 투명 창. 블러 배경은 DockBackdropWindow(바로 아래 창).
+         루트는 평소 배경 없음 → 투명 영역은 클릭 통과. 확대 중에만 거의 투명한 배경으로 확대 영역을 붙잡는다. -->
     <Grid x:Name="Root">
         <Border x:Name="PanelBorder" BorderThickness="1">
             <StackPanel x:Name="ItemsHost" />
