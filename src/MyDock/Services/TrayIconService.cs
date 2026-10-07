@@ -237,7 +237,11 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
                 switch (msg)
                 {
                     case T.WM_COPYDATA:
-                        return OnCopyData(msg, wParam, lParam);
+                    {
+                        IntPtr result = OnCopyData(msg, wParam, lParam);
+                        EnsureOnTop();
+                        return result;
+                    }
                     case T.WM_TIMER:
                         OnTimer((int)wParam.ToInt64());
                         return IntPtr.Zero;
@@ -258,11 +262,19 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
                     case T.WM_SYSCOMMAND:
                     case T.WM_HOTKEY:
                         // 작업 표시줄에 보내는 명령(예: WM_COMMAND 419 = 모두 최소화)은 explorer 로. WM_CLOSE 로 이 창이 닫히지 않게 직접 처리
-                        return Forward(msg, wParam, lParam, ForwardTimeoutMs);
+                    {
+                        IntPtr result = Forward(msg, wParam, lParam, ForwardTimeoutMs);
+                        EnsureOnTop();
+                        return result;
+                    }
                 }
                 // explorer 전용 WM_USER 범위 메시지는 그대로 전달. 등록 메시지(0xC000~)는 브로드캐스트일 수 있어 전달하지 않음(explorer 가 두 번 받음)
                 if (msg >= T.WM_USER && msg < T.RegisteredMessageFirst)
-                    return Forward(msg, wParam, lParam, ForwardTimeoutMs);
+                {
+                    IntPtr result = Forward(msg, wParam, lParam, ForwardTimeoutMs);
+                    EnsureOnTop();
+                    return result;
+                }
             }
         }
         catch (Exception e)
@@ -448,6 +460,17 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
                     T.SetTimer(_trayHwnd, (UIntPtr)TimerReplay, ReplayPasses[_replayCount], IntPtr.Zero);
                 break;
         }
+    }
+
+    /// <summary>
+    /// explorer 로 전달한 뒤 바로 확인: explorer 는 아이콘 삭제 등을 처리하며 자기 작업 표시줄을 다시 맨 위로 올린다.
+    /// 그러면 앱이 곧이어 보내는 NIM_ADD(재등록 시 DELETE → ADD)가 explorer 로만 가 몽독 목록에서 빠진다
+    /// (실측: 카카오톡·디스코드·Parsec·휴대폰과 연결이 매번 빠짐). 앱은 아직 이 SendMessage 응답을 기다리는 중이므로
+    /// 돌려주기 전에 다시 올리면 다음 호출은 확실히 몽독으로 온다.
+    /// </summary>
+    private void EnsureOnTop()
+    {
+        if (_trayHwnd != IntPtr.Zero && T.FindWindow(T.TrayWndClass, null) != _trayHwnd) RaiseTopmost();
     }
 
     private void RaiseTopmost()
