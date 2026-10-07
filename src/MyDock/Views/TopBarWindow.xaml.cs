@@ -716,10 +716,19 @@ public partial class TopBarWindow : Window
 
     private void TogglePanel(StatusPanelKind kind, FrameworkElement anchor)
     {
-        bool same = _panel?.Kind == kind;
-        _panel?.Close();
+        // 닫히는 중(페이드 아웃)인 패널은 열린 것으로 치지 않음 — 그 사이 같은 아이콘을 다시 누르면 새로 연다
+        var old = _panel is { IsClosing: false } ? _panel : null;
+        bool same = old?.Kind == kind;
         _panel = null;
-        if (same) return;
+        if (same)
+        {
+            old!.Close(); // 페이드 아웃 (Closed 는 나중에 오므로 하이라이트는 지금 끔)
+            SetActiveAnchor(null);
+            return;
+        }
+        // 다른 아이콘으로 전환: 이전 카드는 바로 닫고 새 카드도 바로 표시 (맥 메뉴 막대처럼 겹침·깜빡임 없이)
+        bool switching = old != null;
+        old?.CloseImmediately();
 
         var p = anchor.TranslatePoint(new Point(0, 0), this);
         var rect = new Rect(Left + p.X, Top + p.Y, anchor.ActualWidth, anchor.ActualHeight);
@@ -732,7 +741,7 @@ public partial class TopBarWindow : Window
         };
         _panel = panel;
         SetActiveAnchor(anchor);
-        panel.ShowBelow(rect, Top + ActualHeight, Monitor); // 이 상단바의 모니터 안에
+        panel.ShowBelow(rect, Top + ActualHeight, Monitor, animate: !switching); // 이 상단바의 모니터 안에
     }
 
     /// <summary>패널이 열린 아이콘에 회색 알약 하이라이트 (BarButton 의 Tag="Active" 트리거).</summary>

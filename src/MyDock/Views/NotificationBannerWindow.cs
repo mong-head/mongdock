@@ -164,7 +164,6 @@ internal sealed class NotificationBannerWindow : Window
         // 같은 알림이 이미 떠 있으면 무시
         if (_entries.Any(e => e.Item.Id == item.Id && !e.Leaving)) return;
 
-        var shift = new TranslateTransform(CardWidth + ShadowMargin * 2, 0);
         var card = NotificationUi.Card(_services, _p, item, _p.CardBackground);
         card.CornerRadius = new CornerRadius(14);
         card.BorderThickness = new Thickness(0.75);
@@ -173,10 +172,9 @@ internal sealed class NotificationBannerWindow : Window
         var host = new Grid
         {
             Margin = new Thickness(0, 0, 0, 2),
-            RenderTransform = shift,
-            Opacity = 0,
             Cursor = Cursors.Hand,
         };
+        var (_, shift) = Anim.Transforms(host);
         var shadowed = new Grid { Margin = new Thickness(8, 6, 0, 8) }; // 왼쪽 위는 × 자리
         shadowed.Children.Add(new Border
         {
@@ -209,6 +207,12 @@ internal sealed class NotificationBannerWindow : Window
             _services.Notifications.Open(item);
         };
 
+        // 이미 떠 있는 배너의 현재 위치 (새 배너가 위에 끼면 한 번에 내려가지 않고 미끄러져 내려가게 — FLIP)
+        var before = new Dictionary<Entry, double>();
+        if (_stack.IsLoaded && Anim.Enabled)
+            foreach (var e in _entries)
+                before[e] = e.Root.TranslatePoint(new Point(0, 0), _stack).Y;
+
         _entries.Insert(0, entry);
         _stack.Children.Insert(0, host);
 
@@ -216,10 +220,17 @@ internal sealed class NotificationBannerWindow : Window
         foreach (var old in _entries.Where(e => !e.Leaving).Skip(MaxCards).ToList())
             Dismiss(old, fast: true);
 
-        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-        shift.BeginAnimation(TranslateTransform.XProperty,
-            new DoubleAnimation(0, TimeSpan.FromMilliseconds(380)) { EasingFunction = ease });
-        host.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(220)));
+        // 들어오기: 오른쪽 바깥에서 300ms, 아주 약한 되튐 감속 + 페이드 200ms
+        if (!Anim.Enabled) return;
+        Anim.Appear(host, 300, fromX: CardWidth + ShadowMargin * 2, ease: Anim.SoftBack, fadeMs: 200);
+        if (before.Count == 0) return;
+        _stack.UpdateLayout();
+        foreach (var (e, y) in before)
+        {
+            if (!_entries.Contains(e)) continue;
+            double now = e.Root.TranslatePoint(new Point(0, 0), _stack).Y;
+            Anim.SlideFrom(e.Shift, TranslateTransform.YProperty, y - now, 300, Anim.QuintOut);
+        }
     }
 
     private void OnTick()
@@ -235,22 +246,31 @@ internal sealed class NotificationBannerWindow : Window
         }
     }
 
-    /// <summary>오른쪽으로 밀려 나가며 사라짐 → 스택에서 제거. 마지막이면 창 닫기.</summary>
+    /// <summary>
+    /// 오른쪽으로 밀려 나가며 흐려짐(220ms, 클릭으로 열기·넘침은 160ms, ease-in) → 도중부터 높이가 접혀(200ms, ease-out)
+    /// 아래 배너가 부드럽게 올라옴 → 스택에서 제거. 마지막이면 창 닫기.
+    /// </summary>
     private void Dismiss(Entry entry, bool fast)
     {
         if (entry.Leaving) return;
         entry.Leaving = true;
-        var duration = TimeSpan.FromMilliseconds(fast ? 160 : 280);
-        var ease = new CubicEase { EasingMode = EasingMode.EaseIn };
-        var slide = new DoubleAnimation(CardWidth + ShadowMargin * 2, duration) { EasingFunction = ease };
-        slide.Completed += (_, _) =>
+        entry.Root.IsHitTestVisible = false;
+        double ms = fast ? 160 : 220;
+        bool slid = false, folded = false;
+        void Done()
         {
+            if (!slid || !folded) return;
             _stack.Children.Remove(entry.Root);
             _entries.Remove(entry);
             if (_entries.Count == 0 && !_closed) Close();
-        };
-        entry.Root.IsHitTestVisible = false;
-        entry.Shift.BeginAnimation(TranslateTransform.XProperty, slide);
-        entry.Root.BeginAnimation(OpacityProperty, new DoubleAnimation(0, duration));
+        }
+        if (!Anim.Enabled)
+        {
+            slid = folded = true;
+            Done();
+            return;
+        }
+        Anim.Disappear(entry.Root, ms, () => { slid = true; Done(); }, toX: CardWidth + ShadowMargin * 2);
+        Anim.Collapse(entry.Root, 200, () => { folded = true; Done(); }, delayMs: ms * 0.6);
     }
 }
