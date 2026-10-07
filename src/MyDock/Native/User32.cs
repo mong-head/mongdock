@@ -197,6 +197,10 @@ internal static class User32
     public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
 
     public const int SW_HIDE = 0;
+
+    /// <summary>문서상 "직접 쓰지 말 것"이지만 Alt+Tab 과 같은 경로로 창 전환 — UIPI 로 다른 방법이 막힌 관리자 권한 창용 마지막 수단.</summary>
+    [DllImport("user32.dll")]
+    public static extern void SwitchToThisWindow(IntPtr hWnd, [MarshalAs(UnmanagedType.Bool)] bool fUnknown);
     public const int SW_SHOWNA = 8;
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "FindWindowExW")]

@@ -894,8 +894,18 @@ public partial class DockWindow : Window
         return pin.Target;
     }
 
+    /// <summary>실행할 대상이 있는 핀인지 (Target 이 빈 Exe/Aumid 핀은 실행·창 매칭 모두 안 함).</summary>
+    internal static bool CanLaunch(PinItem pin)
+        => pin.Kind != PinKind.Separator && !string.IsNullOrWhiteSpace(pin.Target);
+
+    /// <summary>창으로 핀을 만들 수 있는지 (관리자 권한 창 등 경로를 못 읽은 창은 불가).</summary>
+    internal static bool CanPin(AppWindowInfo w)
+        => !string.IsNullOrWhiteSpace(w.ProcessPath) || !string.IsNullOrWhiteSpace(w.Aumid);
+
     private bool SafeMatches(PinItem pin, AppWindowInfo w)
     {
+        // 빈 Target 핀이 경로를 못 읽은 창("")과 우연히 같다고 판정되지 않게
+        if (!CanLaunch(pin) || !CanPin(w)) return false;
         try { return _services.Windows.Matches(pin, w); }
         catch { return false; }
     }
@@ -929,7 +939,9 @@ public partial class DockWindow : Window
         {
             if (item.Windows.Count == 0)
             {
-                if (item.Pin != null) _services.Launcher.Launch(item.Pin);
+                // 창이 하나도 없을 때만, 그리고 실행 대상이 있는 핀만 실행 (빈 경로 Launch 금지)
+                if (item.Pin != null && CanLaunch(item.Pin)) _services.Launcher.Launch(item.Pin);
+                else if (item.Pin != null) Log.Warn($"실행 대상이 비어 있는 핀 '{item.Pin.Name}' — 실행 안 함");
                 return;
             }
 
@@ -1261,6 +1273,7 @@ public partial class DockWindow : Window
     /// <summary>"새 창 열기" — 프로필이 있는 앱(크롬 등)은 "새 창 ›" 하위 메뉴에 프로필 목록.</summary>
     private void AddNewWindowItem(ContextMenu menu, PinItem pin)
     {
+        if (!CanLaunch(pin)) return; // 실행 경로를 모르면 "새 창" 없음
         IReadOnlyList<AppProfile> profiles;
         try { profiles = _services.Launcher.GetProfiles(pin); }
         catch (Exception ex)
@@ -1306,19 +1319,24 @@ public partial class DockWindow : Window
     private void BuildRunningMenu(ContextMenu menu, DockItemViewModel item)
     {
         AddWindowList(menu, item);
-        if (item.Windows.Count > 0)
+        // 관리자 권한 창처럼 경로를 못 읽은 앱은 "새 창"·"독에 고정" 을 숨김 (빈 경로 핀/실행 방지)
+        bool pinnable = item.Windows.Count > 0 && CanPin(item.Windows[0]);
+        if (pinnable)
         {
             PinItem? tempPin = null;
             try { tempPin = _services.Windows.CreatePin(item.Windows[0]); }
             catch (Exception ex) { Log.Error("임시 핀 생성 실패", ex); }
             if (tempPin != null) AddNewWindowItem(menu, tempPin);
         }
-        menu.Items.Add(Item("독에 고정", () =>
+        if (pinnable)
         {
-            if (item.Windows.Count == 0) return;
-            var newPin = _services.Windows.CreatePin(item.Windows[0]);
-            ModifyPins(p => p.Add(newPin));
-        }));
+            menu.Items.Add(Item("독에 고정", () =>
+            {
+                if (item.Windows.Count == 0) return;
+                var newPin = _services.Windows.CreatePin(item.Windows[0]);
+                ModifyPins(p => p.Add(newPin));
+            }));
+        }
         if (item.IsRunning)
             menu.Items.Add(Item("창 닫기", () => CloseAll(item)));
     }

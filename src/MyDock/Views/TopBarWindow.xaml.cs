@@ -793,12 +793,14 @@ public partial class TopBarWindow : Window
         menu.Closed += (_, _) => AppNameButton.Tag = null;
 
         bool hasApp = app != null;
+        // 경로를 못 읽은 창(관리자 권한 등)은 새 창·독 고정 불가 (빈 경로 Launch 방지)
+        bool launchable = app == null || (pin != null && DockWindow.CanLaunch(pin)) || DockWindow.CanPin(app);
         menu.Items.Add(DockMenus.Item($"{name} 새 창", () =>
         {
             // 바탕 화면이면 맥처럼 Finder(파일 탐색기) 새 창.
-            var target = app == null ? ExplorerPin() : pin ?? _services.Windows.CreatePin(app);
-            _services.Launcher.Launch(target);
-        }));
+            var target = app == null ? ExplorerPin() : pin != null && DockWindow.CanLaunch(pin) ? pin : _services.Windows.CreatePin(app);
+            if (DockWindow.CanLaunch(target)) _services.Launcher.Launch(target);
+        }, enabled: launchable));
         menu.Items.Add(DockMenus.Item($"{name} 최소화", () =>
         {
             foreach (var w in appWindows.Where(w => !w.IsMinimized))
@@ -822,7 +824,7 @@ public partial class TopBarWindow : Window
             {
                 _services.Settings.Current.Pins.Add(_services.Windows.CreatePin(app!));
                 _services.Settings.Save();
-            }, enabled: hasApp));
+            }, enabled: hasApp && DockWindow.CanPin(app!)));
         }
         menu.Items.Add(new Separator());
         menu.Items.Add(DockMenus.Item("바탕 화면 보기", () => _services.Shell.ShowDesktop()));
@@ -840,6 +842,7 @@ public partial class TopBarWindow : Window
 
     private bool SafeMatches(PinItem pin, AppWindowInfo w)
     {
+        if (!DockWindow.CanLaunch(pin) || !DockWindow.CanPin(w)) return false;
         try { return _services.Windows.Matches(pin, w); }
         catch { return false; }
     }

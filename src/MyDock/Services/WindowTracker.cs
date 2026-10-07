@@ -394,6 +394,9 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
     {
         if (!string.IsNullOrEmpty(window.Aumid)) return window.Aumid.ToLowerInvariant();
         if (!string.IsNullOrEmpty(window.ProcessPath)) return window.ProcessPath.ToLowerInvariant();
+        // 경로를 모르는 창(열 수 없는 프로세스): 프로세스별 고유 키 — 서로 다른 앱이 한 아이콘으로 합쳐지지 않게
+        User32.GetWindowThreadProcessId(window.Hwnd, out uint pid);
+        if (pid != 0) return $"pid:{pid}|{Kernel32.ProcessName(pid)?.ToLowerInvariant()}";
         return "hwnd:" + window.Hwnd.ToInt64().ToString("X");
     }
 
@@ -434,6 +437,12 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
             Log.Warn($"패키지 앱인데 AUMID 를 못 찾음 → exe 경로로 핀 생성 (업데이트 시 깨질 수 있음): {path}");
         }
 
+        if (path.Length == 0)
+        {
+            // 경로를 모르면 실행할 수 없는 핀 → Target 은 비워 두고(Launch 가 아무것도 안 함) 로그
+            Log.Warn($"프로세스 경로를 알 수 없는 창 → 실행 불가 핀 (이름만): '{window.Title}'");
+            return new PinItem { Name = window.Title, Kind = PinKind.Exe, Target = "" };
+        }
         return new PinItem
         {
             Name = FriendlyExeName(path) ?? window.Title,

@@ -26,17 +26,35 @@ internal static class Kernel32
     [DllImport("kernel32.dll")]
     public static extern uint GetCurrentThreadId();
 
-    /// <summary>pid → (exe 전체 경로, 패키지 AUMID). 접근 거부 등 실패 시 ("", null).</summary>
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "K32GetProcessImageFileNameW")]
+    public static extern uint GetProcessImageFileName(IntPtr hProcess, StringBuilder lpImageFileName, uint nSize);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "QueryDosDeviceW")]
+    public static extern uint QueryDosDevice(string? lpDeviceName, StringBuilder lpTargetPath, uint ucchMax);
+
+    /// <summary>
+    /// pid → (exe 전체 경로, 패키지 AUMID).
+    /// 1) QueryFullProcessImageName (관리자 권한 프로세스도 PROCESS_QUERY_LIMITED_INFORMATION 이면 보통 됨)
+    /// 2) GetProcessImageFileName (NT 경로 \Device\HarddiskVolumeN\... → C:\...)
+    /// 3) 열 수 없는 프로세스(SYSTEM 의 consent.exe 등) → 프로세스 이름만 얻어 System32\이름.exe 가 있으면 그 경로
+    /// 모두 실패하면 ("", null).
+    /// </summary>
     public static (string Path, string? Aumid) QueryProcess(uint pid)
     {
         IntPtr h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
-        if (h == IntPtr.Zero) return ("", null);
+        if (h == IntPtr.Zero) return (PathFromProcessName(pid), null);
         try
         {
             string path = "";
             uint size = 1024;
             var sb = new StringBuilder((int)size);
             if (QueryFullProcessImageName(h, 0, sb, ref size)) path = sb.ToString();
+            if (path.Length == 0)
+            {
+                var nb = new StringBuilder(1024);
+                if (GetProcessImageFileName(h, nb, (uint)nb.Capacity) > 0) path = NtPathToDos(nb.ToString()) ?? "";
+            }
+            if (path.Length == 0) path = PathFromProcessName(pid);
 
             string? aumid = null;
             uint len = 0;
@@ -52,6 +70,111 @@ internal static class Kernel32
         {
             CloseHandle(h);
         }
+    }
+
+    /// <summary>"\Device\HarddiskVolume3\Windows\x.exe" → "C:\Windows\x.exe". 실패 시 null.</summary>
+    public static string? NtPathToDos(string ntPath)
+    {
+        try
+        {
+            foreach (var drive in Environment.GetLogicalDrives())
+            {
+                string letter = drive.TrimEnd('\\');
+                var target = new StringBuilder(512);
+                if (QueryDosDevice(letter, target, (uint)target.Capacity) == 0) continue;
+                string dev = target.ToString();
+                if (ntPath.StartsWith(dev + "\\", StringComparison.OrdinalIgnoreCase))
+                    return letter + ntPath[dev.Length..];
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    /// <summary>열 수 없는 프로세스: 이름만 얻어(접근 권한 불필요) System32\이름.exe 가 있으면 그 경로. 없으면 "".</summary>
+    private static string PathFromProcessName(uint pid)
+    {
+        string? name = ProcessName(pid);
+        if (string.IsNullOrEmpty(name)) return "";
+        string sys = System.IO.Path.Combine(Environment.SystemDirectory, name + ".exe");
+        return System.IO.File.Exists(sys) ? sys : "";
+    }
+
+    /// <summary>프로세스 이름 (경로를 모를 때 키·로그용, 접근 권한 불필요). 실패 시 null.</summary>
+    public static string? ProcessName(uint pid)
+    {
+        try
+        {
+            using var p = System.Diagnostics.Process.GetProcessById((int)pid);
+            return p.ProcessName;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    // ── 무결성 수준 ──
+    private const uint TOKEN_QUERY = 0x0008;
+    private const int TokenIntegrityLevel = 25;
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool OpenProcessToken(IntPtr processHandle, uint desiredAccess, out IntPtr tokenHandle);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetTokenInformation(IntPtr token, int infoClass, IntPtr info, int length, out int returnLength);
+
+    [DllImport("advapi32.dll")]
+    private static extern IntPtr GetSidSubAuthorityCount(IntPtr sid);
+
+    [DllImport("advapi32.dll")]
+    private static extern IntPtr GetSidSubAuthority(IntPtr sid, uint index);
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetCurrentProcess();
+
+    /// <summary>프로세스 무결성 RID (0x2000 보통, 0x3000 높음(관리자), 0x4000 시스템). pid 0 = 자기 자신. 토큰을 못 열면 null.</summary>
+    public static int? GetIntegrityLevel(uint pid)
+    {
+        IntPtr h = pid == 0 ? GetCurrentProcess() : OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if (h == IntPtr.Zero) return null;
+        try { return IntegrityOf(h); }
+        finally { if (pid != 0) CloseHandle(h); }
+    }
+
+    private static int? IntegrityOf(IntPtr process)
+    {
+        if (!OpenProcessToken(process, TOKEN_QUERY, out IntPtr token)) return null;
+        IntPtr buf = IntPtr.Zero;
+        try
+        {
+            GetTokenInformation(token, TokenIntegrityLevel, IntPtr.Zero, 0, out int len);
+            if (len <= 0) return null;
+            buf = Marshal.AllocHGlobal(len);
+            if (!GetTokenInformation(token, TokenIntegrityLevel, buf, len, out _)) return null;
+            IntPtr sid = Marshal.ReadIntPtr(buf); // TOKEN_MANDATORY_LABEL.Label.Sid
+            int count = Marshal.ReadByte(GetSidSubAuthorityCount(sid));
+            if (count == 0) return null;
+            return Marshal.ReadInt32(GetSidSubAuthority(sid, (uint)(count - 1)));
+        }
+        finally
+        {
+            if (buf != IntPtr.Zero) Marshal.FreeHGlobal(buf);
+            CloseHandle(token);
+        }
+    }
+
+    private static int? _ownIntegrity;
+
+    /// <summary>프로세스가 우리보다 높은 무결성 수준인지 (관리자 권한 창 등 — UIPI 로 AttachThreadInput·입력이 막힘).
+    /// 토큰을 못 열면(대개 상승된·SYSTEM 프로세스) true.</summary>
+    public static bool IsHigherIntegrity(uint pid)
+    {
+        _ownIntegrity ??= GetIntegrityLevel(0) ?? 0x2000;
+        int? other = GetIntegrityLevel(pid);
+        return other is null || other > _ownIntegrity;
     }
 }
 

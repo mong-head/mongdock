@@ -44,7 +44,18 @@ public sealed class AppLauncher : IAppLauncher
 
     private static void LaunchExe(PinItem pin)
     {
-        string target = Environment.ExpandEnvironmentVariables(pin.Target.Trim().Trim('"'));
+        string target = Environment.ExpandEnvironmentVariables((pin.Target ?? "").Trim().Trim('"'));
+        if (target.Length == 0)
+        {
+            Log.Warn($"실행할 경로가 없는 핀 → 무시: '{pin.Name}'");
+            return;
+        }
+        // 전체 경로인데 없으면 실행하지 않음 (파일명만이면 ShellExecute 가 PATH/App Paths 에서 찾게 둠)
+        if (Path.IsPathFullyQualified(target) && !File.Exists(target) && !Directory.Exists(target))
+        {
+            Log.Warn($"실행 파일이 없음 → 무시: {target}");
+            return;
+        }
         var psi = new ProcessStartInfo(target)
         {
             UseShellExecute = true,
@@ -166,6 +177,11 @@ public sealed class AppLauncher : IAppLauncher
 
             if (TrySetForeground(hwnd)) return true;
 
+            // 관리자 권한(더 높은 무결성) 창: UIPI 때문에 AttachThreadInput·입력 주입이 막힘 → 다른 순서로
+            User32.GetWindowThreadProcessId(hwnd, out uint targetPid);
+            if (targetPid != 0 && Kernel32.IsHigherIntegrity(targetPid))
+                return ActivateElevated(hwnd, targetPid);
+
             // 1) 빈 입력 이벤트: "마지막 입력을 받은 프로세스" 조건을 만족시켜 포그라운드 잠금을 푼다.
             //    (예전 Alt 키 트릭은 대상 앱의 메뉴바를 활성화할 수 있어 0 이동 마우스 입력으로 대체)
             User32.Send(User32.EmptyMouseInput());
@@ -197,6 +213,33 @@ public sealed class AppLauncher : IAppLauncher
             Log.Error("Activate 실패", ex);
             return false;
         }
+    }
+
+    /// <summary>
+    /// 관리자 권한 창(작업 관리자, UAC 프롬프트 consent.exe 등) 활성화:
+    /// (a) SetForegroundWindow — 포그라운드 잠금은 호출 프로세스(방금 사용자 클릭을 받은 우리) 기준이라 대상 무결성과 무관
+    /// (b) 실패 시 SwitchToThisWindow(hwnd, TRUE)
+    /// (c) 최소화 상태면 ShowWindowAsync(SW_RESTORE) 후 다시 시도. 결과는 로그.
+    /// UAC 프롬프트가 보안 데스크톱에 떠 있으면 어떤 방법으로도 접근할 수 없다.
+    /// </summary>
+    private static bool ActivateElevated(IntPtr hwnd, uint pid)
+    {
+        string who = $"hwnd=0x{hwnd.ToInt64():X} ({Kernel32.ProcessName(pid) ?? "?"}, 관리자 권한)";
+        if (TrySetForeground(hwnd)) { Log.Info($"활성화 성공(SetForegroundWindow): {who}"); return true; }
+
+        User32.SwitchToThisWindow(hwnd, true);
+        if (User32.GetForegroundWindow() == hwnd) { Log.Info($"활성화 성공(SwitchToThisWindow): {who}"); return true; }
+
+        if (User32.IsIconic(hwnd))
+        {
+            User32.ShowWindowAsync(hwnd, User32.SW_RESTORE);
+            Thread.Sleep(50);
+            if (TrySetForeground(hwnd)) { Log.Info($"활성화 성공(복원 후): {who}"); return true; }
+            User32.SwitchToThisWindow(hwnd, true);
+            if (User32.GetForegroundWindow() == hwnd) { Log.Info($"활성화 성공(복원 후 SwitchToThisWindow): {who}"); return true; }
+        }
+        Log.Warn($"관리자 권한 창 활성화 실패: {who}");
+        return false;
     }
 
     private static bool TrySetForeground(IntPtr hwnd)
