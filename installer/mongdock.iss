@@ -193,11 +193,45 @@ begin
     Result := '';
 end;
 
+var
+  { 설치 시작 때 자동 실행(Run 값)이 이미 등록돼 있었는지 (앱 메뉴·설정 창에서 켠 것 포함) }
+  HadAutoStart: Boolean;
+  { 작업 선택 화면을 실제로 보고 다음으로 넘어갔는지 (= 체크 상태가 사용자의 명시적 선택) }
+  TasksPageConfirmed: Boolean;
+  AutoStartPreselected: Boolean;
+
+function InitializeSetup(): Boolean;
+begin
+  HadAutoStart := RegValueExists(HKEY_CURRENT_USER, RunKey, 'mongdock');
+  TasksPageConfirmed := False;
+  AutoStartPreselected := False;
+  Result := True;
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  { 이미 자동 실행 중이면 (이전 설치 때 체크를 껐더라도) 체크된 상태로 시작한다. 처음 한 번만 — 사용자가 끈 뒤 뒤로 갔다 오면 존중 }
+  if (CurPageID = wpSelectTasks) and HadAutoStart and not AutoStartPreselected then
+  begin
+    WizardSelectTasks('autostart');
+    AutoStartPreselected := True;
+  end;
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  if CurPageID = wpSelectTasks then
+    TasksPageConfirmed := True;
+  Result := True;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  { 자동 실행을 끄고 설치(업그레이드)하면 이전 등록도 지워서 선택과 실제 상태를 맞춘다 }
+  { 자동 실행 체크가 꺼져 있을 때 Run 값을 지우는 건, 처음부터 없었거나 사용자가 작업 선택 화면에서 직접 끈 경우뿐.
+    조용한 설치(/SILENT) 등으로 화면을 거치지 않은 업그레이드에서는 앱에서 켜 둔 자동 실행을 그대로 둔다. }
   if (CurStep = ssPostInstall) and not WizardIsTaskSelected('autostart') then
-    RegDeleteValue(HKEY_CURRENT_USER, RunKey, 'mongdock');
+    if (not HadAutoStart) or TasksPageConfirmed then
+      RegDeleteValue(HKEY_CURRENT_USER, RunKey, 'mongdock');
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

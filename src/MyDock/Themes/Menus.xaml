@@ -49,9 +49,14 @@
                         <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" MinWidth="168" />
                     </ContentControl>
                     <ControlTemplate.Triggers>
-                        <!-- 열릴 때 짧은 페이드 + 3px 내려옴 (110ms). 닫힘은 즉시 (맥 메뉴처럼) -->
-                        <Trigger Property="IsOpen" Value="True">
-                            <Trigger.EnterActions>
+                        <!-- 열릴 때 짧은 페이드 + 3px 내려옴 (110ms). 닫힘은 즉시 (맥 메뉴처럼).
+                             시스템 "애니메이션 효과" 가 꺼져 있으면 애니메이션 없이 바로 표시 -->
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding IsOpen, RelativeSource={RelativeSource Self}}" Value="True" />
+                                <Condition Binding="{Binding Path=(SystemParameters.ClientAreaAnimation)}" Value="True" />
+                            </MultiDataTrigger.Conditions>
+                            <MultiDataTrigger.EnterActions>
                                 <BeginStoryboard>
                                     <Storyboard>
                                         <DoubleAnimation Storyboard.TargetName="Card" Storyboard.TargetProperty="Opacity"
@@ -64,8 +69,8 @@
                                         </DoubleAnimation>
                                     </Storyboard>
                                 </BeginStoryboard>
-                            </Trigger.EnterActions>
-                        </Trigger>
+                            </MultiDataTrigger.EnterActions>
+                        </MultiDataTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>

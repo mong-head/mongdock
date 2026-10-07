@@ -11,7 +11,6 @@ using MyDock.Models;
 using MyDock.Services;
 using MyDock.ViewModels;
 using Ellipse = System.Windows.Shapes.Ellipse;
-using WinForms = System.Windows.Forms;
 
 namespace MyDock.Views;
 
@@ -334,7 +333,7 @@ internal sealed class SettingsWindow : Window
         body.Children.Add(Group(
             Row("독 보이기", null, Toggle(d.Enabled, on => Commit(() => D().Enabled = on))),
             Row("위치", null, Segmented(d.Edge,
-                new[] { (DockEdge.Left, "왼쪽"), (DockEdge.Bottom, "아래"), (DockEdge.Right, "오른쪽") },
+                new[] { (DockEdge.Left, "왼쪽"), (DockEdge.Bottom, "아래"), (DockEdge.Right, "오른쪽"), (DockEdge.Top, "위") },
                 v => Commit(() => D().Edge = v))),
             Row("모니터", "독을 둘 모니터. 연결이 끊기면 주 모니터에 표시됩니다.", MonitorDropdown(d.Monitor)),
             Row("동작", null, Segmented(d.Mode,
@@ -406,29 +405,21 @@ internal sealed class SettingsWindow : Window
         });
     }
 
-    /// <summary>연결된 모니터: 장치 이름 + "모니터 2 (1920×1080)" 표시 이름.
-    /// WinForms Screen 이 EnumDisplayMonitors + GetMonitorInfo(MONITORINFOEX.szDevice) 를 감싼 것. PerMonitorV2 라 Bounds 는 물리 픽셀.</summary>
+    /// <summary>연결된 모니터: 장치 이름(설정에 저장하는 값) + 표시 이름. 표시 번호 순.</summary>
     private static List<(string Device, string Label)> ReadMonitors()
     {
-        var list = new List<(int Number, string Device, string Label)>();
         try
         {
-            var screens = WinForms.Screen.AllScreens;
-            for (int i = 0; i < screens.Length; i++)
-            {
-                var sc = screens[i];
-                string digits = new(sc.DeviceName.Reverse().TakeWhile(char.IsDigit).Reverse().ToArray());
-                int number = int.TryParse(digits, out int n) ? n : i + 1;
-                string label = $"모니터 {number} ({sc.Bounds.Width}×{sc.Bounds.Height})" + (sc.Primary ? " · 주" : "");
-                list.Add((number, sc.DeviceName, label));
-            }
-            list.Sort((a, b) => a.Number.CompareTo(b.Number));
+            return Monitors.GetAll()
+                .OrderBy(m => m.Number)
+                .Select(m => (m.DeviceName, m.DisplayName))
+                .ToList();
         }
         catch (Exception ex)
         {
             Log.Error("모니터 목록 읽기 실패", ex);
+            return new List<(string, string)>();
         }
-        return list.Select(x => (x.Device, x.Label)).ToList();
     }
 
     // ───────────────────────── 페이지: 상단바 ─────────────────────────
@@ -442,6 +433,8 @@ internal sealed class SettingsWindow : Window
             Row("상단바 보이기", null, Toggle(t.Enabled, on => Commit(() => T().Enabled = on))),
             Row("모든 모니터에 표시", "끄면 주 모니터에만 표시합니다.",
                 Toggle(t.ShowOnAllMonitors, on => Commit(() => T().ShowOnAllMonitors = on))),
+            Row("최대화 창이 상단바를 가리지 않게", "상단바 높이만큼 화면 공간을 비워 둡니다. 끄면 최대화한 창이 상단바 아래까지 덮습니다.",
+                Toggle(t.ReserveSpace, on => Commit(() => T().ReserveSpace = on))),
             Row("높이", null, ValueSlider(t.Height, 20, 40, 1, v => $"{v:0}", v => T().Height = v)),
             Row("글자 크기", null, ValueSlider(t.FontSize, 11, 16, 0.5, v => $"{v:0.#}", v => T().FontSize = v)),
             Row("색", null, ColorModeDropdown(t.ColorMode))));
@@ -462,7 +455,7 @@ internal sealed class SettingsWindow : Window
             Row("검색 버튼", null, Segmented(t.SearchMode,
                 new[] { (SearchMode.Spotlight, "몽독 검색 (화면 가운데)"), (SearchMode.Windows, "윈도우 검색") },
                 v => Commit(() => T().SearchMode = v))),
-            Row("검색 단축키", "Win+Space 는 윈도우 입력 언어 전환과 겹칩니다. 언어가 여러 개면 다른 키를 고르세요",
+            Row("검색 단축키", "기본값 '자동': 입력 언어가 1개면 Win+Space, 여러 개면 언어 전환과 겹치지 않게 Alt+Space 를 씁니다.",
                 SpotlightHotkeyDropdown(t.SpotlightHotkey))));
 
         body.Children.Add(SectionTitle("알림"));
@@ -470,7 +463,7 @@ internal sealed class SettingsWindow : Window
             Row("알림 배너", "윈도우 알림이 오면 상단바 아래 오른쪽에 맥처럼 표시합니다.",
                 Toggle(_services.Settings.Current.Notifications.ShowNotificationBanners,
                     on => Commit(() => _services.Settings.Current.Notifications.ShowNotificationBanners = on))),
-            Row("윈도우 기본 알림 팝업 숨기기", "몽독 배너만 보이게 합니다. 알림 기록은 그대로 남습니다",
+            Row("윈도우 기본 알림 팝업 숨기기", "몽독 배너로 보여 준 알림만 숨깁니다. 알람·전화처럼 직접 눌러야 하는 알림은 그대로 뜹니다. 알림 기록은 그대로 남습니다.",
                 Toggle(_services.Settings.Current.Notifications.HideWindowsToastPopups,
                     on => Commit(() => _services.Settings.Current.Notifications.HideWindowsToastPopups = on)))));
     }

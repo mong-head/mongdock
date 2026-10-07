@@ -940,8 +940,6 @@ public partial class TopBarWindow : Window
 
         menu.Items.Add(DockMenus.SettingsWindow(_services, $"{AppInfo.Name} 설정…"));
         var mydock = new MenuItem { Header = AppInfo.Name };
-        mydock.Items.Add(DockMenus.SettingsWindow(_services));
-        mydock.Items.Add(new Separator());
         mydock.Items.Add(DockMenus.DockPosition(_services));
         mydock.Items.Add(DockMenus.DockBehavior(_services));
         mydock.Items.Add(DockMenus.DockThemeMenu(_services));
