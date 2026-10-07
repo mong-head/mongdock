@@ -95,6 +95,9 @@ public partial class DockWindow : Window
         PanelBorder.MouseLeftButtonUp += OnPanelMouseUp;
         PanelBorder.LostMouseCapture += OnPanelLostCapture;
 
+        // 아이콘 드래그로 순서 바꾸기 / 바깥 파일 끌어다 놓기 (DockWindow.ItemDrag.cs)
+        InitItemDrag();
+
         _pollTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(60) };
         _pollTimer.Tick += OnPoll;
 
@@ -149,6 +152,8 @@ public partial class DockWindow : Window
         DockState.VisiblePanel = Rect.Empty;
         _label?.Close();
         _ghost?.Close();
+        _escTimer.Stop();
+        _dragIcon?.Close();
         _picker?.Close();
         foreach (var v in _views.Values) v.Detach();
         _views.Clear();
@@ -204,6 +209,9 @@ public partial class DockWindow : Window
         _label = null;
         _ghost?.Close();
         _ghost = null;
+        CancelItemDrag();
+        _dragIcon?.Close();
+        _dragIcon = null;
 
         var old = _backdrop;
         var fresh = new DockBackdropWindow(_services) { Topmost = !_fullscreen };
@@ -258,6 +266,8 @@ public partial class DockWindow : Window
     {
         if (_closed) return;
         CancelDrag();
+        CancelItemDrag();
+        EndFileDrag();
         _picker?.Close();
         _layout = DockLayout.From(_services.Settings.Current.Dock, SystemTheme.AppsUseLightTheme());
         UiTheme.Apply(_services.Settings.Current); // 메뉴 색 (라이트/다크)
@@ -294,6 +304,7 @@ public partial class DockWindow : Window
         if (PanelBorder.ContextMenu?.IsOpen == true) PanelBorder.ContextMenu.IsOpen = false;
         _picker?.Close();
         _ghost?.Hide();
+        CancelItemDrag();
         HideWindows();
     }
 
@@ -462,7 +473,7 @@ public partial class DockWindow : Window
     {
         double len = _layout.Padding * 2 + 2;
         foreach (var v in _views.Values) len += v.BaseLength;
-        return len;
+        return len + _dropGapLength; // 파일을 끌어 오는 동안 열어 둔 빈 칸
     }
 
     /// <summary>창(아이콘 영역)을 보일 위치에 배치하고 슬라이드 상태를 반영.</summary>
@@ -595,7 +606,7 @@ public partial class DockWindow : Window
     {
         if (_closed || _fullscreen || _layout.Mode != DockMode.AutoHide) return;
         bool menuOpen = PanelBorder.ContextMenu?.IsOpen == true;
-        if (_dragArmed || menuOpen || _dialogOpen || _picker != null)
+        if (_dragArmed || AnyItemDrag || menuOpen || _dialogOpen || _picker != null)
         {
             _lastInsideTicks = Environment.TickCount64;
             return;
@@ -716,6 +727,8 @@ public partial class DockWindow : Window
     /// </summary>
     private void HideWindows(bool soft = false)
     {
+        CancelItemDrag();
+        EndFileDrag();
         _windowsHidden = true;
         _label?.Hide();
         _picker?.Close();
@@ -788,7 +801,7 @@ public partial class DockWindow : Window
 
     private void OnRootMouseMove(object sender, MouseEventArgs e)
     {
-        if (_dragArmed || _windowsHidden || _hideTo >= 1) return;
+        if (_dragArmed || _itemDragging || _fileDragOver || _windowsHidden || _hideTo >= 1) return;
         var p = e.GetPosition(PanelBorder);
         double along = _layout.IsVertical ? p.Y - PanelBorder.ActualHeight / 2 : p.X - PanelBorder.ActualWidth / 2;
 
@@ -803,7 +816,7 @@ public partial class DockWindow : Window
 
     private void OnRootMouseLeave(object sender, MouseEventArgs e)
     {
-        if (_dragArmed) return;
+        if (_dragArmed || _itemDragging) return;
         ResetMagnification(animate: true);
     }
 
@@ -865,6 +878,12 @@ public partial class DockWindow : Window
 
     private void RefreshItems(bool rebuildViews = false, bool place = true)
     {
+        // 아이콘/파일 드래그 중에는 뷰를 다시 만들지 않고 끝난 뒤 반영 (ApplyAll 은 드래그를 먼저 취소하고 rebuild 로 옴)
+        if (!rebuildViews && AnyItemDrag)
+        {
+            _refreshPending = true;
+            return;
+        }
         var settings = _services.Settings.Current;
         var windows = settings.Dock.ShowWindowsFromAllDesktops
             ? _services.Windows.Windows
@@ -980,7 +999,7 @@ public partial class DockWindow : Window
                 view = new DockItemView(item, _layout);
                 view.HoverStarted += OnItemHoverStarted;
                 view.HoverEnded += OnItemHoverEnded;
-                view.Clicked += OnItemClicked;
+                view.Pressed += OnItemPressed;
                 _views[item.Id] = view;
             }
             ItemsHost.Children.Add(view);
@@ -1127,7 +1146,7 @@ public partial class DockWindow : Window
     private void OnItemHoverStarted(object? sender, EventArgs e)
     {
         if (sender is not DockItemView view || string.IsNullOrEmpty(view.Item.Name)) return;
-        if (PanelBorder.ContextMenu?.IsOpen == true || _dragArmed || _hideTo >= 1) return;
+        if (PanelBorder.ContextMenu?.IsOpen == true || _dragArmed || _itemDragging || _fileDragOver || _hideTo >= 1) return;
         if (LabelAnchor(view) is not Point anchor) return;
 
         // 숨은 말풍선은 다른 DPI 모니터로 옮겨도 DPI 가 안 바뀔 수 있어, DPI 가 다르면 새로 만든다 (새 창은 WPF 가 그 모니터 DPI 로 만듦)
@@ -1189,6 +1208,8 @@ public partial class DockWindow : Window
     }
 
     // ───────────────────────── 드래그로 독 이동 ─────────────────────────
+    // 빈 영역·패딩·"실행 중 앱" 앞 자동 구분선을 끌면 독 자체를 옮긴다.
+    // 아이콘·핀 구분선을 끌면 순서 바꾸기 (DockWindow.ItemDrag.cs) — 누른 대상이 달라 서로 겹치지 않는다.
 
     private const double DragThreshold = 6;
     private bool _dragArmed;
@@ -1207,7 +1228,7 @@ public partial class DockWindow : Window
 
     private void OnPanelMouseDown(object sender, MouseButtonEventArgs e)
     {
-        // 아이콘은 자체 처리(e.Handled) → 여기 오는 건 빈 영역/패딩/구분선
+        // 아이콘·핀 구분선은 자체 처리(e.Handled, 순서 바꾸기 드래그) → 여기 오는 건 빈 영역/패딩/자동 구분선
         _dragStart = ToScreenDip(e.GetPosition(this));
         var panelCenter = ToScreenDip(PanelBorder.TranslatePoint(
             new Point(PanelBorder.ActualWidth / 2, PanelBorder.ActualHeight / 2), this));
@@ -1318,6 +1339,12 @@ public partial class DockWindow : Window
     private void OnPanelContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
         _label?.Hide();
+        // 아이콘 드래그를 오른쪽 클릭으로 취소한 직후면 메뉴를 띄우지 않음
+        if (_itemArmed || Environment.TickCount64 < _suppressContextUntil)
+        {
+            e.Handled = true;
+            return;
+        }
         var menu = PanelBorder.ContextMenu!;
         menu.Items.Clear();
 
