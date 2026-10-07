@@ -68,13 +68,15 @@ internal static class DockMenus
             top.ColorMode, v => Update(services, () => services.Settings.Current.TopBar.ColorMode = v));
     }
 
-    /// <summary>"로그인 시 자동 실행" (체크). 설정 저장 + 시작 프로그램 등록/해제.</summary>
+    /// <summary>"로그인 시 자동 실행" (체크 = 실제 시작 프로그램 등록 상태). 등록/해제 + 설정 저장.</summary>
     public static MenuItem StartWithWindows(AppServices services)
     {
-        bool on = services.Settings.Current.StartWithWindows;
+        bool on;
+        try { on = services.Startup.IsEnabled; }
+        catch { on = services.Settings.Current.StartWithWindows; }
         return Item("로그인 시 자동 실행", () =>
         {
-            bool next = !services.Settings.Current.StartWithWindows;
+            bool next = !on;
             services.Startup.SetEnabled(next);
             services.Settings.Current.StartWithWindows = next;
             services.Settings.Save();

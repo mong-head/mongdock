@@ -23,6 +23,7 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
     private IReadOnlyList<AppWindowInfo> _windows = Array.Empty<AppWindowInfo>();
     private HwndSource? _hookSource;
     private uint _shellHookMsg;
+    private uint _taskbarCreatedMsg;
     private DispatcherTimer? _pollTimer;
     private Dispatcher? _dispatcher;
     private bool _refreshQueued;
@@ -57,6 +58,7 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
         _hookSource.AddHook(WndProc);
 
         _shellHookMsg = User32.RegisterWindowMessage("SHELLHOOK");
+        _taskbarCreatedMsg = User32.RegisterWindowMessage("TaskbarCreated");
         if (!User32.RegisterShellHookWindow(_hookSource.Handle))
             Log.Error($"RegisterShellHookWindow 실패 (err={System.Runtime.InteropServices.Marshal.GetLastWin32Error()}) → 타이머 재열거만 사용");
 
@@ -87,6 +89,19 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        if (_taskbarCreatedMsg != 0 && (uint)msg == _taskbarCreatedMsg)
+        {
+            // 탐색기 재시작 → 셸 훅 등록이 사라졌을 수 있으므로 다시 등록 (이미 등록돼 있어도 무해)
+            try
+            {
+                User32.DeregisterShellHookWindow(hwnd);
+                if (!User32.RegisterShellHookWindow(hwnd)) Log.Warn("TaskbarCreated 후 RegisterShellHookWindow 실패");
+                else Log.Info("TaskbarCreated → 셸 훅 재등록");
+                QueueRefresh();
+            }
+            catch (Exception ex) { Log.Error("셸 훅 재등록 실패", ex); }
+            return IntPtr.Zero;
+        }
         if (_shellHookMsg == 0 || (uint)msg != _shellHookMsg) return IntPtr.Zero;
         try
         {

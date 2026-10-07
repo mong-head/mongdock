@@ -10,7 +10,7 @@ namespace MyDock.Services;
 /// <summary>
 /// 바탕화면 배경(월페이퍼)만의 색을 계산한다 — 화면 캡처가 아니므로 우리 창/다른 창이 섞이지 않음.
 /// IDesktopWallpaper 로 주 모니터의 배경 파일·맞춤 방식·배경색을 읽고, 그림을 맞춤 방식대로 모니터 좌표에 매핑해 영역 평균을 낸다.
-/// 파일을 못 찾으면(Spotlight 등) %APPDATA%\Microsoft\Windows\Themes\TranscodedWallpaper, 그래도 없으면 배경색.
+/// 경로가 없거나 파일을 못 찾으면(Spotlight·슬라이드쇼) %APPDATA%\Microsoft\Windows\Themes\TranscodedWallpaper, 그래도 없으면 배경색.
 /// </summary>
 internal sealed class WallpaperSampler
 {
@@ -29,8 +29,28 @@ internal sealed class WallpaperSampler
 
     public sealed record Info(string? Path, int Position, Color Background, RECT Monitor);
 
+    // 빠른 경로 캐시: 영역 → (색, 계산 시각). Invalidate(배경 변경) 또는 30초 경과 시 무효.
+    private readonly Dictionary<string, (Color? Color, DateTime At)> _fast = new();
+    private static readonly TimeSpan FastTtl = TimeSpan.FromSeconds(30);
+
+    /// <summary>COM/파일 조회 없이 최근 결과가 있으면 반환 (UI 스레드에서 즉시 완료용).</summary>
+    public bool TryGetCached(RECT areaPx, out Color? color)
+    {
+        lock (_fast)
+        {
+            if (_fast.TryGetValue(areaPx.ToString(), out var e) && DateTime.UtcNow - e.At < FastTtl)
+            {
+                color = e.Color;
+                return true;
+            }
+        }
+        color = null;
+        return false;
+    }
+
     public void Invalidate()
     {
+        lock (_fast) _fast.Clear();
         lock (_gate)
         {
             _colorCache.Clear();
@@ -108,21 +128,30 @@ internal sealed class WallpaperSampler
         var info = QueryPrimary();
         if (info is null) return null;
 
+        // 경로가 없거나(Spotlight·슬라이드쇼) 파일이 없으면 탐색기가 만든 TranscodedWallpaper 사용, 그것도 없으면 배경색
         string? file = info.Path is not null && File.Exists(info.Path) ? info.Path
-                     : File.Exists(TranscodedPath) && info.Path is not null ? TranscodedPath
+                     : File.Exists(TranscodedPath) ? TranscodedPath
                      : null;
         long stamp = 0;
         try { if (file is not null) stamp = File.GetLastWriteTimeUtc(file).Ticks; } catch { }
         string key = $"{file}|{stamp}|{info.Position}|{info.Background}|{info.Monitor}|{areaPx}";
 
+        Color? c;
         lock (_gate)
         {
-            if (_colorCache.TryGetValue(key, out var cached)) return cached;
-            Color? c = file is null ? info.Background : SampleImage(file, stamp, info, areaPx);
-            if (_colorCache.Count > 64) _colorCache.Clear();
-            _colorCache[key] = c;
-            return c;
+            if (!_colorCache.TryGetValue(key, out c))
+            {
+                c = file is null ? info.Background : SampleImage(file, stamp, info, areaPx);
+                if (_colorCache.Count > 64) _colorCache.Clear();
+                _colorCache[key] = c;
+            }
         }
+        lock (_fast)
+        {
+            if (_fast.Count > 64) _fast.Clear();
+            _fast[areaPx.ToString()] = (c, DateTime.UtcNow);
+        }
+        return c;
     }
 
     private Color? SampleImage(string file, long stamp, Info info, RECT areaPx)

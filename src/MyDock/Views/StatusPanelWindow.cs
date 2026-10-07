@@ -14,18 +14,15 @@ internal enum StatusPanelKind { Volume, Wifi, Bluetooth }
 /// <summary>
 /// 상단바 상태 아이콘(볼륨·와이파이·블루투스)을 눌렀을 때 아래로 뜨는 작은 카드.
 /// 포커스를 뺏지 않는 NOACTIVATE 창이라 일반 Popup 의 "바깥 클릭 시 닫힘"이 동작하지 않으므로,
-/// 다른 창이 활성화되거나 커서가 카드·아이콘 밖에 일정 시간 머물면 닫는다.
+/// <see cref="OutsideClickWatcher"/> 로 바깥 클릭·다른 창 활성화 시 닫는다 (메뉴와 같은 규칙).
 /// </summary>
 internal sealed class StatusPanelWindow : Window
 {
-    private const int LeaveCloseMs = 1500;
-
     private readonly AppServices _services;
     private readonly Brush _fg, _fgDim, _accent, _track;
     private readonly Border _card;
-    private readonly DispatcherTimer _watch;
+    private readonly OutsideClickWatcher _watch;
     private Rect _anchorRect;      // 아이콘 버튼 화면 영역 (DIP)
-    private long _lastInside;
     private bool _updating;
 
     // 볼륨
@@ -85,8 +82,7 @@ internal sealed class StatusPanelWindow : Window
         };
         Content = _card;
 
-        _watch = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(100) };
-        _watch.Tick += OnWatch;
+        _watch = new OutsideClickWatcher(services, InsideAreas, Close);
 
         SourceInitialized += (_, _) => _services.DesktopWindows.MakeOverlay(this);
         Loaded += (_, _) => { Refresh(); _watch.Start(); };
@@ -94,17 +90,14 @@ internal sealed class StatusPanelWindow : Window
         {
             _watch.Stop();
             _services.Status.Changed -= OnStatusChanged;
-            _services.Windows.WindowActivated -= OnWindowActivated;
         };
         _services.Status.Changed += OnStatusChanged;
-        _services.Windows.WindowActivated += OnWindowActivated;
     }
 
     /// <summary>아이콘(anchor, 화면 DIP) 아래에 오른쪽 맞춤으로 표시.</summary>
     public void ShowBelow(Rect anchor, double barBottom)
     {
         _anchorRect = anchor;
-        _lastInside = Environment.TickCount64;
         // 표시 전 Measure 는 신뢰할 수 없으므로 고정 폭으로 계산 (카드 폭 + 그림자 여백)
         double width = _card.Width + _card.Margin.Left + _card.Margin.Right;
         var screen = _services.DesktopWindows.GetPrimaryScreenBounds();
@@ -115,22 +108,14 @@ internal sealed class StatusPanelWindow : Window
         Show();
     }
 
-    private void OnWindowActivated(object? sender, IntPtr hwnd) => Close();
-
-    private void OnWatch(object? sender, EventArgs e)
+    /// <summary>카드 + 이 패널을 연 아이콘 (아이콘을 다시 누르면 상단바가 토글로 닫음).</summary>
+    private IEnumerable<Rect> InsideAreas()
     {
-        Point c;
-        try { c = _services.DesktopWindows.GetCursorPosition(); }
-        catch { return; }
-        var card = new Rect(Left + _card.Margin.Left, Top + _card.Margin.Top, _card.ActualWidth, _card.ActualHeight);
-        card.Inflate(6, 6);
+        var card = OutsideClickWatcher.ScreenRect(_card);
+        card.Inflate(2, 2);
         var anchor = _anchorRect;
-        anchor.Inflate(4, 4);
-        bool dragging = _slider?.IsMouseCaptureWithin == true;
-        if (card.Contains(c) || anchor.Contains(c) || dragging || _btBusy)
-            _lastInside = Environment.TickCount64;
-        else if (Environment.TickCount64 - _lastInside > LeaveCloseMs)
-            Close();
+        anchor.Inflate(2, 2);
+        return new[] { card, anchor };
     }
 
     private void OnStatusChanged(object? sender, EventArgs e) => Refresh();

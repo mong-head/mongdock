@@ -77,15 +77,17 @@ public interface IDesktopWindowService
     /// <summary>창 전체에 아크릴 블러 배경 적용. tint 의 알파가 진하기. 창은 AllowsTransparency=False 여야 할 수 있음 — 구현 쪽 주석 참고.</summary>
     void EnableBlur(Window window, Color tint);
     void DisableBlur(Window window);
-    /// <summary>창 모양을 둥근 사각형으로 자름 (블러 창용). 창 크기가 바뀌면 자동 재적용. radius 0 이면 해제.</summary>
-    void SetRoundedRegion(Window window, double radiusDip);
-    /// <summary>현재 마우스 커서 위치 (화면 좌표, DIP).</summary>
-    Point GetCursorPosition();
+    /// <summary>주 모니터 위의 커서 위치 (주 모니터 DPI 기준 DIP). 커서가 다른 모니터에 있으면 null.</summary>
+    Point? GetCursorPosition();
+    /// <summary>화면 어디서든 마우스 버튼(왼/오/가운데)이 눌린 순간 (WH_MOUSE_LL, UI 스레드). 인자는 주 모니터 DIP 위치(밖이면 null).
+    /// 구독자가 있을 때만 훅을 설치 — NOACTIVATE 창의 메뉴·패널 "바깥 클릭 시 닫기"용. 폴링은 짧은 탭(원격 트랙패드)을 놓침.</summary>
+    event EventHandler<Point?>? GlobalMouseDown;
     /// <summary>화면 영역(DIP)의 대표 색 (최빈/중앙값). 읽을 수 없으면 null. 상단바 자동 색용.</summary>
     Color? SampleScreenColor(Rect areaDip);
     /// <summary>바탕화면 배경(월페이퍼)만의 해당 영역(DIP) 평균 색 — 우리 창·다른 창 제외. 투명 상단바 글자색 결정용. 실패 시 null.
     /// SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 는 원격(StarDesk) 화면에서도 창이 사라지므로 사용 금지.</summary>
-    Color? SampleWallpaperColor(Rect areaDip);
+    Task<Color?> SampleWallpaperColorAsync(Rect areaDip);
+    // 구독자가 있을 때만 배경 감시 폴링을 돌림 (Transparent 모드가 아니면 UI 는 구독 해제).
     /// <summary>배경화면이 바뀜 (설정 변경, 가상 데스크톱 전환으로 데스크톱별 배경이 바뀐 경우 포함).</summary>
     event EventHandler? WallpaperChanged;
     /// <summary>전체 화면 앱이 켜짐(true)/꺼짐(false). 이때 독·상단바는 Topmost 해제·숨김.</summary>
@@ -143,6 +145,8 @@ public interface IStatusService
     void OpenWifiSettings();      // ms-settings:network-wifi
     void OpenBluetoothSettings(); // ms-settings:bluetooth
     void OpenSoundSettings();     // ms-settings:sound
+    /// <summary>표시 안 하는 항목의 폴링을 끔 (상단바 설정 반영).</summary>
+    void SetPolling(bool networkSpeed, bool wifiAndBluetooth);
     void Start();
     void Stop();
 }

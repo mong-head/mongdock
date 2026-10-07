@@ -61,6 +61,7 @@ public partial class DockWindow : Window
     private bool _windowsHidden;
     private long _lastInsideTicks;
     private bool _fullscreen;
+    private bool _dialogOpen;
 
     // 확대
     private double? _cursorAlong;      // 패널 중심 기준 커서의 독 방향 좌표 (패널 위가 아니면 null)
@@ -75,6 +76,8 @@ public partial class DockWindow : Window
         InitializeComponent();
 
         PanelBorder.ContextMenu = new ContextMenu();
+        // 바깥(다른 앱) 클릭·다른 창 활성화 시 닫힘. 독 패널 안 클릭은 WPF 가 처리
+        OutsideClickWatcher.Attach(PanelBorder.ContextMenu, services, () => new[] { OutsideClickWatcher.ScreenRect(PanelBorder) });
         PanelBorder.ContextMenuOpening += OnPanelContextMenuOpening;
         PanelBorder.SizeChanged += (_, _) => SyncBackdrop();
 
@@ -251,7 +254,7 @@ public partial class DockWindow : Window
         {
             PanelBorder.Background = PanelHitBrush; // 클릭은 받되 보이지 않게 (배경은 블러 창)
             _backdrop.Apply(l.Tint);
-            if (!_windowsHidden && IsVisible && !_backdrop.IsVisible) _backdrop.Show();
+            SyncBackdrop();
         }
         else
         {
@@ -433,10 +436,17 @@ public partial class DockWindow : Window
         if (_closed || PanelBorder.ActualWidth <= 0) return;
         var p = PanelBorder.TranslatePoint(new Point(0, 0), Root);
         var rect = new Rect(Left + p.X, Top + p.Y, PanelBorder.ActualWidth, PanelBorder.ActualHeight);
-        if (_layout.Blur && !_windowsHidden)
+        // 아크릴은 창 Opacity 를 따르지 않으므로 페이드(위쪽 독) 중에는 블러 창을 아예 숨김
+        bool wantBackdrop = _layout.Blur && !_windowsHidden && IsVisible
+                            && !(_layout.Edge == DockEdge.Top && (_hide > 0.001 || _hideTo > 0));
+        if (wantBackdrop)
         {
             _backdrop.SetRect(rect);
-            _backdrop.Opacity = Opacity;
+            if (!_backdrop.IsVisible) _backdrop.Show();
+        }
+        else if (_backdrop.IsVisible)
+        {
+            _backdrop.Hide();
         }
         DockState.VisiblePanel = _windowsHidden || _hide > 0.99 ? Rect.Empty : rect;
     }
@@ -475,25 +485,26 @@ public partial class DockWindow : Window
     {
         if (_closed || _fullscreen || _layout.Mode != DockMode.AutoHide) return;
         bool menuOpen = PanelBorder.ContextMenu?.IsOpen == true;
-        if (_dragArmed || menuOpen)
+        if (_dragArmed || menuOpen || _dialogOpen)
         {
             _lastInsideTicks = Environment.TickCount64;
             return;
         }
 
-        Point c;
-        try { c = _services.DesktopWindows.GetCursorPosition(); }
+        Point? cursor;
+        try { cursor = _services.DesktopWindows.GetCursorPosition(); }
         catch { return; }
 
         if (_hideTo >= 1)
         {
-            if (InTriggerZone(c)) SetHidden(false, animate: true);
+            // 주 모니터 밖(null)이면 트리거 판정 안 함
+            if (cursor is Point c && InTriggerZone(c)) SetHidden(false, animate: true);
             return;
         }
 
         var inside = _shownRect;
         inside.Inflate(4, 4);
-        if (inside.Contains(c) || IsMouseOver)
+        if ((cursor is Point p && inside.Contains(p)) || IsMouseOver)
             _lastInsideTicks = Environment.TickCount64;
         else if (Environment.TickCount64 - _lastInsideTicks > Math.Max(0, _services.Settings.Current.Dock.AutoHideDelayMs))
             SetHidden(true, animate: true);
@@ -548,6 +559,7 @@ public partial class DockWindow : Window
         }
         _hideFrom = _hide;
         _hideTo = target;
+        SyncBackdrop(); // 위쪽 독 페이드 아웃: 블러 창을 먼저 숨김
         _slideClock.Restart();
         _sliding = true;
         HookRender();
@@ -564,9 +576,8 @@ public partial class DockWindow : Window
         if (!_windowsHidden && IsVisible) return;
         _windowsHidden = false;
         ApplySlidePosition();
-        if (_layout.Blur && !_backdrop.IsVisible) _backdrop.Show();
         if (!IsVisible) Show();
-        SyncBackdrop();
+        SyncBackdrop(); // 블러 창 표시 여부는 SyncBackdrop 에서 결정 (이 창이 보인 뒤)
     }
 
     private void HideWindows()
@@ -1193,7 +1204,15 @@ public partial class DockWindow : Window
             Filter = "아이콘 이미지 (*.png;*.ico)|*.png;*.ico|모든 파일 (*.*)|*.*",
             CheckFileExists = true,
         };
-        if (dlg.ShowDialog() != true) return;
+        bool ok;
+        _dialogOpen = true; // 대화상자가 떠 있는 동안 자동 숨김 안 함
+        try { ok = dlg.ShowDialog() == true; }
+        finally
+        {
+            _dialogOpen = false;
+            _lastInsideTicks = Environment.TickCount64;
+        }
+        if (!ok) return;
         string copied = _services.Settings.ImportIcon(dlg.FileName);
         ModifyPins(_ => pin.IconPath = copied);
     }

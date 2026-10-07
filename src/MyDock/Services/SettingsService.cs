@@ -36,8 +36,14 @@ public sealed class SettingsService : ISettingsService, IDisposable
     private bool _disposed;
 
     public SettingsService()
+        : this(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MyDock"))
     {
-        _dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MyDock");
+    }
+
+    /// <summary>테스트용: 다른 폴더의 settings.json 사용.</summary>
+    internal SettingsService(string directory)
+    {
+        _dir = directory;
         SettingsPath = Path.Combine(_dir, "settings.json");
         IconsDirectory = Path.Combine(_dir, "icons");
         Directory.CreateDirectory(_dir);
@@ -90,6 +96,11 @@ public sealed class SettingsService : ISettingsService, IDisposable
             string text = ReadAllTextShared(SettingsPath);
             var s = Deserialize(text);
             _lastText = text;
+            if (Migrate(text, s))
+            {
+                Current = s;
+                Save();
+            }
             return s;
         }
         catch (Exception ex)
@@ -108,6 +119,81 @@ public sealed class SettingsService : ISettingsService, IDisposable
             }
             return new Settings();
         }
+    }
+
+    // ───────────────────────── 옛 형식 이관 ─────────────────────────
+
+    private const string OldDockBackground = "#B0202024";
+    private const string OldDockBorder = "#40FFFFFF";
+    private const string OldDockIndicator = "#E0FFFFFF";
+    private const string OldTopBarForeground = "#FFF2F2F2";
+    private const string OldTopBarBackground = "#C0161618";
+
+    /// <summary>
+    /// 이전 버전 settings.json 을 새 형식으로 1회 이관. 원본 JSON 키를 먼저 검사한다.
+    /// - dock.reserveSpace: true → Mode=Reserve, false → Overlay (dock.mode 키가 이미 있으면 mode 우선)
+    /// - dock.background/borderColor/indicatorColor 가 이전 기본값과 정확히 같으면 "" (테마 기본값)
+    /// - topBar.foreground 가 "#FFF2F2F2" 면 "", topBar.background 가 "#C0161618" 이면 새 기본값
+    /// 바뀐 게 있으면 true (호출자가 저장).
+    /// </summary>
+    internal static bool Migrate(string text, Settings s)
+    {
+        var notes = new List<string>();
+        try
+        {
+            using var doc = JsonDocument.Parse(text, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return false;
+
+            if (TryGetProp(root, "dock", out var dock) && dock.ValueKind == JsonValueKind.Object)
+            {
+                if (TryGetProp(dock, "reserveSpace", out var rs) && rs.ValueKind is JsonValueKind.True or JsonValueKind.False
+                    && !TryGetProp(dock, "mode", out _))
+                {
+                    s.Dock.Mode = rs.GetBoolean() ? DockMode.Reserve : DockMode.Overlay;
+                    notes.Add($"dock.reserveSpace={rs.GetBoolean()} → mode={s.Dock.Mode}");
+                }
+                if (ResetIfOld(dock, "background", OldDockBackground)) { s.Dock.Background = ""; notes.Add("dock.background → \"\""); }
+                if (ResetIfOld(dock, "borderColor", OldDockBorder)) { s.Dock.BorderColor = ""; notes.Add("dock.borderColor → \"\""); }
+                if (ResetIfOld(dock, "indicatorColor", OldDockIndicator)) { s.Dock.IndicatorColor = ""; notes.Add("dock.indicatorColor → \"\""); }
+            }
+
+            if (TryGetProp(root, "topBar", out var top) && top.ValueKind == JsonValueKind.Object)
+            {
+                if (ResetIfOld(top, "foreground", OldTopBarForeground)) { s.TopBar.Foreground = ""; notes.Add("topBar.foreground → \"\""); }
+                if (ResetIfOld(top, "background", OldTopBarBackground))
+                {
+                    s.TopBar.Background = new TopBarSettings().Background;
+                    notes.Add($"topBar.background → {s.TopBar.Background}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("설정 이관 검사 실패", ex);
+            return false;
+        }
+        if (notes.Count > 0) Log.Info("설정 이관: " + string.Join(", ", notes));
+        return notes.Count > 0;
+    }
+
+    private static bool ResetIfOld(JsonElement obj, string name, string oldValue) =>
+        TryGetProp(obj, name, out var v) && v.ValueKind == JsonValueKind.String &&
+        string.Equals(v.GetString(), oldValue, StringComparison.Ordinal);
+
+    /// <summary>대소문자 무시 속성 찾기 (camelCase/PascalCase 모두).</summary>
+    private static bool TryGetProp(JsonElement obj, string name, out JsonElement value)
+    {
+        foreach (var p in obj.EnumerateObject())
+        {
+            if (string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                value = p.Value;
+                return true;
+            }
+        }
+        value = default;
+        return false;
     }
 
     private static Settings Deserialize(string text)

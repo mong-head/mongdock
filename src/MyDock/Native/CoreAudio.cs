@@ -76,7 +76,6 @@ internal static class Wlan
     // WLAN_INTERFACE_INFO: GUID(16) + WCHAR[256](512) + enum(4)
     public const int InterfaceInfoSize = 532;
     // WLAN_CONNECTION_ATTRIBUTES 오프셋
-    public const int Conn_IsState = 0;
     public const int Conn_SsidLength = 520;
     public const int Conn_Ssid = 524;
     public const int Conn_SignalQuality = 576;

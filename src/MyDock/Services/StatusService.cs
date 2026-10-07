@@ -40,36 +40,89 @@ public sealed class StatusService : IStatusService, IDisposable
 
     public event EventHandler? Changed;
 
+    private bool _pollSpeed = true;
+    private bool _pollWifiBt = true;
+    private bool _netEventsHooked;
+
     public void Start()
     {
         if (_started) return;
         _started = true;
         _dispatcher = Dispatcher.CurrentDispatcher;
+        _speedTimer = new Timer(_ => SafeRun(PollSpeed, "속도"), null, Timeout.Infinite, Timeout.Infinite);
+        _wifiTimer = new Timer(_ => SafeRun(PollWifi, "와이파이"), null, Timeout.Infinite, Timeout.Infinite);
 
         StartAudio();
-        _ = StartBluetoothAsync();
-
-        NetworkChange.NetworkAddressChanged += OnNetworkChanged;
-        NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailabilityChanged;
-        _speedTimer = new Timer(_ => SafeRun(PollSpeed, "속도"), null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
-        _wifiTimer = new Timer(_ => SafeRun(PollWifi, "와이파이"), null, TimeSpan.Zero, TimeSpan.FromSeconds(5));
+        ApplyPolling();
         Log.Info("StatusService 시작");
+    }
+
+    /// <summary>표시 안 하는 항목의 폴링을 끔. 기본은 둘 다 켜짐. Start 전에 불러도 됨.</summary>
+    public void SetPolling(bool networkSpeed, bool wifiAndBluetooth)
+    {
+        if (_pollSpeed == networkSpeed && _pollWifiBt == wifiAndBluetooth) return;
+        _pollSpeed = networkSpeed;
+        _pollWifiBt = wifiAndBluetooth;
+        if (_started) ApplyPolling();
+    }
+
+    private void ApplyPolling()
+    {
+        // 네트워크 속도: 1초 차분. 다시 켤 때 이전 누적값과 섞이지 않게 기준 초기화.
+        if (_pollSpeed)
+        {
+            _lastTick = 0;
+            _speedTimer?.Change(TimeSpan.Zero, TimeSpan.FromSeconds(1));
+        }
+        else
+        {
+            _speedTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+            Update(() => { bool c = _up != 0 || _down != 0; _up = _down = 0; return c; });
+        }
+
+        // 와이파이(5초 + NetworkChange) / 블루투스(StateChanged 구독)
+        if (_pollWifiBt)
+        {
+            if (!_netEventsHooked)
+            {
+                NetworkChange.NetworkAddressChanged += OnNetworkChanged;
+                NetworkChange.NetworkAvailabilityChanged += OnNetworkAvailabilityChanged;
+                _netEventsHooked = true;
+            }
+            _wifiTimer?.Change(TimeSpan.Zero, TimeSpan.FromSeconds(5));
+            if (_radio is null) _ = StartBluetoothAsync();
+        }
+        else
+        {
+            UnhookWifiBt();
+        }
+    }
+
+    private void UnhookWifiBt()
+    {
+        _wifiTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+        if (_netEventsHooked)
+        {
+            NetworkChange.NetworkAddressChanged -= OnNetworkChanged;
+            NetworkChange.NetworkAvailabilityChanged -= OnNetworkAvailabilityChanged;
+            _netEventsHooked = false;
+        }
+        if (_radio is not null)
+        {
+            try { _radio.StateChanged -= OnRadioStateChanged; } catch { }
+            _radio = null;
+        }
     }
 
     public void Stop()
     {
         if (!_started) return;
         _started = false;
-        NetworkChange.NetworkAddressChanged -= OnNetworkChanged;
-        NetworkChange.NetworkAvailabilityChanged -= OnNetworkAvailabilityChanged;
+        UnhookWifiBt();
         _speedTimer?.Dispose();
         _wifiTimer?.Dispose();
+        _speedTimer = _wifiTimer = null;
         StopAudio();
-        if (_radio is not null)
-        {
-            try { _radio.StateChanged -= OnRadioStateChanged; } catch { }
-            _radio = null;
-        }
     }
 
     public void Dispose() => Stop();
@@ -278,7 +331,9 @@ public sealed class StatusService : IStatusService, IDisposable
         try
         {
             var radios = await Radio.GetRadiosAsync();
-            _radio = radios.FirstOrDefault(r => r.Kind == RadioKind.Bluetooth);
+            var radio = radios.FirstOrDefault(r => r.Kind == RadioKind.Bluetooth);
+            if (!_started || !_pollWifiBt || _radio is not null) return; // 그 사이 꺼졌거나 이미 연결됨
+            _radio = radio;
             if (_radio is null)
             {
                 Update(() => { bool c = _bluetooth is not null; _bluetooth = null; return c; });

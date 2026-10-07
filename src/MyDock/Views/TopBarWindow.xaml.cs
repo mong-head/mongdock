@@ -80,7 +80,6 @@ public partial class TopBarWindow : Window
         _services.Windows.WindowActivated += OnWindowActivated;
         _services.Windows.WindowsChanged += OnWindowsChanged;
         _services.DesktopWindows.DisplayChanged += OnDisplayChanged;
-        _services.DesktopWindows.WallpaperChanged += OnWallpaperChanged;
         _services.DesktopWindows.FullscreenAppChanged += OnFullscreenChanged;
         _services.Status.Changed += OnStatusChanged;
         _subscribed = true;
@@ -103,12 +102,23 @@ public partial class TopBarWindow : Window
             _services.Windows.WindowActivated -= OnWindowActivated;
             _services.Windows.WindowsChanged -= OnWindowsChanged;
             _services.DesktopWindows.DisplayChanged -= OnDisplayChanged;
-            _services.DesktopWindows.WallpaperChanged -= OnWallpaperChanged;
             _services.DesktopWindows.FullscreenAppChanged -= OnFullscreenChanged;
             _services.Status.Changed -= OnStatusChanged;
             _subscribed = false;
         }
         UnregisterIfNeeded();
+        SetWallpaperWatch(false);
+    }
+
+    private bool _wallpaperWatch;
+
+    /// <summary>배경 감시는 구독자가 있을 때만 백엔드가 폴링하므로 Transparent 모드에서만 구독.</summary>
+    private void SetWallpaperWatch(bool on)
+    {
+        if (on == _wallpaperWatch) return;
+        _wallpaperWatch = on;
+        if (on) _services.DesktopWindows.WallpaperChanged += OnWallpaperChanged;
+        else _services.DesktopWindows.WallpaperChanged -= OnWallpaperChanged;
     }
 
     private void OnSettingsChanged(object? sender, EventArgs e) => ApplySettings();
@@ -167,9 +177,12 @@ public partial class TopBarWindow : Window
         ImeButton.Visibility = Vis(s.ShowImeToggle);
         _imeState = 0; // 배지 색 다시 칠하기
 
+        SetStatusPolling(s.Enabled && s.ShowNetworkSpeed, s.Enabled && s.ShowStatusIcons);
+
         if (!s.Enabled)
         {
             UnregisterIfNeeded();
+            SetWallpaperWatch(false);
             StopTimers();
             _panel?.Close();
             if (IsLoaded && IsVisible) Hide(); // 첫 표시 중이면 Loaded 에서 숨김
@@ -211,6 +224,12 @@ public partial class TopBarWindow : Window
         _pollTimer.Start();
     }
 
+    private void SetStatusPolling(bool speed, bool radios)
+    {
+        try { _services.Status.SetPolling(speed, radios); }
+        catch (Exception ex) { Log.Error("상태 폴링 설정 실패", ex); }
+    }
+
     private void StopTimers()
     {
         _pollTimer.Stop();
@@ -235,6 +254,7 @@ public partial class TopBarWindow : Window
     {
         var s = _services.Settings.Current.TopBar;
         _colorTimer.Stop();
+        SetWallpaperWatch(s.Enabled && s.ColorMode == TopBarColorMode.Transparent);
 
         if (s.ColorMode == TopBarColorMode.Blur)
         {
@@ -296,6 +316,8 @@ public partial class TopBarWindow : Window
     private void UpdateAutoColor()
     {
         if (!IsVisible || ColorMode != TopBarColorMode.Auto) return;
+        // 메뉴·상태 패널이 바 아래를 덮고 있으면 그 색을 읽게 되므로 건너뜀
+        if (_panel != null || ContextMenu?.IsOpen == true || _logoMenu?.IsOpen == true) return;
         var band = new Rect(Left, Top + ActualHeight, Math.Max(1, ActualWidth), 3);
         band = ExcludeDock(band);
         if (band.IsEmpty) return;
@@ -327,7 +349,9 @@ public partial class TopBarWindow : Window
     }
 
     /// <summary>Transparent: 왼쪽/오른쪽 구역 뒤 배경화면 밝기로 각각 글자색 결정.</summary>
-    private void UpdateWallpaperText()
+    private int _wallpaperRequest;
+
+    private async void UpdateWallpaperText()
     {
         if (ColorMode != TopBarColorMode.Transparent || !IsLoaded) return;
         double h = Math.Max(1, ActualHeight);
@@ -338,20 +362,23 @@ public partial class TopBarWindow : Window
             return new Rect(Left + p.X, Top, el.ActualWidth, h);
         }
 
-        Color Sample(Rect r, Color previous)
+        int request = ++_wallpaperRequest;
+        Color? left = null, right = null;
+        try
         {
-            try
-            {
-                return _services.DesktopWindows.SampleWallpaperColor(r) is Color c ? AutoText(c) : previous;
-            }
-            catch (Exception ex)
-            {
-                Log.Error("배경화면 색 샘플링 실패", ex);
-                return previous;
-            }
+            var lt = _services.DesktopWindows.SampleWallpaperColorAsync(SectionRect(LeftSection));
+            var rt = _services.DesktopWindows.SampleWallpaperColorAsync(SectionRect(RightSection));
+            left = await lt;
+            right = await rt;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("배경화면 색 샘플링 실패", ex);
         }
 
-        SetTextColors(Sample(SectionRect(LeftSection), _leftText), Sample(SectionRect(RightSection), _rightText));
+        // 그 사이 새 요청이 있었거나 모드가 바뀌었으면 버림
+        if (request != _wallpaperRequest || ColorMode != TopBarColorMode.Transparent || !IsLoaded) return;
+        SetTextColors(left is Color l ? AutoText(l) : _leftText, right is Color r ? AutoText(r) : _rightText);
     }
 
     /// <summary>배경 밝기 → 검정/흰색 글자. Foreground 설정이 있으면 그것.</summary>
@@ -615,6 +642,8 @@ public partial class TopBarWindow : Window
             PlacementTarget = LogoButton,
             Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
         };
+        OutsideClickWatcher.Attach(menu, _services, BarArea);
+        _logoMenu = menu;
         menu.Items.Add(DockMenus.Item("시작 메뉴", () => _services.Shell.OpenStartMenu()));
         menu.Items.Add(DockMenus.Item("작업 보기", () => _services.Shell.OpenTaskView()));
         menu.Items.Add(new Separator());
@@ -630,9 +659,15 @@ public partial class TopBarWindow : Window
         menu.IsOpen = true;
     }
 
+    private ContextMenu? _logoMenu;
+
+    /// <summary>상단바 자체 영역 (그 안의 클릭은 WPF 가 처리).</summary>
+    private IEnumerable<Rect> BarArea() => new[] { OutsideClickWatcher.ScreenRect(Bar) };
+
     private ContextMenu BuildContextMenu()
     {
         var menu = new ContextMenu();
+        OutsideClickWatcher.Attach(menu, _services, BarArea);
         // 열기 직전에 최신 체크 상태로 다시 채움
         ContextMenuOpening += (_, _) =>
         {

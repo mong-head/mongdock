@@ -63,7 +63,6 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     private readonly uint _taskbarCreatedMsg;
     private readonly HwndSource _broadcastWindow;
     private readonly DispatcherTimer _fullscreenTimer;
-    private readonly Dictionary<Window, double> _rounded = new();
     private readonly WallpaperSampler _wallpaper = new();
     private readonly Timer _wallpaperPoll;
     private string? _wallpaperSignature;
@@ -74,7 +73,36 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
 
     public event EventHandler<bool>? FullscreenAppChanged;
     public event EventHandler? DisplayChanged;
-    public event EventHandler? WallpaperChanged;
+    private EventHandler? _wallpaperChanged;
+
+    /// <summary>구독자가 있을 때만 2초 서명 폴링을 돌린다 (UI 스레드에서 구독/해제).</summary>
+    public event EventHandler? WallpaperChanged
+    {
+        add
+        {
+            _wallpaperChanged += value;
+            UpdateWallpaperPolling();
+        }
+        remove
+        {
+            _wallpaperChanged -= value;
+            UpdateWallpaperPolling();
+        }
+    }
+
+    private void UpdateWallpaperPolling()
+    {
+        bool on = _wallpaperChanged is not null && !_disposed;
+        if (on)
+        {
+            _wallpaperSignature = null; // 처음 폴링은 기준값만 기록
+            _wallpaperPoll.Change(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+        }
+        else
+        {
+            _wallpaperPoll.Change(Timeout.Infinite, Timeout.Infinite);
+        }
+    }
 
     public DesktopWindowService()
     {
@@ -92,7 +120,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         _fullscreenTimer.Start();
 
         // 가상 데스크톱 전환(데스크톱별 배경)·슬라이드쇼 감지: 백그라운드에서 2초마다 서명 비교
-        _wallpaperPoll = new Timer(_ => PollWallpaper(), null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+        _wallpaperPoll = new Timer(_ => PollWallpaper(), null, Timeout.Infinite, Timeout.Infinite); // 구독 시 시작
     }
 
     private static HwndSource CreateHiddenWindow(string name)
@@ -139,12 +167,95 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         return SystemParameters.WorkArea;
     }
 
-    /// <summary>커서 위치 (DIP). 커서가 있는 모니터의 DPI 로 변환 — PerMonitorV2 WPF 창 좌표와 같은 기준.</summary>
-    public Point GetCursorPosition()
+    /// <summary>주 모니터 위의 커서 위치 (주 모니터 DPI 기준 DIP). 커서가 다른 모니터에 있으면 null.</summary>
+    public Point? GetCursorPosition()
     {
-        if (!DesktopApi.GetCursorPos(out POINT p)) return new Point();
-        double s = DesktopApi.GetMonitorScale(DesktopApi.MonitorFromPoint(p, DesktopApi.MONITOR_DEFAULTTONEAREST));
+        if (!DesktopApi.GetCursorPos(out POINT p)) return null;
+        IntPtr primary = DesktopApi.PrimaryMonitor;
+        if (DesktopApi.MonitorFromPoint(p, DesktopApi.MONITOR_DEFAULTTONULL) != primary) return null;
+        double s = DesktopApi.GetMonitorScale(primary);
         return new Point(p.X / s, p.Y / s);
+    }
+
+    // ───────────────────────── 전역 마우스 누름 (WH_MOUSE_LL) ─────────────────────────
+
+    private EventHandler<Point?>? _globalMouseDown;
+    private IntPtr _mouseHook;
+    private DesktopApi.LowLevelMouseProc? _mouseProc; // GC 방지용으로 필드 보관
+
+    /// <summary>
+    /// 화면 어디서든 왼/오/가운데 버튼이 눌린 순간 (UI 스레드). 인자는 주 모니터 DIP 위치(밖이면 null).
+    /// 첫 구독 때 WH_MOUSE_LL 훅 설치, 마지막 해제 때 제거 (UI 스레드에서 구독/해제할 것 — 훅은 설치한 스레드의 메시지 루프로 호출됨).
+    /// </summary>
+    public event EventHandler<Point?>? GlobalMouseDown
+    {
+        add
+        {
+            _globalMouseDown += value;
+            if (_globalMouseDown is not null && _mouseHook == IntPtr.Zero && !_disposed) InstallMouseHook();
+        }
+        remove
+        {
+            _globalMouseDown -= value;
+            if (_globalMouseDown is null) RemoveMouseHook();
+        }
+    }
+
+    private void InstallMouseHook()
+    {
+        _mouseProc ??= MouseHookProc;
+        IntPtr hMod = DesktopApi.GetModuleHandle(null);
+        _mouseHook = DesktopApi.SetWindowsHookEx(DesktopApi.WH_MOUSE_LL, _mouseProc, hMod, 0);
+        if (_mouseHook == IntPtr.Zero)
+        {
+            hMod = DesktopApi.GetModuleHandle("user32.dll");
+            _mouseHook = DesktopApi.SetWindowsHookEx(DesktopApi.WH_MOUSE_LL, _mouseProc, hMod, 0);
+        }
+        if (_mouseHook == IntPtr.Zero) Log.Error($"WH_MOUSE_LL 설치 실패 err={Marshal.GetLastWin32Error()}");
+        else Log.Info("전역 마우스 훅 설치");
+    }
+
+    private void RemoveMouseHook()
+    {
+        if (_mouseHook == IntPtr.Zero) return;
+        DesktopApi.UnhookWindowsHookEx(_mouseHook);
+        _mouseHook = IntPtr.Zero;
+        Log.Info("전역 마우스 훅 해제");
+    }
+
+    /// <summary>LL 훅 콜백: 좌표만 읽어 넘기고 즉시 CallNextHookEx (시간 초과 방지 — 변환·이벤트는 Dispatcher 에서).</summary>
+    private IntPtr MouseHookProc(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode >= 0)
+        {
+            int m = (int)wParam.ToInt64();
+            if (m is DesktopApi.WM_LBUTTONDOWN or DesktopApi.WM_RBUTTONDOWN or DesktopApi.WM_MBUTTONDOWN)
+            {
+                // MSLLHOOKSTRUCT.pt = 처음 두 int (물리 px)
+                var pt = new POINT { X = Marshal.ReadInt32(lParam, 0), Y = Marshal.ReadInt32(lParam, 4) };
+                _dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => RaiseGlobalMouseDown(pt)));
+            }
+        }
+        return DesktopApi.CallNextHookEx(_mouseHook, nCode, wParam, lParam);
+    }
+
+    private void RaiseGlobalMouseDown(POINT p)
+    {
+        try
+        {
+            Point? dip = null;
+            IntPtr primary = DesktopApi.PrimaryMonitor;
+            if (DesktopApi.MonitorFromPoint(p, DesktopApi.MONITOR_DEFAULTTONULL) == primary)
+            {
+                double s = DesktopApi.GetMonitorScale(primary);
+                dip = new Point(p.X / s, p.Y / s);
+            }
+            _globalMouseDown?.Invoke(this, dip);
+        }
+        catch (Exception e)
+        {
+            Log.Error("GlobalMouseDown 핸들러 예외", e);
+        }
     }
 
     // ───────────────────────── 오버레이 ─────────────────────────
@@ -183,7 +294,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     ///   권장: 밝은 테마 #60F0F0F0~#C0F6F6F6, 어두운 테마 #A0201E1E 근처.
     /// - ACCENT_ENABLE_BLURBEHIND(3) 는 이 빌드에서 어떤 구성이든 검게 나와 fallback 으로 쓸 수 없음.
     /// - DWMWA_SYSTEMBACKDROP_TYPE(Win11 공식 아크릴)은 비활성 창에서 회색 단색으로 바뀌므로 NOACTIVATE 독에는 부적합.
-    /// - SetWindowRgn 은 WPF 내용은 자르지만 아크릴 배경은 자르지 못한다(모서리가 네모로 남음).
+    /// - SetWindowRgn 은 WPF 내용은 자르지만 아크릴 배경은 자르지 못해(모서리가 네모로 남음) 쓰지 않는다.
     ///   → 블러 창의 모서리는 DWMWA_WINDOW_CORNER_PREFERENCE=ROUND 로 둥글게 한다(반경 약 8px 고정, 그림자 포함).
     ///   이 메서드가 ROUND + 시스템 테두리 없음(DWMWA_BORDER_COLOR=NONE)을 함께 설정한다.
     ///   따라서 블러 창 위에 그리는 테두리/내용의 CornerRadius 는 8 DIP 에 맞추는 것을 권장.
@@ -224,71 +335,6 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         {
             Log.Error("DisableBlur 실패", e);
         }
-    }
-
-    /// <summary>
-    /// CreateRoundRectRgn + SetWindowRgn 으로 창 모양을 자름 (물리 픽셀, 창의 현재 DPI 반영).
-    /// 크기·DPI 가 바뀌면 자동 재적용. radius 0 이면 해제. 레이어드(AllowsTransparency=True) 창에서도 동작 확인.
-    /// 주의: 아크릴 블러 배경은 영역으로 잘리지 않는다 — EnableBlur 주석 참고.
-    /// </summary>
-    public void SetRoundedRegion(Window window, double radiusDip)
-    {
-        try
-        {
-            bool known = _rounded.ContainsKey(window);
-            if (radiusDip <= 0)
-            {
-                if (known)
-                {
-                    _rounded.Remove(window);
-                    window.SizeChanged -= OnRoundedWindowSizeChanged;
-                    window.DpiChanged -= OnRoundedWindowDpiChanged;
-                    window.Closed -= OnRoundedWindowClosed;
-                }
-                IntPtr h = new WindowInteropHelper(window).Handle;
-                if (h != IntPtr.Zero) DesktopApi.SetWindowRgn(h, IntPtr.Zero, true);
-                return;
-            }
-
-            _rounded[window] = radiusDip;
-            if (!known)
-            {
-                window.SizeChanged += OnRoundedWindowSizeChanged;
-                window.DpiChanged += OnRoundedWindowDpiChanged;
-                window.Closed += OnRoundedWindowClosed;
-            }
-            ApplyRegion(window);
-        }
-        catch (Exception e)
-        {
-            Log.Error("SetRoundedRegion 실패", e);
-        }
-    }
-
-    private void OnRoundedWindowSizeChanged(object sender, SizeChangedEventArgs e) => ApplyRegion((Window)sender);
-
-    private void OnRoundedWindowDpiChanged(object sender, DpiChangedEventArgs e) =>
-        _dispatcher.InvokeAsync(() => ApplyRegion((Window)sender), DispatcherPriority.Background);
-
-    private void OnRoundedWindowClosed(object? sender, EventArgs e)
-    {
-        if (sender is not Window w) return;
-        _rounded.Remove(w);
-        w.SizeChanged -= OnRoundedWindowSizeChanged;
-        w.DpiChanged -= OnRoundedWindowDpiChanged;
-        w.Closed -= OnRoundedWindowClosed;
-    }
-
-    private void ApplyRegion(Window window)
-    {
-        if (!_rounded.TryGetValue(window, out double radiusDip)) return;
-        IntPtr hwnd = new WindowInteropHelper(window).EnsureHandle();
-        if (!User32.GetWindowRect(hwnd, out RECT wr) || wr.Width <= 0 || wr.Height <= 0) return;
-        double scale = VisualTreeHelper.GetDpi(window).DpiScaleX;
-        int d = Math.Max(1, (int)Math.Round(radiusDip * 2 * scale)); // CreateRoundRectRgn 은 지름
-        IntPtr rgn = DesktopApi.CreateRoundRectRgn(0, 0, wr.Width + 1, wr.Height + 1, d, d);
-        if (rgn == IntPtr.Zero) return;
-        if (DesktopApi.SetWindowRgn(hwnd, rgn, true) == 0) Gdi32.DeleteObject(rgn); // 성공 시 시스템 소유
     }
 
     // ───────────────────────── 화면 / 배경 색 ─────────────────────────
@@ -368,18 +414,29 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
 
     /// <summary>
     /// 바탕화면 배경 그림만으로 계산한 영역 평균 색 (화면 캡처 아님 → 우리 창/다른 창 영향 없음).
-    /// IDesktopWallpaper(파일·맞춤 방식·배경색) → 그림을 맞춤 방식대로 주 모니터에 매핑. 결과 캐시.
+    /// IDesktopWallpaper(파일·맞춤 방식·배경색) → 그림을 맞춤 방식대로 주 모니터에 매핑.
+    /// 디코드·계산은 백그라운드 스레드. 캐시 적중이면 즉시 완료된 Task. 결과의 연속 작업은 호출한 컨텍스트(UI)로 돌아온다.
     /// </summary>
-    public Color? SampleWallpaperColor(Rect areaDip)
+    public Task<Color?> SampleWallpaperColorAsync(Rect areaDip)
     {
         try
         {
-            return _wallpaper.Sample(ToPx(areaDip, PrimaryScale));
+            RECT px = ToPx(areaDip, PrimaryScale);
+            if (_wallpaper.TryGetCached(px, out Color? cached)) return Task.FromResult(cached);
+            return Task.Run(() =>
+            {
+                try { return _wallpaper.Sample(px); }
+                catch (Exception e)
+                {
+                    Log.Error("SampleWallpaperColor 실패", e);
+                    return (Color?)null;
+                }
+            });
         }
         catch (Exception e)
         {
-            Log.Error("SampleWallpaperColor 실패", e);
-            return null;
+            Log.Error("SampleWallpaperColorAsync 실패", e);
+            return Task.FromResult<Color?>(null);
         }
     }
 
@@ -429,8 +486,9 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     private void RaiseWallpaperChanged(string reason)
     {
         _wallpaper.Invalidate();
+        _wallpaperSignature = null;
         Log.Info($"배경 변경 감지 ({reason})");
-        try { WallpaperChanged?.Invoke(this, EventArgs.Empty); }
+        try { _wallpaperChanged?.Invoke(this, EventArgs.Empty); }
         catch (Exception e) { Log.Error("WallpaperChanged 핸들러 예외", e); }
     }
 
@@ -885,6 +943,8 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        RemoveMouseHook();
+        _globalMouseDown = null;
         _fullscreenTimer.Stop();
         _wallpaperPoll.Dispose();
         foreach (var s in _slots.ToList()) RemoveSlot(s);
