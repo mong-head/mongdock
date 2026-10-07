@@ -12,14 +12,14 @@ using MyDock.ViewModels;
 
 namespace MyDock.Views;
 
-internal enum StatusPanelKind { Volume, Wifi, Bluetooth, ControlCenter }
+internal enum StatusPanelKind { Volume, Wifi, Bluetooth, ControlCenter, Calendar }
 
 /// <summary>
-/// 상단바 상태 아이콘(Wi-Fi·사운드·블루투스·제어센터)을 눌렀을 때 아래로 뜨는 MyDockFinder/맥 스타일 카드.
+/// 상단바 상태 아이콘(Wi-Fi·사운드·블루투스·제어센터)·시계(달력)를 눌렀을 때 아래로 뜨는 MyDockFinder/맥 스타일 카드.
 /// 흰(다크면 짙은 회색) 카드, 반경 12, 그림자, 패딩 16, 섹션 사이 구분선.
 /// 포커스를 뺏지 않는 NOACTIVATE 창이라 <see cref="OutsideClickWatcher"/> 로 바깥 클릭·다른 창 활성화 시 닫는다.
 /// </summary>
-internal sealed class StatusPanelWindow : Window
+internal sealed partial class StatusPanelWindow : Window
 {
     private const string IconFontName = "Segoe Fluent Icons, Segoe MDL2 Assets";
     private static readonly FontFamily IconFont = new(IconFontName);
@@ -59,7 +59,7 @@ internal sealed class StatusPanelWindow : Window
 
         _card = new Border
         {
-            Width = kind switch { StatusPanelKind.Volume => 352, StatusPanelKind.ControlCenter => 352, _ => 300 },
+            Width = kind switch { StatusPanelKind.Volume => 352, StatusPanelKind.ControlCenter => 352, StatusPanelKind.Calendar => 316, _ => 300 },
             CornerRadius = new CornerRadius(12),
             BorderThickness = new Thickness(0.75),
             Background = _p.CardBackground,
@@ -70,6 +70,7 @@ internal sealed class StatusPanelWindow : Window
                 StatusPanelKind.Volume => BuildVolume(),
                 StatusPanelKind.Wifi => BuildWifi(),
                 StatusPanelKind.Bluetooth => BuildBluetooth(),
+                StatusPanelKind.Calendar => BuildCalendar(),
                 _ => BuildControlCenter(),
             },
         };
@@ -93,7 +94,8 @@ internal sealed class StatusPanelWindow : Window
         {
             RefreshAll();
             _watch.Start();
-            if (kind is StatusPanelKind.Volume or StatusPanelKind.ControlCenter) _mediaTimer.Start();
+            // 달력은 열린 채 자정이 지나면 오늘 표시를 옮기려고 같은 타이머로 날짜만 확인 (변할 때만 다시 그림)
+            if (kind is StatusPanelKind.Volume or StatusPanelKind.ControlCenter or StatusPanelKind.Calendar) _mediaTimer.Start();
         };
         Closed += (_, _) =>
         {
@@ -109,13 +111,16 @@ internal sealed class StatusPanelWindow : Window
 
     private const double ShadowMargin = 18;
 
-    /// <summary>아이콘 아래(상단바와 6px 간격)에 아이콘 왼쪽 정렬로 표시. 화면을 넘으면 오른쪽 끝에 맞춤.</summary>
+    /// <summary>
+    /// 아이콘 아래(상단바와 6px 간격)에 아이콘 왼쪽 정렬로 표시. 화면을 넘으면 오른쪽 끝에 맞춤.
+    /// 달력(시계)은 맥처럼 시계 오른쪽 끝에 맞춘다.
+    /// </summary>
     public void ShowBelow(Rect anchor, double barBottom)
     {
         _anchorRect = anchor;
         double cardWidth = _card.Width;
         var screen = _services.DesktopWindows.GetPrimaryScreenBounds();
-        double cardLeft = anchor.Left - 4;
+        double cardLeft = Kind == StatusPanelKind.Calendar ? anchor.Right + 4 - cardWidth : anchor.Left - 4;
         if (cardLeft + cardWidth > screen.Right - 6) cardLeft = screen.Right - 6 - cardWidth;
         cardLeft = Math.Max(screen.Left + 6, cardLeft);
         Left = Math.Round(cardLeft - ShadowMargin);
