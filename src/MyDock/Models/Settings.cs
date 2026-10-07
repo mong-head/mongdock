@@ -165,9 +165,13 @@ public sealed class NotificationSettings
 {
     /// <summary>윈도우 알림이 오면 맥처럼 상단바 아래 오른쪽에 몽독 배너를 띄움 (윈도우 알림 DB 를 읽기만 함).</summary>
     public bool ShowNotificationBanners { get; set; } = true;
-    // HideWindowsToastPopups(윈도우 기본 토스트 숨기기)는 구현하지 않음: 방해 금지(DND)를 켜는 공개 API 가 없고
-    // (FocusSessionManager.TryStartFocusSession 은 Limited Access Feature), 레지스트리 NOC_GLOBAL_SETTING_TOASTS_ENABLED=0 은
-    // 알림 자체를 꺼서 DB 에도 쌓이지 않음. NotificationService 주석 참고.
+
+    /// <summary>
+    /// 윈도우 기본 알림 팝업(오른쪽 아래 토스트)을 화면 밖으로 옮겨 숨김 → 몽독 배너만 보임. 알림 기록은 그대로 남음.
+    /// ShowNotificationBanners 가 켜져 있고 일시 정지가 아닐 때만 동작 (NativeToastSuppressor).
+    /// 방해 금지(DND)·레지스트리(ShowBanner/NOC_GLOBAL_SETTING_TOASTS_ENABLED)는 쓰지 않음: 실시간 반영이 안 되거나 알림 자체가 꺼짐.
+    /// </summary>
+    public bool HideWindowsToastPopups { get; set; }
 }
 
 public sealed class Settings

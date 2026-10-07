@@ -469,7 +469,10 @@ internal sealed class SettingsWindow : Window
         body.Children.Add(Group(
             Row("알림 배너", "윈도우 알림이 오면 상단바 아래 오른쪽에 맥처럼 표시합니다.",
                 Toggle(_services.Settings.Current.Notifications.ShowNotificationBanners,
-                    on => Commit(() => _services.Settings.Current.Notifications.ShowNotificationBanners = on)))));
+                    on => Commit(() => _services.Settings.Current.Notifications.ShowNotificationBanners = on))),
+            Row("윈도우 기본 알림 팝업 숨기기", "몽독 배너만 보이게 합니다. 알림 기록은 그대로 남습니다",
+                Toggle(_services.Settings.Current.Notifications.HideWindowsToastPopups,
+                    on => Commit(() => _services.Settings.Current.Notifications.HideWindowsToastPopups = on)))));
     }
 
     private UIElement SpotlightHotkeyDropdown(SpotlightHotkey current)
