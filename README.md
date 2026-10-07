@@ -8,9 +8,14 @@
 
 ## 설치
 
-### 받아서 바로 실행
-1. [Releases](https://github.com/mong-head/mongdock/releases) 에서 `mongdock-<버전>-win-x64.zip` 을 받아 원하는 폴더(예: `%LOCALAPPDATA%\Programs\mongdock`)에 푼다.
-2. `mongdock.exe` 실행. .NET 설치는 필요 없다.
+### 설치 프로그램 (권장)
+1. [Releases](https://github.com/mong-head/mongdock/releases) 에서 `mongdock-<버전>-setup.exe` 를 받아 실행한다. 관리자 권한은 필요 없고, `%LOCALAPPDATA%\Programs\mongdock` 에 설치된다. .NET 설치도 필요 없다.
+2. 설치 중 "로그인 시 자동 실행"(기본 켜짐), "바탕 화면 바로 가기"(기본 꺼짐)를 고를 수 있다. 마지막 화면의 "mongdock 실행" 으로 바로 켠다.
+3. 새 버전도 같은 방법으로 설치하면 덮어쓰기로 업그레이드된다 (실행 중인 mongdock 은 설치 프로그램이 정상 종료시킨다). 설정은 그대로 남는다.
+
+### 설치 없이 쓰기 (zip)
+1. Releases 에서 `mongdock-<버전>-win-x64.zip` 을 받아 원하는 폴더(예: `%LOCALAPPDATA%\Programs\mongdock`)에 푼다.
+2. `mongdock.exe` 실행.
 3. 컴퓨터를 켤 때 자동으로 켜려면: 알림 영역의 mongdock 아이콘 오른쪽 클릭 → "로그인 시 자동 실행".
 
 처음 실행하면 독에 Finder(파일 탐색기), Launchpad(시작 메뉴), 브라우저, 설정이 고정된다. 다른 앱은 실행 중일 때 독 아이콘을 오른쪽 클릭 → "독에 고정".
@@ -24,11 +29,13 @@
 dotnet build -c Release
 ```
 
-배포용 단일 실행 파일 만들기 (`dist\mongdock-win-x64.zip`):
+배포용 파일 만들기 (`dist\mongdock-<버전>-win-x64.zip` + `dist\mongdock-<버전>-setup.exe`):
 
 ```bash
-powershell -ExecutionPolicy Bypass -File build-release.ps1
+powershell -ExecutionPolicy Bypass -File build-release.ps1 -Version v0.2.0
 ```
+
+설치 프로그램은 [Inno Setup 6](https://jrsoftware.org/isinfo.php) 이 있어야 만들어진다 (없으면 zip 만 만든다). 스크립트는 `installer\mongdock.iss`.
 
 ## 화면
 
@@ -82,8 +89,12 @@ powershell -ExecutionPolicy Bypass -File build-release.ps1
 - 상단바 로고 메뉴 → mongdock 에도 같은 항목이 있다
 - 트레이 아이콘이 안 보이면(윈도우 11 은 새 아이콘을 "^" 안에 숨김) `mongdock.exe` 를 한 번 더 실행해도 일시 정지가 풀린다
 - "윈도우 작업 표시줄 숨기기" 는 mongdock 이 켜져 있을 때만 숨기고, 일시 정지·종료하거나 오류로 꺼지면 원래대로 돌려놓는다
+- 명령줄 `mongdock.exe --exit` 로 실행 중인 mongdock 을 정상 종료할 수 있다 (트레이 "종료" 와 같음)
 
 ### 지우기
+설치 프로그램으로 설치했다면: **설정 → 앱 → 설치된 앱 → mongdock → 제거**. 실행 중인 mongdock 을 끄고, 자동 실행 등록과 바로 가기를 지운다. 마지막에 "설정도 지울까요?" 에서 "예" 를 고르면 `%APPDATA%\mongdock` 도 지운다 (기본은 남김).
+
+zip 으로 썼다면:
 1. 트레이 메뉴에서 "로그인 시 자동 실행" 끄기 → 종료
 2. 압축을 푼 폴더 삭제
 3. (선택) 설정·로그 폴더 `%APPDATA%\mongdock` 삭제

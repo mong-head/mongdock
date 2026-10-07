@@ -19,10 +19,22 @@ public partial class App : Application
     private const string ResumeEventName = @"Local\mongdock.Resume";
     private EventWaitHandle? _resumeEvent;
     private RegisteredWaitHandle? _resumeWait;
+    // 설치 프로그램/스크립트용 정상 종료 요청 (mongdock.exe --exit). 트레이 "종료" 와 같은 경로로 끝나 작업 표시줄·AppBar 가 복원된다.
+    private const string ExitEventName = @"Local\mongdock.Exit";
+    private EventWaitHandle? _exitEvent;
+    private RegisteredWaitHandle? _exitWait;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        if (e.Args.Any(a => string.Equals(a, "--exit", StringComparison.OrdinalIgnoreCase)))
+        {
+            if (EventWaitHandle.TryOpenExisting(ExitEventName, out var exit))
+                using (exit) exit.Set();
+            Shutdown();
+            return;
+        }
 
         _singleInstance = new Mutex(true, @"Local\mongdock.SingleInstance", out bool isFirst);
         if (isFirst)
@@ -38,6 +50,13 @@ public partial class App : Application
         _resumeEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ResumeEventName);
         _resumeWait = ThreadPool.RegisterWaitForSingleObject(_resumeEvent,
             (_, _) => Dispatcher.BeginInvoke(ResumeFromSecondLaunch), null, Timeout.Infinite, executeOnlyOnce: false);
+        _exitEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ExitEventName);
+        _exitWait = ThreadPool.RegisterWaitForSingleObject(_exitEvent,
+            (_, _) => Dispatcher.BeginInvoke(() =>
+            {
+                Log.Info("종료 요청 받음 (--exit)");
+                Shutdown();
+            }), null, Timeout.Infinite, executeOnlyOnce: true);
 
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
@@ -151,6 +170,8 @@ public partial class App : Application
         }
         _resumeWait?.Unregister(null);
         _resumeEvent?.Dispose();
+        _exitWait?.Unregister(null);
+        _exitEvent?.Dispose();
         _singleInstance?.Dispose();
         base.OnExit(e);
     }
