@@ -84,6 +84,7 @@ internal sealed partial class StatusPanelWindow : Window
         });
         root.Children.Add(_card);
         Content = root;
+        _root = root;
 
         _watch = new OutsideClickWatcher(services, InsideAreas, Close);
         _mediaTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
@@ -110,14 +111,52 @@ internal sealed partial class StatusPanelWindow : Window
     }
 
     private const double ShadowMargin = 18;
+    private readonly Grid _root;
+    /// <summary>닫기 페이드 중 (Close 를 한 번 미뤘음).</summary>
+    private bool _fadingOut;
+    /// <summary>페이드가 끝났거나 즉시 닫기 — 이번 Close 는 그대로 진행.</summary>
+    private bool _closeNow;
+
+    /// <summary>닫히는 중(페이드 아웃)이거나 이미 닫힘 — 상단바가 "열린 패널" 로 치지 않게.</summary>
+    public bool IsClosing => _fadingOut || _closed;
+
+    /// <summary>
+    /// 닫기: 빠른 페이드 아웃(100ms) 뒤 실제로 닫힘. 어디서 Close() 를 불러도 같음.
+    /// 애니메이션 꺼짐·앱 종료 중·아직 안 보였으면 바로 닫힘.
+    /// </summary>
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        base.OnClosing(e);
+        if (e.Cancel || _closeNow || !IsLoaded || !Anim.Enabled || Dispatcher.HasShutdownStarted) return;
+        e.Cancel = true;
+        if (_fadingOut) return;
+        _fadingOut = true;
+        _watch.Stop();
+        _root.IsHitTestVisible = false;
+        Anim.Disappear(_root, 100, () =>
+        {
+            _closeNow = true;
+            try { Close(); }
+            catch (Exception ex) { Log.Warn($"상태 패널 닫기 실패: {ex.Message}"); }
+        }, ease: Anim.EaseOut);
+    }
+
+    /// <summary>페이드 없이 바로 닫기 (다른 아이콘으로 전환할 때 두 카드가 겹쳐 깜빡이지 않게).</summary>
+    public void CloseImmediately()
+    {
+        _closeNow = true;
+        Close();
+    }
 
     /// <summary>
     /// 아이콘 아래(상단바와 6px 간격)에 아이콘 왼쪽 정렬로 표시. 화면을 넘으면 오른쪽 끝에 맞춤.
     /// 달력(시계)은 맥처럼 시계 오른쪽 끝에 맞춘다.
+    /// 열 때 위에서 5px 내려오며 페이드 인 + 아주 약한 확대(0.98→1, 140ms, ease-out). animate=false 면 바로 표시(패널 전환).
     /// </summary>
     /// <param name="monitor">상단바가 있는 모니터 — anchor·barBottom 은 이 모니터 기준 DIP, 카드는 이 모니터 안에 맞춘다.</param>
-    public void ShowBelow(Rect anchor, double barBottom, MonitorInfo monitor)
+    public void ShowBelow(Rect anchor, double barBottom, MonitorInfo monitor, bool animate = true)
     {
+        if (animate) Anim.Appear(_root, 140, fromScale: 0.98, fromY: -5, origin: new Point(0.5, 0));
         _anchorRect = anchor;
         double cardWidth = _card.Width;
         var screen = monitor.Bounds;

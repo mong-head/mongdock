@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using MyDock.Services;
@@ -15,9 +16,13 @@ namespace MyDock.Views;
 /// <summary>
 /// 맥 알림 센터 같은 알림 목록 (재사용 UI 요소 — 달력 패널 등 다른 카드 안에 붙여 쓴다).
 /// - 앱별 묶음: 2개 이상이면 카드가 겹친 스택 모양, 누르면 펼침 (헤더: 앱 이름 · 접기 · 모두 숨기기).
+///   펼치기/접기는 겹친 카드가 아래로 풀리듯(높이 + 카드 위치 250ms, QuinticEase out).
 /// - 항목 클릭 = 그 앱 열기(INotificationService.Open — 그 알림은 몽독 목록에서 숨김) → <see cref="ItemOpened"/>.
 /// - 항목에 마우스를 올리면 × (그 알림만 숨기기). 숨기기는 몽독 화면에서만 — 윈도우 알림 DB 는 그대로.
+///   ×·모두 숨기기·모두 지우기는 오른쪽으로 밀려나며 흐려진 뒤(180ms) 높이가 접히고(200ms) 나서 서비스에서 숨긴다.
+/// - 맨 위 "모두 지우기": 묶음이 위에서부터 35ms 간격으로 차례로 사라진 뒤 전부 숨김.
 /// - 화면에 붙어 있는 동안(Loaded)만 서비스 Changed 를 구독하고 30초마다 "n분 전" 갱신. Unloaded 에서 해제.
+///   애니메이션 도중의 다시 그리기는 끝날 때까지 미룬다 (도는 애니메이션이 끊기지 않게).
 ///
 /// 사용: <c>var list = new NotificationListView(services, palette) { Width = 320 }; list.ItemOpened += () => Close(); panel.Children.Add(list);</c>
 /// </summary>
@@ -25,6 +30,12 @@ internal sealed class NotificationListView : Border
 {
     private const int MaxPerGroup = 30;
     private const int MaxGroups = 30;
+    /// <summary>"모두 지우기" 때 묶음 사이 시간차 (ms) 와 시간차를 주는 최대 묶음 수.</summary>
+    private const double StaggerMs = 35;
+    private const int StaggerMax = 8;
+    private const double ToggleMs = 250;
+    /// <summary>겹친 스택에서 뒤 카드가 아래로 비치는 높이.</summary>
+    private const double PeekStep = 6;
 
     private readonly AppServices _services;
     private readonly UiPalette _p;
@@ -32,12 +43,18 @@ internal sealed class NotificationListView : Border
     private readonly StackPanel _content = new();
     private readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
     private readonly DispatcherTimer _clock;
+    /// <summary>진행 중인 애니메이션 수 — 0 이 아니면 Rebuild 를 미룸.</summary>
+    private int _animating;
+    private bool _pendingRebuild;
+    /// <summary>직전 그리기에 알림이 있었는지 (비게 되면 "새 알림 없음" 을 페이드 인).</summary>
+    private bool _hadItems;
+    private Button? _clearAll;
 
     /// <summary>항목을 눌러 앱을 열었음 — 패널을 닫을 때 사용.</summary>
     public event Action? ItemOpened;
 
     /// <param name="maxHeight">이보다 길면 안에서 스크롤 (휠).</param>
-    /// <param name="showHeader">맨 위 "알림" 제목 줄 표시.</param>
+    /// <param name="showHeader">맨 위 "알림" 제목 줄 표시 (꺼도 "모두 지우기" 줄은 알림이 있을 때 표시).</param>
     public NotificationListView(AppServices services, UiPalette palette, double maxHeight = 420, bool showHeader = true)
     {
         _services = services;
@@ -78,30 +95,45 @@ internal sealed class NotificationListView : Border
 
     private void OnChanged(object? sender, EventArgs e) => Rebuild();
 
+    private void BeginAnim() => _animating++;
+
+    private void EndAnim()
+    {
+        if (_animating > 0) _animating--;
+        if (_animating == 0 && _pendingRebuild) Rebuild();
+    }
+
     private void Rebuild()
     {
+        if (_animating > 0)
+        {
+            _pendingRebuild = true;
+            return;
+        }
+        _pendingRebuild = false;
         try
         {
             _content.Children.Clear();
+            _clearAll = null;
             var items = _services.Notifications.Recent;
-            if (_showHeader)
-                _content.Children.Add(new TextBlock
-                {
-                    Text = "알림",
-                    FontSize = 13,
-                    FontWeight = FontWeights.Bold,
-                    Margin = new Thickness(2, 0, 0, 8),
-                });
+            bool wasShowing = _hadItems;
+            _hadItems = items.Count > 0;
+
+            if (_showHeader || items.Count > 0)
+                _content.Children.Add(BuildHeader(items.Count > 0));
             if (items.Count == 0)
             {
-                _content.Children.Add(new TextBlock
+                var empty = new TextBlock
                 {
                     Text = _services.Notifications.IsAvailable ? "새 알림 없음" : "알림을 읽을 수 없음",
                     FontSize = 12.5,
                     Foreground = _p.SubText,
                     HorizontalAlignment = HorizontalAlignment.Center,
                     Margin = new Thickness(0, 10, 0, 12),
-                });
+                };
+                _content.Children.Add(empty);
+                // 방금 비었으면(모두 지우기·마지막 알림 숨김) 문구가 부드럽게 나타나게
+                if (wasShowing) Anim.Reveal(empty, _content.ActualWidth);
                 return;
             }
 
@@ -121,14 +153,40 @@ internal sealed class NotificationListView : Border
         }
     }
 
-    private UIElement BuildGroup(List<NotificationItem> group)
+    /// <summary>"알림" 제목(선택) + 오른쪽 "모두 지우기" (알림이 있을 때만).</summary>
+    private UIElement BuildHeader(bool any)
+    {
+        var header = new DockPanel { Margin = new Thickness(2, 0, 0, 8), LastChildFill = true, MinHeight = 20 };
+        if (any)
+        {
+            _clearAll = LinkButton("모두 지우기", ClearAll);
+            DockPanel.SetDock(_clearAll, Dock.Right);
+            header.Children.Add(_clearAll);
+        }
+        header.Children.Add(new TextBlock
+        {
+            Text = _showHeader ? "알림" : "",
+            FontSize = 13,
+            FontWeight = FontWeights.Bold,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        return header;
+    }
+
+    /// <summary>현재 묶음 (aumid) 의 알림, 최신 순. 없으면 빈 목록.</summary>
+    private List<NotificationItem> GroupOf(string aumid) => _services.Notifications.Recent
+        .Where(i => string.Equals(i.Aumid, aumid, StringComparison.OrdinalIgnoreCase))
+        .OrderByDescending(i => i.Arrival)
+        .ToList();
+
+    private FrameworkElement BuildGroup(List<NotificationItem> group)
     {
         string aumid = group[0].Aumid;
-        var panel = new StackPanel { Margin = new Thickness(0, 0, 0, 8) };
+        var panel = new StackPanel { Margin = new Thickness(0, 0, 0, 8), Tag = aumid };
 
         if (group.Count == 1)
         {
-            panel.Children.Add(ItemCard(group[0]));
+            panel.Children.Add(ItemCard(group[0], panel, null));
             return panel;
         }
 
@@ -152,13 +210,12 @@ internal sealed class NotificationListView : Border
                 });
             }
             var top = NotificationUi.Card(_services, _p, group[0], _p.Tile, compactExtra: group.Count - 1);
-            top.Margin = new Thickness(0, 0, 0, 6 * layers);
+            top.Margin = new Thickness(0, 0, 0, PeekStep * layers);
             stack.Children.Add(top);
             stack.MouseLeftButtonUp += (_, e) =>
             {
                 e.Handled = true;
-                _expanded.Add(aumid);
-                Rebuild();
+                Expand(panel, aumid);
             };
             panel.Children.Add(stack);
             return panel;
@@ -166,12 +223,8 @@ internal sealed class NotificationListView : Border
 
         // 펼친 묶음: 헤더(앱 이름 · 접기 · 모두 숨기기) + 모든 카드
         var header = new DockPanel { Margin = new Thickness(2, 0, 0, 6), LastChildFill = true };
-        var hide = LinkButton("모두 숨기기", () => _services.Notifications.HideApp(aumid));
-        var collapse = LinkButton("접기", () =>
-        {
-            _expanded.Remove(aumid);
-            Rebuild();
-        });
+        var hide = LinkButton("모두 숨기기", () => HideGroup(panel, aumid));
+        var collapse = LinkButton("접기", () => Fold(panel, aumid));
         DockPanel.SetDock(hide, Dock.Right);
         DockPanel.SetDock(collapse, Dock.Right);
         header.Children.Add(hide);
@@ -186,22 +239,24 @@ internal sealed class NotificationListView : Border
             VerticalAlignment = VerticalAlignment.Center,
         });
         panel.Children.Add(header);
+        int z = MaxPerGroup + 1;
         foreach (var item in group.Take(MaxPerGroup))
         {
-            var card = ItemCard(item);
+            var card = ItemCard(item, panel, header);
             card.Margin = new Thickness(0, 0, 0, 6);
+            Panel.SetZIndex(card, z--); // 위 카드가 앞 (펼칠 때 아래 카드가 위 카드 밑에서 나옴)
             panel.Children.Add(card);
         }
         return panel;
     }
 
-    /// <summary>클릭 = 앱 열기, 호버 시 × = 이 알림 숨기기.</summary>
-    private FrameworkElement ItemCard(NotificationItem item)
+    /// <summary>클릭 = 앱 열기, 호버 시 × = 이 알림 숨기기 (밀려나며 사라짐).</summary>
+    private FrameworkElement ItemCard(NotificationItem item, StackPanel groupPanel, FrameworkElement? groupHeader)
     {
         var host = new Grid { Cursor = Cursors.Hand };
         var card = NotificationUi.Card(_services, _p, item, _p.Tile);
         host.Children.Add(card);
-        var close = NotificationUi.CloseButton(_p, () => _services.Notifications.Hide(item));
+        var close = NotificationUi.CloseButton(_p, () => HideItem(item, host, groupPanel, groupHeader));
         close.Margin = new Thickness(-6, -6, 0, 0);
         host.Children.Add(close);
         host.Margin = new Thickness(6, 6, 0, 0); // × 가 잘리지 않게
@@ -215,6 +270,160 @@ internal sealed class NotificationListView : Border
             ItemOpened?.Invoke();
         };
         return host;
+    }
+
+    // ───────────────────────── 숨기기 / 지우기 ─────────────────────────
+
+    /// <summary>× : 카드가 밀려나며 사라진 뒤 숨김. 묶음에 하나만 남게 되면 묶음 헤더도 함께 접음.</summary>
+    private void HideItem(NotificationItem item, FrameworkElement host, StackPanel groupPanel, FrameworkElement? groupHeader)
+    {
+        int cards = groupPanel.Children.Count - (groupHeader != null ? 1 : 0);
+        // 묶음의 마지막 카드면 묶음 전체(아래 간격 포함)를 접음
+        FrameworkElement target = cards <= 1 ? groupPanel : host;
+        BeginAnim();
+        Anim.SlideAway(target, () =>
+        {
+            Safe(() => _services.Notifications.Hide(item));
+            EndAnim();
+        });
+        if (groupHeader != null && cards == 2)
+        {
+            BeginAnim();
+            Anim.Disappear(groupHeader, 140, () => Anim.Collapse(groupHeader, 200, EndAnim));
+        }
+    }
+
+    /// <summary>묶음 "모두 숨기기": 묶음 전체가 밀려나며 사라진 뒤 그 앱 알림 숨김.</summary>
+    private void HideGroup(FrameworkElement groupPanel, string aumid)
+    {
+        BeginAnim();
+        Anim.SlideAway(groupPanel, () =>
+        {
+            Safe(() => _services.Notifications.HideApp(aumid));
+            EndAnim();
+        });
+    }
+
+    /// <summary>맨 위 "모두 지우기": 묶음이 위에서부터 차례로 사라진 뒤 모든 알림 숨김 (몽독 화면에서만).</summary>
+    private void ClearAll()
+    {
+        var groups = _content.Children.OfType<StackPanel>().Where(g => g.Tag is string).ToList();
+        if (_clearAll != null)
+        {
+            _clearAll.IsHitTestVisible = false;
+            Anim.Fade(_clearAll, 0, 150);
+        }
+        BeginAnim();
+        int left = groups.Count;
+        void Finish()
+        {
+            Safe(() =>
+            {
+                // INotificationService 에 전체 숨기기가 없어 앱별로 (각 호출이 Changed 를 내지만 다시 그리기는 EndAnim 에서 한 번)
+                foreach (string aumid in _services.Notifications.Recent.Select(i => i.Aumid).Distinct(StringComparer.OrdinalIgnoreCase).ToList())
+                    _services.Notifications.HideApp(aumid);
+            });
+            EndAnim();
+        }
+        if (left == 0)
+        {
+            Finish();
+            return;
+        }
+        for (int i = 0; i < groups.Count; i++)
+        {
+            Anim.SlideAway(groups[i], () =>
+            {
+                if (--left == 0) Finish();
+            }, delayMs: Math.Min(i, StaggerMax) * StaggerMs);
+        }
+    }
+
+    private static void Safe(Action action)
+    {
+        try { action(); }
+        catch (Exception ex) { Log.Error("알림 숨기기 실패", ex); }
+    }
+
+    // ───────────────────────── 펼치기 / 접기 ─────────────────────────
+
+    /// <summary>겹친 스택 → 펼친 묶음. 카드들이 맨 위 카드 밑에서 아래로 풀려 나옴.</summary>
+    private void Expand(StackPanel oldPanel, string aumid)
+    {
+        _expanded.Add(aumid);
+        var group = GroupOf(aumid);
+        int index = _content.Children.IndexOf(oldPanel);
+        if (group.Count < 2 || index < 0 || _animating > 0)
+        {
+            Rebuild();
+            return;
+        }
+        double oldHeight = oldPanel.ActualHeight;
+        double width = _content.ActualWidth;
+        var fresh = (StackPanel)BuildGroup(group);
+        _content.Children[index] = fresh;
+        if (!Anim.Enabled || width <= 0) return;
+
+        fresh.Measure(new Size(width, double.PositiveInfinity));
+        double newHeight = fresh.DesiredSize.Height - fresh.Margin.Top - fresh.Margin.Bottom;
+        BeginAnim();
+        Anim.Height(fresh, oldHeight, newHeight, ToggleMs, Anim.QuintOut, EndAnim, clearAtEnd: true);
+
+        // 헤더는 살짝 늦게 페이드 인, 카드는 겹친 자리(맨 위 카드 위치 + 비침 간격)에서 제자리로
+        var header = (FrameworkElement)fresh.Children[0];
+        Anim.Appear(header, 180, fromY: -4, delayMs: 60);
+        double headerHeight = header.DesiredSize.Height;
+        double top = headerHeight;
+        for (int k = 1; k < fresh.Children.Count; k++)
+        {
+            var card = (FrameworkElement)fresh.Children[k];
+            int n = k - 1;
+            double from = -top + Math.Min(n, 2) * PeekStep;
+            var (_, shift) = Anim.Transforms(card);
+            Anim.SlideFrom(shift, TranslateTransform.YProperty, from, ToggleMs, Anim.QuintOut);
+            if (n >= 1)
+                card.BeginAnimation(OpacityProperty, Anim.FromTo(n <= 2 ? 0.7 : 0, 1, ToggleMs * 0.8, Anim.EaseOut));
+            top += card.DesiredSize.Height;
+        }
+    }
+
+    /// <summary>펼친 묶음 → 겹친 스택. 카드들이 맨 위 카드 밑으로 모여 들어간 뒤 스택으로 바뀜.</summary>
+    private void Fold(StackPanel oldPanel, string aumid)
+    {
+        _expanded.Remove(aumid);
+        var group = GroupOf(aumid);
+        int index = _content.Children.IndexOf(oldPanel);
+        double width = _content.ActualWidth;
+        if (group.Count < 2 || index < 0 || _animating > 0 || !Anim.Enabled || width <= 0)
+        {
+            Rebuild();
+            return;
+        }
+        var fresh = (FrameworkElement)BuildGroup(group);
+        fresh.Measure(new Size(width, double.PositiveInfinity));
+        double newHeight = fresh.DesiredSize.Height - fresh.Margin.Top - fresh.Margin.Bottom;
+
+        oldPanel.IsHitTestVisible = false;
+        BeginAnim();
+        var header = (FrameworkElement)oldPanel.Children[0];
+        Anim.Disappear(header, 120);
+        for (int k = 1; k < oldPanel.Children.Count; k++)
+        {
+            var card = (FrameworkElement)oldPanel.Children[k];
+            int n = k - 1;
+            double y = card.TranslatePoint(new Point(0, 0), oldPanel).Y;
+            double to = -y + Math.Min(n, 2) * PeekStep; // 스택에서는 맨 위 카드가 묶음 맨 위 (헤더 없음)
+            var (_, shift) = Anim.Transforms(card);
+            shift.BeginAnimation(TranslateTransform.YProperty, Anim.To(to, ToggleMs, Anim.QuintOut));
+            if (n >= 1)
+                card.BeginAnimation(OpacityProperty, Anim.To(n <= 2 ? 0.6 : 0, ToggleMs * 0.8, Anim.EaseOut));
+        }
+        Anim.Height(oldPanel, oldPanel.ActualHeight, newHeight, ToggleMs, Anim.QuintOut, () =>
+        {
+            int at = _content.Children.IndexOf(oldPanel);
+            if (at >= 0) _content.Children[at] = fresh;
+            EndAnim();
+        }, clearAtEnd: false);
     }
 
     private Button LinkButton(string text, Action onClick)
@@ -414,7 +623,7 @@ internal static class NotificationUi
 
     public static void ShowClose(Border close, bool show)
     {
-        close.Opacity = show ? 1 : 0;
+        Anim.Fade(close, show ? 1 : 0, show ? 100 : 120);
         close.IsHitTestVisible = show;
     }
 

@@ -46,6 +46,12 @@ internal sealed class SpotlightWindow : Window
     private readonly TextBlock _placeholder;
     private readonly Border _divider;
     private readonly StackPanel _list;
+    private readonly Grid _listHost;
+    private readonly Border _highlight;
+    private readonly TranslateTransform _highlightShift = new();
+    private readonly Grid _root;
+    /// <summary>각 결과 행의 목록 안 위쪽 위치 (구분선 포함, 레이아웃 전에도 하이라이트를 놓을 수 있게 직접 셈).</summary>
+    private double _nextRowTop;
     private readonly List<Result> _results = new();
     private readonly bool? _hangulAtOpen;
     private int _selected;
@@ -63,6 +69,7 @@ internal sealed class SpotlightWindow : Window
         public Border Row = null!;
         public TextBlock Label = null!;
         public TextBlock? Glyph;
+        public double Top;
     }
 
     /// <summary>상단바 검색 버튼: 열려 있으면 닫고, 아니면 연다.</summary>
@@ -148,12 +155,26 @@ internal sealed class SpotlightWindow : Window
         searchRow.Children.Add(boxHost);
 
         _divider = new Border { Height = 1, Background = _p.Divider, Visibility = Visibility.Collapsed };
-        _list = new StackPanel { Margin = new Thickness(8, 6, 8, 8), Visibility = Visibility.Collapsed };
+        _list = new StackPanel();
+        // 선택 하이라이트는 행 배경이 아니라 행 뒤의 한 장 — 선택이 바뀌면 그 자리로 미끄러져 감 (툭 점프하지 않게)
+        _highlight = new Border
+        {
+            Height = RowHeight,
+            CornerRadius = new CornerRadius(8),
+            Background = _p.Accent,
+            VerticalAlignment = VerticalAlignment.Top,
+            IsHitTestVisible = false,
+            Visibility = Visibility.Collapsed,
+            RenderTransform = _highlightShift,
+        };
+        _listHost = new Grid { Margin = new Thickness(8, 6, 8, 8), Visibility = Visibility.Collapsed };
+        _listHost.Children.Add(_highlight);
+        _listHost.Children.Add(_list);
 
         var content = new StackPanel();
         content.Children.Add(searchRow);
         content.Children.Add(_divider);
-        content.Children.Add(_list);
+        content.Children.Add(_listHost);
 
         var card = new Border
         {
@@ -173,6 +194,7 @@ internal sealed class SpotlightWindow : Window
         });
         root.Children.Add(card);
         Content = root;
+        _root = root;
 
         PreviewKeyDown += OnPreviewKeyDown;
         SourceInitialized += (_, _) => OnSourceInitialized();
@@ -180,11 +202,12 @@ internal sealed class SpotlightWindow : Window
         Deactivated += (_, _) => CloseSafe();
         Closed += (_, _) =>
         {
+            // CloseSafe 를 거쳤으면 _current·_closedAt 은 닫기 시작할 때 이미 정리됨
+            if (!_closing) _closedAt = Environment.TickCount64;
             _closing = true;
             _generation++;
             _services.Windows.WindowActivated -= OnOtherWindowActivated;
             if (ReferenceEquals(_current, this)) _current = null;
-            _closedAt = Environment.TickCount64;
         };
     }
 
@@ -227,6 +250,9 @@ internal sealed class SpotlightWindow : Window
             Log.Warn($"Spotlight 모니터 계산 실패: {ex.Message}");
             monitor = IntPtr.Zero;
         }
+
+        // 열기: 페이드 + 아주 약한 확대(0.97→1, 150ms, ease-out)
+        Anim.Appear(_root, 150, fromScale: 0.97, origin: new Point(0.5, 0.3));
 
         if (monitor == IntPtr.Zero)
         {
@@ -327,12 +353,17 @@ internal sealed class SpotlightWindow : Window
     {
         if (_closing) return;
         _closing = true;
-        // Deactivated 처리 중에 바로 Close 하면 예외가 날 수 있어 디스패처로 미룸
+        // 닫기 시작 = 토글 기준으로는 이미 닫힘 (페이드 중에 단축키를 다시 누르면 새 창을 연다)
+        if (ReferenceEquals(_current, this)) _current = null;
+        _closedAt = Environment.TickCount64;
+        _root.IsHitTestVisible = false;
+        // Deactivated 처리 중에 바로 Close 하면 예외가 날 수 있어 디스패처로 미룸. 빠른 페이드 아웃(100ms) 뒤 닫음
         Dispatcher.BeginInvoke(() =>
-        {
-            try { Close(); }
-            catch (Exception ex) { Log.Error("Spotlight 닫기 실패", ex); }
-        });
+            Anim.Disappear(_root, 100, () =>
+            {
+                try { Close(); }
+                catch (Exception ex) { Log.Error("Spotlight 닫기 실패", ex); }
+            }, ease: Anim.EaseOut));
     }
 
     // ───────────────────────── 앱 목록 / 검색 ─────────────────────────
@@ -377,19 +408,25 @@ internal sealed class SpotlightWindow : Window
         int gen = ++_generation;
         _results.Clear();
         _list.Children.Clear();
+        _nextRowTop = 0;
+        _selected = -1; // 목록이 새로 그려지면 하이라이트는 미끄러지지 않고 바로 첫 줄에
 
         foreach (var app in apps)
             AddRow(new Result { Kind = ResultKind.App, App = app }, app.Name, null, gen);
         if (query.Length > 0)
         {
-            if (apps.Count > 0) _list.Children.Add(new Border { Height = 1, Background = _p.Divider, Margin = new Thickness(10, 4, 10, 4) });
+            if (apps.Count > 0)
+            {
+                _list.Children.Add(new Border { Height = 1, Background = _p.Divider, Margin = new Thickness(10, 4, 10, 4) });
+                _nextRowTop += 1 + 4 + 4;
+            }
             AddRow(new Result { Kind = ResultKind.WindowsSearch }, $"Windows 검색에서 ‘{query}’ 찾기", "", gen);
             AddRow(new Result { Kind = ResultKind.Web }, $"웹에서 ‘{query}’ 검색", "", gen);
         }
 
         bool any = _results.Count > 0;
         _divider.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
-        _list.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
+        _listHost.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
         Select(any ? 0 : -1);
     }
 
@@ -441,6 +478,8 @@ internal sealed class SpotlightWindow : Window
             Cursor = Cursors.Hand,
         };
         int index = _results.Count;
+        r.Top = _nextRowTop;
+        _nextRowTop += RowHeight;
         // 마우스를 실제로 움직였을 때만 선택 이동 (키보드로 고른 항목이 커서 위치 때문에 바뀌지 않게)
         r.Row.MouseMove += (_, _) => { if (_selected != index) Select(index); };
         r.Row.MouseLeftButtonUp += (_, e) => { e.Handled = true; Execute(index); };
@@ -472,14 +511,31 @@ internal sealed class SpotlightWindow : Window
         }, DispatcherPriority.Background);
     }
 
+    /// <summary>선택 이동: 하이라이트가 새 행으로 90ms 미끄러짐(ease-out). 목록을 새로 그린 직후엔 바로 놓음.</summary>
     private void Select(int index)
     {
+        int previous = _selected;
         _selected = index;
+        if (index >= 0 && index < _results.Count)
+        {
+            double y = _results[index].Top;
+            _highlight.Visibility = Visibility.Visible;
+            if (previous >= 0 && previous < _results.Count && Anim.Enabled)
+                _highlightShift.BeginAnimation(TranslateTransform.YProperty, Anim.To(y, 90, Anim.EaseOut));
+            else
+            {
+                _highlightShift.BeginAnimation(TranslateTransform.YProperty, null);
+                _highlightShift.Y = y;
+            }
+        }
+        else
+        {
+            _highlight.Visibility = Visibility.Collapsed;
+        }
         for (int i = 0; i < _results.Count; i++)
         {
             var r = _results[i];
             bool on = i == index;
-            r.Row.Background = on ? _p.Accent : Brushes.Transparent;
             r.Label.Foreground = on ? _p.AccentText : _p.Text;
             if (r.Glyph is not null) r.Glyph.Foreground = on ? _p.AccentText : _p.SubText;
         }
@@ -568,7 +624,7 @@ internal sealed class SpotlightWindow : Window
     {
         try
         {
-            await Task.Delay(80); // Spotlight 창이 닫히고 포그라운드가 넘어갈 시간
+            await Task.Delay(140); // Spotlight 창이 (100ms 페이드 뒤) 닫히고 포그라운드가 넘어갈 시간
             services.Shell.OpenSearch();
             if (query.Length == 0) return;
 

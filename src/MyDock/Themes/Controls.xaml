@@ -8,6 +8,18 @@
     <!-- 상단바 아이콘 축소: BarIcons 좌표는 20 DIP 아이콘 기준(Stretch=None)이라 크기 대신 배율로 줄임 -->
     <ScaleTransform x:Key="BarIconScale" ScaleX="0.8" ScaleY="0.8" />
 
+    <!-- 호버 하이라이트 페이드: 템플릿 안 x:Name="Hover" 층의 Opacity 를 짧게 (들어올 때 90ms, 나갈 때 120ms).
+         누름(IsPressed)·열림(Tag=Active)은 다른 층(Bg/Press)에 즉시 Setter 라 애니메이션 값과 충돌하지 않음 -->
+    <Storyboard x:Key="HoverIn008">
+        <DoubleAnimation Storyboard.TargetName="Hover" Storyboard.TargetProperty="Opacity" To="0.08" Duration="0:0:0.09" />
+    </Storyboard>
+    <Storyboard x:Key="HoverIn010">
+        <DoubleAnimation Storyboard.TargetName="Hover" Storyboard.TargetProperty="Opacity" To="0.1" Duration="0:0:0.09" />
+    </Storyboard>
+    <Storyboard x:Key="HoverOut">
+        <DoubleAnimation Storyboard.TargetName="Hover" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.12" />
+    </Storyboard>
+
     <!-- 상단바 버튼: 포커스 없음, 호버 시 글자색을 옅게 깐 둥근 배경 (밝은/어두운 바 모두 자연스럽게).
          글자색은 구역(왼쪽/오른쪽 StackPanel)의 TextElement.Foreground 를 따름 → 배경 밝기별 자동 색 -->
     <Style x:Key="BarButton" TargetType="Button">
@@ -26,18 +38,25 @@
                 <ControlTemplate TargetType="Button">
                     <Grid Background="Transparent">
                         <Border x:Name="Bg" Background="{TemplateBinding Foreground}" CornerRadius="6" Opacity="0" />
+                        <!-- 호버는 별도 층에서 짧게 페이드 (Active/Pressed 의 즉시 Setter 와 겹치지 않게) -->
+                        <Border x:Name="Hover" Background="{TemplateBinding Foreground}" CornerRadius="6" Opacity="0" />
                         <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bg" Property="Opacity" Value="0.08" />
+                            <Trigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverIn008}" />
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverOut}" />
+                            </Trigger.ExitActions>
                         </Trigger>
                         <!-- 패널이 열린 아이콘: 회색 알약 하이라이트 (검정 글자 기준 #1A000000) -->
                         <Trigger Property="Tag" Value="Active">
                             <Setter TargetName="Bg" Property="Opacity" Value="0.1" />
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="Bg" Property="Opacity" Value="0.24" />
+                            <Setter TargetName="Bg" Property="Opacity" Value="0.16" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -64,14 +83,20 @@
                 <ControlTemplate TargetType="Button">
                     <Grid Background="Transparent">
                         <Border x:Name="Bg" Background="{TemplateBinding Foreground}" CornerRadius="6" Opacity="0" />
+                        <Border x:Name="Hover" Background="{TemplateBinding Foreground}" CornerRadius="6" Opacity="0" />
                         <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center" />
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bg" Property="Opacity" Value="0.1" />
+                            <Trigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverIn010}" />
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverOut}" />
+                            </Trigger.ExitActions>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="Bg" Property="Opacity" Value="0.18" />
+                            <Setter TargetName="Bg" Property="Opacity" Value="0.08" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -97,7 +122,12 @@
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Hover" Property="Opacity" Value="0.1" />
+                            <Trigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverIn010}" />
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverOut}" />
+                            </Trigger.ExitActions>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -195,14 +225,20 @@
                     <Grid>
                         <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="6" />
                         <Border x:Name="Hover" Background="{TemplateBinding Foreground}" CornerRadius="6" Opacity="0" />
+                        <Border x:Name="Press" Background="{TemplateBinding Foreground}" CornerRadius="6" Opacity="0" />
                         <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Hover" Property="Opacity" Value="0.08" />
+                            <Trigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverIn008}" />
+                            </Trigger.EnterActions>
+                            <Trigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverOut}" />
+                            </Trigger.ExitActions>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="Hover" Property="Opacity" Value="0.16" />
+                            <Setter TargetName="Press" Property="Opacity" Value="0.08" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
