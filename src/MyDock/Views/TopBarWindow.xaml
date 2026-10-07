@@ -46,7 +46,7 @@
                     <Button Style="{StaticResource BarIconButton}" Content="&#xE721;" Click="OnSearch" />
                     <!-- 제어 센터 (빠른 설정) : 토글 두 개 -->
                     <Button x:Name="QuickSettingsButton" Style="{StaticResource BarButton}" Click="OnQuickSettings">
-                        <Viewbox Width="18" Height="16">
+                        <Viewbox Width="21" Height="19">
                             <Canvas Width="16" Height="14">
                                 <Path StrokeThickness="1.3"
                                       Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}">
@@ -74,28 +74,28 @@
                 <!-- 한/영 배지: "한" = 글자색으로 채운 배경 + 반전 글자, "A" = 테두리만 -->
                 <Button x:Name="ImeButton" Style="{StaticResource BarButton}" Padding="6,0" Margin="3,4,2,4" Click="OnImeToggle">
                     <Border x:Name="ImeBadge" CornerRadius="4" BorderThickness="1.3" MinWidth="22" Height="20" Padding="3,0">
-                        <TextBlock x:Name="ImeText" Text="–" FontWeight="Bold" FontSize="13"
+                        <TextBlock x:Name="ImeText" Text="–" FontWeight="Bold" FontSize="14"
                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                 </Button>
 
-                <TextBlock x:Name="Clock" VerticalAlignment="Center" Margin="10,0,2,0" FontSize="15" />
+                <TextBlock x:Name="Clock" VerticalAlignment="Center" Margin="10,0,2,0" FontSize="17" />
             </StackPanel>
 
             <!-- 왼쪽: 로고 메뉴 · 가상 데스크톱 버튼 · 현재 앱 이름 (버튼은 앱 이름 길이와 무관하게 고정 위치) -->
             <StackPanel x:Name="LeftSection" HorizontalAlignment="Left" Orientation="Horizontal" Margin="10,0,0,0">
                 <Button x:Name="LogoButton" Style="{StaticResource BarButton}" Padding="9,0" Click="OnLogoClick">
                     <!-- 윈도우 11 로고: 정사각형 4개 + 작은 틈, 단색 -->
-                    <Path Width="15" Height="15" Stretch="Uniform"
+                    <Path Width="19" Height="19" Stretch="Uniform"
                           Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
                           Data="M0,0 H7.4 V7.4 H0 Z M8.6,0 H16 V7.4 H8.6 Z M0,8.6 H7.4 V16 H0 Z M8.6,8.6 H16 V16 H8.6 Z" />
                 </Button>
                 <StackPanel x:Name="DesktopButtons" Orientation="Horizontal">
-                    <Button Style="{StaticResource BarIconButton}" FontSize="13" Content="&#xE76B;" Click="OnPreviousDesktop" />
-                    <Button Style="{StaticResource BarIconButton}" FontSize="13" Content="&#xE76C;" Click="OnNextDesktop" />
-                    <Button Style="{StaticResource BarIconButton}" FontSize="13" Content="&#xE710;" Click="OnNewDesktop" />
+                    <Button Style="{StaticResource BarIconButton}" FontSize="15" Content="&#xE76B;" Click="OnPreviousDesktop" />
+                    <Button Style="{StaticResource BarIconButton}" FontSize="15" Content="&#xE76C;" Click="OnNextDesktop" />
+                    <Button Style="{StaticResource BarIconButton}" FontSize="15" Content="&#xE710;" Click="OnNewDesktop" />
                 </StackPanel>
-                <TextBlock x:Name="AppName" FontWeight="Bold" FontFamily="Segoe UI, Malgun Gothic" FontSize="15" VerticalAlignment="Center"
+                <TextBlock x:Name="AppName" FontWeight="Bold" FontFamily="Segoe UI, Malgun Gothic" FontSize="16.5" VerticalAlignment="Center"
                            Margin="12,0,10,1" TextTrimming="CharacterEllipsis" MaxWidth="420" />
             </StackPanel>
 

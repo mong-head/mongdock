@@ -44,7 +44,7 @@
     <!-- 상단바 아이콘 버튼 (Segoe Fluent Icons / MDL2 글리프, 단색) -->
     <Style x:Key="BarIconButton" TargetType="Button" BasedOn="{StaticResource BarButton}">
         <Setter Property="FontFamily" Value="{StaticResource IconFont}" />
-        <Setter Property="FontSize" Value="17" />
+        <Setter Property="FontSize" Value="20" />
         <Setter Property="Padding" Value="9,0" />
     </Style>
 

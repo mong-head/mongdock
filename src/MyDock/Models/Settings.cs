@@ -116,7 +116,7 @@ public sealed class TopBarSettings
     /// <summary>와이파이·블루투스·볼륨 아이콘 (MyDockFinder 처럼). 클릭 시 작은 패널(볼륨 슬라이더, 블루투스 토글, 설정 열기).</summary>
     public bool ShowStatusIcons { get; set; } = true;
     /// <summary>네트워크 업/다운 속도 (2줄 작은 글씨).</summary>
-    public bool ShowNetworkSpeed { get; set; } = true;
+    public bool ShowNetworkSpeed { get; set; } = false;
     public bool ReserveSpace { get; set; } = true;
 }
 
