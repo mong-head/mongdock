@@ -2,13 +2,11 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using MyDock.Native;
-using Windows.Devices.Bluetooth;
-using Windows.Devices.Enumeration;
 using Windows.Devices.Radios;
 
 namespace MyDock.Services;
 
-/// <summary>StatusService 확장: 와이파이 라디오, IP/링크 속도, 재생 장치 목록/기본 장치 변경, 페어링된 블루투스 장치.</summary>
+/// <summary>StatusService 확장: 와이파이 라디오, IP/링크 속도, 재생 장치 목록/기본 장치 변경. (블루투스 기기는 StatusService.Bluetooth.cs)</summary>
 public sealed partial class StatusService
 {
     public void OpenAvailableNetworks() => OpenUri("ms-availablenetworks:");
@@ -253,108 +251,4 @@ public sealed partial class StatusService
             if (obj is not null && Marshal.IsComObject(obj)) Marshal.ReleaseComObject(obj);
         }
     }
-
-    // ───────────────────────── 블루투스 장치 ─────────────────────────
-
-    private const string IsConnectedProp = "System.Devices.Aep.IsConnected";
-    private DeviceWatcher? _btWatcher;
-    private readonly Dictionary<string, (string Name, bool Connected)> _btDevices = new();
-    private IReadOnlyList<BluetoothDeviceInfo> _btList = Array.Empty<BluetoothDeviceInfo>();
-
-    public IReadOnlyList<BluetoothDeviceInfo> BluetoothDevices { get { lock (_gate) return _btList; } }
-
-    /// <summary>페어링된 블루투스 장치 감시 (DeviceWatcher, AssociationEndpoint + IsConnected 속성).</summary>
-    private void StartBluetoothWatcher()
-    {
-        if (_btWatcher is not null) return;
-        try
-        {
-            string selector = BluetoothDevice.GetDeviceSelectorFromPairingState(true);
-            var w = DeviceInformation.CreateWatcher(selector, new[] { IsConnectedProp }, DeviceInformationKind.AssociationEndpoint);
-            w.Added += OnBtAdded;
-            w.Updated += OnBtUpdated;
-            w.Removed += OnBtRemoved;
-            w.Stopped += OnBtStopped;
-            _btWatcher = w;
-            w.Start();
-        }
-        catch (Exception ex)
-        {
-            Log.Error("블루투스 장치 감시 시작 실패", ex);
-            _btWatcher = null;
-        }
-    }
-
-    private void StopBluetoothWatcher()
-    {
-        var w = _btWatcher;
-        _btWatcher = null;
-        if (w is null) return;
-        lock (_gate) _btDevices.Clear(); // 다시 시작하면 Added 로 새로 채움
-        try
-        {
-            w.Added -= OnBtAdded;
-            w.Updated -= OnBtUpdated;
-            w.Removed -= OnBtRemoved;
-            w.Stopped -= OnBtStopped;
-            if (w.Status is DeviceWatcherStatus.Started or DeviceWatcherStatus.EnumerationCompleted) w.Stop();
-        }
-        catch (Exception ex)
-        {
-            Log.Warn($"블루투스 장치 감시 정지 실패: {ex.Message}");
-        }
-    }
-
-    /// <summary>감시자가 스스로 멈춤(Aborted 포함 — Stopped 이벤트로 옴) → 폴링이 켜져 있으면 2초 뒤 재시작.</summary>
-    private void OnBtStopped(DeviceWatcher sender, object args)
-    {
-        if (sender != _btWatcher) return; // 우리가 Stop 한 경우는 이미 _btWatcher 가 바뀌어 있음
-        Log.Warn($"블루투스 장치 감시가 멈춤 (status={sender.Status}) → 재시작 예약");
-        _dispatcher?.InvokeAsync(async () =>
-        {
-            await Task.Delay(2000);
-            if (!_started || !_pollWifiBt || _btWatcher != sender) return;
-            StopBluetoothWatcher();
-            StartBluetoothWatcher();
-        });
-    }
-
-    private static bool ReadConnected(IReadOnlyDictionary<string, object> props) =>
-        props.TryGetValue(IsConnectedProp, out object? v) && v is bool b && b;
-
-    private void OnBtAdded(DeviceWatcher sender, DeviceInformation info)
-    {
-        if (sender != _btWatcher) return;
-        lock (_gate) _btDevices[info.Id] = (string.IsNullOrWhiteSpace(info.Name) ? info.Id : info.Name, ReadConnected(info.Properties));
-        PublishBt();
-    }
-
-    private void OnBtUpdated(DeviceWatcher sender, DeviceInformationUpdate update)
-    {
-        if (sender != _btWatcher) return;
-        lock (_gate)
-        {
-            if (!_btDevices.TryGetValue(update.Id, out var cur)) return;
-            if (update.Properties.ContainsKey(IsConnectedProp)) cur.Connected = ReadConnected(update.Properties);
-            _btDevices[update.Id] = cur;
-        }
-        PublishBt();
-    }
-
-    private void OnBtRemoved(DeviceWatcher sender, DeviceInformationUpdate update)
-    {
-        if (sender != _btWatcher) return;
-        lock (_gate) _btDevices.Remove(update.Id);
-        PublishBt();
-    }
-
-    private void PublishBt() => Update(() =>
-    {
-        var list = _btDevices.Select(kv => new BluetoothDeviceInfo(kv.Key, kv.Value.Name, kv.Value.Connected))
-                             .OrderByDescending(d => d.Connected).ThenBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase)
-                             .ToList();
-        if (_btList.SequenceEqual(list)) return false;
-        _btList = list;
-        return true;
-    });
 }
