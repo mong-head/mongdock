@@ -66,6 +66,7 @@ public partial class TopBarWindow : Window
 
         SourceInitialized += OnSourceInitialized;
         Loaded += (_, _) => { if (!_services.Settings.Current.TopBar.Enabled || _fullscreen) Hide(); };
+        ContentRendered += (_, _) => { Remeasure(LeftSection); Remeasure(RightSection); };
         Closed += OnClosed;
     }
 
@@ -82,10 +83,12 @@ public partial class TopBarWindow : Window
         _services.DesktopWindows.DisplayChanged += OnDisplayChanged;
         _services.DesktopWindows.FullscreenAppChanged += OnFullscreenChanged;
         _services.Status.Changed += OnStatusChanged;
+        _services.VirtualDesktops.Changed += OnDesktopChanged;
         _subscribed = true;
 
         ApplySettings();
         UpdateStatus();
+        UpdateDesktopIndex();
     }
 
     private void OnClosed(object? sender, EventArgs e)
@@ -104,6 +107,7 @@ public partial class TopBarWindow : Window
             _services.DesktopWindows.DisplayChanged -= OnDisplayChanged;
             _services.DesktopWindows.FullscreenAppChanged -= OnFullscreenChanged;
             _services.Status.Changed -= OnStatusChanged;
+            _services.VirtualDesktops.Changed -= OnDesktopChanged;
             _subscribed = false;
         }
         UnregisterIfNeeded();
@@ -169,8 +173,9 @@ public partial class TopBarWindow : Window
 
         FontSize = Math.Clamp(double.IsNaN(s.FontSize) ? 14 : s.FontSize, 8, 32);
         LogoButton.Visibility = Vis(s.ShowLogo);
-        AppName.Visibility = Vis(s.ShowActiveAppName);
+        AppNameButton.Visibility = Vis(s.ShowActiveAppName);
         DesktopButtons.Visibility = Vis(s.ShowDesktopButtons);
+        DesktopButtons.Background = DesktopGroupPill ? BrushParser.Frozen(Color.FromArgb(0x0D, 0, 0, 0)) : Brushes.Transparent;
         NetSpeed.Visibility = Vis(s.ShowNetworkSpeed);
         StatusIcons.Visibility = Vis(s.ShowStatusIcons);
         QuickButtons.Visibility = Vis(s.ShowQuickButtons);
@@ -446,7 +451,7 @@ public partial class TopBarWindow : Window
         if (text == _lastClockText) return;
         _lastClockText = text;
         Clock.Text = text;
-        RightSection.InvalidateMeasure(); // 글자 길이가 바뀌면 오른쪽 구역 폭도 다시 계산 (시계가 잘리는 현상 방지)
+        Remeasure(RightSection); // 글자 길이가 바뀌면 오른쪽 구역 폭도 다시 계산 (시계가 잘리는 현상 방지)
     }
 
     private int _imeState; // 0 = 아직 안 그림, 1 = 한, 2 = A, 3 = 모름
@@ -490,8 +495,11 @@ public partial class TopBarWindow : Window
                 ImeBadge.Opacity = 0.5;
                 break;
         }
-        RightSection.InvalidateMeasure();
+        Remeasure(RightSection);
     }
+
+    /// <summary>앱 이름에 표시 중인 앱의 창 (앱 메뉴용). null 이면 바탕 화면.</summary>
+    private AppWindowInfo? _currentApp;
 
     private void UpdateAppName(bool force = false)
     {
@@ -499,15 +507,48 @@ public partial class TopBarWindow : Window
         if (!force && fg == _lastForeground) return;
         _lastForeground = fg;
 
-        var info = _services.Windows.Windows.FirstOrDefault(w => w.Hwnd == fg);
-        // 목록에 없는 창(바탕화면, 대화상자, 독/상단바 자신 등)이면 이전 이름 유지
-        if (info == null) return;
-        string name = AppNames.Get(info);
-        if (AppName.Text != name)
+        var windows = _services.Windows.Windows;
+        bool isDesktop;
+        try { isDesktop = fg == IntPtr.Zero || _services.Windows.IsDesktopWindow(fg); }
+        catch { isDesktop = fg == IntPtr.Zero; }
+        if (isDesktop)
         {
-            AppName.Text = name;
-            LeftSection.InvalidateMeasure();
+            _currentApp = null;
+            SetAppNameText("바탕 화면");
+            return;
         }
+
+        var info = windows.FirstOrDefault(w => w.Hwnd == fg);
+        if (info == null)
+        {
+            // 목록에 없는 창(대화상자, 독/상단바 자신 등)이면 이전 이름 유지. 이전 앱 창이 모두 닫혔으면 바탕 화면.
+            bool previousGone = _currentApp != null && !windows.Any(w => w.Hwnd == _currentApp.Hwnd);
+            if (!previousGone && AppName.Text.Length > 0) return;
+            _currentApp = null;
+            SetAppNameText("바탕 화면");
+            return;
+        }
+        _currentApp = info;
+        SetAppNameText(AppNames.Get(info));
+    }
+
+    /// <summary>
+    /// 구역 아래 모든 요소의 측정을 무효화. 첫 표시 전후에 바뀐 글자 크기가 부모(버튼·StackPanel)에
+    /// 전달되지 않아 처음 잰 폭에 갇히는 현상(실측: TextBlock 48 / 버튼 24)을 막는다. 요소 수가 적어 비용은 무시할 만함.
+    /// </summary>
+    private static void Remeasure(DependencyObject root)
+    {
+        if (root is UIElement ui) ui.InvalidateMeasure();
+        int n = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < n; i++) Remeasure(VisualTreeHelper.GetChild(root, i));
+    }
+
+    private void SetAppNameText(string name)
+    {
+        if (AppName.Text == name) return;
+        AppName.Text = name;
+        // 글자 길이가 바뀌면 감싼 버튼·구역도 다시 재야 함 (안 하면 처음 잰 빈 폭에 갇힘)
+        Remeasure(LeftSection);
     }
 
     // ───────────────────────── 상태 아이콘 ─────────────────────────
@@ -555,7 +596,7 @@ public partial class TopBarWindow : Window
         }
 
         VolumeIcon.Data = BarIcons.Speaker(st.Volume, st.Muted);
-        RightSection.InvalidateMeasure();
+        Remeasure(RightSection);
     }
 
     private static string FormatSpeed(long bytesPerSec)
@@ -641,7 +682,116 @@ public partial class TopBarWindow : Window
     private void OnSearch(object sender, RoutedEventArgs e) => Safe(() => _services.Shell.OpenSearch());
     /// <summary>제어 센터: Win+A 대신 MyDockFinder 같은 타일 패널.</summary>
     private void OnQuickSettings(object sender, RoutedEventArgs e) => TogglePanel(StatusPanelKind.ControlCenter, QuickSettingsButton);
-    private void OnNotifications(object sender, RoutedEventArgs e) => Safe(() => _services.Shell.OpenNotificationCenter());
+    /// <summary>시계 클릭 = 알림 센터 + 달력 (MyDockFinder 와 동일). 잠깐 알약 하이라이트.</summary>
+    private void OnClockClick(object sender, RoutedEventArgs e)
+    {
+        _panel?.Close();
+        Safe(() => _services.Shell.OpenNotificationCenter());
+        ClockButton.Tag = "Active";
+        var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
+        t.Tick += (_, _) => { t.Stop(); ClockButton.Tag = null; };
+        t.Start();
+    }
+
+    private void OnTaskView(object sender, RoutedEventArgs e) => Safe(() => _services.Shell.OpenTaskView());
+
+    /// <summary>가운데 그룹 배경: true = 옅은 알약(#0D000000), false = 배경 없이 호버만.</summary>
+    internal static bool DesktopGroupPill = true;
+
+    private void OnDesktopChanged(object? sender, EventArgs e) => UpdateDesktopIndex();
+
+    /// <summary>"2 / 3" 표시, 첫/마지막 데스크톱이면 ‹/› 흐리게.</summary>
+    private void UpdateDesktopIndex()
+    {
+        int index = 0, count = 0;
+        try
+        {
+            index = _services.VirtualDesktops.CurrentIndex;
+            count = _services.VirtualDesktops.Count;
+        }
+        catch (Exception ex) { Log.Error("가상 데스크톱 정보 조회 실패", ex); }
+
+        bool known = index > 0 && count > 0;
+        DesktopIndex.Text = known ? $"{index} / {count}" : "";
+        DesktopIndex.Visibility = known ? Visibility.Visible : Visibility.Collapsed;
+        PrevDesktopButton.Opacity = known && index <= 1 ? 0.35 : 1;
+        NextDesktopButton.Opacity = known && index >= count ? 0.35 : 1;
+    }
+
+    // ───────────────────────── 앱 메뉴 (앱 이름 클릭) ─────────────────────────
+
+    private void OnAppNameClick(object sender, RoutedEventArgs e)
+    {
+        _panel?.Close();
+        UiTheme.Apply(_services.Settings.Current);
+        var app = _currentApp;
+        string name = app != null ? AppNames.Get(app) : "바탕 화면";
+        var appWindows = app == null
+            ? new List<AppWindowInfo>()
+            : _services.Windows.Windows.Where(w => SameApp(w, app)).ToList();
+        var pin = app == null ? null : _services.Settings.Current.Pins.FirstOrDefault(p => p.Kind != PinKind.Separator && SafeMatches(p, app));
+
+        var menu = new ContextMenu
+        {
+            PlacementTarget = AppNameButton,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+            HorizontalOffset = -10,
+        };
+        OutsideClickWatcher.Attach(menu, _services, BarArea);
+        AppNameButton.Tag = "Active";
+        menu.Closed += (_, _) => AppNameButton.Tag = null;
+
+        bool hasApp = app != null;
+        menu.Items.Add(DockMenus.Item($"{name} 새 창", () =>
+        {
+            var target = pin ?? _services.Windows.CreatePin(app!);
+            _services.Launcher.Launch(target);
+        }, enabled: hasApp));
+        menu.Items.Add(DockMenus.Item($"{name} 최소화", () =>
+        {
+            foreach (var w in appWindows.Where(w => !w.IsMinimized))
+                _services.Launcher.Minimize(w.Hwnd);
+        }, enabled: hasApp && appWindows.Any(w => !w.IsMinimized)));
+        menu.Items.Add(DockMenus.Item($"{name} 종료", () =>
+        {
+            foreach (var w in appWindows) _services.Launcher.Close(w.Hwnd);
+        }, enabled: hasApp && appWindows.Count > 0));
+        menu.Items.Add(new Separator());
+        if (pin != null)
+        {
+            menu.Items.Add(DockMenus.Item("독에서 제거", () =>
+            {
+                _services.Settings.Current.Pins.Remove(pin);
+                _services.Settings.Save();
+            }));
+        }
+        else
+        {
+            menu.Items.Add(DockMenus.Item("독에 고정", () =>
+            {
+                _services.Settings.Current.Pins.Add(_services.Windows.CreatePin(app!));
+                _services.Settings.Save();
+            }, enabled: hasApp));
+        }
+        menu.Items.Add(new Separator());
+        menu.Items.Add(DockMenus.Item("바탕 화면 보기", () => _services.Shell.ShowDesktop()));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(DockMenus.Item("MyDock 설정 파일 열기", () => _services.Launcher.OpenFile(_services.Settings.SettingsPath)));
+        menu.Items.Add(DockMenus.Quit());
+        menu.IsOpen = true;
+    }
+
+    private bool SameApp(AppWindowInfo a, AppWindowInfo b)
+    {
+        try { return _services.Windows.GetAppKey(a) == _services.Windows.GetAppKey(b); }
+        catch { return string.Equals(a.ProcessPath, b.ProcessPath, StringComparison.OrdinalIgnoreCase); }
+    }
+
+    private bool SafeMatches(PinItem pin, AppWindowInfo w)
+    {
+        try { return _services.Windows.Matches(pin, w); }
+        catch { return false; }
+    }
 
     /// <summary>로고 클릭 → 맥 Apple 메뉴 같은 시스템 메뉴 (MyDock 설정은 하위 메뉴로).</summary>
     private void OnLogoClick(object sender, RoutedEventArgs e)

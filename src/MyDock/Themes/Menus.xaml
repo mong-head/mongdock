@@ -12,7 +12,7 @@
     <SolidColorBrush x:Key="Menu.Accent" Color="#FF0A64D6" />
     <SolidColorBrush x:Key="Menu.AccentText" Color="#FFFFFFFF" />
     <sys:Double x:Key="Menu.ShadowOpacity">0.22</sys:Double>
-    <FontFamily x:Key="Menu.Font">Segoe UI Variable Text, Segoe UI, Malgun Gothic</FontFamily>
+    <FontFamily x:Key="Menu.Font">Segoe UI Variable Text, Noto Sans KR, Malgun Gothic</FontFamily>
 
     <!-- 카드 (그림자는 별도 Border 에만 걸어 글자가 흐려지지 않게) -->
     <ControlTemplate x:Key="MenuCardTemplate" TargetType="{x:Type ContentControl}">

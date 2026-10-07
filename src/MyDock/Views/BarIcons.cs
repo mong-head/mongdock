@@ -165,4 +165,26 @@ internal static class BarIcons
         Rounded(Geometry.Parse(
             "M8.5,1.2 C5.4,1.2 3.8,3.6 3.8,6.4 L3.8,9.6 L2,12.4 L15,12.4 L13.2,9.6 L13.2,6.4 C13.2,3.6 11.6,1.2 8.5,1.2 Z"), 0.9),
         Geometry.Parse("M6.4,13.6 A2.1,2.1 0 0 0 10.6,13.6 Z")));
+
+    // ───────────────────────── 가상 데스크톱 그룹 (맥 chevron / Mission Control) ─────────────────────────
+
+    /// <summary>‹ (상자 10 x 16).</summary>
+    public static readonly Geometry ChevronLeft = Freeze(Stroke("M7.4,2.6 L2.6,8 L7.4,13.4", 2.0));
+
+    /// <summary>› (상자 10 x 16).</summary>
+    public static readonly Geometry ChevronRight = Freeze(Stroke("M2.6,2.6 L7.4,8 L2.6,13.4", 2.0));
+
+    /// <summary>+ (상자 14 x 16).</summary>
+    public static readonly Geometry Plus = Freeze(Stroke("M7,2.6 L7,13.4 M1.6,8 L12.4,8", 2.0));
+
+    /// <summary>작업 보기 = 맥 Mission Control 느낌: 위 작은 창 둘 + 아래 큰 창 하나 (상자 18 x 16, 채움).</summary>
+    public static readonly Geometry MissionControl = Freeze(new GeometryGroup
+    {
+        Children =
+        {
+            new RectangleGeometry(new Rect(1, 2, 7.2, 5), 1.6, 1.6),
+            new RectangleGeometry(new Rect(9.8, 2, 7.2, 5), 1.6, 1.6),
+            new RectangleGeometry(new Rect(3.2, 8.6, 11.6, 6), 1.8, 1.8),
+        },
+    });
 }

@@ -256,6 +256,13 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
         return new AppWindowInfo(hwnd, title, path, aumid, User32.IsIconic(hwnd));
     }
 
+    /// <summary>바탕화면(Progman/WorkerW) 또는 작업표시줄(Shell_TrayWnd/Shell_SecondaryTrayWnd) 창인지.</summary>
+    public bool IsDesktopWindow(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+        return User32.GetClassNameOf(hwnd) is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd";
+    }
+
     /// <summary>작업표시줄에 버튼이 생기는 창인지 (Alt+Tab/작업표시줄 규칙 근사).</summary>
     internal static bool IsTaskbarWindow(IntPtr hwnd)
     {
@@ -354,6 +361,17 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
     public PinItem CreatePin(AppWindowInfo window)
     {
         string path = window.ProcessPath ?? "";
+        // 시스템 패키지 앱(설정·계산기 등)은 WindowsApps 밖에 있지만 AUMID 로 실행해야 함
+        if (AppsFolder.IsPackagedAumid(window.Aumid))
+        {
+            string aumid = AppsFolder.RestoreAumidCase(window.Aumid!) ?? window.Aumid!;
+            return new PinItem
+            {
+                Name = AppsFolder.GetAppDisplayName(aumid) ?? FriendlyExeName(path) ?? window.Title,
+                Kind = PinKind.Aumid,
+                Target = aumid,
+            };
+        }
         if (AppsFolder.IsWindowsAppsPath(path))
         {
             // 패키지 앱: 버전 포함 경로는 절대 저장하지 않고 AUMID 로.

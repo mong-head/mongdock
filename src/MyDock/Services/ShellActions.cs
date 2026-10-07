@@ -21,6 +21,8 @@ public sealed class ShellActions : IShellActions
 
     public void OpenTaskView() => KeyChord.Send("Win+Tab", User32.VK_LWIN, User32.VK_TAB);
 
+    public void ShowDesktop() => KeyChord.Send("Win+D", User32.VK_LWIN, User32.VK_D);
+
     public void OpenAbout() => ShellOpen("ms-settings:about");
 
     public void OpenSettings() => ShellOpen("ms-settings:");

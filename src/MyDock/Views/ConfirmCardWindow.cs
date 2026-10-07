@@ -31,7 +31,7 @@ internal sealed class ConfirmCardWindow : Window
         SizeToContent = SizeToContent.WidthAndHeight;
         UseLayoutRounding = true;
         Title = "MyDock Confirm";
-        FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI, Malgun Gothic");
+        FontFamily = new FontFamily("Segoe UI Variable Text, Noto Sans KR, Malgun Gothic");
         FontSize = 13;
         Foreground = p.Text;
         TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);

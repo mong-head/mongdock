@@ -52,7 +52,7 @@ internal sealed class StatusPanelWindow : Window
         SizeToContent = SizeToContent.WidthAndHeight;
         UseLayoutRounding = true;
         Title = "MyDock Status";
-        FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI, Malgun Gothic");
+        FontFamily = new FontFamily("Segoe UI Variable Text, Noto Sans KR, Malgun Gothic");
         FontSize = 15;
         Foreground = _p.Text;
         TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);

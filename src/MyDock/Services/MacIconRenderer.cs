@@ -122,6 +122,104 @@ internal static class MacIconRenderer
         });
     }
 
+    /// <summary>
+    /// 윈도우 패키지 앱용: 항상 흰 판 위 72% 배치.
+    /// removeBackground 면 가장자리가 한 가지 색으로 꽉 찬 타일 배경(예: 파란 설정 타일)을 투명화하고, 남은 그림이 흰색이면 타일 색으로 칠한다.
+    /// </summary>
+    public static BitmapSource? OnPlate(BitmapSource source, bool removeBackground)
+    {
+        var px = ReadPixels(ref source, out int w, out int h);
+        if (px is null) return null;
+        if (removeBackground && RemoveUniformBackground(px, w, h))
+        {
+            var cleaned = BitmapSource.Create(w, h, 96, 96, PixelFormats.Pbgra32, null, px, w * 4);
+            cleaned.Freeze();
+            source = cleaned;
+        }
+        // 투명 여백을 잘라 내용만 판 위에
+        int minX = w, minY = h, maxX = -1, maxY = -1;
+        for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++)
+        {
+            if (px[(y * w + x) * 4 + 3] > 24)
+            {
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+        if (maxX < 0) return Plate(null);
+        var cropped = new CroppedBitmap(source, new Int32Rect(minX, minY, maxX - minX + 1, maxY - minY + 1));
+        cropped.Freeze();
+        return Plate(cropped);
+    }
+
+    /// <summary>
+    /// 테두리 픽셀이 거의 모두 같은 불투명 색(타일 배경)이면 그 색과 비슷한 픽셀을 투명화. 지웠으면 true.
+    /// </summary>
+    private static bool RemoveUniformBackground(byte[] px, int w, int h)
+    {
+        if (w < 8 || h < 8) return false;
+        // 테두리에서 1~2px 안쪽(안티앨리어싱/둥근 모서리 피함)의 색 분포
+        int inset = Math.Max(1, w / 32);
+        var border = new List<int>();
+        for (int x = inset; x < w - inset; x++) { border.Add(Idx(x, inset)); border.Add(Idx(x, h - 1 - inset)); }
+        for (int y = inset; y < h - inset; y++) { border.Add(Idx(inset, y)); border.Add(Idx(w - 1 - inset, y)); }
+        int Idx(int x, int y) => (y * w + x) * 4;
+
+        long r = 0, g = 0, b = 0;
+        int opaque = 0;
+        foreach (int i in border)
+        {
+            if (px[i + 3] < 240) continue;
+            b += px[i]; g += px[i + 1]; r += px[i + 2]; opaque++;
+        }
+        if (opaque < border.Count * 0.7) return false; // 이미 투명 배경
+        byte br = (byte)(r / opaque), bg = (byte)(g / opaque), bb = (byte)(b / opaque);
+        int Dist(int i) => Math.Abs(px[i + 2] - br) + Math.Abs(px[i + 1] - bg) + Math.Abs(px[i] - bb);
+        int uniform = border.Count(i => px[i + 3] >= 240 && Dist(i) < 30);
+        if (uniform < border.Count * 0.9) return false; // 가장자리가 단색이 아님 (그림이 꽉 찬 아이콘)
+
+        // 타일 색과 비슷한 픽셀은 모두 투명화 (톱니 구멍처럼 둘러싸인 부분도 타일 색이면 지움).
+        // 경계의 안티앨리어싱 픽셀은 거리에 비례해 알파를 줄인다.
+        for (int i = 0; i < px.Length; i += 4)
+        {
+            int a = px[i + 3];
+            if (a == 0) continue;
+            // 프리멀티플라이 → 직선 색으로 비교
+            int sr = px[i + 2] * 255 / a, sg = px[i + 1] * 255 / a, sb = px[i] * 255 / a;
+            int d = Math.Abs(sr - br) + Math.Abs(sg - bg) + Math.Abs(sb - bb);
+            if (d < 40) { px[i] = px[i + 1] = px[i + 2] = px[i + 3] = 0; }
+            else if (d < 160)
+            {
+                double k = (d - 40) / 120.0;
+                for (int c = 0; c < 4; c++) px[i + c] = (byte)(px[i + c] * k);
+            }
+        }
+
+        // 남은 그림이 거의 흰색(타일 위 흰 글리프)이면 흰 판 위에서 안 보이므로 지운 타일 색으로 칠한다.
+        long lum = 0, n = 0;
+        for (int i = 0; i < px.Length; i += 4)
+        {
+            int a = px[i + 3];
+            if (a < 128) continue;
+            lum += (px[i + 2] * 299 + px[i + 1] * 587 + px[i] * 114) / 1000 * 255 / a;
+            n++;
+        }
+        if (n > 0 && lum / n > 200)
+        {
+            for (int i = 0; i < px.Length; i += 4)
+            {
+                int a = px[i + 3];
+                px[i] = (byte)(bb * a / 255);
+                px[i + 1] = (byte)(bg * a / 255);
+                px[i + 2] = (byte)(br * a / 255);
+            }
+        }
+        return true;
+    }
+
     /// <summary>밝은 스퀴클 판 + (있으면) 내용 72% 가운데 배치.</summary>
     public static BitmapSource Plate(BitmapSource? content) => Render(dc =>
     {

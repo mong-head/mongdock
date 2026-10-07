@@ -22,6 +22,8 @@ public sealed class IconService : IIconService
     private readonly Dictionary<string, LinkedListNode<(string Key, ImageSource Image)>> _map = new(StringComparer.OrdinalIgnoreCase);
     private readonly LinkedList<(string Key, ImageSource Image)> _lru = new();
     private readonly object _gate = new();
+    private readonly Dictionary<string, DateTime> _failed = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly TimeSpan FailedRetry = TimeSpan.FromSeconds(10);
     private ImageSource? _default;
     private ImageSource? _launchpad;
 
@@ -33,7 +35,10 @@ public sealed class IconService : IIconService
         if (launchpad) return style == IconStyle.Mac ? MacLaunchpadIcon : LaunchpadIcon;
 
         string rawKey = $"pin|{pin.Kind}|{pin.Target}|{pin.IconPath}";
-        return Styled(rawKey, style, () =>
+        // 윈도우(마이크로소프트) 패키지 앱이고 커스텀 아이콘이 없으면 맥 스타일은 흰 판 + unplated 로고
+        string? windowsAumid = pin.Kind == PinKind.Aumid && string.IsNullOrWhiteSpace(pin.IconPath)
+                               && PackageLogo.IsWindowsPackage(pin.Target) ? pin.Target.Trim() : null;
+        return Styled(rawKey, style, windowsAumid, () =>
         {
             if (!string.IsNullOrWhiteSpace(pin.IconPath))
             {
@@ -42,7 +47,7 @@ public sealed class IconService : IIconService
             }
             return pin.Kind switch
             {
-                PinKind.Aumid => FromShellItem(AppsFolder.ShellPathOf(pin.Target.Trim())),
+                PinKind.Aumid => FromAumid(pin.Target.Trim()),
                 PinKind.Exe => FromFile(Environment.ExpandEnvironmentVariables(pin.Target.Trim().Trim('"'))),
                 _ => null,
             };
@@ -52,28 +57,54 @@ public sealed class IconService : IIconService
     public ImageSource GetIcon(AppWindowInfo window, IconStyle style)
     {
         if (window is null) return Fallback(style);
-        bool packaged = !string.IsNullOrEmpty(window.Aumid) && AppsFolder.IsWindowsAppsPath(window.ProcessPath);
-        if (!packaged && window.ProcessPath.Length == 0)
+        // 패키지 앱 판정은 경로가 아니라 AUMID 형식("패밀리!앱ID")으로 — 설정·계산기 같은 시스템 앱은
+        // WindowsApps 가 아닌 C:\Windows\SystemApps, ImmersiveControlPanel 등에 있고,
+        // 최소화된 UWP 는 CoreWindow 가 프레임에서 떨어져 경로가 ApplicationFrameHost.exe 로만 보인다.
+        bool packaged = AppsFolder.IsPackagedAumid(window.Aumid);
+        bool frameHost = window.ProcessPath.EndsWith(@"\ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase);
+        if (!packaged && (window.ProcessPath.Length == 0 || frameHost))
         {
-            // hwnd 기반은 창이 사라져도 캐시에 남으니 캐시하지 않음
+            // 실제 앱을 아직 모름 (창 생성 직후 등) → 창 자체 아이콘, 캐시하지 않음 (다음 갱신 때 다시 시도)
             var raw = FromWindowHandle(window.Hwnd);
             return raw is null ? Fallback(style) : style == IconStyle.Mac ? (MacIconRenderer.Normalize(raw) ?? Fallback(style)) : raw;
         }
-        string rawKey = packaged ? "aumid|" + window.Aumid : "exe|" + window.ProcessPath;
-        return Styled(rawKey, style, () =>
-            (packaged ? FromShellItem(AppsFolder.ShellPathOf(window.Aumid!)) : null)
-            ?? FromFile(window.ProcessPath)
+        string rawKey = packaged ? "aumid|" + window.Aumid!.ToLowerInvariant() : "exe|" + window.ProcessPath;
+        string? windowsAumid = packaged && PackageLogo.IsWindowsPackage(window.Aumid!) ? window.Aumid : null;
+        return Styled(rawKey, style, windowsAumid, () =>
+            (packaged ? FromAumid(window.Aumid!) : null)
+            ?? (frameHost ? null : FromFile(window.ProcessPath))
             ?? FromWindowHandle(window.Hwnd));
     }
 
-    /// <summary>원본은 rawKey 로, 맥 스타일은 "mac|rawKey" 로 따로 캐시.</summary>
-    private ImageSource Styled(string rawKey, IconStyle style, Func<ImageSource?> loadRaw)
+    /// <summary>패키지 앱 아이콘: shell:AppsFolder\AUMID 의 IShellItemImageFactory → 패키지 로고(Assets) 파일.</summary>
+    private static ImageSource? FromAumid(string aumid)
+    {
+        string real = AppsFolder.RestoreAumidCase(aumid) ?? aumid;
+        return FromShellItem(AppsFolder.ShellPathOf(real)) ?? PackageLogo.Load(AppsFolder.FamilyOf(real));
+    }
+
+    /// <summary>맥 스타일 렌더링 규칙이 바뀌면 올려서 이전 캐시 결과(예: 파란 타일 설정 아이콘)가 남지 않게.</summary>
+    private const string MacStyleVersion = "mac2";
+
+    /// <summary>
+    /// 원본은 rawKey 로, 맥 스타일은 "mac2|rawKey" 로 따로 캐시.
+    /// windowsAumid 가 있으면(윈도우 패키지 앱) 맥 스타일은 항상 흰 판 위: unplated 로고 → 없으면 타일 배경색을 지운 원본.
+    /// </summary>
+    private ImageSource Styled(string rawKey, IconStyle style, string? windowsAumid, Func<ImageSource?> loadRaw)
     {
         ImageSource raw = GetOrAdd("orig|" + rawKey, loadRaw, DefaultIcon);
         if (style != IconStyle.Mac) return raw;
-        return GetOrAdd("mac|" + rawKey, () =>
-            raw is BitmapSource bs && !ReferenceEquals(raw, _default) ? MacIconRenderer.Normalize(bs) : null,
-            MacDefaultIcon);
+        return GetOrAdd(MacStyleVersion + "|" + rawKey, () =>
+        {
+            if (windowsAumid is not null)
+            {
+                string real = AppsFolder.RestoreAumidCase(windowsAumid) ?? windowsAumid;
+                var unplated = PackageLogo.LoadUnplated(real);
+                if (unplated is not null) return MacIconRenderer.OnPlate(unplated, removeBackground: false);
+                return raw is BitmapSource rb && !ReferenceEquals(raw, _default) ? MacIconRenderer.OnPlate(rb, removeBackground: true) : null;
+            }
+            return raw is BitmapSource bs && !ReferenceEquals(raw, _default) ? MacIconRenderer.Normalize(bs) : null;
+        }, MacDefaultIcon);
     }
 
     private ImageSource Fallback(IconStyle style) => style == IconStyle.Mac ? MacDefaultIcon : DefaultIcon;
@@ -92,10 +123,24 @@ public sealed class IconService : IIconService
             }
         }
 
+        lock (_gate)
+        {
+            // 실패한 키는 잠시(10초) 기본 아이콘만 돌려주고, 그 뒤 다시 시도 (실패 결과를 영구 캐시하지 않음)
+            if (_failed.TryGetValue(key, out var until) && DateTime.UtcNow < until) return fallback;
+        }
+
         ImageSource? img = null;
         try { img = factory(); }
         catch (Exception ex) { Log.Error($"아이콘 로드 실패: {key}", ex); }
-        img ??= fallback;
+        if (img is null)
+        {
+            lock (_gate)
+            {
+                if (_failed.Count > 256) _failed.Clear();
+                _failed[key] = DateTime.UtcNow + FailedRetry;
+            }
+            return fallback;
+        }
         if (img.CanFreeze && !img.IsFrozen) img.Freeze();
 
         lock (_gate)

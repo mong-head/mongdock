@@ -37,6 +37,8 @@ public interface IWindowTracker
     string GetAppKey(AppWindowInfo window);
     /// <summary>실행 중 창으로 핀 생성. WindowsApps 패키지 앱이면 Kind=Aumid(버전 경로 저장 금지), 아니면 Kind=Exe.</summary>
     PinItem CreatePin(AppWindowInfo window);
+    /// <summary>바탕 화면(Progman/WorkerW)·작업 표시줄 같은 셸 창이면 true — 상단바가 "바탕 화면" 표시용.</summary>
+    bool IsDesktopWindow(IntPtr hwnd);
     void Start();
     void Stop();
 }
@@ -49,6 +51,8 @@ public interface IAppLauncher
     /// <summary>이미 앞에 있으면 최소화, 아니면 Activate. (맥 독 클릭 동작)</summary>
     void ToggleActivate(IntPtr hwnd);
     void Close(IntPtr hwnd);
+    /// <summary>창 최소화 (ShowWindowAsync SW_MINIMIZE).</summary>
+    void Minimize(IntPtr hwnd);
     /// <summary>파일/폴더를 기본 프로그램으로 엶 (settings.json 편집 등).</summary>
     void OpenFile(string path);
 }
@@ -105,6 +109,10 @@ public interface IEdgeReservation : IDisposable
 
 public interface IVirtualDesktopService
 {
+    /// <summary>현재 가상 데스크톱 번호 (1부터)와 전체 개수. 모르면 0. 바뀌면 Changed (UI 스레드, 단축키·작업 보기로 바꾼 경우 포함).</summary>
+    int CurrentIndex { get; }
+    int Count { get; }
+    event EventHandler? Changed;
     void Previous();
     void Next();
     void New();
@@ -118,6 +126,7 @@ public interface IShellActions
     void OpenQuickSettings();    // Win+A (와이파이/볼륨/블루투스)
     void OpenNotificationCenter(); // Win+N
     void OpenTaskView();         // Win+Tab
+    void ShowDesktop();          // Win+D (바탕 화면 보기 토글)
     // 로고 메뉴 (맥 Apple 메뉴 대응). 전원 동작은 UI 가 확인 카드를 띄운 뒤에만 호출.
     void OpenAbout();            // ms-settings:about
     void OpenSettings();         // ms-settings:

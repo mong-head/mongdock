@@ -43,7 +43,7 @@ internal static class AppsFolder
                 {
                     try
                     {
-                        string? parsing = GetDisplayName(item, ShellConst.SIGDN_PARSINGNAME);
+                        string? parsing = GetDisplayName(item, ShellConst.SIGDN_PARENTRELATIVEPARSING);
                         string? display = GetDisplayName(item, ShellConst.SIGDN_NORMALDISPLAY);
                         if (!string.IsNullOrEmpty(parsing)) list.Add((parsing, display ?? parsing));
                     }
@@ -143,6 +143,28 @@ internal static class AppsFolder
         foreach (var (parsing, display) in Enumerate())
             if (string.Equals(parsing, aumid, StringComparison.OrdinalIgnoreCase)) return display;
         return null;
+    }
+
+    private static readonly Dictionary<string, bool> PackagedCache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 설치된 패키지 앱의 AUMID 인지 ("패밀리!앱ID" 형식이고 AppsFolder/패키지 저장소에 있음). 결과 캐시.
+    /// Chrome("Chrome")·탐색기("Microsoft.Windows.Explorer") 같은 데스크톱 앱의 명시적 AUMID 는 false.
+    /// </summary>
+    public static bool IsPackagedAumid(string? aumid)
+    {
+        if (string.IsNullOrWhiteSpace(aumid)) return false;
+        int bang = aumid.IndexOf('!');
+        if (bang <= 0 || bang == aumid.Length - 1 || aumid.IndexOf('_') <= 0 || aumid.IndexOf('_') > bang) return false;
+        lock (PackagedCache)
+            if (PackagedCache.TryGetValue(aumid, out bool known)) return known;
+        bool result = RestoreAumidCase(aumid) is not null;
+        lock (PackagedCache)
+        {
+            if (PackagedCache.Count > 512) PackagedCache.Clear();
+            PackagedCache[aumid] = result;
+        }
+        return result;
     }
 
     /// <summary>"Claude_pzs8sxrjxfjjc!Claude" → "Claude_pzs8sxrjxfjjc".</summary>

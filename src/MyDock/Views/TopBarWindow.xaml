@@ -56,9 +56,6 @@
                     <Button x:Name="QuickSettingsButton" Style="{StaticResource BarButton}" Click="OnQuickSettings">
                         <Path Width="18" Height="16" Data="{x:Static v:BarIcons.ControlCenter}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
                     </Button>
-                    <Button Style="{StaticResource BarIconButton}" Click="OnNotifications">
-                        <Path Width="17" Height="17" Data="{x:Static v:BarIcons.Bell}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
-                    </Button>
                 </StackPanel>
 
                 <!-- 한/영 배지: "한" = 글자색으로 채운 배경 + 반전 글자, "A" = 테두리만 -->
@@ -69,7 +66,10 @@
                     </Border>
                 </Button>
 
-                <TextBlock x:Name="Clock" VerticalAlignment="Center" Margin="10,0,2,0" FontSize="17" />
+                <!-- 시계: 클릭 = 알림 센터 + 달력 (MyDockFinder 와 동일) -->
+                <Button x:Name="ClockButton" Style="{StaticResource BarButton}" Padding="8,0" Margin="4,4,0,4" Click="OnClockClick">
+                    <TextBlock x:Name="Clock" FontSize="17" />
+                </Button>
             </StackPanel>
 
             <!-- 왼쪽: 로고 메뉴 · 가상 데스크톱 버튼 · 현재 앱 이름 (버튼은 앱 이름 길이와 무관하게 고정 위치) -->
@@ -88,16 +88,31 @@
                         </Path.Data>
                     </Path>
                 </Button>
-                <StackPanel x:Name="DesktopButtons" Orientation="Horizontal">
-                    <Button Style="{StaticResource BarIconButton}" FontSize="15" Content="&#xE76B;" Click="OnPreviousDesktop" />
-                    <Button Style="{StaticResource BarIconButton}" FontSize="15" Content="&#xE76C;" Click="OnNextDesktop" />
-                    <Button Style="{StaticResource BarIconButton}" FontSize="15" Content="&#xE710;" Click="OnNewDesktop" />
-                </StackPanel>
-                <TextBlock x:Name="AppName" FontWeight="Bold" FontFamily="Segoe UI, Malgun Gothic" FontSize="16.5" VerticalAlignment="Center"
-                           Margin="12,0,10,1" TextTrimming="CharacterEllipsis" MaxWidth="420" />
+                <!-- 앱 이름: 클릭 = 앱 메뉴 (맥 앱 메뉴) -->
+                <Button x:Name="AppNameButton" Style="{StaticResource BarButton}" Padding="8,0" Margin="4,4,0,4" Click="OnAppNameClick">
+                    <TextBlock x:Name="AppName" FontWeight="Bold" FontSize="16.5" Margin="0,0,0,1"
+                               TextTrimming="CharacterEllipsis" MaxWidth="420" />
+                </Button>
             </StackPanel>
 
-
+            <!-- 가운데: 가상 데스크톱 그룹 [‹] [2 / 3] [›] [+] [작업 보기] — 앱 이름 길이와 무관한 고정 위치 -->
+            <Border x:Name="DesktopButtons" HorizontalAlignment="Center" VerticalAlignment="Center" CornerRadius="8" Height="26">
+                <StackPanel Orientation="Horizontal" Margin="2,0">
+                    <Button x:Name="PrevDesktopButton" Style="{StaticResource BarButton}" Padding="7,0" Margin="0,2" MinWidth="0" Click="OnPreviousDesktop">
+                        <Path Width="10" Height="16" Data="{x:Static v:BarIcons.ChevronLeft}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                    </Button>
+                    <TextBlock x:Name="DesktopIndex" VerticalAlignment="Center" FontSize="14" Margin="3,0,3,1" MinWidth="34" TextAlignment="Center" />
+                    <Button x:Name="NextDesktopButton" Style="{StaticResource BarButton}" Padding="7,0" Margin="0,2" MinWidth="0" Click="OnNextDesktop">
+                        <Path Width="10" Height="16" Data="{x:Static v:BarIcons.ChevronRight}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                    </Button>
+                    <Button Style="{StaticResource BarButton}" Padding="7,0" Margin="0,2" MinWidth="0" Click="OnNewDesktop">
+                        <Path Width="14" Height="16" Data="{x:Static v:BarIcons.Plus}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                    </Button>
+                    <Button Style="{StaticResource BarButton}" Padding="7,0" Margin="0,2" MinWidth="0" Click="OnTaskView">
+                        <Path Width="18" Height="16" Data="{x:Static v:BarIcons.MissionControl}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                    </Button>
+                </StackPanel>
+            </Border>
         </Grid>
     </Border>
 </Window>

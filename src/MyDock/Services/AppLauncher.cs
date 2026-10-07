@@ -184,6 +184,20 @@ public sealed class AppLauncher : IAppLauncher
         }
     }
 
+    /// <summary>창 최소화 (비동기 ShowWindowAsync — 응답 없는 창에도 UI 스레드가 멈추지 않음).</summary>
+    public void Minimize(IntPtr hwnd)
+    {
+        try
+        {
+            if (hwnd == IntPtr.Zero || !User32.IsWindow(hwnd)) return;
+            User32.ShowWindowAsync(hwnd, User32.SW_MINIMIZE);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Minimize 실패", ex);
+        }
+    }
+
     public void Close(IntPtr hwnd)
     {
         try

@@ -123,7 +123,8 @@ internal class DesktopWallpaperClass
 internal static class ShellConst
 {
     public const uint SIGDN_NORMALDISPLAY = 0x00000000;
-    public const uint SIGDN_PARSINGNAME = 0x80058000;
+    /// <summary>부모 기준 파싱 이름 — AppsFolder 항목에서는 AUMID. (0x80058000 은 SIGDN_FILESYSPATH 라 AppsFolder 항목에서 실패)</summary>
+    public const uint SIGDN_PARENTRELATIVEPARSING = 0x80018001;
 
     public const int SIIGBF_BIGGERSIZEOK = 0x01;
     public const int SIIGBF_ICONONLY = 0x04;
