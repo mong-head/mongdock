@@ -79,6 +79,7 @@ public partial class DockWindow : Window
         PanelBorder.SizeChanged += (_, _) => SyncBackdrop();
 
         Root.MouseMove += OnRootMouseMove;
+        ItemsHost.LayoutUpdated += (_, _) => UpdateLabelPosition(); // 확대로 아이콘 위치/크기가 바뀐 뒤
         Root.MouseLeave += OnRootMouseLeave;
 
         // 빈 영역/구분선 드래그 → 독 이동
@@ -423,6 +424,7 @@ public partial class DockWindow : Window
         // 위쪽 독은 상단바 아래로 미끄러져 들어가는 대신 흐려지며 사라짐
         Opacity = l.Edge == DockEdge.Top ? 1 - _hide : 1;
         SyncBackdrop();
+        UpdateLabelPosition();
     }
 
     /// <summary>블러 창을 패널 영역에 정확히 맞춤 (+ 상단바 샘플링용 공유 영역 갱신).</summary>
@@ -909,35 +911,57 @@ public partial class DockWindow : Window
 
     // ───────────────────────── 이름 말풍선 ─────────────────────────
 
+    private DockItemView? _labelView;
+    private const double LabelGap = 10;
+
     private void OnItemHoverStarted(object? sender, EventArgs e)
     {
         if (sender is not DockItemView view || string.IsNullOrEmpty(view.Item.Name)) return;
         if (PanelBorder.ContextMenu?.IsOpen == true || _dragArmed || _hideTo >= 1) return;
-
-        var source = PresentationSource.FromVisual(this);
-        if (source?.CompositionTarget == null) return;
-        const double gap = 6;
-
-        // 확대된 아이콘이 들어가는 창의 안쪽 끝에서 조금 더 바깥
-        var center = view.TranslatePoint(new Point(view.ActualWidth / 2, view.ActualHeight / 2), this);
-        Point local = _layout.Edge switch
-        {
-            DockEdge.Left => new Point(ActualWidth + gap, center.Y),
-            DockEdge.Bottom => new Point(center.X, -gap),
-            DockEdge.Top => new Point(center.X, ActualHeight + gap),
-            _ => new Point(-gap, center.Y),
-        };
-        var screen = source.CompositionTarget.TransformFromDevice.Transform(PointToScreen(local));
+        if (LabelAnchor(view) is not Point anchor) return;
 
         if (_label == null)
         {
             _label = new DockLabelWindow(_services);
             _label.SetColors(_layout.LabelBackground, _layout.LabelForeground, _layout.LabelBorder);
         }
-        _label.ShowAt(view.Item.Name, screen, _layout.Edge);
+        _labelView = view;
+        _label.ShowAt(view.Item.Name, anchor, _layout.Edge);
     }
 
-    private void OnItemHoverEnded(object? sender, EventArgs e) => _label?.Hide();
+    private void OnItemHoverEnded(object? sender, EventArgs e)
+    {
+        if (sender == _labelView) _labelView = null;
+        _label?.Hide();
+    }
+
+    /// <summary>
+    /// 말풍선 기준점(화면 DIP): 확대된 아이콘의 안쪽 끝 + 간격.
+    /// 아이콘은 가장자리 쪽 변을 기준으로 IconSize×Scale 만큼 안쪽으로 커지므로 그 끝을 계산한다.
+    /// </summary>
+    private Point? LabelAnchor(DockItemView view)
+    {
+        var source = PresentationSource.FromVisual(this);
+        if (source?.CompositionTarget == null || !view.IsVisible) return null;
+
+        double extent = _layout.IconSize * view.Scale + LabelGap;
+        double w = view.ActualWidth, h = view.ActualHeight;
+        Point local = _layout.Edge switch
+        {
+            DockEdge.Left => view.TranslatePoint(new Point(0, h / 2), this) + new Vector(extent, 0),
+            DockEdge.Bottom => view.TranslatePoint(new Point(w / 2, h), this) - new Vector(0, extent),
+            DockEdge.Top => view.TranslatePoint(new Point(w / 2, 0), this) + new Vector(0, extent),
+            _ => view.TranslatePoint(new Point(w, h / 2), this) - new Vector(extent, 0),
+        };
+        return source.CompositionTarget.TransformFromDevice.Transform(PointToScreen(local));
+    }
+
+    /// <summary>확대/슬라이드 중 말풍선이 아이콘을 따라가게.</summary>
+    private void UpdateLabelPosition()
+    {
+        if (_label == null || _labelView == null || !_label.IsVisible) return;
+        if (LabelAnchor(_labelView) is Point anchor) _label.MoveTo(anchor);
+    }
 
     // ───────────────────────── 드래그로 독 이동 ─────────────────────────
 
