@@ -32,6 +32,15 @@ public enum IconStyle
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SearchMode
+{
+    /// <summary>몽독 자체 검색창 (맥 Spotlight 처럼 화면 가운데). 앱 이름 검색 + Windows 검색/웹 검색으로 넘기기.</summary>
+    Spotlight,
+    /// <summary>윈도우 검색 (Win+S). 윈도우 10·왼쪽 정렬 작업 표시줄에서는 왼쪽 아래에 뜸.</summary>
+    Windows,
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TopBarColorMode
 {
     /// <summary>완전 투명 — 바탕화면이 비침. 글자/아이콘 색은 그 아래 배경화면 밝기에 따라 검정/흰색 자동.</summary>
@@ -101,6 +110,8 @@ public sealed class DockSettings
     /// <summary>화면 가장자리와 독 사이 여백 (DIP).</summary>
     public double Margin { get; set; } = 10;
     public bool ShowRunningApps { get; set; } = true;
+    /// <summary>독을 둘 모니터의 장치 이름 (예 "\.\DISPLAY2"). "" 또는 연결 안 된 모니터면 주 모니터.</summary>
+    public string Monitor { get; set; } = "";
 }
 
 public sealed class TopBarSettings
@@ -129,6 +140,10 @@ public sealed class TopBarSettings
     /// <summary>네트워크 업/다운 속도 (2줄 작은 글씨).</summary>
     public bool ShowNetworkSpeed { get; set; } = false;
     public bool ReserveSpace { get; set; } = true;
+    /// <summary>모든 모니터에 상단바 표시 (맥처럼). false 면 주 모니터에만.</summary>
+    public bool ShowOnAllMonitors { get; set; } = true;
+    /// <summary>검색 버튼 동작.</summary>
+    public SearchMode SearchMode { get; set; } = SearchMode.Spotlight;
 }
 
 public sealed class Settings
