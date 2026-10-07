@@ -347,7 +347,8 @@ public enum TrayMouseButton { Left, Right, Middle }
 public sealed class TrayIconInfo
 {
     internal TrayIconInfo(string key, IntPtr ownerHwnd, uint uid, Guid guid, uint callbackMessage, uint version,
-        System.Windows.Media.Imaging.BitmapSource? icon, string tooltip, bool isHidden, uint processId, string processName)
+        System.Windows.Media.Imaging.BitmapSource? icon, string tooltip, bool isHidden, uint processId, string processName,
+        string processPath)
     {
         Key = key;
         OwnerHwnd = ownerHwnd;
@@ -360,6 +361,7 @@ public sealed class TrayIconInfo
         IsHidden = isHidden;
         ProcessId = processId;
         ProcessName = processName;
+        ProcessPath = processPath;
     }
 
     /// <summary>아이콘 식별자 (GUID 가 있으면 GUID, 아니면 소유 창 + uID).</summary>
@@ -381,6 +383,8 @@ public sealed class TrayIconInfo
     public uint ProcessId { get; }
     /// <summary>예: "kakaotalk.exe" (모르면 "").</summary>
     public string ProcessName { get; }
+    /// <summary>소유 프로세스의 exe 전체 경로 (모르면 ""). 윈도우 트레이 설정(NotifyIconSettings) 매칭용.</summary>
+    public string ProcessPath { get; }
 }
 
 /// <summary>

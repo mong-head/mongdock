@@ -23,7 +23,7 @@ namespace MyDock.Views;
 ///   슬라이더는 드래그 중엔 저장하지 않고 놓을 때(클릭·휠은 짧은 디바운스 후) 저장.
 /// - 다른 곳(메뉴·독 드래그·settings.json 편집)에서 설정이 바뀌면 현재 페이지를 다시 그림.
 /// </summary>
-internal sealed class SettingsWindow : Window
+internal sealed partial class SettingsWindow : Window
 {
     private enum Page { General, Dock, TopBar, Search, About }
 
@@ -452,12 +452,14 @@ internal sealed class SettingsWindow : Window
             Row("가상 데스크톱 버튼", null, Toggle(t.ShowDesktopButtons, on => Commit(() => T().ShowDesktopButtons = on))),
             Row("앱 트레이 아이콘", "카카오톡·디스코드 같은 앱의 알림 영역 아이콘. 작업 표시줄을 숨겨도 여기서 열 수 있어요.",
                 Toggle(t.ShowTrayIcons, on => Commit(() => T().ShowTrayIcons = on))),
-            Row("트레이 아이콘 개수", "넘치면 ⌃ 버튼 하나로 묶어요.",
+            Row("상단바 트레이 아이콘 최대 개수", "바에 둘 아이콘이 이보다 많으면 순서 뒤쪽부터 ⌃ 안으로 들어가요.",
                 ValueSlider(t.TrayIconsVisibleCount, 1, 20, 1, v => $"{v:0}개", v => T().TrayIconsVisibleCount = (int)Math.Round(v))),
             Row("상태 아이콘", "Wi-Fi·블루투스·볼륨", Toggle(t.ShowStatusIcons, on => Commit(() => T().ShowStatusIcons = on))),
             Row("빠른 버튼", "검색·빠른 설정·알림 센터", Toggle(t.ShowQuickButtons, on => Commit(() => T().ShowQuickButtons = on))),
             Row("한/영", null, Toggle(t.ShowImeToggle, on => Commit(() => T().ShowImeToggle = on))),
             Row("네트워크 속도", null, Toggle(t.ShowNetworkSpeed, on => Commit(() => T().ShowNetworkSpeed = on)))));
+
+        if (t.ShowTrayIcons) AddTrayArrange(body); // SettingsWindow.Tray.cs
 
         body.Children.Add(Group(
             Row("캘린더 앱", "시계 달력에서 날짜를 두 번 누르거나 '캘린더에서 열기' 를 누르면 엽니다. 웹은 기본 브라우저로 그 날짜를 엽니다.",

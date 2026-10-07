@@ -225,6 +225,9 @@ public sealed class SettingsService : ISettingsService, IDisposable
         // 수동 편집으로 null 이 들어와도 UI 가 죽지 않게 보정.
         s.Dock ??= new DockSettings();
         s.TopBar ??= new TopBarSettings();
+        s.TopBar.TrayIconPlacement ??= new Dictionary<string, TrayIconPlacement>();
+        foreach (var k in s.TopBar.TrayIconPlacement.Where(kv => kv.Value is null).Select(kv => kv.Key).ToList())
+            s.TopBar.TrayIconPlacement.Remove(k);
         s.Notifications ??= new NotificationSettings();
         s.Search ??= new SearchSettings();
         s.Search.FileSearchFolders ??= new List<string>();

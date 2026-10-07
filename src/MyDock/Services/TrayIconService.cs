@@ -30,8 +30,11 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
     private const int TimerRaise = 1;       // 100ms: Z 순서 맨 위 유지
     private const int TimerHousekeep = 2;   // 2s: explorer 창 다시 찾기·위치 맞추기·죽은 아이콘 정리
     private const int TimerReplay = 3;      // 시작 직후: TaskbarCreated 재등록 요청 (ReplayPasses 간격으로 여러 번)
-    /// <summary>재등록 요청 간격 (ms): 시작 0.2초 뒤, 그 뒤 2초, 다시 4초 뒤.</summary>
-    private static readonly uint[] ReplayPasses = { 200, 2000, 4000 };
+    /// <summary>
+    /// 재등록 요청 간격 (ms, 앞 요청 기준): 0.2초 뒤 모든 앱에 한 번, 그 뒤 시작 1·3·8초쯤에는 <b>빠진 앱만</b> 골라 다시
+    /// (이미 잡힌 앱에 다시 보내면 DELETE→ADD 로 아이콘이 깜빡임 — 실측).
+    /// </summary>
+    private static readonly uint[] ReplayPasses = { 200, 800, 2000, 5000 };
     private int _replayCount;
     private const uint ForwardTimeoutMs = 3000;
     private const uint AppBarForwardTimeoutMs = 5000;
@@ -39,7 +42,7 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
     private readonly Dispatcher _dispatcher;
     private readonly object _gate = new();
     private readonly List<Entry> _entries = new();          // _gate
-    private readonly Dictionary<uint, string> _procNames = new(); // 트레이 스레드 전용
+    private readonly Dictionary<uint, (string Name, string Path)> _procNames = new(); // 트레이 스레드 전용
     private readonly T.WndProc _wndProc;                     // GC 방지
     private readonly uint _selfPid = (uint)Environment.ProcessId;
     private readonly uint _taskbarCreatedMsg;
@@ -452,10 +455,18 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
                 // 보내기 직전에 몽독 창이 맨 위인지 확인 (시작 직후 작업 표시줄 숨기기 등으로 explorer 창이 다시 올라와
                 // 앱들의 NIM_ADD 가 explorer 로 새는 경우가 있음 — 실측: 재시작 후 14개 중 5개만 잡힘)
                 if (T.FindWindow(T.TrayWndClass, null) != _trayHwnd) RaiseTopmost();
-                int n = SendTaskbarCreatedToApps(_explorerTray);
                 _replayCount++;
-                Log.Info($"트레이 아이콘 재등록 요청 {_replayCount}회차 (TaskbarCreated → 창 {n}개)");
-                // 늦게 반응하는 앱·위의 경우를 위해 2초, 6초 뒤 한 번씩 더 (중복 NIM_ADD 는 같은 아이콘으로 합쳐짐)
+                if (_replayCount == 1)
+                {
+                    int n = SendTaskbarCreatedToApps(_explorerTray);
+                    Log.Info($"트레이 아이콘 재등록 요청 1회차 (TaskbarCreated → 창 {n}개)");
+                }
+                else
+                {
+                    // 늦게 반응하는 앱·위의 경우: 트레이 아이콘을 가진 적 있는 앱(윈도우 설정 목록) 중 실행 중인데 아직 없는 것만
+                    string missing = SendTaskbarCreatedToMissingApps(_explorerTray);
+                    Log.Info($"트레이 아이콘 재등록 확인 {_replayCount}회차: " + (missing.Length > 0 ? "빠진 앱에 다시 요청 → " + missing : "빠진 앱 없음"));
+                }
                 if (_replayCount < ReplayPasses.Length)
                     T.SetTimer(_trayHwnd, (UIntPtr)TimerReplay, ReplayPasses[_replayCount], IntPtr.Zero);
                 break;
@@ -543,6 +554,67 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
         return count;
     }
 
+    /// <summary>
+    /// NotifyIconSettings 의 ExecutablePath(트레이 아이콘을 가진 적 있는 앱) 중 지금 실행 중인데 몽독 목록에 아이콘이 하나도 없는
+    /// 프로세스에만 TaskbarCreated 를 보냄 — 최상위 창과 메시지 전용 창(HWND_MESSAGE) 모두. 이미 잡힌 앱은 건드리지 않음(깜빡임 방지).
+    /// 반환: 로그용 "앱(창 수), ..." (보낸 곳 없으면 "").
+    /// </summary>
+    private string SendTaskbarCreatedToMissingApps(IntPtr explorerTray)
+    {
+        if (_taskbarCreatedMsg == 0) return "";
+        var reader = NotifyIconSettingsReader.Shared;
+        if (!reader.IsAvailable) return "";
+        uint explorerPid = 0;
+        IntPtr ex = explorerTray != IntPtr.Zero ? explorerTray : T.FindExplorerTray();
+        if (ex != IntPtr.Zero) T.GetWindowThreadProcessId(ex, out explorerPid);
+
+        var captured = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        lock (_gate)
+        {
+            foreach (var e in _entries)
+                if (e.ProcessPath.Length > 0) captured.Add(e.ProcessPath);
+        }
+
+        // 1) 후보 프로세스: 파일 이름으로 먼저 거르고(싸게) 전체 경로를 확인
+        var targets = new Dictionary<uint, string>();
+        foreach (var p in Process.GetProcesses())
+        {
+            using (p)
+            {
+                uint pid;
+                string file;
+                try { pid = (uint)p.Id; file = p.ProcessName + ".exe"; }
+                catch { continue; }
+                if (pid == 0 || pid == _selfPid || pid == explorerPid || !reader.IsKnownFileName(file)) continue;
+                string path;
+                try { path = Kernel32.QueryProcess(pid).Path; }
+                catch { continue; }
+                if (path.Length == 0 || captured.Contains(path) || !reader.IsKnownPath(path)) continue;
+                targets[pid] = file;
+            }
+        }
+        if (targets.Count == 0) return "";
+
+        // 2) 그 프로세스들의 최상위 창 + 메시지 전용 창에 보냄
+        var sent = new Dictionary<uint, int>();
+        void Send(IntPtr h)
+        {
+            T.GetWindowThreadProcessId(h, out uint pid);
+            if (!targets.ContainsKey(pid)) return;
+            if (T.SendNotifyMessage(h, _taskbarCreatedMsg, IntPtr.Zero, IntPtr.Zero))
+                sent[pid] = sent.TryGetValue(pid, out int c) ? c + 1 : 1;
+        }
+        T.EnumWindows((h, _) => { Send(h); return true; }, IntPtr.Zero);
+        IntPtr after = IntPtr.Zero;
+        for (int i = 0; i < 4096; i++)
+        {
+            after = T.FindWindowEx(T.HWND_MESSAGE, after, null, null);
+            if (after == IntPtr.Zero) break;
+            Send(after);
+        }
+        return string.Join(", ", targets.Select(t => $"{t.Value}(창 {(sent.TryGetValue(t.Key, out int c) ? c : 0)})"));
+    }
+
     // ───────────────────────── 트레이 데이터 해석 ─────────────────────────
 
     private sealed class Entry
@@ -559,6 +631,7 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
         public bool Hidden;
         public uint Pid;
         public string ProcessName = "";
+        public string ProcessPath = "";
         public bool Own;
         public RECT? Placement;
         public TrayIconInfo? Snapshot; // null 이면 다시 만들어야 함
@@ -664,7 +737,7 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
 
         uint pid = 0;
         if (hwnd != IntPtr.Zero) T.GetWindowThreadProcessId(hwnd, out pid);
-        string procName = pid != 0 ? ProcessName(pid) : "";
+        var (procName, procPath) = pid != 0 ? ProcessInfo(pid) : ("", "");
 
         bool added = false, own;
         int total;
@@ -683,6 +756,7 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
                     Uid = uid,
                     Pid = pid,
                     ProcessName = procName,
+                    ProcessPath = procPath,
                     Own = pid == _selfPid,
                 };
                 _entries.Add(found);
@@ -704,6 +778,7 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
                 e.Uid = uid;
                 e.Pid = pid;
                 e.ProcessName = procName;
+                e.ProcessPath = procPath;
                 e.Own = pid == _selfPid;
             }
             if (ver is > 0 and <= 4) e.Version = ver;
@@ -729,9 +804,12 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
         return null;
     }
 
-    private string ProcessName(uint pid)
+    private (string Name, string Path) ProcessInfo(uint pid)
     {
-        if (_procNames.TryGetValue(pid, out var name)) return name;
+        if (_procNames.TryGetValue(pid, out var info)) return info;
+        string name, path = "";
+        try { path = Kernel32.QueryProcess(pid).Path; }
+        catch { /* 아래 이름만 */ }
         try
         {
             using var p = Process.GetProcessById((int)pid);
@@ -739,11 +817,12 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
         }
         catch
         {
-            name = $"pid {pid}";
+            name = path.Length > 0 ? System.IO.Path.GetFileName(path) : $"pid {pid}";
         }
+        info = (name, path);
         if (_procNames.Count > 512) _procNames.Clear();
-        _procNames[pid] = name;
-        return name;
+        _procNames[pid] = info;
+        return info;
     }
 
     /// <summary>HICON → 독립된 픽셀 복사본 (Pbgra32, Freeze). 원본 핸들은 건드리지 않음(앱 소유).</summary>
@@ -818,7 +897,7 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
             {
                 if (e.Own) continue; // 몽독 자신의 트레이 아이콘은 제외 (로고 메뉴에 같은 기능)
                 e.Snapshot ??= new TrayIconInfo(e.Key, e.Hwnd, e.Uid, e.Guid, e.CallbackMessage, e.Version, e.Icon,
-                    e.Tip, e.Hidden, e.Pid, e.ProcessName);
+                    e.Tip, e.Hidden, e.Pid, e.ProcessName, e.ProcessPath);
                 list.Add(e.Snapshot);
             }
         }

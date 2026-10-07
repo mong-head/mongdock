@@ -175,8 +175,15 @@ public sealed class TopBarSettings
     /// 켜져 있으면 몽독이 트레이 메시지를 먼저 받아 explorer 로 그대로 전달한다 (TrayIconService).
     /// </summary>
     public bool ShowTrayIcons { get; set; } = true;
-    /// <summary>상단바에 바로 보일 트레이 아이콘 수. 넘치면 "⌃" 버튼 하나로 묶어 누르면 아래 패널에 나머지.</summary>
-    public int TrayIconsVisibleCount { get; set; } = 6;
+    /// <summary>
+    /// 상단바에 바로 보일 트레이 아이콘의 <b>최대</b> 개수. 어느 아이콘이 바에 갈지는 TrayIconPlacement(몽독에서 옮김) &gt;
+    /// 윈도우 설정("작업 표시줄에 항상 표시") &gt; 기본(⌃ 안) 순서로 정하고, 이 수를 넘으면 순서 뒤쪽부터 ⌃ 로.
+    /// </summary>
+    public int TrayIconsVisibleCount { get; set; } = 10;
+    /// <summary>
+    /// 몽독에서 직접 옮긴 트레이 아이콘 자리 (윈도우 설정보다 우선). 키 = GUID("d" 형식 소문자) 또는 "exe 파일 이름 소문자:uID".
+    /// </summary>
+    public Dictionary<string, TrayIconPlacement> TrayIconPlacement { get; set; } = new();
     /// <summary>네트워크 업/다운 속도 (2줄 작은 글씨).</summary>
     public bool ShowNetworkSpeed { get; set; } = false;
     public bool ReserveSpace { get; set; } = true;
@@ -188,6 +195,15 @@ public sealed class TopBarSettings
     public SpotlightHotkey SpotlightHotkey { get; set; } = SpotlightHotkey.Auto;
     /// <summary>시계 달력에서 날짜를 열 캘린더. 고른 데스크톱 앱이 지워졌으면 Google 웹으로 대신 엶.</summary>
     public CalendarApp CalendarApp { get; set; } = CalendarApp.Google;
+}
+
+/// <summary>트레이 아이콘 하나의 몽독 저장 자리.</summary>
+public sealed class TrayIconPlacement
+{
+    /// <summary>true = 상단바, false = ⌃ 안.</summary>
+    public bool OnBar { get; set; }
+    /// <summary>바(또는 ⌃) 안의 순서 (작을수록 왼쪽).</summary>
+    public int Order { get; set; }
 }
 
 public sealed class NotificationSettings
