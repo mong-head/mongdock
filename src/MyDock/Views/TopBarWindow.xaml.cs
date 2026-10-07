@@ -51,8 +51,6 @@ public partial class TopBarWindow : Window
     /// <summary>이 상단바의 모니터 (분리됐으면 주 모니터 — 곧 App 이 이 창을 닫는다). Left/Top 등 DIP 는 이 모니터 기준.</summary>
     private MonitorInfo Monitor => _services.DesktopWindows.ResolveMonitor(MonitorDevice);
 
-    public TopBarWindow(AppServices services) : this(services, "") { }
-
     public TopBarWindow(AppServices services, string monitorDevice)
     {
         _services = services;

@@ -20,7 +20,24 @@ internal sealed class SpotlightHotkeyController : IDisposable
         _hotkey.Pressed += OnPressed;
         _services.Settings.SettingsChanged += OnChanged;
         AppState.Changed += OnChanged;
+        _services.DesktopWindows.DisplayChanged += OnDisplayChanged;
+        Microsoft.Win32.SystemEvents.SessionSwitch += OnSessionSwitch;
         Sync();
+    }
+
+    /// <summary>LL 훅은 시간 초과 등으로 조용히 빠질 수 있음 → 디스플레이 변경·세션 잠금 해제 때 재설치.</summary>
+    private void OnDisplayChanged(object? sender, EventArgs e)
+    {
+        if (!_disposed) _hotkey.Reinstall("DisplayChanged");
+    }
+
+    // SystemEvents 스레드에서 올 수 있음 — Reinstall 은 스레드 무관
+    private void OnSessionSwitch(object sender, Microsoft.Win32.SessionSwitchEventArgs e)
+    {
+        if (_disposed) return;
+        if (e.Reason is Microsoft.Win32.SessionSwitchReason.SessionUnlock or Microsoft.Win32.SessionSwitchReason.ConsoleConnect
+            or Microsoft.Win32.SessionSwitchReason.RemoteConnect)
+            _hotkey.Reinstall($"세션 {e.Reason}");
     }
 
     private void OnChanged(object? sender, EventArgs e) => Sync();
@@ -56,6 +73,8 @@ internal sealed class SpotlightHotkeyController : IDisposable
         _disposed = true;
         _services.Settings.SettingsChanged -= OnChanged;
         AppState.Changed -= OnChanged;
+        _services.DesktopWindows.DisplayChanged -= OnDisplayChanged;
+        Microsoft.Win32.SystemEvents.SessionSwitch -= OnSessionSwitch;
         _hotkey.Pressed -= OnPressed;
         _hotkey.Dispose();
     }

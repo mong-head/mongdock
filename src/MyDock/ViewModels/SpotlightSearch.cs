@@ -133,8 +133,7 @@ public static class SpotlightRecents
         if (list.Count > Limit) list.RemoveRange(Limit, list.Count - Limit);
         try
         {
-            Directory.CreateDirectory(AppInfo.DataDirectory);
-            File.WriteAllLines(FilePath, list);
+            AtomicFile.WriteAllLines(FilePath, list); // 임시 파일 → 바꿔 끼움 (중간에 꺼져도 잘린 파일이 남지 않음)
         }
         catch (Exception ex)
         {

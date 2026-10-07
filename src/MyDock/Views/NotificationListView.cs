@@ -329,12 +329,7 @@ internal sealed class NotificationListView : Border
         int left = groups.Count;
         void Finish()
         {
-            Safe(() =>
-            {
-                // INotificationService 에 전체 숨기기가 없어 앱별로 (각 호출이 Changed 를 내지만 다시 그리기는 EndAnim 에서 한 번)
-                foreach (string aumid in _services.Notifications.Recent.Select(i => i.Aumid).Distinct(StringComparer.OrdinalIgnoreCase).ToList())
-                    _services.Notifications.HideApp(aumid);
-            });
+            Safe(() => _services.Notifications.HideAll()); // 숨김 파일 저장·Changed 한 번
             EndAnim();
         }
         if (left == 0)

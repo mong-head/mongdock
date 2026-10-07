@@ -23,7 +23,9 @@ namespace MyDock.Services;
 ///   (원격 데스크톱·StarDesk 등)는 실제 키처럼 처리한다.
 ///
 /// 한계: 관리자 권한 창(작업 관리자 등)이 포그라운드면 UIPI 때문에 LL 훅이 그 키를 받지 못한다.
-/// 훅은 UI 스레드에서 설치·해제할 것 (LL 훅은 설치한 스레드의 메시지 루프로 호출됨).
+/// 훅은 전용 백그라운드 스레드(<see cref="LowLevelHookThread"/>)에서 돈다 — UI 가 바빠도 시스템 키 입력이 늦지 않고,
+/// LowLevelHooksTimeout 초과로 훅이 조용히 빠질 위험이 줄어든다. 그래도 빠질 수 있어 <see cref="Reinstall"/> 제공
+/// (세션 잠금 해제·디스플레이 변경 때 컨트롤러가 호출).
 /// </summary>
 public sealed class SpotlightHotkeyService : IDisposable
 {
@@ -33,9 +35,9 @@ public sealed class SpotlightHotkeyService : IDisposable
     private const long RepeatGapMs = 1500;
 
     private readonly Dispatcher _dispatcher;
-    private K.LowLevelKeyboardProc? _proc; // GC 방지용으로 필드 보관
-    private IntPtr _hook;
-    private SpotlightHotkey _mode = SpotlightHotkey.None;
+    private readonly LowLevelHookThread _hook;
+    private volatile SpotlightHotkey _mode = SpotlightHotkey.None;
+    // 아래 둘은 훅 스레드에서만 읽고 쓴다
     private bool _spaceHeld;       // 우리가 삼킨 Space 가 아직 눌려 있음
     private long _lastSpaceDownAt;
     private bool _disposed;
@@ -43,86 +45,60 @@ public sealed class SpotlightHotkeyService : IDisposable
     /// <summary>단축키가 눌림 (UI 스레드).</summary>
     public event EventHandler? Pressed;
 
+    /// <summary>UI 스레드에서 만들 것 (Pressed 를 그 Dispatcher 로 올린다).</summary>
     public SpotlightHotkeyService()
     {
         _dispatcher = Dispatcher.CurrentDispatcher;
+        _hook = new LowLevelHookThread(K.WH_KEYBOARD_LL, "전역 키보드", OnKey);
     }
 
-    /// <summary>현재 적용된 단축키 (None 이면 훅 없음).</summary>
-    public SpotlightHotkey Mode => _mode;
-
-    /// <summary>단축키 적용. None 이면 훅 해제. 같은 값이면 아무것도 안 함. UI 스레드에서 호출.</summary>
+    /// <summary>단축키 적용. None 이면 훅 해제. 같은 값이면 아무것도 안 함.</summary>
     public void Apply(SpotlightHotkey mode)
     {
         if (_disposed) return;
-        if (mode == _mode && (mode == SpotlightHotkey.None || _hook != IntPtr.Zero)) return;
+        if (mode == _mode && (mode == SpotlightHotkey.None || _hook.IsRunning)) return;
         _mode = mode;
-        _spaceHeld = false;
         if (mode == SpotlightHotkey.None)
         {
-            RemoveHook();
+            _hook.Stop();
             return;
         }
-        if (_hook == IntPtr.Zero) InstallHook();
+        if (!_hook.IsRunning)
+        {
+            _hook.Stop(); // 설치 실패로 반쯤 남은 상태 정리
+            if (_hook.Start()) Log.Info($"Spotlight 단축키 {mode}");
+        }
         else Log.Info($"Spotlight 단축키 변경: {mode}");
     }
 
-    private void InstallHook()
+    /// <summary>훅 재설치 (켜져 있을 때만). 조용히 제거됐을 경우 대비.</summary>
+    public void Reinstall(string reason)
     {
-        _proc ??= HookProc;
-        IntPtr hMod = K.GetModuleHandle(null);
-        _hook = K.SetWindowsHookEx(K.WH_KEYBOARD_LL, _proc, hMod, 0);
-        if (_hook == IntPtr.Zero)
-        {
-            hMod = K.GetModuleHandle("user32.dll");
-            _hook = K.SetWindowsHookEx(K.WH_KEYBOARD_LL, _proc, hMod, 0);
-        }
-        if (_hook == IntPtr.Zero) Log.Error($"WH_KEYBOARD_LL 설치 실패 err={Marshal.GetLastWin32Error()}");
-        else Log.Info($"전역 키보드 훅 설치 (Spotlight 단축키 {_mode})");
-    }
-
-    private void RemoveHook()
-    {
-        if (_hook == IntPtr.Zero) return;
-        if (!K.UnhookWindowsHookEx(_hook))
-            Log.Warn($"WH_KEYBOARD_LL 해제 실패 err={Marshal.GetLastWin32Error()}");
-        _hook = IntPtr.Zero;
-        _spaceHeld = false;
-        Log.Info("전역 키보드 훅 해제");
+        if (_disposed || _mode == SpotlightHotkey.None) return;
+        _hook.Restart(reason);
     }
 
     /// <summary>
-    /// LL 훅 콜백: 판단만 하고 즉시 반환 (시스템 시간 제한 LowLevelHooksTimeout 초과 시 훅이 빠짐).
-    /// 무거운 일(창 열기)은 Dispatcher.BeginInvoke. 1 을 반환하면 그 키는 삼켜짐.
+    /// LL 훅 콜백 (훅 스레드): 판단만 하고 즉시 반환. true = 삼킴.
+    /// 무거운 일(창 열기)은 Dispatcher.BeginInvoke.
     /// </summary>
-    private IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam)
+    private bool OnKey(int nCode, IntPtr wParam, IntPtr lParam)
     {
-        if (nCode >= 0 && _mode != SpotlightHotkey.None)
+        if (_mode == SpotlightHotkey.None) return false;
+        var k = Marshal.PtrToStructure<K.KBDLLHOOKSTRUCT>(lParam);
+        // 내가 주입한 더미 키는 그대로 통과 (다른 프로세스의 주입 입력은 아래에서 정상 처리)
+        bool mine = (k.flags & K.LLKHF_INJECTED) != 0 && k.dwExtraInfo == InjectMarker;
+        if (mine || k.vkCode != K.VK_SPACE) return false;
+        int msg = (int)wParam.ToInt64();
+        bool down = msg is K.WM_KEYDOWN or K.WM_SYSKEYDOWN;
+        bool up = msg is K.WM_KEYUP or K.WM_SYSKEYUP;
+        if (down) return OnSpaceDown();
+        if (up && _spaceHeld)
         {
-            try
-            {
-                var k = Marshal.PtrToStructure<K.KBDLLHOOKSTRUCT>(lParam);
-                // 내가 주입한 더미 키는 그대로 통과 (다른 프로세스의 주입 입력은 아래에서 정상 처리)
-                bool mine = (k.flags & K.LLKHF_INJECTED) != 0 && k.dwExtraInfo == InjectMarker;
-                if (!mine && k.vkCode == K.VK_SPACE)
-                {
-                    int msg = (int)wParam.ToInt64();
-                    bool down = msg is K.WM_KEYDOWN or K.WM_SYSKEYDOWN;
-                    bool up = msg is K.WM_KEYUP or K.WM_SYSKEYUP;
-                    if (down && OnSpaceDown()) return new IntPtr(1);
-                    if (up && _spaceHeld)
-                    {
-                        _spaceHeld = false;
-                        return new IntPtr(1);
-                    }
-                }
-            }
-            catch
-            {
-                // 훅 안에서 예외를 밖으로 내보내지 않음 (로그도 생략 — 빠르게 반환)
-            }
+            _spaceHeld = false;
+            return true;
         }
-        return K.CallNextHookEx(_hook, nCode, wParam, lParam);
+        return false;
     }
 
     /// <summary>Space 다운: 단축키면 true (삼킴).</summary>
@@ -193,6 +169,6 @@ public sealed class SpotlightHotkeyService : IDisposable
         if (_disposed) return;
         _disposed = true;
         _mode = SpotlightHotkey.None;
-        RemoveHook();
+        _hook.Dispose();
     }
 }

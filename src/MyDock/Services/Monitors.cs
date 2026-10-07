@@ -1,5 +1,4 @@
 using System.Windows;
-using System.Windows.Interop;
 using MyDock.Native;
 
 namespace MyDock.Services;
@@ -14,9 +13,8 @@ namespace MyDock.Services;
 /// </summary>
 public sealed class MonitorInfo
 {
-    internal MonitorInfo(IntPtr handle, string deviceName, RECT bounds, RECT work, double scale, bool isPrimary, int number)
+    internal MonitorInfo(string deviceName, RECT bounds, RECT work, double scale, bool isPrimary, int number)
     {
-        Handle = handle;
         DeviceName = deviceName;
         BoundsRect = bounds;
         WorkRect = work;
@@ -25,8 +23,6 @@ public sealed class MonitorInfo
         Number = number;
     }
 
-    /// <summary>HMONITOR (구성이 바뀌면 무효가 될 수 있음 — 비교는 <see cref="DeviceName"/> 으로).</summary>
-    public IntPtr Handle { get; }
     /// <summary>MONITORINFOEX.szDevice (예 "\\.\DISPLAY2"). 설정 Dock.Monitor 에 저장하는 값.</summary>
     public string DeviceName { get; }
     /// <summary>배율 (1.0 = 96 DPI, 1.25 = 125%).</summary>
@@ -38,10 +34,6 @@ public sealed class MonitorInfo
     internal RECT BoundsRect { get; }
     internal RECT WorkRect { get; }
 
-    /// <summary>모니터 전체 영역 (물리 픽셀, 가상 화면 좌표).</summary>
-    public Rect BoundsPx => new(BoundsRect.Left, BoundsRect.Top, BoundsRect.Width, BoundsRect.Height);
-    /// <summary>작업 영역 (물리 픽셀) — 작업 표시줄·AppBar 제외.</summary>
-    public Rect WorkAreaPx => new(WorkRect.Left, WorkRect.Top, WorkRect.Width, WorkRect.Height);
     /// <summary>모니터 전체 영역 (이 모니터 기준 DIP = px / Scale).</summary>
     public Rect Bounds => ToDip(BoundsRect);
     /// <summary>작업 영역 (이 모니터 기준 DIP).</summary>
@@ -101,25 +93,10 @@ public static class Monitors
     /// <summary>장치 이름의 모니터. "" 이거나 연결돼 있지 않으면 주 모니터.</summary>
     public static MonitorInfo Resolve(string? deviceName) => Find(deviceName) ?? GetPrimary();
 
-    /// <summary>창이 (가장 많이) 걸쳐 있는 모니터.</summary>
-    public static MonitorInfo FromWindow(Window window)
-    {
-        IntPtr hwnd = new WindowInteropHelper(window).Handle;
-        return FromHwnd(hwnd);
-    }
-
     internal static MonitorInfo FromHwnd(IntPtr hwnd)
     {
         if (hwnd == IntPtr.Zero) return GetPrimary();
         return Create(DesktopApi.MonitorFromWindow(hwnd, DesktopApi.MONITOR_DEFAULTTONEAREST), 0) ?? GetPrimary();
-    }
-
-    /// <summary>물리 픽셀 위치의 모니터. 어느 모니터에도 없으면 null.</summary>
-    public static MonitorInfo? FromPointPx(Point px)
-    {
-        var p = new POINT { X = (int)Math.Floor(px.X), Y = (int)Math.Floor(px.Y) };
-        IntPtr h = DesktopApi.MonitorFromPoint(p, DesktopApi.MONITOR_DEFAULTTONULL);
-        return h == IntPtr.Zero ? null : Create(h, 0);
     }
 
     /// <summary>구성 비교용 서명: 장치·영역·DPI·주 모니터 (작업 영역 제외 — AppBar 변경으로 바뀌므로).</summary>
@@ -130,7 +107,7 @@ public static class Monitors
     {
         if (!DesktopApi.TryGetMonitorInfoEx(h, out MONITORINFOEX mi)) return null;
         string device = mi.szDevice ?? "";
-        return new MonitorInfo(h, device, mi.rcMonitor, mi.rcWork, DesktopApi.GetMonitorScale(h),
+        return new MonitorInfo(device, mi.rcMonitor, mi.rcWork, DesktopApi.GetMonitorScale(h),
             (mi.dwFlags & DesktopApi.MONITORINFOF_PRIMARY) != 0, ParseNumber(device, index + 1));
     }
 
@@ -145,6 +122,6 @@ public static class Monitors
     private static MonitorInfo Fallback()
     {
         var r = new RECT(0, 0, User32.GetSystemMetrics(User32.SM_CXSCREEN), User32.GetSystemMetrics(User32.SM_CYSCREEN));
-        return new MonitorInfo(IntPtr.Zero, "", r, r, 1.0, true, 1);
+        return new MonitorInfo("", r, r, 1.0, true, 1);
     }
 }

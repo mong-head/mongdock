@@ -187,6 +187,14 @@ public sealed class NotificationSettings
 
 public sealed class Settings
 {
+    /// <summary>settings.json 형식 버전. 이관은 파일에 적힌 버전이 이보다 낮을 때만 한 번 (SettingsService.Migrate).</summary>
+    public const int CurrentVersion = 2;
+
+    /// <summary>
+    /// 이 파일이 어느 형식까지 이관됐는지. 키가 없는 옛 파일은 0 으로 본다 (원본 JSON 으로 판단 — 속성 기본값과 무관).
+    /// 1 이하: 옛 기본 색·상단바 32/14 를 새 기본값으로 바꾼 적 없음. 2: 현재.
+    /// </summary>
+    public int SettingsVersion { get; set; } = CurrentVersion;
     public DockSettings Dock { get; set; } = new();
     public TopBarSettings TopBar { get; set; } = new();
     public NotificationSettings Notifications { get; set; } = new();

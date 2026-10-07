@@ -16,6 +16,8 @@ namespace MyDock.Views;
 /// - 폴더 : 그 폴더를 여는 핀 (Target = 폴더 경로, ShellExecute 가 탐색기로 연다.
 ///          explorer.exe + 인자로 만들면 모든 탐색기 창이 이 핀에 묶이므로 쓰지 않음)
 /// - .url 등 그 밖의 파일 : 파일 자체를 기본 프로그램으로 여는 핀
+/// - C:\Program Files\WindowsApps\ 안의 exe (직접 또는 바로 가기 대상) : 버전 포함 경로는 업데이트 때 깨지므로
+///   패키지 패밀리로 AUMID 를 찾아 Aumid 핀으로. 못 찾으면 거절(null, 로그).
 /// </summary>
 internal static class DockDropFiles
 {
@@ -37,6 +39,7 @@ internal static class DockDropFiles
             switch (ext)
             {
                 case ".exe":
+                    if (AppsFolder.IsWindowsAppsPath(path)) return FromPackagedExe(path);
                     return new PinItem { Name = ExeName(path), Kind = PinKind.Exe, Target = path };
                 case ".lnk":
                     return FromShortcut(path, fileName, settings);
@@ -62,7 +65,22 @@ internal static class DockDropFiles
         return Path.GetFileNameWithoutExtension(exe);
     }
 
-    private static PinItem FromShortcut(string lnk, string name, ISettingsService settings)
+    /// <summary>WindowsApps 안의 exe → 패키지 패밀리의 AUMID 핀. 못 찾으면 null (버전 경로를 저장하지 않으려고 거절).</summary>
+    private static PinItem? FromPackagedExe(string exe)
+    {
+        string? family = AppsFolder.FamilyFromWindowsAppsPath(exe);
+        string? aumid = family is null ? null : AppsFolder.FindAumidByFamily(family);
+        if (string.IsNullOrEmpty(aumid))
+        {
+            Log.Warn($"끌어 놓은 패키지 앱 exe 의 AUMID 를 찾지 못해 핀으로 만들지 않음 (버전 경로 저장 금지): {exe}");
+            return null;
+        }
+        aumid = AppsFolder.RestoreAumidCase(aumid) ?? aumid;
+        Log.Info($"끌어 놓은 패키지 앱 exe → AUMID 핀: {aumid}");
+        return new PinItem { Name = AppsFolder.GetAppDisplayName(aumid) ?? ExeName(exe), Kind = PinKind.Aumid, Target = aumid };
+    }
+
+    private static PinItem? FromShortcut(string lnk, string name, ISettingsService settings)
     {
         var fallback = new PinItem { Name = name, Kind = PinKind.Exe, Target = lnk };
         if (!TryReadShortcut(lnk, out string target, out string args, out string iconPath))
@@ -72,6 +90,13 @@ internal static class DockDropFiles
         // 대상이 실제 exe 일 때만 풀어서 저장 (스토어 앱·MSI 광고 바로 가기 등은 경로가 없거나 엉뚱함 → 바로 가기 그대로)
         if (!expanded.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || !File.Exists(expanded))
             return fallback;
+        // 패키지 앱 exe 를 가리키는 바로 가기 → AUMID 핀 (못 찾으면 바로 가기 파일 자체를 실행하는 핀 — 버전 경로는 저장 안 함)
+        if (AppsFolder.IsWindowsAppsPath(expanded))
+        {
+            var packaged = FromPackagedExe(expanded);
+            if (packaged is not null) packaged.Name = name;
+            return packaged ?? fallback;
+        }
 
         var pin = new PinItem
         {
