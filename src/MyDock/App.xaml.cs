@@ -20,6 +20,7 @@ public partial class App : Application
     private TrayController? _tray;
     private SpotlightHotkeyController? _spotlightHotkey;
     private IDisposable? _banners;
+    private NativeToastSuppressor? _toastSuppressor;
     private const string ResumeEventName = @"Local\mongdock.Resume";
     private EventWaitHandle? _resumeEvent;
     private RegisteredWaitHandle? _resumeWait;
@@ -104,11 +105,28 @@ public partial class App : Application
         _spotlightHotkey = new SpotlightHotkeyController(_services);
         _banners = NotificationBannerWindow.Attach(_services);
         _services.Notifications.Start();
+        _toastSuppressor = new NativeToastSuppressor();
+        AppState.Changed += OnPausedChanged;
+        SyncToastSuppressor();
         Log.Info($"{AppInfo.Name} 시작");
     }
 
     private void OnDisplayChanged(object? sender, EventArgs e) => SyncTopBars();
-    private void OnSettingsChanged(object? sender, EventArgs e) => SyncTopBars();
+    private void OnSettingsChanged(object? sender, EventArgs e)
+    {
+        SyncTopBars();
+        SyncToastSuppressor();
+    }
+
+    private void OnPausedChanged(object? sender, EventArgs e) => SyncToastSuppressor();
+
+    /// <summary>윈도우 기본 알림 팝업 숨기기: 설정이 켜져 있고, 몽독 배너도 켜져 있고, 일시 정지가 아닐 때만.</summary>
+    private void SyncToastSuppressor()
+    {
+        if (_services is null || _toastSuppressor is null || _exiting) return;
+        var n = _services.Settings.Current.Notifications;
+        _toastSuppressor.SetEnabled(n.HideWindowsToastPopups && n.ShowNotificationBanners && !AppState.Paused);
+    }
 
     /// <summary>
     /// 상단바 창 수를 모니터 구성에 맞춤: ShowOnAllMonitors 면 연결된 모든 모니터에 하나씩, 아니면 주 모니터에만.
@@ -210,6 +228,9 @@ public partial class App : Application
         _tray?.Dispose();
         // 전역 키보드 훅 해제
         _spotlightHotkey?.Dispose();
+        // 숨기던 윈도우 알림 팝업 훅 해제 (떠 있던 팝업은 제자리로)
+        AppState.Changed -= OnPausedChanged;
+        _toastSuppressor?.Dispose();
         // 창을 닫아야 AppBar 가 해제된다.
         _exiting = true;
         if (_services is not null)

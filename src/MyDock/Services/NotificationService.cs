@@ -21,7 +21,7 @@ namespace MyDock.Services;
 /// 새 알림: 첫 읽기의 알림은 모두 "본 것" — 그 뒤 처음 보는 Id 이고 도착 시간이 시작 시점 이후면 Arrived.
 /// 사생활: 알림 제목·본문은 로그에 남기지 않음 (개수·AUMID 만).
 ///
-/// 윈도우 기본 토스트 숨기기(방해 금지 켜기)는 구현하지 않음 — 공개 API 없음 (Settings.NotificationSettings 주석).
+/// 윈도우 기본 토스트 팝업 숨기기는 NativeToastSuppressor (팝업 창을 화면 밖으로 옮김, 알림 기록은 그대로).
 /// </summary>
 public sealed class NotificationService : INotificationService, IDisposable
 {
