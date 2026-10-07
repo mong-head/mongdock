@@ -7,7 +7,7 @@
 ## 설치
 
 ### 받아서 바로 실행
-1. [Releases](https://github.com/mong-head/mongdock/releases) 에서 `MyDock-win-x64.zip` 을 받아 원하는 폴더(예: `%LOCALAPPDATA%\Programs\MyDock`)에 푼다.
+1. [Releases](https://github.com/mong-head/mongdock/releases) 에서 `MyDock-<버전>-win-x64.zip` 을 받아 원하는 폴더(예: `%LOCALAPPDATA%\Programs\MyDock`)에 푼다.
 2. `MyDock.exe` 실행. .NET 설치는 필요 없다.
 3. 컴퓨터를 켤 때 자동으로 켜려면: 알림 영역의 MyDock 아이콘 → "로그인 시 자동 실행".
 
