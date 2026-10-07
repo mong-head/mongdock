@@ -91,7 +91,8 @@ public interface IDesktopWindowService
     void DisableBlur(Window window);
     /// <summary>주 모니터 위의 커서 위치 (주 모니터 DPI 기준 DIP). 커서가 다른 모니터에 있으면 null.</summary>
     Point? GetCursorPosition();
-    /// <summary>화면 어디서든 마우스 버튼(왼/오/가운데)이 눌린 순간 (WH_MOUSE_LL, UI 스레드). 인자는 주 모니터 DIP 위치(밖이면 null).
+    /// <summary>화면 어디서든 마우스 버튼(왼/오/가운데)이 눌린 순간 (WH_MOUSE_LL, UI 스레드). 인자는 눌린 곳 모니터 기준 DIP 위치
+    /// (물리 px / 그 모니터 배율 — 그 모니터 위 창의 화면 DIP 와 비교 가능; 주 모니터면 기존과 같음). 어느 모니터에도 없으면 null.
     /// 구독자가 있을 때만 훅을 설치 — NOACTIVATE 창의 메뉴·패널 "바깥 클릭 시 닫기"용. 폴링은 짧은 탭(원격 트랙패드)을 놓침.</summary>
     event EventHandler<Point?>? GlobalMouseDown;
     /// <summary>화면 영역(DIP)의 대표 색 (최빈/중앙값). 읽을 수 없으면 null. 상단바 자동 색용.</summary>
@@ -102,14 +103,44 @@ public interface IDesktopWindowService
     // 구독자가 있을 때만 배경 감시 폴링을 돌림 (Transparent 모드가 아니면 UI 는 구독 해제).
     /// <summary>배경화면이 바뀜 (설정 변경, 가상 데스크톱 전환으로 데스크톱별 배경이 바뀐 경우 포함).</summary>
     event EventHandler? WallpaperChanged;
-    /// <summary>전체 화면 앱이 켜짐(true)/꺼짐(false). 이때 독·상단바는 Topmost 해제·숨김.</summary>
+    /// <summary>전체 화면 앱이 켜짐(true)/꺼짐(false) — 어느 모니터든. 이때 그 모니터의 독·상단바는 Topmost 해제·숨김
+    /// (어느 모니터인지는 <see cref="FullscreenMonitor"/>/<see cref="IsFullscreenOn"/>). 다른 모니터로 옮겨 가도 true 로 다시 발생.</summary>
     event EventHandler<bool>? FullscreenAppChanged;
-    /// <summary>해상도·DPI·작업 영역 변경, 탐색기 재시작 후. UI 는 배치를 다시 계산.</summary>
+    /// <summary>해상도·DPI·작업 영역 변경, 모니터 연결/분리, 탐색기 재시작 후 (300ms 디바운스). UI 는 배치를 다시 계산.</summary>
     event EventHandler? DisplayChanged;
     /// <summary>윈도우 작업 표시줄(주·보조 모니터) 숨김/복원. 숨긴 상태로 프로세스가 끝나면(정상·예외·ProcessExit) 반드시 복원. 탐색기 재시작 후 숨김 상태면 다시 숨김.</summary>
     void SetWindowsTaskbarHidden(bool hidden);
     /// <summary>DWM 실시간 창 미리보기를 host 창의 destDip 영역에 그림. Dispose 로 해제, Update 로 위치 변경. 다른 데스크톱(cloaked) 창은 비어 보일 수 있음.</summary>
     IWindowThumbnail? CreateThumbnail(Window host, IntPtr source, Rect destDip);
+
+    // ───────────── 여러 모니터 ─────────────
+    // DIP 좌표 규칙: "물리 픽셀 / 그 모니터의 배율" (= 그 모니터 위 WPF 창의 Left/Top). MonitorInfo 주석 참고.
+    // 위의 모니터 인자 없는 메서드들은 기존처럼 주 모니터 기준.
+
+    /// <summary>연결된 모니터 목록 (주 모니터 먼저). <see cref="Monitors.GetAll"/> 과 같음.</summary>
+    IReadOnlyList<MonitorInfo> GetMonitors();
+    /// <summary>장치 이름(Dock.Monitor 등)의 모니터. "" 이거나 연결 안 됐으면 주 모니터.</summary>
+    MonitorInfo ResolveMonitor(string? deviceName);
+    /// <summary>독 공간 예약을 지정 모니터에 (null/""/분리됨 → 주 모니터, 다시 연결되면 자동 복귀).</summary>
+    IEdgeReservation ReserveEdge(DockEdge edge, double thickness, string? monitor);
+    /// <summary>상단바 AppBar 를 지정 모니터 맨 위에 (null/"" → 주 모니터). 그 모니터가 분리되면 재배치하지 않음 — 창을 닫을 것.</summary>
+    void RegisterTopAppBar(Window window, double thickness, string? monitor);
+    /// <summary>커서가 monitor 위에 있으면 그 모니터 기준 DIP, 아니면 null.</summary>
+    Point? GetCursorPosition(MonitorInfo monitor);
+    /// <summary>monitor 기준 DIP 영역의 화면 대표 색 (그 모니터 밖은 잘라냄).</summary>
+    Color? SampleScreenColor(Rect areaDip, MonitorInfo monitor);
+    /// <summary>monitor 기준 DIP 영역의 배경화면 색 (그 모니터의 배경).</summary>
+    Task<Color?> SampleWallpaperColorAsync(Rect areaDip, MonitorInfo monitor);
+    /// <summary>
+    /// 창의 DPI 가 monitor 와 다르고 다른 모니터에 있으면 물리 픽셀(SetWindowPos)로 그 모니터로 옮겨 DPI 를 맞춘다
+    /// (그 뒤 Left/Top 을 monitor 기준 DIP 로 설정하면 정확). 같은 모니터·같은 DPI 면 아무것도 안 함. 옮겼으면 true.
+    /// 핸들이 없으면 아무것도 안 함 — 새 창은 WPF 가 Left/Top 이 속한 모니터에 만든다.
+    /// </summary>
+    bool EnsureOnMonitor(Window window, MonitorInfo monitor);
+    /// <summary>전체 화면 앱이 있는 모니터의 장치 이름 (없으면 null). <see cref="FullscreenAppChanged"/> 는 이 값이 바뀔 때 발생.</summary>
+    string? FullscreenMonitor { get; }
+    /// <summary>해당 모니터(null/"" = 주 모니터)에 전체 화면 앱이 있는지.</summary>
+    bool IsFullscreenOn(string? deviceName);
 }
 
 public interface IWindowThumbnail : IDisposable

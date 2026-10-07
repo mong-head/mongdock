@@ -109,17 +109,26 @@ internal sealed class StatusPanelWindow : Window
     private const double ShadowMargin = 18;
 
     /// <summary>아이콘 아래(상단바와 6px 간격)에 아이콘 왼쪽 정렬로 표시. 화면을 넘으면 오른쪽 끝에 맞춤.</summary>
-    public void ShowBelow(Rect anchor, double barBottom)
+    /// <param name="monitor">상단바가 있는 모니터 — anchor·barBottom 은 이 모니터 기준 DIP, 카드는 이 모니터 안에 맞춘다.</param>
+    public void ShowBelow(Rect anchor, double barBottom, MonitorInfo monitor)
     {
         _anchorRect = anchor;
         double cardWidth = _card.Width;
-        var screen = _services.DesktopWindows.GetPrimaryScreenBounds();
+        var screen = monitor.Bounds;
         double cardLeft = anchor.Left - 4;
         if (cardLeft + cardWidth > screen.Right - 6) cardLeft = screen.Right - 6 - cardWidth;
         cardLeft = Math.Max(screen.Left + 6, cardLeft);
-        Left = Math.Round(cardLeft - ShadowMargin);
-        Top = Math.Round(barBottom + 6 - 2);
-        Show();
+        double left = Math.Round(cardLeft - ShadowMargin);
+        double top = Math.Round(barBottom + 6 - 2);
+        Left = left;
+        Top = top;
+        Show(); // 새 창: WPF 가 Left/Top 이 속한 모니터에 그 DPI 로 만든다
+        // 배율이 다른 모니터끼리 DIP 영역이 겹쳐 다른 모니터에 만들어졌으면 옮긴 뒤 다시 배치 (단일 모니터는 아무것도 안 함)
+        if (_services.DesktopWindows.EnsureOnMonitor(this, monitor))
+        {
+            Left = left;
+            Top = top;
+        }
     }
 
     /// <summary>카드 + 이 패널을 연 아이콘 (아이콘을 다시 누르면 상단바가 토글로 닫음).</summary>

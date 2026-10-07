@@ -45,12 +45,36 @@ public partial class TopBarWindow : Window
     private Color _leftText = LightText, _rightText = LightText;
     private StatusPanelWindow? _panel;
 
-    public TopBarWindow(AppServices services)
+    /// <summary>이 상단바가 놓일 모니터의 장치 이름 (MonitorInfo.DeviceName). "" 이면 주 모니터(주 모니터가 바뀌면 따라감).</summary>
+    public string MonitorDevice { get; }
+
+    /// <summary>이 상단바의 모니터 (분리됐으면 주 모니터 — 곧 App 이 이 창을 닫는다). Left/Top 등 DIP 는 이 모니터 기준.</summary>
+    private MonitorInfo Monitor => _services.DesktopWindows.ResolveMonitor(MonitorDevice);
+
+    public TopBarWindow(AppServices services) : this(services, "") { }
+
+    public TopBarWindow(AppServices services, string monitorDevice)
     {
         _services = services;
+        MonitorDevice = monitorDevice ?? "";
         UiFonts.Apply(services.Settings.Current); // 내장 Pretendard 등 UI 글꼴 리소스
         InitializeComponent();
         Bar.Background = _barBrush;
+
+        // 주 모니터가 아니면 처음부터 그 모니터 위에 만들어지게 (WPF 는 새 창을 Left/Top 이 속한 모니터의 DPI 로 만든다).
+        // 주 모니터 상단바는 예전처럼 그대로 (AppBar 가 위치를 정함).
+        // 모니터를 새로 연결했을 때 그 모니터에 이미 전체 화면 앱이 있으면 처음부터 숨김 (시작 시에는 항상 false)
+        _fullscreen = services.DesktopWindows.IsFullscreenOn(MonitorDevice);
+        if (_fullscreen) Topmost = false;
+
+        var mon = services.DesktopWindows.ResolveMonitor(MonitorDevice);
+        if (!mon.IsPrimary)
+        {
+            var b = mon.Bounds;
+            Left = b.Left;
+            Top = b.Top;
+            Width = b.Width;
+        }
 
         _pollTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(300) };
         _pollTimer.Tick += (_, _) => { UpdateIme(); UpdateAppName(); };
@@ -94,8 +118,11 @@ public partial class TopBarWindow : Window
         UpdateDesktopIndex();
     }
 
+    private bool _closed;
+
     private void OnClosed(object? sender, EventArgs e)
     {
+        _closed = true;
         _pollTimer.Stop();
         _clockTimer.Stop();
         _imeRecheck.Stop();
@@ -141,6 +168,7 @@ public partial class TopBarWindow : Window
 
     private void OnDisplayChanged(object? sender, EventArgs e)
     {
+        if (_closed) return; // 모니터 분리로 App 이 같은 이벤트에서 먼저 닫은 경우
         // 옛 좌표로 떠 있는 패널·메뉴는 닫고 위치·폭(AppBar 포함) 다시 계산
         _panel?.Close();
         CloseAppMenu();
@@ -156,8 +184,11 @@ public partial class TopBarWindow : Window
         if (ColorMode == TopBarColorMode.Transparent) UpdateColors();
     }
 
-    private void OnFullscreenChanged(object? sender, bool fullscreen)
+    private void OnFullscreenChanged(object? sender, bool anyFullscreen)
     {
+        // 이 상단바의 모니터에 전체 화면 앱이 있을 때만 (다른 모니터의 전체 화면은 무시)
+        bool fullscreen = anyFullscreen && _services.DesktopWindows.IsFullscreenOn(MonitorDevice);
+        if (fullscreen == _fullscreen) return;
         _fullscreen = fullscreen;
         Topmost = !fullscreen;
         if (fullscreen)
@@ -178,7 +209,7 @@ public partial class TopBarWindow : Window
 
     private void ApplySettings()
     {
-        if (!_initialized) return;
+        if (!_initialized || _closed) return;
         UiFonts.Apply(_services.Settings.Current);
         var s = _services.Settings.Current.TopBar;
         double height = Math.Clamp(double.IsNaN(s.Height) ? 26 : s.Height, 16, 80);
@@ -222,14 +253,17 @@ public partial class TopBarWindow : Window
             if (!_appBarRegistered)
             {
                 Height = height;
-                _services.DesktopWindows.RegisterTopAppBar(this, height);
+                _services.DesktopWindows.RegisterTopAppBar(this, height, MonitorDevice);
                 _appBarRegistered = true;
                 _registeredHeight = height;
             }
         }
         else
         {
-            var b = _services.DesktopWindows.GetPrimaryScreenBounds();
+            var mon = Monitor;
+            // 다른 DPI 모니터에 있으면 먼저 그 모니터로 (그 뒤 DIP 설정이 정확). 단일 모니터는 아무것도 안 함
+            _services.DesktopWindows.EnsureOnMonitor(this, mon);
+            var b = mon.Bounds;
             Left = b.Left;
             Top = b.Top;
             Width = b.Width;
@@ -349,11 +383,11 @@ public partial class TopBarWindow : Window
         // 메뉴·상태 패널이 바 아래를 덮고 있으면 그 색을 읽게 되므로 건너뜀
         if (_panel != null || ContextMenu?.IsOpen == true || _logoMenu?.IsOpen == true || _openAppMenu?.IsOpen == true) return;
         var band = new Rect(Left, Top + ActualHeight, Math.Max(1, ActualWidth), 3);
-        band = ExcludeDock(band);
+        band = ExcludeDock(band, Monitor.DeviceName);
         if (band.IsEmpty) return;
 
         Color? sampled;
-        try { sampled = _services.DesktopWindows.SampleScreenColor(band); }
+        try { sampled = _services.DesktopWindows.SampleScreenColor(band, Monitor); }
         catch (Exception ex)
         {
             Log.Error("상단바 색 샘플링 실패", ex);
@@ -367,11 +401,14 @@ public partial class TopBarWindow : Window
         SetTextColors(text, text);
     }
 
-    /// <summary>띠가 독 패널과 겹치면 독을 뺀 좌/우 중 넓은 쪽만 사용.</summary>
-    private static Rect ExcludeDock(Rect band)
+    /// <summary>띠가 독 패널과 겹치면 독을 뺀 좌/우 중 넓은 쪽만 사용 (독이 같은 모니터에 있을 때만 — DIP 기준이 모니터마다 다름).</summary>
+    private static Rect ExcludeDock(Rect band, string monitorDevice)
     {
         var dock = DockState.VisiblePanel;
         if (dock.IsEmpty || !dock.IntersectsWith(band)) return band;
+        if (monitorDevice.Length > 0 && DockState.Monitor.Length > 0
+            && !string.Equals(monitorDevice, DockState.Monitor, StringComparison.OrdinalIgnoreCase))
+            return band;
         var left = new Rect(band.Left, band.Top, Math.Max(0, dock.Left - band.Left), band.Height);
         var right = new Rect(dock.Right, band.Top, Math.Max(0, band.Right - dock.Right), band.Height);
         var best = left.Width >= right.Width ? left : right;
@@ -396,8 +433,9 @@ public partial class TopBarWindow : Window
         Color? left = null, right = null;
         try
         {
-            var lt = _services.DesktopWindows.SampleWallpaperColorAsync(SectionRect(LeftSection));
-            var rt = _services.DesktopWindows.SampleWallpaperColorAsync(SectionRect(RightSection));
+            var mon = Monitor;
+            var lt = _services.DesktopWindows.SampleWallpaperColorAsync(SectionRect(LeftSection), mon);
+            var rt = _services.DesktopWindows.SampleWallpaperColorAsync(SectionRect(RightSection), mon);
             left = await lt;
             right = await rt;
         }
@@ -691,7 +729,7 @@ public partial class TopBarWindow : Window
         };
         _panel = panel;
         SetActiveAnchor(anchor);
-        panel.ShowBelow(rect, Top + ActualHeight);
+        panel.ShowBelow(rect, Top + ActualHeight, Monitor); // 이 상단바의 모니터 안에
     }
 
     /// <summary>패널이 열린 아이콘에 회색 알약 하이라이트 (BarButton 의 Tag="Active" 트리거).</summary>

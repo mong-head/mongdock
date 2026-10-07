@@ -23,8 +23,9 @@ internal sealed class WindowPickerWindow : Window
 
     private readonly AppServices _services;
     private readonly UiPalette _p;
-    private readonly Rect _anchor;          // 독 아이콘 화면 영역 (DIP)
+    private readonly Rect _anchor;          // 독 아이콘 화면 영역 (_monitor 기준 DIP)
     private readonly DockEdge _edge;
+    private readonly MonitorInfo _monitor;  // 독이 있는 모니터
     private readonly ScrollViewer _scroll;
     private readonly OutsideClickWatcher _watch;
     private readonly List<(AppWindowInfo Window, Border Slot)> _slots = new();
@@ -32,12 +33,13 @@ internal sealed class WindowPickerWindow : Window
     private bool _placed;
 
     public WindowPickerWindow(AppServices services, UiPalette palette, IReadOnlyList<AppWindowInfo> windows,
-        ImageSource? appIcon, Rect anchorDip, DockEdge edge)
+        ImageSource? appIcon, Rect anchorDip, DockEdge edge, MonitorInfo monitor)
     {
         _services = services;
         _p = palette;
         _anchor = anchorDip;
         _edge = edge;
+        _monitor = monitor;
 
         WindowStyle = WindowStyle.None;
         AllowsTransparency = false;          // DWM 썸네일용 (레이어드 창 불가)
@@ -57,7 +59,7 @@ internal sealed class WindowPickerWindow : Window
         Left = -32000;
         Top = -32000;
 
-        var screen = services.DesktopWindows.GetPrimaryScreenBounds();
+        var screen = monitor.Bounds;
         var wrap = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
@@ -121,8 +123,10 @@ internal sealed class WindowPickerWindow : Window
     private void Place()
     {
         if (ActualWidth <= 0) return;
-        var work = _services.DesktopWindows.GetPrimaryWorkArea();
-        if (work.IsEmpty || work.Width <= 0) work = _services.DesktopWindows.GetPrimaryScreenBounds();
+        // 독과 다른 DPI 모니터에 만들어졌으면 먼저 독 모니터로 (그 뒤 Left/Top 이 그 모니터 기준 DIP 로 정확; 단일 모니터는 아무것도 안 함).
+        _services.DesktopWindows.EnsureOnMonitor(this, _monitor);
+        var work = _monitor.WorkArea;
+        if (work.IsEmpty || work.Width <= 0) work = _monitor.Bounds;
         const double gap = 12;
         double w = ActualWidth, h = ActualHeight;
         double cx = _anchor.Left + _anchor.Width / 2, cy = _anchor.Top + _anchor.Height / 2;

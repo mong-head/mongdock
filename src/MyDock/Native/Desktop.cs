@@ -17,6 +17,18 @@ internal struct MONITORINFO
     public uint dwFlags;
 }
 
+/// <summary>MONITORINFOEXW — szDevice 는 "\\.\DISPLAY1" 같은 장치 이름 (CCHDEVICENAME=32).</summary>
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+internal struct MONITORINFOEX
+{
+    public uint cbSize;
+    public RECT rcMonitor;
+    public RECT rcWork;
+    public uint dwFlags;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+    public string szDevice;
+}
+
 [StructLayout(LayoutKind.Sequential)]
 internal struct ACCENT_POLICY
 {
@@ -74,6 +86,19 @@ internal static class DesktopApi
     [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+    [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetMonitorInfoEx(IntPtr hMonitor, ref MONITORINFOEX lpmi);
+
+    public const uint MONITOR_DEFAULTTONEAREST = 2;
+    public const uint MONITORINFOF_PRIMARY = 1;
+
+    public delegate bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdcMonitor, IntPtr lprcMonitor, IntPtr dwData);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumProc lpfnEnum, IntPtr dwData);
 
     [DllImport("shcore.dll")]
     public static extern int GetDpiForMonitor(IntPtr hmonitor, int dpiType, out uint dpiX, out uint dpiY);
@@ -137,6 +162,23 @@ internal static class DesktopApi
         bounds = mi.rcMonitor;
         work = mi.rcWork;
         return ok;
+    }
+
+    /// <summary>연결된 모든 모니터 핸들 (EnumDisplayMonitors 순서).</summary>
+    public static List<IntPtr> EnumMonitorHandles()
+    {
+        var list = new List<IntPtr>();
+        MonitorEnumProc proc = (h, _, _, _) => { list.Add(h); return true; };
+        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, proc, IntPtr.Zero);
+        GC.KeepAlive(proc);
+        return list;
+    }
+
+    /// <summary>모니터 영역/작업 영역/주 모니터 여부/장치 이름.</summary>
+    public static bool TryGetMonitorInfoEx(IntPtr monitor, out MONITORINFOEX info)
+    {
+        info = new MONITORINFOEX { cbSize = (uint)Marshal.SizeOf<MONITORINFOEX>(), szDevice = "" };
+        return monitor != IntPtr.Zero && GetMonitorInfoEx(monitor, ref info);
     }
 
     /// <summary>모니터 배율 (1.0 = 96 DPI).</summary>

@@ -285,7 +285,7 @@ public partial class TopBarWindow
         {
             if (_openAppMenu?.IsOpen != true || _openTitle == null) return;
             Point? cursor;
-            try { cursor = _services.DesktopWindows.GetCursorPosition(); }
+            try { cursor = _services.DesktopWindows.GetCursorPosition(Monitor); } // 이 상단바의 모니터 기준
             catch { return; }
             if (cursor is not Point c) return;
 
