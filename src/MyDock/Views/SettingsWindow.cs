@@ -462,6 +462,12 @@ internal sealed class SettingsWindow : Window
             Row("검색 버튼", null, Segmented(t.SearchMode,
                 new[] { (SearchMode.Spotlight, "몽독 검색 (화면 가운데)"), (SearchMode.Windows, "윈도우 검색") },
                 v => Commit(() => T().SearchMode = v)))));
+
+        body.Children.Add(SectionTitle("알림"));
+        body.Children.Add(Group(
+            Row("알림 배너", "윈도우 알림이 오면 상단바 아래 오른쪽에 맥처럼 표시합니다.",
+                Toggle(_services.Settings.Current.Notifications.ShowNotificationBanners,
+                    on => Commit(() => _services.Settings.Current.Notifications.ShowNotificationBanners = on)))));
     }
 
     private UIElement ColorModeDropdown(TopBarColorMode current)

@@ -299,6 +299,52 @@ public interface IStartupService
     void SetEnabled(bool enabled);
 }
 
+/// <summary>
+/// 윈도우 알림 하나 (wpndatabase.db 의 토스트). Id = Notification.Id. Arrival 은 로컬 시간.
+/// AppLogoPath = 토스트가 지정한 앱 로고 대체 이미지(보낸 사람 사진 등, AppLogoCircle 이면 원형으로 자름), ImagePath = 본문 이미지.
+/// 둘 다 로컬 파일일 때만 (없으면 null). 앱 아이콘은 IIconService.GetIcon(item.ToPin(), style).
+/// </summary>
+public sealed record NotificationItem(
+    long Id,
+    string Aumid,
+    string AppName,
+    string? Title,
+    IReadOnlyList<string> Lines,
+    DateTime Arrival,
+    string? Attribution,
+    string? AppLogoPath,
+    bool AppLogoCircle,
+    string? ImagePath)
+{
+    /// <summary>앱 아이콘·실행용 핀 (Kind=Aumid).</summary>
+    public PinItem ToPin() => new() { Name = AppName, Kind = PinKind.Aumid, Target = Aumid };
+}
+
+/// <summary>
+/// 윈도우 알림 읽기 (공식 UserNotificationListener 는 패키지 앱 전용이라, %LOCALAPPDATA%\Microsoft\Windows\Notifications\wpndatabase.db
+/// 를 winsqlite3 로 **읽기 전용** 조회). 윈도우 DB 는 절대 쓰지 않음 — "숨기기" 는 몽독 화면에서만.
+/// 이벤트는 UI 스레드.
+/// </summary>
+public interface INotificationService
+{
+    /// <summary>DB 를 읽을 수 있는지 (winsqlite3 없음·DB 없음이면 false — UI 는 "알림 없음" 표시).</summary>
+    bool IsAvailable { get; }
+    /// <summary>알림 센터 목록 (최신순, 몽독에서 숨긴 것 제외). 윈도우 알림 센터에서 지운 것은 다음 갱신 때 빠짐.</summary>
+    IReadOnlyList<NotificationItem> Recent { get; }
+    /// <summary><see cref="Recent"/> 가 바뀜 (새 알림·윈도우에서 지움·몽독에서 숨김).</summary>
+    event EventHandler? Changed;
+    /// <summary>몽독 시작 이후 새로 도착한 알림 (배너용). 팝업 숨김(SuppressPopup) 알림·같은 태그의 연속 갱신은 제외.</summary>
+    event EventHandler<NotificationItem>? Arrived;
+    /// <summary>알림을 보낸 앱 열기: 그 앱 창이 있으면 활성화, 없으면 AUMID 로 실행. 그 알림은 목록에서 숨김(맥처럼).</summary>
+    void Open(NotificationItem item);
+    /// <summary>알림 하나를 몽독 목록에서 숨김 (윈도우 DB 는 그대로).</summary>
+    void Hide(NotificationItem item);
+    /// <summary>앱의 현재 알림을 몽독 목록에서 모두 숨김 ("모두 숨기기").</summary>
+    void HideApp(string aumid);
+    void Start();
+    void Stop();
+}
+
 /// <summary>App.xaml.cs 에서 만들어 창들에 넘겨주는 서비스 묶음.</summary>
 public sealed record AppServices(
     ISettingsService Settings,
@@ -312,4 +358,5 @@ public sealed record AppServices(
     IStatusService Status,
     IMediaService Media,
     IAppMenuService AppMenus,
-    IStartupService Startup);
+    IStartupService Startup,
+    INotificationService Notifications);
