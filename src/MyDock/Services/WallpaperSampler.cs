@@ -62,22 +62,28 @@ internal sealed class WallpaperSampler
     /// <summary>현재 주 모니터 배경 정보. 실패 시 null.</summary>
     public static Info? QueryPrimary()
     {
+        DesktopApi.TryGetMonitorRects(DesktopApi.PrimaryMonitor, out RECT primary, out _);
+        return Query(primary);
+    }
+
+    /// <summary>모니터 영역(물리 px)이 target 인 모니터의 배경 정보 (못 맞추면 첫 모니터). 실패 시 null.</summary>
+    public static Info? Query(RECT target)
+    {
         object? obj = null;
         try
         {
             obj = new DesktopWallpaperClass();
             var wp = (IDesktopWallpaper)obj;
-            DesktopApi.TryGetMonitorRects(DesktopApi.PrimaryMonitor, out RECT primary, out _);
 
             string? id = null;
-            RECT mrect = primary;
+            RECT mrect = target;
             uint count = wp.GetMonitorDevicePathCount();
             for (uint i = 0; i < count; i++)
             {
                 string mid = wp.GetMonitorDevicePathAt(i);
                 RECT r;
                 try { r = wp.GetMonitorRECT(mid); } catch { continue; }
-                if (r.Left == primary.Left && r.Top == primary.Top && r.Right == primary.Right && r.Bottom == primary.Bottom)
+                if (r.Left == target.Left && r.Top == target.Top && r.Right == target.Right && r.Bottom == target.Bottom)
                 {
                     id = mid;
                     mrect = r;
@@ -122,10 +128,12 @@ internal sealed class WallpaperSampler
         return $"{info?.Path}|{info?.Position}|{info?.Background}|{t}|{vd}";
     }
 
-    /// <summary>주 모니터 기준 물리 픽셀 영역의 배경 평균 색.</summary>
+    /// <summary>물리 픽셀 영역의 배경 평균 색 — 영역 가운데가 있는 모니터(없으면 가장 가까운 모니터)의 배경 기준.</summary>
     public Color? Sample(RECT areaPx)
     {
-        var info = QueryPrimary();
+        var center = new POINT { X = areaPx.Left + areaPx.Width / 2, Y = areaPx.Top + areaPx.Height / 2 };
+        IntPtr mon = DesktopApi.MonitorFromPoint(center, DesktopApi.MONITOR_DEFAULTTONEAREST);
+        var info = DesktopApi.TryGetMonitorRects(mon, out RECT monitorRect, out _) ? Query(monitorRect) : QueryPrimary();
         if (info is null) return null;
 
         // 경로가 없거나(Spotlight·슬라이드쇼) 파일이 없으면 탐색기가 만든 TranscodedWallpaper 사용, 그것도 없으면 배경색

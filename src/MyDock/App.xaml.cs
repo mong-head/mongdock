@@ -14,7 +14,9 @@ public partial class App : Application
     private Mutex? _singleInstance;
     private AppServices? _services;
     private DockWindow? _dock;
-    private TopBarWindow? _topBar;
+    /// <summary>모니터 장치 이름 → 그 모니터의 상단바 (ShowOnAllMonitors 면 모든 모니터, 아니면 주 모니터만).</summary>
+    private readonly Dictionary<string, TopBarWindow> _topBars = new(StringComparer.OrdinalIgnoreCase);
+    private bool _exiting;
     private TrayController? _tray;
     private const string ResumeEventName = @"Local\mongdock.Resume";
     private EventWaitHandle? _resumeEvent;
@@ -90,10 +92,56 @@ public partial class App : Application
         _services.Media.Start();
         _dock = new DockWindow(_services);
         _dock.Show();
-        _topBar = new TopBarWindow(_services);
-        _topBar.Show();
+        // 상단바 창들보다 먼저 구독 → 모니터가 분리되면 그 상단바가 이벤트를 처리하기 전에 닫힘
+        _services.DesktopWindows.DisplayChanged += OnDisplayChanged;
+        _services.Settings.SettingsChanged += OnSettingsChanged;
+        SyncTopBars();
         _tray = new TrayController(_services);
         Log.Info($"{AppInfo.Name} 시작");
+    }
+
+    private void OnDisplayChanged(object? sender, EventArgs e) => SyncTopBars();
+    private void OnSettingsChanged(object? sender, EventArgs e) => SyncTopBars();
+
+    /// <summary>
+    /// 상단바 창 수를 모니터 구성에 맞춤: ShowOnAllMonitors 면 연결된 모든 모니터에 하나씩, 아니면 주 모니터에만.
+    /// 사라진 모니터·더 이상 원하지 않는 모니터의 상단바는 닫고(AppBar 해제), 새 모니터에는 새로 만든다.
+    /// 단일 모니터에서는 주 모니터 상단바 하나 (예전과 같음).
+    /// </summary>
+    private void SyncTopBars()
+    {
+        if (_services is null || _exiting) return;
+        try
+        {
+            var monitors = _services.DesktopWindows.GetMonitors();
+            bool all = _services.Settings.Current.TopBar.ShowOnAllMonitors;
+            // 키 "" = 주 모니터 상단바 (장치 이름 없이 등록 → 주 모니터가 바뀌어도 그 창이 따라감, 단일 모니터는 예전과 똑같음).
+            // 나머지 모니터는 장치 이름으로.
+            var wanted = new List<string> { "" };
+            if (all)
+                wanted.AddRange(monitors.Where(m => !m.IsPrimary && m.DeviceName.Length > 0).Select(m => m.DeviceName));
+
+            foreach (var key in _topBars.Keys.Where(k => !wanted.Contains(k, StringComparer.OrdinalIgnoreCase)).ToList())
+            {
+                var bar = _topBars[key];
+                _topBars.Remove(key);
+                Log.Info($"상단바 닫음: {(key.Length > 0 ? key : "주 모니터")}");
+                try { bar.Close(); }
+                catch (Exception ex) { Log.Error("상단바 닫기 실패", ex); }
+            }
+            foreach (var device in wanted)
+            {
+                if (_topBars.ContainsKey(device)) continue;
+                var bar = new TopBarWindow(_services, device);
+                _topBars[device] = bar;
+                Log.Info($"상단바 만듦: {(device.Length > 0 ? device : "주 모니터")}");
+                bar.Show();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("상단바 모니터 동기화 실패", ex);
+        }
     }
 
     /// <summary>
@@ -154,7 +202,18 @@ public partial class App : Application
         // 트레이 아이콘을 내리고, 숨겨 둔 작업 표시줄을 복원한다.
         _tray?.Dispose();
         // 창을 닫아야 AppBar 가 해제된다.
-        _topBar?.Close();
+        _exiting = true;
+        if (_services is not null)
+        {
+            _services.DesktopWindows.DisplayChanged -= OnDisplayChanged;
+            _services.Settings.SettingsChanged -= OnSettingsChanged;
+        }
+        foreach (var bar in _topBars.Values.ToList())
+        {
+            try { bar.Close(); }
+            catch (Exception ex) { Log.Error("상단바 닫기 실패", ex); }
+        }
+        _topBars.Clear();
         _dock?.Close();
         if (_services is not null)
         {

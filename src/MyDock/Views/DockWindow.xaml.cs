@@ -43,13 +43,15 @@ public partial class DockWindow : Window
     /// <summary>핀 아닌 실행 중 앱의 표시 순서 (처음 본 순서 유지).</summary>
     private readonly List<string> _runningOrder = new();
 
-    // 배치
+    // 배치 (모든 DIP 좌표는 _monitor 기준: px / _monitor.Scale)
+    private MonitorInfo _monitor;      // 독이 놓일 모니터 (Dock.Monitor, 없거나 분리되면 주 모니터)
     private Rect _screen = new(0, 0, 1920, 1080);
     private Rect _shownRect;           // 보일 때의 이 창 위치 (DIP)
     private double _baseLength;        // 확대 전 패널 길이
     private IEdgeReservation? _reservation;
     private DockEdge _reservedEdge;
     private double _reservedThickness;
+    private string _reservedMonitor = "";
 
     // 자동 숨김 / 슬라이드
     private readonly DispatcherTimer _pollTimer;
@@ -73,6 +75,7 @@ public partial class DockWindow : Window
     {
         _services = services;
         _layout = DockLayout.From(services.Settings.Current.Dock, SystemTheme.AppsUseLightTheme());
+        _monitor = services.DesktopWindows.ResolveMonitor(services.Settings.Current.Dock.Monitor);
         UiFonts.Apply(services.Settings.Current);
         InitializeComponent();
 
@@ -226,8 +229,11 @@ public partial class DockWindow : Window
         });
     }
 
-    private void OnFullscreenChanged(object? sender, bool fullscreen)
+    private void OnFullscreenChanged(object? sender, bool anyFullscreen)
     {
+        // 전체 화면 앱이 독이 있는 모니터에 있을 때만 (다른 모니터의 전체 화면은 무시)
+        bool fullscreen = anyFullscreen && _services.DesktopWindows.IsFullscreenOn(_monitor.DeviceName);
+        if (fullscreen == _fullscreen) return;
         _fullscreen = fullscreen;
         Topmost = !fullscreen;
         _backdrop.Topmost = !fullscreen;
@@ -348,17 +354,21 @@ public partial class DockWindow : Window
         var l = _layout;
         bool want = l.Mode == DockMode.Reserve && DockActive;
         double t = l.ReserveThickness;
-        if (_reservation != null && (!want || _reservedEdge != l.Edge || Math.Abs(_reservedThickness - t) > 0.5))
+        // 설정의 모니터 이름 그대로 넘김 — 분리되면 백엔드가 주 모니터에 두고, 다시 연결되면 스스로 복귀
+        string monitor = _services.Settings.Current.Dock.Monitor ?? "";
+        if (_reservation != null && (!want || _reservedEdge != l.Edge || Math.Abs(_reservedThickness - t) > 0.5
+                                     || !string.Equals(_reservedMonitor, monitor, StringComparison.OrdinalIgnoreCase)))
             ReleaseReservation();
 
         if (want && _reservation == null)
         {
             try
             {
-                _reservation = _services.DesktopWindows.ReserveEdge(l.Edge, t);
+                _reservation = _services.DesktopWindows.ReserveEdge(l.Edge, t, monitor);
                 _reservation.BoundsChanged += OnReservationBoundsChanged;
                 _reservedEdge = l.Edge;
                 _reservedThickness = t;
+                _reservedMonitor = monitor;
             }
             catch (Exception ex)
             {
@@ -425,14 +435,13 @@ public partial class DockWindow : Window
     /// </summary>
     private Rect GetPlacementArea()
     {
-        var s = _services.DesktopWindows.GetPrimaryScreenBounds();
-        Rect a;
-        try { a = _services.DesktopWindows.GetPrimaryWorkArea(); }
-        catch { a = s; }
+        var s = _monitor.Bounds;
+        Rect a = _monitor.WorkArea;
         if (a.IsEmpty || a.Width <= 0 || a.Height <= 0) a = s;
 
         var top = _services.Settings.Current.TopBar;
-        if (top.Enabled && !top.ReserveSpace)
+        // 상단바가 이 모니터에 있을 때만 (모든 모니터 표시이거나 주 모니터)
+        if (top.Enabled && !top.ReserveSpace && (top.ShowOnAllMonitors || _monitor.IsPrimary))
         {
             double minTop = s.Top + Math.Max(0, top.Height);
             if (a.Top < minTop) a = new Rect(a.Left, minTop, a.Width, Math.Max(0, a.Bottom - minTop));
@@ -461,7 +470,8 @@ public partial class DockWindow : Window
     {
         if (_closed) return;
         var l = _layout;
-        _screen = _services.DesktopWindows.GetPrimaryScreenBounds();
+        RefreshMonitor();
+        _screen = _monitor.Bounds;
         _baseLength = ComputeBaseLength();
 
         GetFrame(l.Edge, false, out double edgeLine, out double start, out double end);
@@ -480,6 +490,21 @@ public partial class DockWindow : Window
     }
 
     private static double ClampOffset(double v) => double.IsNaN(v) ? 0.5 : Math.Clamp(v, 0, 1);
+
+    /// <summary>
+    /// 독 모니터를 다시 찾고(설정 변경·분리/재연결), 독 창·블러 창의 DPI 가 그 모니터와 다르면 물리 px 로 그 모니터로 옮긴다.
+    /// 그래야 이후 Left/Top(그 모니터 기준 DIP)이 정확하다. 단일 모니터·같은 DPI 면 아무것도 안 함.
+    /// </summary>
+    private void RefreshMonitor()
+    {
+        var mon = _services.DesktopWindows.ResolveMonitor(_services.Settings.Current.Dock.Monitor);
+        if (!string.Equals(mon.DeviceName, _monitor.DeviceName, StringComparison.OrdinalIgnoreCase))
+            Log.Info($"독 모니터 변경 → {mon}");
+        _monitor = mon;
+        DockState.Monitor = mon.DeviceName;
+        _services.DesktopWindows.EnsureOnMonitor(this, mon);
+        _services.DesktopWindows.EnsureOnMonitor(_backdrop, mon);
+    }
 
     /// <summary>슬라이드 진행도(_hide)에 따라 창 위치 갱신 + 블러 창 동기화.</summary>
     private void ApplySlidePosition()
@@ -517,7 +542,12 @@ public partial class DockWindow : Window
         if (wantBackdrop)
         {
             _backdrop.SetRect(rect);
-            if (!_backdrop.IsVisible) _backdrop.Show();
+            if (!_backdrop.IsVisible)
+            {
+                _backdrop.Show();
+                // 숨은 동안 다른 DPI 모니터로 못 옮겨졌으면 보인 뒤 맞춤 (단일 모니터는 아무것도 안 함)
+                if (_services.DesktopWindows.EnsureOnMonitor(_backdrop, _monitor)) _backdrop.SetRect(rect);
+            }
         }
         else if (_backdrop.IsVisible)
         {
@@ -575,18 +605,21 @@ public partial class DockWindow : Window
         // → 폴링마다 화면 크기를 확인해 달라졌으면 바로 다시 배치 (가벼운 호출)
         try
         {
-            var screen = _services.DesktopWindows.GetPrimaryScreenBounds();
-            if (!screen.IsEmpty && screen != _screen) OnDisplayChanged(this, EventArgs.Empty);
+            var mon = _services.DesktopWindows.ResolveMonitor(_services.Settings.Current.Dock.Monitor);
+            var screen = mon.Bounds;
+            if (!screen.IsEmpty && (screen != _screen
+                                    || !string.Equals(mon.DeviceName, _monitor.DeviceName, StringComparison.OrdinalIgnoreCase)))
+                OnDisplayChanged(this, EventArgs.Empty);
         }
         catch { }
 
         Point? cursor;
-        try { cursor = _services.DesktopWindows.GetCursorPosition(); }
+        try { cursor = _services.DesktopWindows.GetCursorPosition(_monitor); }
         catch { return; }
 
         if (_hideTo >= 1)
         {
-            // 주 모니터 밖(null)이면 트리거 판정 안 함
+            // 독 모니터 밖(null)이면 트리거 판정 안 함
             if (cursor is Point c && InTriggerZone(c)) SetHidden(false, animate: true);
             return;
         }
@@ -667,7 +700,12 @@ public partial class DockWindow : Window
         _windowsHidden = false;
         Root.IsHitTestVisible = true;
         ApplySlidePosition();               // 투명도도 여기서 복원
-        if (!IsVisible) Show();
+        if (!IsVisible)
+        {
+            Show();
+            // 숨은 동안 독 모니터가 바뀌어 DPI 가 안 맞으면 보인 뒤 그 모니터로 옮기고 다시 배치 (단일 모니터는 아무것도 안 함)
+            if (_services.DesktopWindows.EnsureOnMonitor(this, _monitor)) ApplySlidePosition();
+        }
         SyncBackdrop(); // 블러 창 표시 여부는 SyncBackdrop 에서 결정 (이 창이 보인 뒤)
     }
 
@@ -1063,7 +1101,7 @@ public partial class DockWindow : Window
         // 현재 데스크톱 창 먼저, 그다음 데스크톱 번호 순
         var windows = item.Windows.OrderByDescending(w => w.OnCurrentDesktop).ThenBy(w => w.DesktopIndex).ToList();
         var picker = new WindowPickerWindow(_services, UiTheme.Palette(_services.Settings.Current), windows,
-            item.Icon, new Rect(a, b), _layout.Edge);
+            item.Icon, new Rect(a, b), _layout.Edge, _monitor);
         picker.Closed += (_, _) =>
         {
             if (_picker != picker) return;
@@ -1092,6 +1130,12 @@ public partial class DockWindow : Window
         if (PanelBorder.ContextMenu?.IsOpen == true || _dragArmed || _hideTo >= 1) return;
         if (LabelAnchor(view) is not Point anchor) return;
 
+        // 숨은 말풍선은 다른 DPI 모니터로 옮겨도 DPI 가 안 바뀔 수 있어, DPI 가 다르면 새로 만든다 (새 창은 WPF 가 그 모니터 DPI 로 만듦)
+        if (_label != null && !MatchesMonitorDpi(_label))
+        {
+            _label.Close();
+            _label = null;
+        }
         if (_label == null)
         {
             _label = new DockLabelWindow(_services);
@@ -1099,6 +1143,15 @@ public partial class DockWindow : Window
         }
         _labelView = view;
         _label.ShowAt(view.Item.Name, anchor, _layout.Edge);
+        // 배율이 다른 모니터끼리 DIP 가 겹쳐 엉뚱한 모니터에 만들어졌으면 옮긴 뒤 다시 (단일 모니터는 아무것도 안 함)
+        if (_services.DesktopWindows.EnsureOnMonitor(_label, _monitor)) _label.MoveTo(anchor);
+    }
+
+    /// <summary>창의 DPI 가 독 모니터 배율과 같은지 (핸들이 아직 없으면 true — 만들 때 WPF 가 맞춤).</summary>
+    private bool MatchesMonitorDpi(Window w)
+    {
+        if (new System.Windows.Interop.WindowInteropHelper(w).Handle == IntPtr.Zero) return true;
+        return Math.Abs(VisualTreeHelper.GetDpi(w).DpiScaleX - _monitor.Scale) < 0.001;
     }
 
     private void OnItemHoverEnded(object? sender, EventArgs e)
@@ -1184,8 +1237,15 @@ public partial class DockWindow : Window
         }
 
         ComputeDragTarget(p, out _dragEdge, out _dragOffset);
+        if (_ghost != null && !_ghost.IsVisible && !MatchesMonitorDpi(_ghost))
+        {
+            _ghost.Close();
+            _ghost = null;
+        }
         _ghost ??= new DockGhostWindow(_services);
-        _ghost.ShowAt(GhostRect(_dragEdge, _dragOffset), _layout);
+        var ghostRect = GhostRect(_dragEdge, _dragOffset);
+        _ghost.ShowAt(ghostRect, _layout);
+        if (_services.DesktopWindows.EnsureOnMonitor(_ghost, _monitor)) _ghost.ShowAt(ghostRect, _layout);
     }
 
     private void OnPanelMouseUp(object sender, MouseButtonEventArgs e)
