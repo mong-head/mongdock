@@ -174,3 +174,48 @@ internal static class DesktopApi
         catch (DllNotFoundException) { }
     }
 }
+
+/// <summary>IVirtualDesktopManager (문서화된 COM). 창이 현재 가상 데스크톱에 있는지 / 어느 데스크톱인지.</summary>
+[ComImport, Guid("a5cd92ff-29be-454c-8d04-d82879fb3f1b"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IVirtualDesktopManager
+{
+    [PreserveSig] int IsWindowOnCurrentVirtualDesktop(IntPtr topLevelWindow, out int onCurrentDesktop);
+    [PreserveSig] int GetWindowDesktopId(IntPtr topLevelWindow, out Guid desktopId);
+    [PreserveSig] int MoveWindowToDesktop(IntPtr topLevelWindow, ref Guid desktopId);
+}
+
+[ComImport, Guid("aa509086-5ca9-4c25-8f95-589d3c07b48a")]
+internal class VirtualDesktopManagerClass
+{
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct DWM_THUMBNAIL_PROPERTIES
+{
+    public uint dwFlags;
+    public RECT rcDestination;
+    public RECT rcSource;
+    public byte opacity;
+    [MarshalAs(UnmanagedType.Bool)] public bool fVisible;
+    [MarshalAs(UnmanagedType.Bool)] public bool fSourceClientAreaOnly;
+}
+
+internal static class DwmThumbnail
+{
+    public const uint DWM_TNP_RECTDESTINATION = 0x1;
+    public const uint DWM_TNP_OPACITY = 0x4;
+    public const uint DWM_TNP_VISIBLE = 0x8;
+    public const uint DWM_TNP_SOURCECLIENTAREAONLY = 0x10;
+
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmRegisterThumbnail(IntPtr hwndDestination, IntPtr hwndSource, out IntPtr phThumbnailId);
+
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmUnregisterThumbnail(IntPtr hThumbnailId);
+
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmQueryThumbnailSourceSize(IntPtr hThumbnail, out SIZE pSize);
+
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmUpdateThumbnailProperties(IntPtr hThumbnailId, ref DWM_THUMBNAIL_PROPERTIES ptnProperties);
+}

@@ -73,8 +73,12 @@ internal static class Dwm
     [DllImport("dwmapi.dll")]
     public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out int pvAttribute, int cbAttribute);
 
-    public static bool IsCloaked(IntPtr hwnd) =>
-        DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, out int cloaked, sizeof(int)) == 0 && cloaked != 0;
+    /// <summary>셸이 숨긴 창 (다른 가상 데스크톱의 창 등).</summary>
+    public const int DWM_CLOAKED_SHELL = 0x2;
+
+    /// <summary>DWMWA_CLOAKED 값 (0 = 보임, 1 = 앱, 2 = 셸, 4 = 상속). 실패 시 0.</summary>
+    public static int GetCloaked(IntPtr hwnd) =>
+        DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, out int cloaked, sizeof(int)) == 0 ? cloaked : 0;
 }
 
 [StructLayout(LayoutKind.Sequential)]

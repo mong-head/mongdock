@@ -148,7 +148,11 @@ internal sealed class DockItemView : Grid
 
     private void UpdateDots()
     {
-        if (_runningDot != null) _runningDot.Visibility = Item.IsRunning ? Visibility.Visible : Visibility.Collapsed;
+        if (_runningDot != null)
+        {
+            _runningDot.Visibility = Item.IsRunning ? Visibility.Visible : Visibility.Collapsed;
+            _runningDot.Opacity = Item.RunningElsewhereOnly ? 0.4 : 1; // 다른 데스크톱에만 창이 있음
+        }
         if (_notifyDot != null) _notifyDot.Visibility = Item.HasNotification ? Visibility.Visible : Visibility.Collapsed;
     }
 

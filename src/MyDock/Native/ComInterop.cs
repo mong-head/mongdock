@@ -26,6 +26,7 @@ internal struct PROPVARIANT
 internal static class PropertyKeys
 {
     public static readonly PROPERTYKEY AppUserModel_ID = new(new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), 5);
+    public static readonly PROPERTYKEY AppUserModel_RelaunchCommand = new(new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), 2);
 }
 
 [StructLayout(LayoutKind.Sequential)]

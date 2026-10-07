@@ -17,6 +17,9 @@ public enum DockMode
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
+public enum MultiWindowClick { Picker, MostRecent }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum DockTheme { System, Light, Dark }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -66,6 +69,10 @@ public sealed class PinItem
 
 public sealed class DockSettings
 {
+    /// <summary>창이 여러 개인 앱 아이콘 클릭: Picker = 창 선택 패널(미리보기), MostRecent = 가장 최근 창으로 바로.</summary>
+    public MultiWindowClick MultiWindowClick { get; set; } = MultiWindowClick.Picker;
+    /// <summary>다른 가상 데스크톱의 창도 독에 표시(실행 중 점, 창 선택에 "데스크톱 N").</summary>
+    public bool ShowWindowsFromAllDesktops { get; set; } = true;
     public DockEdge Edge { get; set; } = DockEdge.Right;
     public DockMode Mode { get; set; } = DockMode.AutoHide;
     /// <summary>자동 숨김에서 마우스가 독을 벗어난 뒤 숨기까지 지연 (ms).</summary>
@@ -106,6 +113,8 @@ public sealed class TopBarSettings
     public double FontSize { get; set; } = 14;
     public string ClockFormat { get; set; } = "ddd tt h:mm";
     public bool ShowDesktopButtons { get; set; } = true;
+    /// <summary>앱 이름 오른쪽에 그 앱의 메뉴(파일·편집·보기…) 표시 (맥 메뉴바처럼).</summary>
+    public bool ShowAppMenus { get; set; } = true;
     /// <summary>왼쪽 로고 버튼 (클릭 시 MyDock 메뉴: 시작 메뉴, 설정, 종료 등).</summary>
     public bool ShowLogo { get; set; } = true;
     /// <summary>포그라운드 앱 이름 표시 (맥 메뉴바처럼 굵게).</summary>
@@ -128,4 +137,6 @@ public sealed class Settings
     public bool StartWithWindows { get; set; }
     /// <summary>MyDockFinder ico.ini 를 한 번 가져왔는지. true 면 다시 가져오지 않음.</summary>
     public bool ImportedFromMyDockFinder { get; set; }
+    /// <summary>사용자 정의 앱 메뉴. 키 = exe 파일명(소문자, 예 "chrome.exe") 또는 AUMID. 있으면 기본 메뉴 대신 사용.</summary>
+    public Dictionary<string, List<AppMenuDef>> AppMenus { get; set; } = new();
 }

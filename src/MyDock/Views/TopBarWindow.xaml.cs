@@ -174,6 +174,8 @@ public partial class TopBarWindow : Window
         FontSize = Math.Clamp(double.IsNaN(s.FontSize) ? 14 : s.FontSize, 8, 32);
         LogoButton.Visibility = Vis(s.ShowLogo);
         AppNameButton.Visibility = Vis(s.ShowActiveAppName);
+        AppMenuBar.Visibility = Vis(s.ShowAppMenus);
+        _menuHwnd = IntPtr.MaxValue; // 설정이 바뀌면 메뉴 다시 구성
         DesktopButtons.Visibility = Vis(s.ShowDesktopButtons);
         DesktopButtons.Background = DesktopGroupPill ? BrushParser.Frozen(Color.FromArgb(0x0D, 0, 0, 0)) : Brushes.Transparent;
         NetSpeed.Visibility = Vis(s.ShowNetworkSpeed);
@@ -329,7 +331,7 @@ public partial class TopBarWindow : Window
     {
         if (!IsVisible || ColorMode != TopBarColorMode.Auto) return;
         // 메뉴·상태 패널이 바 아래를 덮고 있으면 그 색을 읽게 되므로 건너뜀
-        if (_panel != null || ContextMenu?.IsOpen == true || _logoMenu?.IsOpen == true) return;
+        if (_panel != null || ContextMenu?.IsOpen == true || _logoMenu?.IsOpen == true || _openAppMenu?.IsOpen == true) return;
         var band = new Rect(Left, Top + ActualHeight, Math.Max(1, ActualWidth), 3);
         band = ExcludeDock(band);
         if (band.IsEmpty) return;
@@ -528,6 +530,12 @@ public partial class TopBarWindow : Window
     private AppWindowInfo? _currentApp;
 
     private void UpdateAppName(bool force = false)
+    {
+        UpdateAppNameCore(force);
+        SyncAppMenus();
+    }
+
+    private void UpdateAppNameCore(bool force)
     {
         var fg = _services.Windows.ForegroundWindow;
         if (!force && fg == _lastForeground) return;

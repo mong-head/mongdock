@@ -78,13 +78,18 @@
                                 <!-- 체크 표시 자리만 (아이콘 거터 없음) -->
                                 <ColumnDefinition Width="22" />
                                 <ColumnDefinition Width="*" />
+                                <!-- 단축키 (맥처럼 회색 작은 글씨, 오른쪽 정렬) -->
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="MenuShortcut" />
                                 <ColumnDefinition Width="Auto" SharedSizeGroup="MenuArrow" />
                             </Grid.ColumnDefinitions>
                             <TextBlock x:Name="Check" Grid.Column="0" Text="✓" FontSize="12.5" FontWeight="SemiBold"
                                        HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Hidden" />
                             <ContentPresenter x:Name="Header" Grid.Column="1" ContentSource="Header" RecognizesAccessKey="False"
                                               VerticalAlignment="Center" Margin="0,0,14,1" />
-                            <TextBlock x:Name="Arrow" Grid.Column="2" Text="›" FontSize="17" Margin="0,0,0,2"
+                            <TextBlock x:Name="Shortcut" Grid.Column="2" Text="{TemplateBinding InputGestureText}"
+                                       FontSize="13" Opacity="0.5" Margin="18,0,2,1" HorizontalAlignment="Right"
+                                       VerticalAlignment="Center" />
+                            <TextBlock x:Name="Arrow" Grid.Column="3" Text="›" FontSize="17" Margin="0,0,0,2"
                                        VerticalAlignment="Center" Visibility="Collapsed" />
                         </Grid>
                         <Popup x:Name="PART_Popup" Placement="Right" HorizontalOffset="-6" VerticalOffset="-13"

@@ -43,6 +43,27 @@ public sealed class VirtualDesktopService : IVirtualDesktopService, IDisposable
 
     public void New() => KeyChord.Send("new", User32.VK_LCONTROL, User32.VK_LWIN, User32.VK_D);
 
+    /// <summary>데스크톱 전환/추가/삭제 (백그라운드 스레드에서 발생 — 받는 쪽이 UI 스레드로 넘길 것). WindowTracker 가 목록 갱신에 사용.</summary>
+    internal static event EventHandler? DesktopsChangedStatic;
+
+    /// <summary>가상 데스크톱 ID 목록 (작업 보기 순서). 데스크톱을 추가한 적 없으면 빈 목록.</summary>
+    internal static List<Guid> ReadDesktopIds()
+    {
+        var list = new List<Guid>();
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(KeyPath);
+            if (key?.GetValue("VirtualDesktopIDs") is byte[] ids)
+                for (int i = 0; i + 16 <= ids.Length; i += 16)
+                    list.Add(new Guid(ids.AsSpan(i, 16)));
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"가상 데스크톱 ID 읽기 실패: {ex.Message}");
+        }
+        return list;
+    }
+
     /// <summary>(현재 번호 1부터, 개수). 모르면 0.</summary>
     internal static (int Current, int Count) Read()
     {
@@ -111,6 +132,8 @@ public sealed class VirtualDesktopService : IVirtualDesktopService, IDisposable
         if (cur == _current && count == _count) return;
         _current = cur;
         _count = count;
+        try { DesktopsChangedStatic?.Invoke(this, EventArgs.Empty); }
+        catch (Exception ex) { Log.Error("DesktopsChangedStatic 핸들러 예외", ex); }
         _dispatcher.InvokeAsync(() =>
         {
             try { Changed?.Invoke(this, EventArgs.Empty); }

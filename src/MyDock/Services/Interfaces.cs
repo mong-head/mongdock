@@ -39,6 +39,8 @@ public interface IWindowTracker
     PinItem CreatePin(AppWindowInfo window);
     /// <summary>바탕 화면(Progman/WorkerW)·작업 표시줄 같은 셸 창이면 true — 상단바가 "바탕 화면" 표시용.</summary>
     bool IsDesktopWindow(IntPtr hwnd);
+    /// <summary>창의 프로필 이름 (크롬 등, 알 수 있을 때만).</summary>
+    string? GetProfileName(AppWindowInfo window);
     void Start();
     void Stop();
 }
@@ -46,11 +48,15 @@ public interface IWindowTracker
 public interface IAppLauncher
 {
     void Launch(PinItem pin);
-    /// <summary>창을 앞으로 가져옴 (최소화돼 있으면 복원).</summary>
+    /// <summary>창을 앞으로 가져옴 (최소화돼 있으면 복원). 다른 가상 데스크톱에 있으면 그 데스크톱으로 이동한 뒤 활성화.</summary>
     void Activate(IntPtr hwnd);
     /// <summary>이미 앞에 있으면 최소화, 아니면 Activate. (맥 독 클릭 동작)</summary>
     void ToggleActivate(IntPtr hwnd);
     void Close(IntPtr hwnd);
+    /// <summary>브라우저(크롬·엣지·웨일) 프로필 목록 (Local State). 프로필 개념이 없는 앱이면 빈 목록.</summary>
+    IReadOnlyList<AppProfile> GetProfiles(PinItem pin);
+    /// <summary>해당 프로필로 새 창 (예: chrome.exe --profile-directory="Profile 1").</summary>
+    void LaunchProfile(PinItem pin, AppProfile profile);
     /// <summary>창 최소화 (ShowWindowAsync SW_MINIMIZE).</summary>
     void Minimize(IntPtr hwnd);
     /// <summary>파일/폴더를 기본 프로그램으로 엶 (settings.json 편집 등).</summary>
@@ -62,6 +68,8 @@ public interface IIconService
     /// <summary>핀 아이콘. IconPath 가 있으면 그것, 없으면 exe/패키지 아이콘. 실패 시 기본 아이콘. Frozen.</summary>
     ImageSource GetIcon(PinItem pin, IconStyle style);
     ImageSource GetIcon(AppWindowInfo window, IconStyle style);
+    /// <summary>창 자체의 작은 아이콘(WM_GETICON — 크롬 프로필 아바타 배지 등). 없으면 null.</summary>
+    ImageSource? GetWindowIcon(IntPtr hwnd);
 }
 
 public interface IDesktopWindowService
@@ -98,7 +106,18 @@ public interface IDesktopWindowService
     event EventHandler<bool>? FullscreenAppChanged;
     /// <summary>해상도·DPI·작업 영역 변경, 탐색기 재시작 후. UI 는 배치를 다시 계산.</summary>
     event EventHandler? DisplayChanged;
+    /// <summary>DWM 실시간 창 미리보기를 host 창의 destDip 영역에 그림. Dispose 로 해제, Update 로 위치 변경. 다른 데스크톱(cloaked) 창은 비어 보일 수 있음.</summary>
+    IWindowThumbnail? CreateThumbnail(Window host, IntPtr source, Rect destDip);
 }
+
+public interface IWindowThumbnail : IDisposable
+{
+    /// <summary>원본 창 크기(px) — 비율 계산용.</summary>
+    Size SourceSize { get; }
+    void Update(Rect destDip);
+}
+
+public sealed record AppProfile(string Id, string Name, ImageSource? Avatar);
 
 public interface IEdgeReservation : IDisposable
 {
@@ -206,6 +225,19 @@ public interface IStatusService
     void Stop();
 }
 
+/// <summary>포그라운드 앱의 메뉴. 일반 Win32 메뉴(HMENU)가 있으면 그것을 읽고, 없으면 settings.AppMenus → 내장 기본 메뉴(브라우저·탐색기 등) → 공통 편집 메뉴 순.</summary>
+public interface IAppMenuService
+{
+    IReadOnlyList<AppMenu> GetMenus(AppWindowInfo window);
+    /// <summary>항목 실행: Win32 메뉴는 WM_COMMAND 를 그 창에, 단축키 항목은 그 창을 포그라운드로 확인한 뒤 SendInput.</summary>
+    void Invoke(IntPtr hwnd, AppMenuItem item);
+}
+
+public sealed record AppMenu(string Title, IReadOnlyList<AppMenuItem> Items);
+
+/// <summary>IsSeparator 면 구분선. Shortcut 은 표시용 문자열. Children 이 있으면 하위 메뉴.</summary>
+public sealed record AppMenuItem(string Text, bool IsSeparator, bool Enabled, bool Checked, string? Shortcut, IReadOnlyList<AppMenuItem>? Children, object? Payload);
+
 public interface IImeService
 {
     /// <summary>포그라운드 창이 한글 입력 모드면 true, 영문이면 false, 알 수 없으면 null.</summary>
@@ -232,4 +264,5 @@ public sealed record AppServices(
     IImeService Ime,
     IStatusService Status,
     IMediaService Media,
+    IAppMenuService AppMenus,
     IStartupService Startup);

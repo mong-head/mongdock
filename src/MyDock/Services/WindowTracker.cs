@@ -65,13 +65,18 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
         _foreground = User32.GetForegroundWindow();
         Refresh(force: true);
 
+        VirtualDesktopService.DesktopsChangedStatic += OnDesktopsChanged;
         _pollTimer = new DispatcherTimer(PollInterval, DispatcherPriority.Background, (_, _) => Poll(), _dispatcher);
         _pollTimer.Start();
         Log.Info("WindowTracker 시작");
     }
 
+    /// <summary>가상 데스크톱 전환/추가/삭제 (백그라운드 스레드) → UI 스레드에서 목록 갱신 (OnCurrentDesktop/DesktopIndex).</summary>
+    private void OnDesktopsChanged(object? sender, EventArgs e) => _dispatcher?.InvokeAsync(QueueRefresh);
+
     public void Stop()
     {
+        VirtualDesktopService.DesktopsChangedStatic -= OnDesktopsChanged;
         _pollTimer?.Stop();
         _pollTimer = null;
         if (_hookSource is not null)
@@ -205,11 +210,12 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
     {
         var result = new List<AppWindowInfo>();
         var seenPids = new HashSet<uint>();
+        var desktopIds = VirtualDesktopService.ReadDesktopIds();
         User32.EnumWindows((hwnd, _) =>
         {
             try
             {
-                var info = TryGetInfo(hwnd, seenPids);
+                var info = TryGetInfo(hwnd, seenPids, desktopIds);
                 if (info is not null) result.Add(info);
             }
             catch (Exception ex)
@@ -226,9 +232,9 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
         return result;
     }
 
-    private AppWindowInfo? TryGetInfo(IntPtr hwnd, HashSet<uint> seenPids)
+    private AppWindowInfo? TryGetInfo(IntPtr hwnd, HashSet<uint> seenPids, IReadOnlyList<Guid> desktopIds)
     {
-        if (!IsTaskbarWindow(hwnd)) return null;
+        if (!IsTaskbarWindow(hwnd, out bool onCurrent)) return null;
 
         User32.GetWindowThreadProcessId(hwnd, out uint pid);
         if (pid == 0 || pid == _ownPid) return null;
@@ -253,7 +259,31 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
         }
 
         string? aumid = Shell32.GetWindowAumid(hwnd) ?? procAumid;
-        return new AppWindowInfo(hwnd, title, path, aumid, User32.IsIconic(hwnd));
+        int desktop = VirtualDesktopHelper.GetDesktopIndex(hwnd, desktopIds);
+        return new AppWindowInfo(hwnd, title, path, aumid, User32.IsIconic(hwnd), desktop, onCurrent);
+    }
+
+    /// <summary>
+    /// 창의 브라우저 프로필 이름 (크롬·엣지·웨일). 크롬은 창 속성 PKEY_AppUserModel_RelaunchCommand 에
+    /// "chrome.exe --profile-directory=Profile 1" 을 넣으므로 그 디렉터리를 Local State 의 프로필 이름으로 매핑한다.
+    /// (창 AUMID 는 프로필과 무관하게 "Chrome" 인 경우가 있어 쓰지 않음.) 알 수 없으면 null.
+    /// </summary>
+    public string? GetProfileName(AppWindowInfo window)
+    {
+        try
+        {
+            if (window is null || ChromiumProfiles.UserDataDir(window.ProcessPath) is null) return null;
+            string? dir = ChromiumProfiles.ParseProfileDir(Shell32.GetWindowRelaunchCommand(window.Hwnd));
+            if (dir is null) return null;
+            var profile = ChromiumProfiles.Read(window.ProcessPath)
+                .FirstOrDefault(p => string.Equals(p.Dir, dir, StringComparison.OrdinalIgnoreCase));
+            return profile?.Name ?? dir;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"프로필 이름 조회 실패: {ex.Message}");
+            return null;
+        }
     }
 
     /// <summary>바탕화면(Progman/WorkerW) 또는 작업표시줄(Shell_TrayWnd/Shell_SecondaryTrayWnd) 창인지.</summary>
@@ -263,9 +293,10 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
         return User32.GetClassNameOf(hwnd) is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd";
     }
 
-    /// <summary>작업표시줄에 버튼이 생기는 창인지 (Alt+Tab/작업표시줄 규칙 근사).</summary>
-    internal static bool IsTaskbarWindow(IntPtr hwnd)
+    /// <summary>작업표시줄에 버튼이 생기는 창인지 (Alt+Tab/작업표시줄 규칙 근사). 다른 가상 데스크톱의 창도 포함.</summary>
+    internal static bool IsTaskbarWindow(IntPtr hwnd, out bool onCurrentDesktop)
     {
+        onCurrentDesktop = true;
         if (!User32.IsWindowVisible(hwnd)) return false;
         long ex = User32.GetWindowLong(hwnd, User32.GWL_EXSTYLE);
         bool appWindow = (ex & User32.WS_EX_APPWINDOW) != 0;
@@ -273,8 +304,15 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
         if ((ex & User32.WS_EX_NOACTIVATE) != 0 && !appWindow) return false;
         IntPtr owner = User32.GetWindow(hwnd, User32.GW_OWNER);
         if (owner != IntPtr.Zero && !appWindow) return false;
-        // 다른 가상 데스크톱의 창, 일시 중단된 UWP 프레임 등은 cloaked
-        if (Dwm.IsCloaked(hwnd)) return false;
+        // cloaked: 셸이 숨긴 창(DWM_CLOAKED_SHELL)이고 현재 데스크톱이 아니면 → 다른 가상 데스크톱의 창으로 포함.
+        // 앱이 스스로 숨긴 창, 일시 중단된 UWP 프레임 등 그 외 cloaked 는 제외.
+        int cloaked = Dwm.GetCloaked(hwnd);
+        if (cloaked != 0)
+        {
+            if (cloaked != Dwm.DWM_CLOAKED_SHELL) return false;
+            if (VirtualDesktopHelper.IsOnCurrentDesktop(hwnd) != false) return false;
+            onCurrentDesktop = false;
+        }
         string cls = User32.GetClassNameOf(hwnd);
         if (cls is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd") return false;
         return true;

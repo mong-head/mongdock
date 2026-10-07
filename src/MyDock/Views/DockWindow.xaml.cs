@@ -142,6 +142,7 @@ public partial class DockWindow : Window
         DockState.VisiblePanel = Rect.Empty;
         _label?.Close();
         _ghost?.Close();
+        _picker?.Close();
         foreach (var v in _views.Values) v.Detach();
         _views.Clear();
         _backdrop.Close();
@@ -205,6 +206,7 @@ public partial class DockWindow : Window
     {
         if (_closed) return;
         CancelDrag();
+        _picker?.Close();
         _layout = DockLayout.From(_services.Settings.Current.Dock, SystemTheme.AppsUseLightTheme());
         UiTheme.Apply(_services.Settings.Current); // 메뉴 색 (라이트/다크)
         _label?.Hide();
@@ -486,7 +488,7 @@ public partial class DockWindow : Window
     {
         if (_closed || _fullscreen || _layout.Mode != DockMode.AutoHide) return;
         bool menuOpen = PanelBorder.ContextMenu?.IsOpen == true;
-        if (_dragArmed || menuOpen || _dialogOpen)
+        if (_dragArmed || menuOpen || _dialogOpen || _picker != null)
         {
             _lastInsideTicks = Environment.TickCount64;
             return;
@@ -585,6 +587,7 @@ public partial class DockWindow : Window
     {
         _windowsHidden = true;
         _label?.Hide();
+        _picker?.Close();
         ResetMagnification();
         if (_backdrop.IsVisible) _backdrop.Hide();
         if (IsVisible) Hide();
@@ -723,7 +726,9 @@ public partial class DockWindow : Window
     private void RefreshItems(bool rebuildViews = false, bool place = true)
     {
         var settings = _services.Settings.Current;
-        var windows = _services.Windows.Windows;
+        var windows = settings.Dock.ShowWindowsFromAllDesktops
+            ? _services.Windows.Windows
+            : _services.Windows.Windows.Where(w => w.OnCurrentDesktop).ToList();
         var style = settings.Dock.IconStyle;
         var old = rebuildViews ? new Dictionary<string, DockItemViewModel>() : _items.ToDictionary(i => i.Id);
         var list = new List<DockItemViewModel>();
@@ -810,6 +815,7 @@ public partial class DockWindow : Window
         {
             if (item.IsSeparator) continue;
             item.IsRunning = item.Windows.Count > 0;
+            item.RunningElsewhereOnly = item.IsRunning && item.Windows.All(w => !w.OnCurrentDesktop);
             item.HasNotification = item.Windows.Any(w => _flashed.Contains(w.Hwnd));
         }
     }
@@ -892,6 +898,12 @@ public partial class DockWindow : Window
                 return;
             }
 
+            if (item.Windows.Count > 1 && _services.Settings.Current.Dock.MultiWindowClick == MultiWindowClick.Picker)
+            {
+                ShowWindowPicker(sender as DockItemView, item);
+                return;
+            }
+
             var fg = _services.Windows.ForegroundWindow;
             if (item.Windows.Count > 1 && item.Windows.Any(w => w.Hwnd == fg))
             {
@@ -914,6 +926,40 @@ public partial class DockWindow : Window
         {
             Log.Error("독 아이콘 클릭 처리 실패", ex);
         }
+    }
+
+    // ───────────────────────── 창 선택 패널 ─────────────────────────
+
+    private WindowPickerWindow? _picker;
+    private DockItemViewModel? _pickerItem;
+
+    private void ShowWindowPicker(DockItemView? view, DockItemViewModel item)
+    {
+        // 같은 아이콘을 다시 누르면 닫기 (토글)
+        bool same = _pickerItem == item && _picker != null;
+        _picker?.Close();
+        if (same || view == null) return;
+
+        var source = PresentationSource.FromVisual(this);
+        if (source?.CompositionTarget == null) return;
+        var toDip = source.CompositionTarget.TransformFromDevice;
+        var a = toDip.Transform(view.PointToScreen(new Point(0, 0)));
+        var b = toDip.Transform(view.PointToScreen(new Point(view.ActualWidth, view.ActualHeight)));
+
+        // 현재 데스크톱 창 먼저, 그다음 데스크톱 번호 순
+        var windows = item.Windows.OrderByDescending(w => w.OnCurrentDesktop).ThenBy(w => w.DesktopIndex).ToList();
+        var picker = new WindowPickerWindow(_services, UiTheme.Palette(_services.Settings.Current), windows,
+            item.Icon, new Rect(a, b), _layout.Edge);
+        picker.Closed += (_, _) =>
+        {
+            if (_picker != picker) return;
+            _picker = null;
+            _pickerItem = null;
+            _lastInsideTicks = Environment.TickCount64;
+        };
+        _picker = picker;
+        _pickerItem = item;
+        picker.Show();
     }
 
     private void ClearNotification(DockItemViewModel item)
@@ -1129,7 +1175,8 @@ public partial class DockWindow : Window
 
         if (!item.IsSeparator)
         {
-            menu.Items.Add(Item("새 창 열기", () => _services.Launcher.Launch(pin)));
+            AddWindowList(menu, item);
+            AddNewWindowItem(menu, pin);
             if (item.IsRunning)
                 menu.Items.Add(Item("창 닫기", () => CloseAll(item)));
             menu.Items.Add(new Separator());
@@ -1146,8 +1193,91 @@ public partial class DockWindow : Window
         menu.Items.Add(Item(item.IsSeparator ? "구분선 제거" : "독에서 제거", () => ModifyPins(p => p.Remove(pin))));
     }
 
+    /// <summary>맥 독처럼 메뉴 맨 위에 그 앱의 창 목록 (제목 + 다른 데스크톱이면 "— 데스크톱 N", 활성 창 ✓).</summary>
+    private void AddWindowList(ContextMenu menu, DockItemViewModel item)
+    {
+        if (item.Windows.Count == 0) return;
+        var fg = _services.Windows.ForegroundWindow;
+        foreach (var w in item.Windows.OrderByDescending(w => w.OnCurrentDesktop).ThenBy(w => w.DesktopIndex))
+        {
+            var header = new StackPanel { Orientation = Orientation.Horizontal };
+            string title = string.IsNullOrWhiteSpace(w.Title) ? item.Name : w.Title;
+            header.Children.Add(new TextBlock { Text = title.Length > 48 ? title[..47] + "…" : title });
+            if (!w.OnCurrentDesktop)
+            {
+                header.Children.Add(new TextBlock
+                {
+                    Text = w.DesktopIndex > 0 ? $"  — 데스크톱 {w.DesktopIndex}" : "  — 다른 데스크톱",
+                    Opacity = 0.55,
+                });
+            }
+            var hwnd = w.Hwnd;
+            var mi = new MenuItem { Header = header, IsChecked = hwnd == fg };
+            mi.Click += (_, _) =>
+            {
+                try { _services.Launcher.Activate(hwnd); }
+                catch (Exception ex) { Log.Error("창 전환 실패", ex); }
+            };
+            menu.Items.Add(mi);
+        }
+        menu.Items.Add(new Separator());
+    }
+
+    /// <summary>"새 창 열기" — 프로필이 있는 앱(크롬 등)은 "새 창 ›" 하위 메뉴에 프로필 목록.</summary>
+    private void AddNewWindowItem(ContextMenu menu, PinItem pin)
+    {
+        IReadOnlyList<AppProfile> profiles;
+        try { profiles = _services.Launcher.GetProfiles(pin); }
+        catch (Exception ex)
+        {
+            Log.Error("프로필 목록 조회 실패", ex);
+            profiles = Array.Empty<AppProfile>();
+        }
+
+        if (profiles.Count == 0)
+        {
+            menu.Items.Add(Item("새 창 열기", () => _services.Launcher.Launch(pin)));
+            return;
+        }
+
+        var parent = new MenuItem { Header = "새 창" };
+        foreach (var profile in profiles)
+        {
+            var header = new StackPanel { Orientation = Orientation.Horizontal };
+            header.Children.Add(new Border
+            {
+                Width = 16,
+                Height = 16,
+                CornerRadius = new CornerRadius(8),
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Background = profile.Avatar != null
+                    ? new ImageBrush(profile.Avatar) { Stretch = Stretch.UniformToFill }
+                    : BrushParser.Frozen(Color.FromArgb(0x40, 0x80, 0x80, 0x80)),
+            });
+            header.Children.Add(new TextBlock { Text = profile.Name, VerticalAlignment = VerticalAlignment.Center });
+            var p = profile;
+            var mi = new MenuItem { Header = header };
+            mi.Click += (_, _) =>
+            {
+                try { _services.Launcher.LaunchProfile(pin, p); }
+                catch (Exception ex) { Log.Error("프로필 새 창 실패", ex); }
+            };
+            parent.Items.Add(mi);
+        }
+        menu.Items.Add(parent);
+    }
+
     private void BuildRunningMenu(ContextMenu menu, DockItemViewModel item)
     {
+        AddWindowList(menu, item);
+        if (item.Windows.Count > 0)
+        {
+            PinItem? tempPin = null;
+            try { tempPin = _services.Windows.CreatePin(item.Windows[0]); }
+            catch (Exception ex) { Log.Error("임시 핀 생성 실패", ex); }
+            if (tempPin != null) AddNewWindowItem(menu, tempPin);
+        }
         menu.Items.Add(Item("독에 고정", () =>
         {
             if (item.Windows.Count == 0) return;

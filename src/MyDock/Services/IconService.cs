@@ -76,6 +76,33 @@ public sealed class IconService : IIconService
             ?? FromWindowHandle(window.Hwnd));
     }
 
+    private readonly Dictionary<IntPtr, (ImageSource? Image, DateTime At)> _windowIcons = new();
+    private static readonly TimeSpan WindowIconTtl = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// 창 자체 아이콘 (WM_GETICON ICON_BIG → ICON_SMALL2 → GCLP_HICON, SendMessageTimeout 100ms).
+    /// 빌린 핸들이라 해제하지 않고 BitmapSource 로 복사해 Freeze. 창마다 5초 캐시 (크롬 프로필 아이콘처럼 창별로 다른 경우용).
+    /// </summary>
+    public ImageSource? GetWindowIcon(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return null;
+        lock (_gate)
+        {
+            if (_windowIcons.TryGetValue(hwnd, out var c) && DateTime.UtcNow - c.At < WindowIconTtl) return c.Image;
+        }
+        ImageSource? img = null;
+        try { if (User32.IsWindow(hwnd)) img = FromWindowHandle(hwnd); }
+        catch (Exception ex) { Log.Warn($"창 아이콘 조회 실패: {ex.Message}"); }
+        lock (_gate)
+        {
+            if (_windowIcons.Count > 128)
+                foreach (var k in _windowIcons.Where(kv => DateTime.UtcNow - kv.Value.At >= WindowIconTtl).Select(kv => kv.Key).ToList())
+                    _windowIcons.Remove(k);
+            _windowIcons[hwnd] = (img, DateTime.UtcNow);
+        }
+        return img;
+    }
+
     /// <summary>패키지 앱 아이콘: shell:AppsFolder\AUMID 의 IShellItemImageFactory → 패키지 로고(Assets) 파일.</summary>
     private static ImageSource? FromAumid(string aumid)
     {

@@ -31,6 +31,10 @@ public sealed class DockItemViewModel : ObservableObject
     private bool _isRunning;
     public bool IsRunning { get => _isRunning; set => Set(ref _isRunning, value); }
 
+    private bool _onlyElsewhere;
+    /// <summary>창이 다른 가상 데스크톱에만 있음 → 실행 중 점을 흐리게.</summary>
+    public bool RunningElsewhereOnly { get => _onlyElsewhere; set => Set(ref _onlyElsewhere, value); }
+
     private bool _hasNotification;
     public bool HasNotification { get => _hasNotification; set => Set(ref _hasNotification, value); }
 }

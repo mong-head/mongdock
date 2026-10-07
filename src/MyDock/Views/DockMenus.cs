@@ -37,13 +37,20 @@ internal static class DockMenus
             dock.Edge, v => Update(services, () => services.Settings.Current.Dock.Edge = v));
     }
 
-    /// <summary>"독 동작 ▸ 자동 숨김 / 항상 표시 / 공간 차지".</summary>
+    /// <summary>"독 동작 ▸ 자동 숨김 / 항상 표시 / 공간 차지 / ─ / 여러 창 클릭: 창 선택 / 최근 창".</summary>
     public static MenuItem DockBehavior(AppServices services)
     {
         var dock = services.Settings.Current.Dock;
-        return Choice("독 동작",
+        var parent = Choice("독 동작",
             new[] { (DockMode.AutoHide, "자동 숨김"), (DockMode.Overlay, "항상 표시"), (DockMode.Reserve, "공간 차지") },
             dock.Mode, v => Update(services, () => services.Settings.Current.Dock.Mode = v));
+        parent.Items.Add(new Separator());
+        foreach (var (value, label) in new[] { (MultiWindowClick.Picker, "여러 창 클릭: 창 선택"), (MultiWindowClick.MostRecent, "여러 창 클릭: 최근 창") })
+        {
+            parent.Items.Add(Item(label, () => Update(services, () => services.Settings.Current.Dock.MultiWindowClick = value),
+                isChecked: dock.MultiWindowClick == value));
+        }
+        return parent;
     }
 
     /// <summary>"테마 ▸ 시스템 / 라이트 / 다크".</summary>

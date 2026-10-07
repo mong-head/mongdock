@@ -102,14 +102,19 @@ internal static class Shell32
     // ── 헬퍼 ──
 
     /// <summary>창의 PKEY_AppUserModel_ID (명시적으로 설정된 경우만). 없으면 null.</summary>
-    public static string? GetWindowAumid(IntPtr hwnd)
+    public static string? GetWindowAumid(IntPtr hwnd) => GetWindowAppModelString(hwnd, PropertyKeys.AppUserModel_ID);
+
+    /// <summary>창의 PKEY_AppUserModel_RelaunchCommand (크롬은 "chrome.exe --profile-directory=..."). 없으면 null.</summary>
+    public static string? GetWindowRelaunchCommand(IntPtr hwnd) => GetWindowAppModelString(hwnd, PropertyKeys.AppUserModel_RelaunchCommand);
+
+    private static string? GetWindowAppModelString(IntPtr hwnd, PROPERTYKEY pkey)
     {
         IPropertyStore? store = null;
         try
         {
             var iid = typeof(IPropertyStore).GUID;
             if (SHGetPropertyStoreForWindow(hwnd, ref iid, out store) != 0 || store is null) return null;
-            var key = PropertyKeys.AppUserModel_ID;
+            var key = pkey;
             if (store.GetValue(ref key, out PROPVARIANT pv) != 0) return null;
             try
             {

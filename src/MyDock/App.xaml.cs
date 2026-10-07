@@ -48,6 +48,7 @@ public partial class App : Application
             new ImeService(),
             new StatusService(),
             new MediaService(),
+            new AppMenuService(settings),
             new StartupService());
 
         ImportMyDockFinderPinsOnce(settings);

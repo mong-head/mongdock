@@ -8,4 +8,7 @@ public sealed record AppWindowInfo(
     string ProcessPath,
     // 창의 AppUserModelID (스토어 앱 등). 없으면 null.
     string? Aumid,
-    bool IsMinimized);
+    bool IsMinimized,
+    // 이 창이 있는 가상 데스크톱 번호 (1부터, 모르면 0) / 현재 데스크톱에 있는지.
+    int DesktopIndex = 0,
+    bool OnCurrentDesktop = true);

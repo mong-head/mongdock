@@ -337,6 +337,92 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         }
     }
 
+    // ───────────────────────── DWM 창 미리보기 ─────────────────────────
+
+    /// <summary>
+    /// DWM 실시간 창 미리보기 (DwmRegisterThumbnail). host 창의 클라이언트 영역 destDip 위치(host 의 DPI 로 px 변환)에 그린다.
+    /// host 창 구성: 최상위(top-level) WPF 창이면 됨. Win11 26200 에서 AllowsTransparency=True(레이어드)·False 둘 다
+    /// 실제로 미리보기가 보이는 것을 화면 캡처로 확인. DWM 이 host 내용 "위에" 합성하므로 WPF 요소로 미리보기를 덮을 수는 없다
+    /// (미리보기 위에 그릴 것은 별도 창으로). 최소화된 창은 원본이 마지막 모습이거나 비어 보이고,
+    /// 다른 가상 데스크톱(cloaked) 창은 비어 보일 수 있음. 실패 시 null.
+    /// </summary>
+    public IWindowThumbnail? CreateThumbnail(Window host, IntPtr source, Rect destDip)
+    {
+        try
+        {
+            if (source == IntPtr.Zero || !User32.IsWindow(source)) return null;
+            IntPtr hostHwnd = new WindowInteropHelper(host).EnsureHandle();
+            int hr = DwmThumbnail.DwmRegisterThumbnail(hostHwnd, source, out IntPtr thumb);
+            if (hr != 0 || thumb == IntPtr.Zero)
+            {
+                Log.Warn($"DwmRegisterThumbnail 실패 hr=0x{hr:X8}");
+                return null;
+            }
+            var t = new WindowThumbnail(host, thumb);
+            t.Update(destDip);
+            return t;
+        }
+        catch (Exception e)
+        {
+            Log.Error("CreateThumbnail 실패", e);
+            return null;
+        }
+    }
+
+    private sealed class WindowThumbnail : IWindowThumbnail
+    {
+        private readonly Window _host;
+        private IntPtr _thumb;
+
+        public WindowThumbnail(Window host, IntPtr thumb)
+        {
+            _host = host;
+            _thumb = thumb;
+        }
+
+        public Size SourceSize
+        {
+            get
+            {
+                if (_thumb == IntPtr.Zero || DwmThumbnail.DwmQueryThumbnailSourceSize(_thumb, out SIZE s) != 0) return Size.Empty;
+                return new Size(s.cx, s.cy);
+            }
+        }
+
+        public void Update(Rect destDip)
+        {
+            if (_thumb == IntPtr.Zero) return;
+            try
+            {
+                var dpi = VisualTreeHelper.GetDpi(_host);
+                var props = new DWM_THUMBNAIL_PROPERTIES
+                {
+                    dwFlags = DwmThumbnail.DWM_TNP_RECTDESTINATION | DwmThumbnail.DWM_TNP_VISIBLE |
+                              DwmThumbnail.DWM_TNP_OPACITY | DwmThumbnail.DWM_TNP_SOURCECLIENTAREAONLY,
+                    rcDestination = new RECT(
+                        (int)Math.Round(destDip.Left * dpi.DpiScaleX), (int)Math.Round(destDip.Top * dpi.DpiScaleY),
+                        (int)Math.Round(destDip.Right * dpi.DpiScaleX), (int)Math.Round(destDip.Bottom * dpi.DpiScaleY)),
+                    opacity = 255,
+                    fVisible = true,
+                    fSourceClientAreaOnly = false,
+                };
+                int hr = DwmThumbnail.DwmUpdateThumbnailProperties(_thumb, ref props);
+                if (hr != 0) Log.Warn($"DwmUpdateThumbnailProperties 실패 hr=0x{hr:X8}");
+            }
+            catch (Exception e)
+            {
+                Log.Error("썸네일 위치 갱신 실패", e);
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_thumb == IntPtr.Zero) return;
+            DwmThumbnail.DwmUnregisterThumbnail(_thumb);
+            _thumb = IntPtr.Zero;
+        }
+    }
+
     // ───────────────────────── 화면 / 배경 색 ─────────────────────────
 
     /// <summary>

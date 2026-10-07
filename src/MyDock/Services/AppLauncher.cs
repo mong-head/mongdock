@@ -117,20 +117,79 @@ public sealed class AppLauncher : IAppLauncher
         }
     }
 
+    /// <summary>창을 앞으로. 다른 가상 데스크톱의 창이면 먼저 그 데스크톱으로 이동(Ctrl+Win+←/→)한 뒤 활성화.</summary>
     public void Activate(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero || !User32.IsWindow(hwnd)) return;
+        if (VirtualDesktopHelper.IsOnCurrentDesktop(hwnd) == false)
+            _ = SwitchDesktopThenActivateAsync(hwnd);
+        else
+            ActivateWindow(hwnd);
+    }
+
+    private const int DesktopKeyGapMs = 120;
+    private bool _switching;
+
+    /// <summary>
+    /// 창이 있는 데스크톱 번호와 현재 번호의 차이만큼 Ctrl+Win+←/→ 를 보내고(키 사이 120ms), 도착을 확인한 뒤 활성화.
+    /// UI 스레드에서 비동기로 진행 (대기 중에도 UI 가 멈추지 않음). 진행 중 재요청은 무시.
+    /// </summary>
+    private async Task SwitchDesktopThenActivateAsync(IntPtr hwnd)
+    {
+        if (_switching) return;
+        _switching = true;
+        try
+        {
+            var ids = VirtualDesktopService.ReadDesktopIds();
+            int target = VirtualDesktopHelper.GetDesktopIndex(hwnd, ids);
+            var (current, _) = VirtualDesktopService.Read();
+            if (target <= 0 || current <= 0)
+            {
+                Log.Warn($"창의 데스크톱 번호를 알 수 없음 (target={target}, current={current}) → 바로 활성화 시도");
+                ActivateWindow(hwnd);
+                return;
+            }
+            int diff = target - current;
+            for (int i = 0; i < Math.Abs(diff); i++)
+            {
+                if (i > 0) await Task.Delay(DesktopKeyGapMs);
+                KeyChord.Send(diff > 0 ? "next" : "prev", User32.VK_LCONTROL, User32.VK_LWIN, diff > 0 ? User32.VK_RIGHT : User32.VK_LEFT);
+            }
+            // 전환 애니메이션 동안 도착 확인 (최대 ~1초)
+            for (int i = 0; i < 10; i++)
+            {
+                await Task.Delay(100);
+                if (VirtualDesktopService.Read().Current == target) break;
+            }
+            int now = VirtualDesktopService.Read().Current;
+            if (now != target) Log.Warn($"가상 데스크톱 이동 확인 실패: 목표 {target}, 현재 {now}");
+            ActivateWindow(hwnd);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("다른 데스크톱 창 활성화 실패", ex);
+        }
+        finally
+        {
+            _switching = false;
+        }
+    }
+
+    /// <summary>창을 앞으로 (최소화면 복원). AppMenuService 등 다른 서비스도 사용. 실패 시 false.</summary>
+    internal static bool ActivateWindow(IntPtr hwnd)
     {
         try
         {
-            if (hwnd == IntPtr.Zero || !User32.IsWindow(hwnd)) return;
+            if (hwnd == IntPtr.Zero || !User32.IsWindow(hwnd)) return false;
             // 응답 없는 창에 동기 호출을 하면 UI 스레드가 멈추므로 비동기 ShowWindowAsync 사용
             if (User32.IsIconic(hwnd)) User32.ShowWindowAsync(hwnd, User32.SW_RESTORE);
 
-            if (TrySetForeground(hwnd)) return;
+            if (TrySetForeground(hwnd)) return true;
 
             // 1) 빈 입력 이벤트: "마지막 입력을 받은 프로세스" 조건을 만족시켜 포그라운드 잠금을 푼다.
             //    (예전 Alt 키 트릭은 대상 앱의 메뉴바를 활성화할 수 있어 0 이동 마우스 입력으로 대체)
             User32.Send(User32.EmptyMouseInput());
-            if (TrySetForeground(hwnd)) return;
+            if (TrySetForeground(hwnd)) return true;
 
             // 2) 포그라운드 스레드에 입력 큐를 붙여서 재시도 — 응답 없는 창이 관련되면 UI 스레드가 멈출 수 있어 건너뜀
             IntPtr fg = User32.GetForegroundWindow();
@@ -143,7 +202,7 @@ public sealed class AppLauncher : IAppLauncher
                 try
                 {
                     User32.BringWindowToTop(hwnd);
-                    if (TrySetForeground(hwnd)) return;
+                    if (TrySetForeground(hwnd)) return true;
                 }
                 finally
                 {
@@ -151,10 +210,12 @@ public sealed class AppLauncher : IAppLauncher
                 }
             }
             Log.Warn($"SetForegroundWindow 실패 hwnd=0x{hwnd.ToInt64():X}");
+            return false;
         }
         catch (Exception ex)
         {
             Log.Error("Activate 실패", ex);
+            return false;
         }
     }
 
@@ -171,7 +232,7 @@ public sealed class AppLauncher : IAppLauncher
             if (hwnd == IntPtr.Zero || !User32.IsWindow(hwnd)) return;
             IntPtr fg = User32.GetForegroundWindow();
             if (fg == IntPtr.Zero) fg = _tracker.ForegroundWindow; // 전환 중 등 일시적으로 0 일 때
-            if (fg == hwnd && !User32.IsIconic(hwnd))
+            if (fg == hwnd && !User32.IsIconic(hwnd) && VirtualDesktopHelper.IsOnCurrentDesktop(hwnd) != false)
             {
                 User32.ShowWindowAsync(hwnd, User32.SW_MINIMIZE);
                 return;
@@ -181,6 +242,49 @@ public sealed class AppLauncher : IAppLauncher
         catch (Exception ex)
         {
             Log.Error("ToggleActivate 실패", ex);
+        }
+    }
+
+    // ───────────────────────── 브라우저 프로필 ─────────────────────────
+
+    /// <summary>크로미움 계열(크롬·엣지·웨일) Exe 핀의 프로필 목록 (Local State 순서). 그 외는 빈 목록.</summary>
+    public IReadOnlyList<AppProfile> GetProfiles(PinItem pin)
+    {
+        try
+        {
+            if (pin is null || pin.Kind != PinKind.Exe) return Array.Empty<AppProfile>();
+            string exe = Environment.ExpandEnvironmentVariables(pin.Target.Trim().Trim('"'));
+            return ChromiumProfiles.Read(exe)
+                .Select(p => new AppProfile(p.Dir, p.Name, ChromiumProfiles.LoadPicture(p.PicturePath)))
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("프로필 목록 조회 실패", ex);
+            return Array.Empty<AppProfile>();
+        }
+    }
+
+    /// <summary>해당 프로필로 새 창: exe --profile-directory="Profile 1".</summary>
+    public void LaunchProfile(PinItem pin, AppProfile profile)
+    {
+        try
+        {
+            if (pin is null || profile is null) return;
+            string exe = Environment.ExpandEnvironmentVariables(pin.Target.Trim().Trim('"'));
+            var psi = new ProcessStartInfo(exe)
+            {
+                UseShellExecute = true,
+                Arguments = $"--profile-directory=\"{profile.Id.Replace("\"", "")}\"",
+            };
+            string? dir = File.Exists(exe) ? Path.GetDirectoryName(exe) : null;
+            if (!string.IsNullOrEmpty(dir)) psi.WorkingDirectory = dir;
+            Process.Start(psi)?.Dispose();
+            Log.Info($"프로필로 실행: {exe} {psi.Arguments}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"프로필 실행 실패: {profile?.Id}", ex);
         }
     }
 
