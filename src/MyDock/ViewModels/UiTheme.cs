@@ -33,6 +33,9 @@ public sealed class UiPalette
     public Brush WindowBackground { get; private init; } = Brushes.White;
     public Brush SidebarBackground { get; private init; } = Brushes.WhiteSmoke;
     public Brush GroupBackground { get; private init; } = Brushes.White;
+    // 달력: 일요일·공휴일(빨강), 토요일(파랑) 글자색
+    public Brush HolidayText { get; private init; } = Brushes.Red;
+    public Brush SaturdayText { get; private init; } = Brushes.Blue;
 
     public static readonly UiPalette Light = new()
     {
@@ -57,6 +60,8 @@ public sealed class UiPalette
         WindowBackground = F("#FFF5F5F7"),
         SidebarBackground = F("#FFE9E9EC"),
         GroupBackground = F("#FFFFFFFF"),
+        HolidayText = F("#FFE0352B"),
+        SaturdayText = F("#FF1F6FD6"),
     };
 
     public static readonly UiPalette Dark = new()
@@ -82,6 +87,8 @@ public sealed class UiPalette
         WindowBackground = F("#FF1E1E20"),
         SidebarBackground = F("#FF2A2A2C"),
         GroupBackground = F("#FF2C2C2E"),
+        HolidayText = F("#FFFF6B61"),
+        SaturdayText = F("#FF6AAEFF"),
     };
 
     private static SolidColorBrush F(string hex) => BrushParser.Frozen(BrushParser.Hex(hex));
