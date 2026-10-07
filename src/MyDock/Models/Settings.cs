@@ -43,6 +43,8 @@ public enum SearchMode
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SpotlightHotkey
 {
+    /// <summary>자동: 입력 언어가 하나면 Win+Space, 여러 개면(Win+Space = 언어 전환) Alt+Space.</summary>
+    Auto,
     /// <summary>Win+Space (맥 ⌘+Space 자리). 윈도우 입력 언어 전환과 겹침 — 몽독이 가로챔.</summary>
     WinSpace,
     /// <summary>Alt+Space. 창 메뉴(시스템 메뉴) 대신 Spotlight.</summary>
@@ -158,7 +160,7 @@ public sealed class TopBarSettings
     /// <summary>검색 버튼 동작.</summary>
     public SearchMode SearchMode { get; set; } = SearchMode.Spotlight;
     /// <summary>Spotlight 검색창을 여는 전역 단축키 (맥 ⌘+Space 처럼). None 이면 끔.</summary>
-    public SpotlightHotkey SpotlightHotkey { get; set; } = SpotlightHotkey.WinSpace;
+    public SpotlightHotkey SpotlightHotkey { get; set; } = SpotlightHotkey.Auto;
 }
 
 public sealed class NotificationSettings

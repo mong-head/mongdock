@@ -215,8 +215,17 @@ internal sealed class NotificationListView : Border
             var top = NotificationUi.Card(_services, _p, group[0], _p.Tile, compactExtra: group.Count - 1);
             top.Margin = new Thickness(0, 0, 0, PeekStep * layers);
             stack.Children.Add(top);
+            // 호버 시 묶음 × = 이 앱 알림 전부 숨기기 (밀려나며 사라짐). 카드 × 와 같은 자리·모양
+            var closeGroup = NotificationUi.CloseButton(_p, () => HideGroup(panel, aumid));
+            closeGroup.Margin = new Thickness(-6, -6, 0, 0);
+            closeGroup.ToolTip = "이 묶음 지우기";
+            stack.Children.Add(closeGroup);
+            stack.Margin = new Thickness(6, 6, 0, 0); // × 가 잘리지 않게
+            stack.MouseEnter += (_, _) => NotificationUi.ShowClose(closeGroup, true);
+            stack.MouseLeave += (_, _) => NotificationUi.ShowClose(closeGroup, false);
             stack.MouseLeftButtonUp += (_, e) =>
             {
+                if (e.Handled) return; // × 클릭
                 e.Handled = true;
                 Expand(panel, aumid);
             };
@@ -350,6 +359,16 @@ internal sealed class NotificationListView : Border
 
     // ───────────────────────── 펼치기 / 접기 ─────────────────────────
 
+    /// <summary>
+    /// 목록의 index 자리 묶음을 새 요소로 교체. UIElementCollection 의 인덱서 대입은
+    /// 기존 자식 연결을 먼저 끊지 않아 ArgumentException 을 던지므로 RemoveAt + Insert.
+    /// </summary>
+    private void ReplaceChild(int index, UIElement fresh)
+    {
+        _content.Children.RemoveAt(index);
+        _content.Children.Insert(index, fresh);
+    }
+
     /// <summary>겹친 스택 → 펼친 묶음. 카드들이 맨 위 카드 밑에서 아래로 풀려 나옴.</summary>
     private void Expand(StackPanel oldPanel, string aumid)
     {
@@ -364,7 +383,7 @@ internal sealed class NotificationListView : Border
         double oldHeight = oldPanel.ActualHeight;
         double width = _content.ActualWidth;
         var fresh = (StackPanel)BuildGroup(group);
-        _content.Children[index] = fresh;
+        ReplaceChild(index, fresh);
         // 펼친 묶음이 목록 아래로 넘치면 보이도록 스크롤 (레이아웃 끝난 뒤)
         void Reveal() => Dispatcher.BeginInvoke(() => fresh.BringIntoView(), DispatcherPriority.Loaded);
         if (!Anim.Enabled || width <= 0)
@@ -430,7 +449,7 @@ internal sealed class NotificationListView : Border
         Anim.Height(oldPanel, oldPanel.ActualHeight, newHeight, ToggleMs, Anim.QuintOut, () =>
         {
             int at = _content.Children.IndexOf(oldPanel);
-            if (at >= 0) _content.Children[at] = fresh;
+            if (at >= 0) ReplaceChild(at, fresh);
             EndAnim();
         }, clearAtEnd: false);
     }

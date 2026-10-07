@@ -28,9 +28,20 @@ internal sealed class SpotlightHotkeyController : IDisposable
     private void Sync()
     {
         if (_disposed) return;
-        var mode = AppState.Paused ? SpotlightHotkey.None : _services.Settings.Current.TopBar.SpotlightHotkey;
+        var mode = AppState.Paused ? SpotlightHotkey.None : Resolve(_services.Settings.Current.TopBar.SpotlightHotkey);
         _hotkey.Apply(mode);
     }
+
+    /// <summary>Auto: 키보드 입력 언어가 하나면 Win+Space, 여러 개면 Win+Space 가 언어 전환이므로 Alt+Space.</summary>
+    private static SpotlightHotkey Resolve(SpotlightHotkey mode)
+    {
+        if (mode != SpotlightHotkey.Auto) return mode;
+        int layouts = GetKeyboardLayoutList(0, null);
+        return layouts > 1 ? SpotlightHotkey.AltSpace : SpotlightHotkey.WinSpace;
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern int GetKeyboardLayoutList(int nBuff, IntPtr[]? lpList);
 
     private void OnPressed(object? sender, EventArgs e)
     {

@@ -479,6 +479,7 @@ internal sealed class SettingsWindow : Window
     {
         var options = new[]
         {
+            (SpotlightHotkey.Auto, "자동 (언어 1개면 Win+Space, 여러 개면 Alt+Space)"),
             (SpotlightHotkey.WinSpace, "Win + Space"),
             (SpotlightHotkey.AltSpace, "Alt + Space"),
             (SpotlightHotkey.CtrlSpace, "Ctrl + Space"),
