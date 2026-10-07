@@ -41,6 +41,7 @@ internal sealed class NotificationListView : Border
     private readonly UiPalette _p;
     private readonly bool _showHeader;
     private readonly StackPanel _content = new();
+    private readonly ScrollViewer _scroll;
     private readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
     private readonly DispatcherTimer _clock;
     /// <summary>진행 중인 애니메이션 수 — 0 이 아니면 Rebuild 를 미룸.</summary>
@@ -64,15 +65,17 @@ internal sealed class NotificationListView : Border
         SetResourceReference(TextElement.FontFamilyProperty, UiFonts.Key);
         TextElement.SetForeground(this, _p.Text);
 
-        Child = new ScrollViewer
+        Child = _scroll = new ScrollViewer
         {
             MaxHeight = maxHeight,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
+            // 넘칠 때만 맥 같은 얇은 스크롤바 (Themes/Controls.xaml ThinScrollBar)
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             PanningMode = PanningMode.VerticalOnly,
             Focusable = false,
             Content = _content,
         };
+        if (TryFindResource("ThinScrollBar") is Style thin) _scroll.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), thin);
 
         _clock = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(30) };
         _clock.Tick += (_, _) => Rebuild();
@@ -362,12 +365,18 @@ internal sealed class NotificationListView : Border
         double width = _content.ActualWidth;
         var fresh = (StackPanel)BuildGroup(group);
         _content.Children[index] = fresh;
-        if (!Anim.Enabled || width <= 0) return;
+        // 펼친 묶음이 목록 아래로 넘치면 보이도록 스크롤 (레이아웃 끝난 뒤)
+        void Reveal() => Dispatcher.BeginInvoke(() => fresh.BringIntoView(), DispatcherPriority.Loaded);
+        if (!Anim.Enabled || width <= 0)
+        {
+            Reveal();
+            return;
+        }
 
         fresh.Measure(new Size(width, double.PositiveInfinity));
         double newHeight = fresh.DesiredSize.Height - fresh.Margin.Top - fresh.Margin.Bottom;
         BeginAnim();
-        Anim.Height(fresh, oldHeight, newHeight, ToggleMs, Anim.QuintOut, EndAnim, clearAtEnd: true);
+        Anim.Height(fresh, oldHeight, newHeight, ToggleMs, Anim.QuintOut, () => { EndAnim(); Reveal(); }, clearAtEnd: true);
 
         // 헤더는 살짝 늦게 페이드 인, 카드는 겹친 자리(맨 위 카드 위치 + 비침 간격)에서 제자리로
         var header = (FrameworkElement)fresh.Children[0];
