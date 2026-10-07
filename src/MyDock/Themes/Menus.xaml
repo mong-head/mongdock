@@ -37,7 +37,7 @@
         <Setter Property="Foreground" Value="{DynamicResource Menu.Text}" />
         <Setter Property="MinWidth" Value="0" />
         <Setter Property="Grid.IsSharedSizeScope" Value="True" />
-        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Ideal" />
         <Setter Property="UseLayoutRounding" Value="True" />
         <Setter Property="Template">
             <Setter.Value>
@@ -96,7 +96,7 @@
                                IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}">
                             <ContentControl Template="{StaticResource MenuCardTemplate}"
                                             FontFamily="{DynamicResource UiFont}" FontSize="14"
-                                            TextOptions.TextFormattingMode="Display" Grid.IsSharedSizeScope="True">
+                                            TextOptions.TextFormattingMode="Ideal" Grid.IsSharedSizeScope="True">
                                 <StackPanel IsItemsHost="True" MinWidth="150" />
                             </ContentControl>
                         </Popup>

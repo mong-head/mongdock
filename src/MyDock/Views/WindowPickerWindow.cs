@@ -55,7 +55,7 @@ internal sealed class WindowPickerWindow : Window
         SetResourceReference(FontFamilyProperty, UiFonts.Key);
         FontSize = 13;
         Foreground = _p.Text;
-        TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
+        TextOptions.SetTextFormattingMode(this, TextFormattingMode.Ideal);
         Left = -32000;
         Top = -32000;
 

@@ -12,7 +12,8 @@
         ResizeMode="NoResize"
         Focusable="False"
         UseLayoutRounding="True"
-        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextFormattingMode="Ideal"
+        FontWeight="Medium"
         FontFamily="{DynamicResource UiFont}"
         Width="800" Height="26">
     <!-- 기본은 흰 바 + 아주 옅은 하단 구분선(코드에서 색 결정). 투명 모드에서도 Bar 배경은 알파 1 → 빈 곳 클릭/오른쪽 클릭을 바가 받음 -->

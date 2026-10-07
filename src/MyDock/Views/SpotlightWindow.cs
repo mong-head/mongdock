@@ -102,7 +102,7 @@ internal sealed class SpotlightWindow : Window
         Title = "mongdock Spotlight";
         SetResourceReference(FontFamilyProperty, UiFonts.Key);
         Foreground = _p.Text;
-        TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
+        TextOptions.SetTextFormattingMode(this, TextFormattingMode.Ideal);
 
         // ── 검색 줄: 돋보기 + 큰 입력칸 ──
         var magnifier = new Path

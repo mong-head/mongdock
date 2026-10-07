@@ -79,7 +79,7 @@ internal sealed class SettingsWindow : Window
         UseLayoutRounding = true;
         SetResourceReference(FontFamilyProperty, UiFonts.Key);
         FontSize = 13;
-        TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
+        TextOptions.SetTextFormattingMode(this, TextFormattingMode.Ideal);
 
         _sliderTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
         _sliderTimer.Tick += (_, _) =>

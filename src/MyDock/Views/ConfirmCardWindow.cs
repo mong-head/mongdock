@@ -35,7 +35,7 @@ internal sealed class ConfirmCardWindow : Window
         SetResourceReference(FontFamilyProperty, UiFonts.Key);
         FontSize = 13;
         Foreground = p.Text;
-        TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
+        TextOptions.SetTextFormattingMode(this, TextFormattingMode.Ideal);
 
         var body = new StackPanel { Width = 260 };
         body.Children.Add(new TextBlock

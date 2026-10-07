@@ -55,7 +55,7 @@ internal sealed class StatusPanelWindow : Window
         SetResourceReference(FontFamilyProperty, UiFonts.Key);
         FontSize = 15;
         Foreground = _p.Text;
-        TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
+        TextOptions.SetTextFormattingMode(this, TextFormattingMode.Ideal);
 
         _card = new Border
         {
