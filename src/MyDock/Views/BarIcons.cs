@@ -174,6 +174,9 @@ internal static class BarIcons
     /// <summary>› (상자 10 x 16).</summary>
     public static readonly Geometry ChevronRight = Freeze(Stroke("M2.6,2.6 L7.4,8 L2.6,13.4", 2.0));
 
+    /// <summary>⌃ 트레이 아이콘 더 보기 (상자 14 x 16).</summary>
+    public static readonly Geometry ChevronUp = Freeze(Stroke("M2.4,10.6 L7,5.6 L11.6,10.6", 2.0));
+
     /// <summary>+ (상자 14 x 16).</summary>
     public static readonly Geometry Plus = Freeze(Stroke("M7,2.6 L7,13.4 M1.6,8 L12.4,8", 2.0));
 

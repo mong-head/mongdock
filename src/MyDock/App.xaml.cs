@@ -88,7 +88,8 @@ public partial class App : Application
             new MediaService(),
             new AppMenuService(settings),
             new StartupService(),
-            new NotificationService(tracker, launcher));
+            new NotificationService(tracker, launcher),
+            new TrayIconService());
 
         InitializePinsOnce(settings);
 
@@ -108,6 +109,7 @@ public partial class App : Application
         _toastSuppressor = new NativeToastSuppressor(_services.Notifications as NotificationService);
         AppState.Changed += OnPausedChanged;
         SyncToastSuppressor();
+        SyncTrayIcons();
         Log.Info($"{AppInfo.Name} 시작");
     }
 
@@ -116,11 +118,13 @@ public partial class App : Application
     {
         SyncTopBars();
         SyncToastSuppressor();
+        SyncTrayIcons();
     }
 
     private void OnPausedChanged(object? sender, EventArgs e)
     {
         SyncToastSuppressor();
+        SyncTrayIcons();
         // 일시 정지 중엔 알림 DB 감시·폴링도 멈춤 (재개하면 그 사이 알림은 배너 없이 목록에만)
         if (_services is null || _exiting) return;
         if (AppState.Paused) _services.Notifications.Stop();
@@ -133,6 +137,18 @@ public partial class App : Application
         if (_services is null || _toastSuppressor is null || _exiting) return;
         var n = _services.Settings.Current.Notifications;
         _toastSuppressor.SetEnabled(n.HideWindowsToastPopups && n.ShowNotificationBanners && !AppState.Paused);
+    }
+
+    /// <summary>
+    /// 앱 트레이 아이콘 가로채기: 상단바가 켜져 있고, "앱 트레이 아이콘" 이 켜져 있고, 일시 정지가 아닐 때만.
+    /// 끄면 몽독의 Shell_TrayWnd 창이 사라져 앱들은 다시 explorer 로만 보낸다.
+    /// </summary>
+    private void SyncTrayIcons()
+    {
+        if (_services is null || _exiting) return;
+        var t = _services.Settings.Current.TopBar;
+        try { _services.TrayIcons.SetEnabled(t.Enabled && t.ShowTrayIcons && !AppState.Paused); }
+        catch (Exception ex) { Log.Error("트레이 아이콘 서비스 전환 실패", ex); }
     }
 
     /// <summary>
@@ -235,6 +251,12 @@ public partial class App : Application
         _tray?.Dispose();
         // 전역 키보드 훅 해제
         _spotlightHotkey?.Dispose();
+        // 트레이 가로채기 창을 먼저 없앤다 → 이후 AppBar 해제(SHAppBarMessage)·트레이 아이콘 삭제는 explorer 로 바로 감
+        if (_services?.TrayIcons is IDisposable trayIcons)
+        {
+            try { trayIcons.Dispose(); }
+            catch (Exception ex) { Log.Error("트레이 아이콘 서비스 정리 실패", ex); }
+        }
         // 숨기던 윈도우 알림 팝업 훅 해제 (떠 있던 팝업은 제자리로)
         AppState.Changed -= OnPausedChanged;
         _toastSuppressor?.Dispose();
