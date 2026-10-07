@@ -317,4 +317,26 @@ internal static class TrayApi
 
     [DllImport("user32.dll")]
     public static extern IntPtr GetShellWindow();
+
+    /// <summary>FindWindowEx 의 부모로 주면 메시지 전용 창(HWND_MESSAGE)을 열거.</summary>
+    public static readonly IntPtr HWND_MESSAGE = new(-3);
+
+    // ── NotifyIconSettings (윈도우 11 트레이 아이콘 설정) 읽기 ──
+
+    public const uint KF_FLAG_DONT_VERIFY = 0x00004000;
+
+    /// <summary>KNOWNFOLDERID → 경로 (ppszPath 는 CoTaskMemFree 로 해제). 성공 시 0(S_OK).</summary>
+    [DllImport("shell32.dll", ExactSpelling = true)]
+    public static extern int SHGetKnownFolderPath(ref Guid rfid, uint dwFlags, IntPtr hToken, out IntPtr ppszPath);
+
+    public const uint REG_NOTIFY_CHANGE_NAME = 0x1;
+    public const uint REG_NOTIFY_CHANGE_LAST_SET = 0x4;
+    /// <summary>윈도우 8+: 호출 스레드가 끝나도 알림 등록 유지 (스레드 풀에서 다시 등록할 때 필요).</summary>
+    public const uint REG_NOTIFY_THREAD_AGNOSTIC = 0x10000000;
+
+    /// <summary>레지스트리 키 변경 알림 (비동기: hEvent 가 신호됨). 성공 시 0(ERROR_SUCCESS). 오류 코드를 직접 반환.</summary>
+    [DllImport("advapi32.dll", ExactSpelling = true)]
+    public static extern int RegNotifyChangeKeyValue(Microsoft.Win32.SafeHandles.SafeRegistryHandle hKey,
+        [MarshalAs(UnmanagedType.Bool)] bool bWatchSubtree, uint dwNotifyFilter, Microsoft.Win32.SafeHandles.SafeWaitHandle hEvent,
+        [MarshalAs(UnmanagedType.Bool)] bool fAsynchronous);
 }
