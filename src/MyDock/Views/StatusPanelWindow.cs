@@ -92,7 +92,11 @@ internal sealed partial class StatusPanelWindow : Window
         Content = root;
         _root = root;
 
-        _watch = new OutsideClickWatcher(services, InsideAreas, Close);
+        _watch = new OutsideClickWatcher(services, InsideAreas, Close)
+        {
+            // 트레이 아이콘(앱 메뉴·창을 띄움)·달력 아래 알림(앱을 엶): 그 앱이 앞으로 와도 패널은 유지, 바깥 클릭으로만 닫힘
+            CloseOnActivation = kind is not (StatusPanelKind.Tray or StatusPanelKind.Calendar),
+        };
         _mediaTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
         _mediaTimer.Tick += (_, _) => RefreshAll();
 

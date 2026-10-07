@@ -23,6 +23,12 @@ internal sealed class OutsideClickWatcher
     private bool _running;
     private long _startedAt;
 
+    /// <summary>
+    /// 다른 창이 활성화돼도 닫을지 (기본 true). 트레이·알림 패널처럼 패널 안에서 누른 것이 다른 앱의
+    /// 메뉴·창을 띄우는 경우 false — 그 메뉴가 떠도 패널은 남고, 바깥을 클릭할 때만 닫힌다.
+    /// </summary>
+    public bool CloseOnActivation { get; set; } = true;
+
     public OutsideClickWatcher(AppServices services, Func<IEnumerable<Rect>> insideAreas, Action close)
     {
         _services = services;
@@ -47,7 +53,10 @@ internal sealed class OutsideClickWatcher
         _services.Windows.WindowActivated -= OnWindowActivated;
     }
 
-    private void OnWindowActivated(object? sender, IntPtr hwnd) => Fire();
+    private void OnWindowActivated(object? sender, IntPtr hwnd)
+    {
+        if (CloseOnActivation) Fire();
+    }
 
     private void OnGlobalMouseDown(object? sender, Point? position)
     {

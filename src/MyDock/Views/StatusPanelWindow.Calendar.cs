@@ -177,12 +177,11 @@ internal sealed partial class StatusPanelWindow
         };
         root.Children.Add(holidayLine);
 
-        // 맥 알림 센터처럼 달력 아래에 최근 알림 (앱별 묶음). 항목을 눌러 앱을 열면 패널 닫기
+        // 맥 알림 센터처럼 달력 아래에 최근 알림 (앱별 묶음). 항목을 눌러 앱을 열어도 패널은 남음 (바깥 클릭으로 닫힘)
         if (_services.Notifications.IsAvailable)
         {
             root.Children.Add(Divider());
             var notifications = new NotificationListView(_services, _p, maxHeight: 320);
-            notifications.ItemOpened += Close;
             root.Children.Add(notifications);
         }
 
