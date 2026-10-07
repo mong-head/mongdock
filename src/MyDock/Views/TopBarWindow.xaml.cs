@@ -537,6 +537,16 @@ public partial class TopBarWindow : Window
         SyncAppMenus();
     }
 
+    // 바탕 화면이 앞에 있을 때 앱 이름 — 맥처럼 "Finder".
+    private const string DesktopAppName = "Finder";
+
+    private static PinItem ExplorerPin() => new()
+    {
+        Name = DesktopAppName,
+        Kind = PinKind.Exe,
+        Target = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"),
+    };
+
     private void UpdateAppNameCore(bool force)
     {
         var fg = _services.Windows.ForegroundWindow;
@@ -550,18 +560,18 @@ public partial class TopBarWindow : Window
         if (isDesktop)
         {
             _currentApp = null;
-            SetAppNameText("바탕 화면");
+            SetAppNameText(DesktopAppName);
             return;
         }
 
         var info = windows.FirstOrDefault(w => w.Hwnd == fg);
         if (info == null)
         {
-            // 목록에 없는 창(대화상자, 독/상단바 자신 등)이면 이전 이름 유지. 이전 앱 창이 모두 닫혔으면 바탕 화면.
+            // 목록에 없는 창(대화상자, 독/상단바 자신 등)이면 이전 이름 유지. 이전 앱 창이 모두 닫혔으면 바탕 화면(Finder).
             bool previousGone = _currentApp != null && !windows.Any(w => w.Hwnd == _currentApp.Hwnd);
             if (!previousGone && AppName.Text.Length > 0) return;
             _currentApp = null;
-            SetAppNameText("바탕 화면");
+            SetAppNameText(DesktopAppName);
             return;
         }
         _currentApp = info;
@@ -760,7 +770,7 @@ public partial class TopBarWindow : Window
         _panel?.Close();
         UiTheme.Apply(_services.Settings.Current);
         var app = _currentApp;
-        string name = app != null ? AppNames.Get(app) : "바탕 화면";
+        string name = app != null ? AppNames.Get(app) : DesktopAppName;
         var appWindows = app == null
             ? new List<AppWindowInfo>()
             : _services.Windows.Windows.Where(w => SameApp(w, app)).ToList();
@@ -779,9 +789,10 @@ public partial class TopBarWindow : Window
         bool hasApp = app != null;
         menu.Items.Add(DockMenus.Item($"{name} 새 창", () =>
         {
-            var target = pin ?? _services.Windows.CreatePin(app!);
+            // 바탕 화면이면 맥처럼 Finder(파일 탐색기) 새 창.
+            var target = app == null ? ExplorerPin() : pin ?? _services.Windows.CreatePin(app);
             _services.Launcher.Launch(target);
-        }, enabled: hasApp));
+        }));
         menu.Items.Add(DockMenus.Item($"{name} 최소화", () =>
         {
             foreach (var w in appWindows.Where(w => !w.IsMinimized))
