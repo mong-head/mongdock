@@ -16,7 +16,9 @@ namespace MyDock.Views;
 
 /// <summary>
 /// 맥 Spotlight 스타일 검색창. 상단바 검색 버튼(SearchMode=Spotlight)으로 열고, 다시 누르면 닫는다.
-/// 마우스가 있는 모니터의 가로 가운데, 위에서 약 25% 지점. 시작 메뉴의 모든 앱(shell:AppsFolder)을 검색해 실행.
+/// 마우스가 있는 모니터의 가로 가운데, 위에서 약 25% 지점.
+/// 검색 대상(설정 Search 로 켜고 끔): 계산기 · 앱(shell:AppsFolder) · 윈도우 설정 · 파일/폴더(윈도우 검색 색인) · 웹/Windows 검색.
+/// 결과는 카테고리 머리글로 묶고 맨 위에 "최상위 히트" (SpotlightSearchSession). 목록이 길면 화면 높이 55% 까지 + 얇은 스크롤바.
 /// 상단바·독과 달리 키보드 입력을 받아야 하므로 포커스를 가져오는(활성화되는) 창이다 — 대신 Alt+Tab·작업 표시줄에는 숨김(WS_EX_TOOLWINDOW).
 /// 비활성화(바깥 클릭·다른 창 활성화)되면 닫힌다. 모든 동작은 마우스 클릭만으로도 가능.
 /// </summary>
@@ -28,6 +30,11 @@ internal sealed class SpotlightWindow : Window
     private const double CardWidth = 680;
     private const double ShadowMargin = 24;
     private const double RowHeight = 44;
+    private const double HeaderHeight = 26;
+    /// <summary>파일 경로 부제의 최대 폭 (카드 폭 − 여백·아이콘·스크롤바·"폴더에서 보기" 버튼 자리).</summary>
+    private const double SubtitleMaxWidth = CardWidth - 16 - 22 - 44 - 10 - 110;
+    /// <summary>결과 목록 최대 높이 = 모니터 높이의 이 비율 (넘치면 스크롤).</summary>
+    private const double MaxListRatio = 0.55;
     private const double AppIconSize = 32;
     /// <summary>카드 윗변 위치 = 모니터 높이의 이 비율.</summary>
     private const double TopRatio = 0.25;
@@ -35,8 +42,7 @@ internal sealed class SpotlightWindow : Window
     private static SpotlightWindow? _current;
     /// <summary>방금 비활성화로 닫혔으면 같은 클릭의 토글이 다시 열지 않도록.</summary>
     private static long _closedAt;
-    private static IReadOnlyList<SpotlightApp> _apps = Array.Empty<SpotlightApp>();
-    /// <summary>앱 아이콘 캐시 (파싱 이름 → Frozen 이미지). 창을 다시 열 때 바로 보이게 정적.</summary>
+    /// <summary>앱 아이콘 캐시 (IconKey → Frozen 이미지). 창을 다시 열 때 바로 보이게 정적. 파일 아이콘은 ShellFileIcons 가 확장자별로 캐시.</summary>
     private static readonly Dictionary<string, ImageSource> IconCache = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly AppServices _services;
@@ -47,6 +53,8 @@ internal sealed class SpotlightWindow : Window
     private readonly Border _divider;
     private readonly StackPanel _list;
     private readonly Grid _listHost;
+    private readonly ScrollViewer _scroll;
+    private readonly SpotlightSearchSession _session;
     private readonly Border _highlight;
     private readonly TranslateTransform _highlightShift = new();
     private readonly Grid _root;
@@ -59,16 +67,20 @@ internal sealed class SpotlightWindow : Window
     private bool _closing;
     private long _openedAt;
     private IntPtr _hwnd;
-
-    private enum ResultKind { App, WindowsSearch, Web }
+    /// <summary>사용자가 키보드·마우스로 선택을 옮겼는지 (늦게 온 파일 결과가 선택을 바꾸지 않게). 검색어가 바뀌면 초기화.</summary>
+    private bool _userMoved;
+    private Point _lastMouse = new(double.NaN, double.NaN);
 
     private sealed class Result
     {
-        public ResultKind Kind;
-        public SpotlightApp? App;
+        public SpotlightItem Item = null!;
         public Border Row = null!;
         public TextBlock Label = null!;
+        public TextBlock? Sub;
         public TextBlock? Glyph;
+        public Border? RevealButton;
+        /// <summary>카테고리 머리글 바로 아래 행 (스크롤로 보이게 할 때 머리글까지).</summary>
+        public bool FirstInSection;
         public double Top;
     }
 
@@ -167,14 +179,26 @@ internal sealed class SpotlightWindow : Window
             Visibility = Visibility.Collapsed,
             RenderTransform = _highlightShift,
         };
-        _listHost = new Grid { Margin = new Thickness(8, 6, 8, 8), Visibility = Visibility.Collapsed };
+        _listHost = new Grid { Margin = new Thickness(8, 6, 8, 8) };
         _listHost.Children.Add(_highlight);
         _listHost.Children.Add(_list);
+        // 결과가 많으면 최대 높이(모니터 높이 55%, 표시할 때 계산) + 얇은 스크롤바 (Themes/Controls.xaml ThinScrollBar)
+        _scroll = new ScrollViewer
+        {
+            Content = _listHost,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            PanningMode = PanningMode.VerticalOnly,
+            Focusable = false,
+            MaxHeight = 480,
+            Visibility = Visibility.Collapsed,
+        };
+        if (TryFindResource("ThinScrollBar") is Style thin) _scroll.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), thin);
 
         var content = new StackPanel();
         content.Children.Add(searchRow);
         content.Children.Add(_divider);
-        content.Children.Add(_listHost);
+        content.Children.Add(_scroll);
 
         var card = new Border
         {
@@ -196,6 +220,17 @@ internal sealed class SpotlightWindow : Window
         Content = root;
         _root = root;
 
+        // 검색 공급자: 계산기 · 앱 · 설정 · 파일(느림, 디바운스) · 웹/Windows 검색. 켜고 끄기는 매 검색마다 최신 설정으로.
+        _session = new SpotlightSearchSession(new ISpotlightProvider[]
+        {
+            new CalculatorProvider(),
+            new AppSearchProvider(services, _iconStyle),
+            new SettingsSearchProvider(),
+            new FileSearchProvider(),
+            new FallbackProvider(q => _ = SendToWindowsSearchAsync(_services, q)),
+        }, () => _services.Settings.Current.Search ?? new SearchSettings());
+        _session.Updated += OnResults;
+
         PreviewKeyDown += OnPreviewKeyDown;
         SourceInitialized += (_, _) => OnSourceInitialized();
         Activated += (_, _) => FocusBox();
@@ -206,6 +241,8 @@ internal sealed class SpotlightWindow : Window
             if (!_closing) _closedAt = Environment.TickCount64;
             _closing = true;
             _generation++;
+            _session.Updated -= OnResults;
+            _session.Dispose();
             _services.Windows.WindowActivated -= OnOtherWindowActivated;
             if (ReferenceEquals(_current, this)) _current = null;
         };
@@ -250,6 +287,12 @@ internal sealed class SpotlightWindow : Window
             Log.Warn($"Spotlight 모니터 계산 실패: {ex.Message}");
             monitor = IntPtr.Zero;
         }
+
+        // 결과 목록 최대 높이: 모니터 높이(DIP)의 55% − 검색 줄
+        double monitorDip = monitor != IntPtr.Zero && scale > 0
+            ? bounds.Height / scale
+            : _services.DesktopWindows.GetPrimaryScreenBounds().Height;
+        if (monitorDip > 0) _scroll.MaxHeight = Math.Max(RowHeight * 4, monitorDip * MaxListRatio - 60);
 
         // 열기: 페이드 + 아주 약한 확대(0.97→1, 150ms, ease-out)
         Anim.Appear(_root, 150, fromScale: 0.97, origin: new Point(0.5, 0.3));
@@ -378,7 +421,7 @@ internal sealed class SpotlightWindow : Window
                     .Where(a => !string.IsNullOrWhiteSpace(a.DisplayName))
                     .Select(a => new SpotlightApp(a.ParsingName, a.DisplayName.Trim()))
                     .ToList());
-            _apps = apps;
+            AppSearchProvider.Apps = apps;
             if (!_closing) OnQueryChanged();
         }
         catch (Exception ex)
@@ -392,52 +435,83 @@ internal sealed class SpotlightWindow : Window
         if (_closing) return;
         string q = _box.Text;
         _placeholder.Visibility = q.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-
-        IReadOnlyList<SpotlightApp> found;
-        try { found = SpotlightMatcher.Search(_apps, q, SpotlightRecents.Items); }
-        catch (Exception ex)
-        {
-            Log.Error("Spotlight 검색 실패", ex);
-            found = Array.Empty<SpotlightApp>();
-        }
-        BuildRows(found, q.Trim());
+        // 빠른 공급자(계산기·앱·설정·웹)는 바로 OnResults, 파일은 디바운스 뒤 한 번 더
+        try { _session.Search(q); }
+        catch (Exception ex) { Log.Error("Spotlight 검색 실패", ex); }
     }
 
-    private void BuildRows(IReadOnlyList<SpotlightApp> apps, string query)
+    /// <summary>
+    /// 검색 결과 그리기. isUpdate = 같은 검색어에 늦게 온 결과(파일)를 합친 것 →
+    /// 사용자가 이미 선택을 옮겼으면 그 항목을 그대로 선택하고 스크롤도 유지 (선택이 튀지 않게).
+    /// </summary>
+    private void OnResults(string query, IReadOnlyList<SpotlightSection> sections, bool isUpdate)
+    {
+        if (_closing || !string.Equals(query, _box.Text, StringComparison.Ordinal)) return;
+        string? keepKey = isUpdate && _userMoved && _selected >= 0 && _selected < _results.Count ? _results[_selected].Item.Key : null;
+        double keepOffset = isUpdate ? _scroll.VerticalOffset : 0;
+        if (!isUpdate) _userMoved = false;
+
+        BuildRows(sections);
+
+        int index = _results.Count > 0 ? 0 : -1;
+        if (keepKey is not null)
+        {
+            int found = _results.FindIndex(r => r.Item.Key == keepKey);
+            if (found >= 0) index = found;
+        }
+        Select(index, animate: false, ensureVisible: !isUpdate);
+        _scroll.ScrollToVerticalOffset(keepOffset);
+    }
+
+    private void BuildRows(IReadOnlyList<SpotlightSection> sections)
     {
         int gen = ++_generation;
         _results.Clear();
         _list.Children.Clear();
         _nextRowTop = 0;
-        _selected = -1; // 목록이 새로 그려지면 하이라이트는 미끄러지지 않고 바로 첫 줄에
+        _selected = -1; // 목록이 새로 그려지면 하이라이트는 미끄러지지 않고 바로 놓음
 
-        foreach (var app in apps)
-            AddRow(new Result { Kind = ResultKind.App, App = app }, app.Name, null, gen);
-        if (query.Length > 0)
+        foreach (var section in sections)
         {
-            if (apps.Count > 0)
+            if (section.Items.Count == 0) continue;
+            bool header = section.Header is not null;
+            if (header)
             {
+                _list.Children.Add(new TextBlock
+                {
+                    Text = section.Header,
+                    FontSize = 11.5,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = _p.SubText,
+                    Height = HeaderHeight,
+                    Padding = new Thickness(10, _nextRowTop > 0 ? 8 : 4, 0, 0),
+                });
+                _nextRowTop += HeaderHeight;
+            }
+            else if (_results.Count > 0)
+            {
+                // 웹/Windows 검색: 머리글 없이 구분선만
                 _list.Children.Add(new Border { Height = 1, Background = _p.Divider, Margin = new Thickness(10, 4, 10, 4) });
                 _nextRowTop += 1 + 4 + 4;
             }
-            AddRow(new Result { Kind = ResultKind.WindowsSearch }, $"Windows 검색에서 ‘{query}’ 찾기", "", gen);
-            AddRow(new Result { Kind = ResultKind.Web }, $"웹에서 ‘{query}’ 검색", "", gen);
+            for (int i = 0; i < section.Items.Count; i++)
+                AddRow(section.Items[i], header && i == 0, gen);
         }
 
         bool any = _results.Count > 0;
         _divider.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
-        _listHost.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
-        Select(any ? 0 : -1);
+        _scroll.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void AddRow(Result r, string text, string? glyph, int gen)
+    private void AddRow(SpotlightItem item, bool firstInSection, int gen)
     {
+        var r = new Result { Item = item, FirstInSection = firstInSection };
         var iconHost = new Grid { Width = AppIconSize, Height = AppIconSize, Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center };
-        if (glyph is not null)
+        if (item.Glyph is not null)
         {
             r.Glyph = new TextBlock
             {
-                Text = glyph,
+                Text = item.Glyph,
                 FontFamily = IconFont,
                 FontSize = 18,
                 Foreground = _p.SubText,
@@ -446,27 +520,63 @@ internal sealed class SpotlightWindow : Window
             };
             iconHost.Children.Add(r.Glyph);
         }
-        else if (r.App is not null)
+        else if (item.LoadIcon is not null)
         {
             var image = new Image { Width = AppIconSize, Height = AppIconSize, Stretch = Stretch.Uniform };
             RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
             iconHost.Children.Add(image);
-            if (IconCache.TryGetValue(r.App.ParsingName, out var cached)) image.Source = cached;
-            else QueueIcon(r.App, image, gen);
+            if (item.IconKey is not null && IconCache.TryGetValue(item.IconKey, out var cached)) image.Source = cached;
+            else QueueIcon(item, image, gen);
         }
 
         r.Label = new TextBlock
         {
-            Text = text,
-            FontSize = 16,
+            Text = item.Title,
+            FontSize = item.Subtitle is null ? 16 : 14.5,
             Foreground = _p.Text,
             TextTrimming = TextTrimming.CharacterEllipsis,
-            VerticalAlignment = VerticalAlignment.Center,
         };
+        var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        texts.Children.Add(r.Label);
+        if (item.Subtitle is not null)
+        {
+            r.Sub = new TextBlock
+            {
+                Text = item.SubtitleIsPath ? TrimPathStart(item.Subtitle, 11.5, SubtitleMaxWidth) : item.Subtitle,
+                FontSize = 11.5,
+                Foreground = _p.SubText,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(0, 1, 0, 0),
+            };
+            if (item.SubtitleIsPath) r.Sub.ToolTip = item.Subtitle;
+            texts.Children.Add(r.Sub);
+        }
+
         var panel = new DockPanel { LastChildFill = true };
         DockPanel.SetDock(iconHost, Dock.Left);
         panel.Children.Add(iconHost);
-        panel.Children.Add(r.Label);
+        int index = _results.Count;
+        if (item.Reveal is not null)
+        {
+            // 호버하면 오른쪽에 작은 "폴더에서 보기" (클릭은 행 실행으로 번지지 않게 Handled)
+            r.RevealButton = new Border
+            {
+                CornerRadius = new CornerRadius(6),
+                Background = _p.Tile,
+                Padding = new Thickness(9, 3, 9, 4),
+                Margin = new Thickness(10, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Visibility = Visibility.Collapsed,
+                Cursor = Cursors.Hand,
+                ToolTip = "Ctrl+Enter",
+                Child = new TextBlock { Text = "폴더에서 보기", FontSize = 11.5, Foreground = _p.Text },
+            };
+            r.RevealButton.MouseLeftButtonDown += (_, e) => e.Handled = true;
+            r.RevealButton.MouseLeftButtonUp += (_, e) => { e.Handled = true; Execute(index, reveal: true); };
+            DockPanel.SetDock(r.RevealButton, Dock.Right);
+            panel.Children.Add(r.RevealButton);
+        }
+        panel.Children.Add(texts);
 
         r.Row = new Border
         {
@@ -477,42 +587,87 @@ internal sealed class SpotlightWindow : Window
             Child = panel,
             Cursor = Cursors.Hand,
         };
-        int index = _results.Count;
         r.Top = _nextRowTop;
         _nextRowTop += RowHeight;
-        // 마우스를 실제로 움직였을 때만 선택 이동 (키보드로 고른 항목이 커서 위치 때문에 바뀌지 않게)
-        r.Row.MouseMove += (_, _) => { if (_selected != index) Select(index); };
+        r.Row.MouseMove += (_, e) =>
+        {
+            // 마우스를 실제로 움직였을 때만 선택 이동 (키보드 이동·스크롤로 행이 커서 밑을 지나갈 때는 무시)
+            Point pos = e.GetPosition(this);
+            if (pos == _lastMouse) return;
+            _lastMouse = pos;
+            if (_selected != index)
+            {
+                _userMoved = true;
+                Select(index);
+            }
+        };
+        if (r.RevealButton is { } reveal)
+        {
+            r.Row.MouseEnter += (_, _) => reveal.Visibility = Visibility.Visible;
+            r.Row.MouseLeave += (_, _) => reveal.Visibility = Visibility.Collapsed;
+        }
         r.Row.MouseLeftButtonUp += (_, e) => { e.Handled = true; Execute(index); };
         _results.Add(r);
         _list.Children.Add(r.Row);
     }
 
+    /// <summary>경로가 넘치면 앞부분을 "…" 로 (끝의 폴더 이름이 보이게). WPF TextTrimming 은 뒤만 자르므로 직접 잼.</summary>
+    private string TrimPathStart(string text, double fontSize, double maxWidth)
+    {
+        try
+        {
+            double ppd = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+            var typeface = new Typeface(FontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+            double Measure(string s) => new FormattedText(s, System.Globalization.CultureInfo.CurrentUICulture,
+                FlowDirection.LeftToRight, typeface, fontSize, Brushes.Black, ppd).WidthIncludingTrailingWhitespace;
+            if (Measure(text) <= maxWidth) return text;
+            // 이분 탐색으로 뒤에서 몇 글자까지 들어가는지
+            int lo = 1, hi = text.Length;
+            while (lo < hi)
+            {
+                int mid = (lo + hi + 1) / 2;
+                if (Measure("…" + text[^mid..]) <= maxWidth) lo = mid;
+                else hi = mid - 1;
+            }
+            return "…" + text[^lo..];
+        }
+        catch
+        {
+            return text;
+        }
+    }
+
     /// <summary>아이콘은 목록을 먼저 그린 뒤 Background 우선순위로 하나씩 (입력·렌더링을 막지 않게). 맥 스타일 렌더링은 UI 스레드 필요.</summary>
-    private void QueueIcon(SpotlightApp app, Image image, int gen)
+    private void QueueIcon(SpotlightItem item, Image image, int gen)
     {
         Dispatcher.BeginInvoke(() =>
         {
-            if (_closing || gen != _generation) return;
-            if (!IconCache.TryGetValue(app.ParsingName, out var icon))
+            if (_closing || gen != _generation || item.LoadIcon is null) return;
+            ImageSource? icon = null;
+            if (item.IconKey is null || !IconCache.TryGetValue(item.IconKey, out icon))
             {
                 try
                 {
-                    icon = _services.Icons.GetIcon(new PinItem { Name = app.Name, Kind = PinKind.Aumid, Target = app.ParsingName }, _iconStyle);
+                    icon = item.LoadIcon();
                 }
                 catch (Exception ex)
                 {
-                    Log.Warn($"Spotlight 아이콘 실패: {app.ParsingName} ({ex.Message})");
+                    Log.Warn($"Spotlight 아이콘 실패: {item.Key} ({ex.Message})");
                     return;
                 }
-                if (IconCache.Count > 400) IconCache.Clear();
-                IconCache[app.ParsingName] = icon;
+                if (icon is null) return;
+                if (item.IconKey is not null)
+                {
+                    if (IconCache.Count > 400) IconCache.Clear();
+                    IconCache[item.IconKey] = icon;
+                }
             }
             image.Source = icon;
         }, DispatcherPriority.Background);
     }
 
     /// <summary>선택 이동: 하이라이트가 새 행으로 90ms 미끄러짐(ease-out). 목록을 새로 그린 직후엔 바로 놓음.</summary>
-    private void Select(int index)
+    private void Select(int index, bool animate = true, bool ensureVisible = true)
     {
         int previous = _selected;
         _selected = index;
@@ -520,7 +675,7 @@ internal sealed class SpotlightWindow : Window
         {
             double y = _results[index].Top;
             _highlight.Visibility = Visibility.Visible;
-            if (previous >= 0 && previous < _results.Count && Anim.Enabled)
+            if (animate && previous >= 0 && previous < _results.Count && Anim.Enabled)
                 _highlightShift.BeginAnimation(TranslateTransform.YProperty, Anim.To(y, 90, Anim.EaseOut));
             else
             {
@@ -537,9 +692,33 @@ internal sealed class SpotlightWindow : Window
             var r = _results[i];
             bool on = i == index;
             r.Label.Foreground = on ? _p.AccentText : _p.Text;
+            if (r.Sub is not null)
+            {
+                r.Sub.Foreground = on ? _p.AccentText : _p.SubText;
+                r.Sub.Opacity = on ? 0.85 : 1;
+            }
             if (r.Glyph is not null) r.Glyph.Foreground = on ? _p.AccentText : _p.SubText;
         }
-        if (index >= 0 && index < _results.Count) _results[index].Row.BringIntoView();
+        if (ensureVisible && index >= 0 && index < _results.Count) EnsureVisible(index);
+    }
+
+    /// <summary>선택 행이 스크롤 영역 안에 보이게 (카테고리 첫 행이면 머리글까지). 레이아웃 전이면 한 박자 뒤에.</summary>
+    private void EnsureVisible(int index)
+    {
+        if (_scroll.ViewportHeight <= 0 || _scroll.ScrollableHeight <= 0)
+        {
+            if (_scroll.ViewportHeight <= 0)
+                Dispatcher.BeginInvoke(() => { if (!_closing && _selected == index && _scroll.ViewportHeight > 0) EnsureVisible(index); }, DispatcherPriority.Loaded);
+            return;
+        }
+        var r = _results[index];
+        double padTop = _listHost.Margin.Top;
+        double top = padTop + r.Top - (r.FirstInSection ? HeaderHeight : 0);
+        double bottom = padTop + r.Top + RowHeight + (index == _results.Count - 1 ? _listHost.Margin.Bottom : 0);
+        if (index == 0) top = 0;
+        double offset = _scroll.VerticalOffset, viewport = _scroll.ViewportHeight;
+        if (top < offset) _scroll.ScrollToVerticalOffset(top);
+        else if (bottom > offset + viewport) _scroll.ScrollToVerticalOffset(bottom - viewport);
     }
 
     // ───────────────────────── 키보드 ─────────────────────────
@@ -547,7 +726,13 @@ internal sealed class SpotlightWindow : Window
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
         // 한글 조합 중에는 Key 가 ImeProcessed 로 온다 → 실제 키로 판단 (조합 중 글자는 이미 Text 에 포함됨)
-        Key key = e.Key == Key.ImeProcessed ? e.ImeProcessedKey : e.Key;
+        // Alt 와 함께 누르면 Key.System 으로 온다 (Alt+Enter)
+        Key key = e.Key switch
+        {
+            Key.ImeProcessed => e.ImeProcessedKey,
+            Key.System => e.SystemKey,
+            _ => e.Key,
+        };
         switch (key)
         {
             case Key.Escape:
@@ -556,47 +741,52 @@ internal sealed class SpotlightWindow : Window
                 break;
             case Key.Down:
                 e.Handled = true;
-                if (_results.Count > 0) Select((_selected + 1) % _results.Count);
+                if (_results.Count > 0)
+                {
+                    _userMoved = true;
+                    Select((_selected + 1) % _results.Count);
+                }
                 break;
             case Key.Up:
                 e.Handled = true;
-                if (_results.Count > 0) Select(_selected <= 0 ? _results.Count - 1 : _selected - 1);
+                if (_results.Count > 0)
+                {
+                    _userMoved = true;
+                    Select(_selected <= 0 ? _results.Count - 1 : _selected - 1);
+                }
                 break;
             case Key.Enter:
                 e.Handled = true;
+                // Ctrl+Enter / Alt+Enter = 폴더에서 보기
+                bool reveal = (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt)) != 0;
                 // 조합 중 Enter: IME 가 글자를 확정한 뒤의 검색 결과로 실행
                 if (e.Key == Key.ImeProcessed)
-                    Dispatcher.BeginInvoke(() => Execute(_selected), DispatcherPriority.Input);
+                    Dispatcher.BeginInvoke(() => Execute(_selected, reveal), DispatcherPriority.Input);
                 else
-                    Execute(_selected);
+                    Execute(_selected, reveal);
                 break;
         }
     }
 
     // ───────────────────────── 실행 ─────────────────────────
 
-    private void Execute(int index)
+    private void Execute(int index, bool reveal = false)
     {
         if (_closing || index < 0 || index >= _results.Count) return;
         var r = _results[index];
-        string query = _box.Text.Trim();
+        var item = r.Item;
+        if (reveal && item.Reveal is null) return; // 폴더에서 볼 수 없는 항목
+
+        if (!reveal && item.CopyText is not null)
+        {
+            CopyAndClose(r);
+            return;
+        }
         CloseSafe();
         try
         {
-            switch (r.Kind)
-            {
-                case ResultKind.App when r.App is not null:
-                    SpotlightRecents.Add(r.App.ParsingName);
-                    // shell:AppsFolder\<파싱 이름> 실행 (AppLauncher 의 AUMID 경로 — 데스크톱 앱 항목도 동작)
-                    _services.Launcher.Launch(new PinItem { Name = r.App.Name, Kind = PinKind.Aumid, Target = r.App.ParsingName });
-                    break;
-                case ResultKind.WindowsSearch:
-                    _ = SendToWindowsSearchAsync(_services, query);
-                    break;
-                case ResultKind.Web:
-                    OpenWebSearch(query);
-                    break;
-            }
+            if (reveal) item.Reveal!();
+            else item.Execute();
         }
         catch (Exception ex)
         {
@@ -604,12 +794,36 @@ internal sealed class SpotlightWindow : Window
         }
     }
 
-    private static void OpenWebSearch(string query)
+    /// <summary>계산기: 결과를 클립보드로 복사 → 부제에 "복사됨" 잠깐 보여 주고 닫음.</summary>
+    private void CopyAndClose(Result r)
     {
-        if (query.Length == 0) return;
-        string url = "https://www.google.com/search?q=" + Uri.EscapeDataString(query);
-        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })?.Dispose();
-        Log.Info("Spotlight 웹 검색");
+        bool ok = false;
+        for (int attempt = 0; attempt < 3 && !ok; attempt++)
+        {
+            try
+            {
+                r.Item.Execute();
+                ok = true;
+            }
+            catch (Exception ex) when (attempt < 2)
+            {
+                Log.Warn($"클립보드 복사 재시도: {ex.Message}");
+                Thread.Sleep(30); // 다른 앱이 클립보드를 잠깐 잡고 있는 경우
+            }
+            catch (Exception ex)
+            {
+                Log.Error("계산 결과 복사 실패", ex);
+            }
+        }
+        if (r.Sub is not null) r.Sub.Text = ok ? "✓ 복사됨" : "복사하지 못했어요";
+        _root.IsHitTestVisible = false;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ok ? 550 : 1200) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            CloseSafe();
+        };
+        timer.Start();
     }
 
     /// <summary>윈도우 검색 창 프로세스 (Win11 SearchHost, Win10 SearchApp/SearchUI, 시작 메뉴 통합 검색).</summary>
