@@ -274,6 +274,7 @@ public sealed partial class StatusService
             w.Added += OnBtAdded;
             w.Updated += OnBtUpdated;
             w.Removed += OnBtRemoved;
+            w.Stopped += OnBtStopped;
             _btWatcher = w;
             w.Start();
         }
@@ -295,12 +296,27 @@ public sealed partial class StatusService
             w.Added -= OnBtAdded;
             w.Updated -= OnBtUpdated;
             w.Removed -= OnBtRemoved;
+            w.Stopped -= OnBtStopped;
             if (w.Status is DeviceWatcherStatus.Started or DeviceWatcherStatus.EnumerationCompleted) w.Stop();
         }
         catch (Exception ex)
         {
             Log.Warn($"블루투스 장치 감시 정지 실패: {ex.Message}");
         }
+    }
+
+    /// <summary>감시자가 스스로 멈춤(Aborted 포함 — Stopped 이벤트로 옴) → 폴링이 켜져 있으면 2초 뒤 재시작.</summary>
+    private void OnBtStopped(DeviceWatcher sender, object args)
+    {
+        if (sender != _btWatcher) return; // 우리가 Stop 한 경우는 이미 _btWatcher 가 바뀌어 있음
+        Log.Warn($"블루투스 장치 감시가 멈춤 (status={sender.Status}) → 재시작 예약");
+        _dispatcher?.InvokeAsync(async () =>
+        {
+            await Task.Delay(2000);
+            if (!_started || !_pollWifiBt || _btWatcher != sender) return;
+            StopBluetoothWatcher();
+            StartBluetoothWatcher();
+        });
     }
 
     private static bool ReadConnected(IReadOnlyDictionary<string, object> props) =>

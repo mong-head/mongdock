@@ -88,7 +88,7 @@ internal static class BuiltinMenus
         M("편집",
             I("실행 취소", "Ctrl+Z"),
             Sep, I("잘라내기", "Ctrl+X"), I("복사", "Ctrl+C"), I("붙여넣기", "Ctrl+V"), I("모두 선택", "Ctrl+A"),
-            Sep, I("이름 바꾸기", "F2"), I("삭제", "Delete")),
+            Sep, I("이름 바꾸기", "F2")),
         M("보기",
             I("새로고침", "F5")),
         M("이동",
@@ -116,10 +116,9 @@ internal static class BuiltinMenus
         M("보기", I("확대", "Ctrl+="), I("축소", "Ctrl+-"), I("실제 크기", "Ctrl+0"), Sep, I("새로고침", "Ctrl+R")),
     };
 
-    /// <summary>그 외 앱: 편집 + 확대/축소 (새로고침은 Electron 만).</summary>
+    /// <summary>알 수 없는 앱: 보기(확대/축소/실제 크기)만 — 편집 단축키는 앱마다 의미가 달라 넣지 않음.</summary>
     private static List<AppMenuDef> Generic() => new()
     {
-        EditMenu(),
         M("보기", I("확대", "Ctrl+="), I("축소", "Ctrl+-"), I("실제 크기", "Ctrl+0")),
     };
 }

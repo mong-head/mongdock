@@ -8,9 +8,19 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <!-- 트레이 아이콘(NotifyIcon)용. 프레임워크 포함(NuGet 아님). WPF 와 이름이 겹치지 않게 아래에서 암시적 using 제거 -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- WFAC010: WinForms 용 DPI 권고. 이 앱은 WPF 이고 DPI 는 app.manifest(PerMonitorV2)로 설정하므로 무시 -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
     <!-- PerMonitorV2 DPI 인식 -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WinForms 암시적 using 은 WPF 타입(Color, Point, Brush, Image, Application 등)과 충돌하므로 제거 -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- 내장 글꼴 Pretendard (SIL OFL 1.1) — 라이선스 파일을 함께 배포 -->

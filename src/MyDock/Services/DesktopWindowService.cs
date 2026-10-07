@@ -637,9 +637,11 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
             if (_taskbarCreatedMsg != 0 && (uint)msg == _taskbarCreatedMsg)
             {
                 Log.Info("TaskbarCreated (탐색기 재시작) → AppBar 재등록");
+                VirtualDesktopHelper.Invalidate();
                 _dispatcher.InvokeAsync(() =>
                 {
                     ReRegisterAll();
+                    if (_taskbarHidden) ApplyTaskbarVisibility(hidden: true); // 새 작업 표시줄도 다시 숨김
                     QueueDisplayChanged();
                 }, DispatcherPriority.Background);
                 return IntPtr.Zero;
@@ -997,8 +999,8 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
             if (_exitHooksInstalled) return;
             _exitHooksInstalled = true;
         }
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => RemoveAll("ProcessExit");
-        AppDomain.CurrentDomain.UnhandledException += (_, _) => RemoveAll("UnhandledException");
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => { RemoveAll("ProcessExit"); RestoreTaskbar("ProcessExit"); };
+        AppDomain.CurrentDomain.UnhandledException += (_, _) => { RemoveAll("UnhandledException"); RestoreTaskbar("UnhandledException"); };
     }
 
     /// <summary>등록된 모든 AppBar 를 해제 (어느 스레드에서나 호출 가능).</summary>
@@ -1025,10 +1027,65 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         if (hwnds.Length > 0) Log.Info($"AppBar {hwnds.Length}개 해제 ({reason})");
     }
 
+    // ───────────────────────── 윈도우 작업 표시줄 숨김 ─────────────────────────
+
+    private static volatile bool _taskbarHidden;
+
+    /// <summary>
+    /// 윈도우 작업 표시줄(Shell_TrayWnd + 모든 Shell_SecondaryTrayWnd) 숨김/복원 (ShowWindowAsync — 탐색기가 응답 없어도 안 멈춤).
+    /// 작업 영역은 AppBar 가 관리하므로 건드리지 않고, 작업 표시줄 자동 숨김 레지스트리도 바꾸지 않는다.
+    /// 숨긴 상태로 끝나면 ProcessExit/UnhandledException/Dispose 에서 복원. 탐색기 재시작(TaskbarCreated) 후 다시 숨김.
+    /// </summary>
+    public void SetWindowsTaskbarHidden(bool hidden)
+    {
+        if (_taskbarHidden == hidden) return;
+        _taskbarHidden = hidden;
+        ApplyTaskbarVisibility(hidden);
+        Log.Info(hidden ? "윈도우 작업 표시줄 숨김" : "윈도우 작업 표시줄 복원");
+    }
+
+    private static void ApplyTaskbarVisibility(bool hidden)
+    {
+        try
+        {
+            foreach (IntPtr h in FindTaskbars())
+                User32.ShowWindowAsync(h, hidden ? User32.SW_HIDE : User32.SW_SHOWNA);
+        }
+        catch (Exception e)
+        {
+            Log.Error("작업 표시줄 표시 상태 변경 실패", e);
+        }
+    }
+
+    private static List<IntPtr> FindTaskbars()
+    {
+        var list = new List<IntPtr>();
+        IntPtr main = User32.FindWindowEx(IntPtr.Zero, IntPtr.Zero, "Shell_TrayWnd", null);
+        if (main != IntPtr.Zero) list.Add(main);
+        IntPtr after = IntPtr.Zero;
+        for (int i = 0; i < 16; i++)
+        {
+            after = User32.FindWindowEx(IntPtr.Zero, after, "Shell_SecondaryTrayWnd", null);
+            if (after == IntPtr.Zero) break;
+            list.Add(after);
+        }
+        return list;
+    }
+
+    /// <summary>숨겨 둔 상태면 복원 (어느 스레드에서나).</summary>
+    private static void RestoreTaskbar(string reason)
+    {
+        if (!_taskbarHidden) return;
+        _taskbarHidden = false;
+        ApplyTaskbarVisibility(hidden: false);
+        Log.Info($"윈도우 작업 표시줄 복원 ({reason})");
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+        RestoreTaskbar("Dispose");
         RemoveMouseHook();
         _globalMouseDown = null;
         _fullscreenTimer.Stop();

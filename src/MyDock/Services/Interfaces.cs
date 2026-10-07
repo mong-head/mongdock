@@ -106,6 +106,8 @@ public interface IDesktopWindowService
     event EventHandler<bool>? FullscreenAppChanged;
     /// <summary>해상도·DPI·작업 영역 변경, 탐색기 재시작 후. UI 는 배치를 다시 계산.</summary>
     event EventHandler? DisplayChanged;
+    /// <summary>윈도우 작업 표시줄(주·보조 모니터) 숨김/복원. 숨긴 상태로 프로세스가 끝나면(정상·예외·ProcessExit) 반드시 복원. 탐색기 재시작 후 숨김 상태면 다시 숨김.</summary>
+    void SetWindowsTaskbarHidden(bool hidden);
     /// <summary>DWM 실시간 창 미리보기를 host 창의 destDip 영역에 그림. Dispose 로 해제, Update 로 위치 변경. 다른 데스크톱(cloaked) 창은 비어 보일 수 있음.</summary>
     IWindowThumbnail? CreateThumbnail(Window host, IntPtr source, Rect destDip);
 }

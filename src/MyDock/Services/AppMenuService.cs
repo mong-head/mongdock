@@ -204,11 +204,16 @@ public sealed class AppMenuService : IAppMenuService
     private IReadOnlyList<AppMenu> GetBuiltin(AppWindowInfo w)
     {
         string exe = Path.GetFileName(w.ProcessPath).ToLowerInvariant();
+        string cls = User32.GetClassNameOf(w.Hwnd);
+        // 콘솔/터미널: Ctrl+C 등이 다른 의미라 메뉴를 보여 주지 않음
+        if (cls is "ConsoleWindowClass" or "CASCADIA_HOSTING_WINDOW_CLASS" or "mintty" or "VirtualConsoleClass" or "PuTTY"
+            || exe is "windowsterminal.exe" or "wt.exe" or "conhost.exe" or "openconsole.exe" or "mintty.exe" or "alacritty.exe" or "wezterm-gui.exe")
+            return Array.Empty<AppMenu>();
         string kind = exe switch
         {
             "chrome.exe" or "msedge.exe" or "whale.exe" => exe,
             "firefox.exe" => "firefox.exe",
-            "explorer.exe" when User32.GetClassNameOf(w.Hwnd) == "CabinetWClass" => "explorer",
+            "explorer.exe" when cls == "CabinetWClass" => "explorer",
             "notion.exe" => "notion",
             _ => IsElectron(w.ProcessPath) ? "electron" : "generic",
         };
@@ -291,12 +296,28 @@ public sealed class AppMenuService : IAppMenuService
                 Log.Warn($"수식키가 눌려 있어 '{text}' 취소");
                 return;
             }
+            // 기다리는 사이 사용자가 다른 창으로 옮겼을 수 있음 → 보내기 직전 다시 확인
+            if (!IsTargetFocused(hwnd))
+            {
+                Log.Warn($"단축키 보내기 직전 포그라운드가 바뀜 → '{text}' 취소");
+                return;
+            }
             KeyChord.Send(text, vks);
         }
         catch (Exception ex)
         {
             Log.Error($"단축키 전송 실패: {text}", ex);
         }
+    }
+
+    /// <summary>hwnd 가 포그라운드이고, 그 창 스레드의 활성 창도 hwnd 인지 (키 입력이 그 창으로 가는지).</summary>
+    private static bool IsTargetFocused(IntPtr hwnd)
+    {
+        if (User32.GetForegroundWindow() != hwnd) return false;
+        uint tid = User32.GetWindowThreadProcessId(hwnd, out _);
+        var gti = new GUITHREADINFO { cbSize = (uint)Marshal.SizeOf<GUITHREADINFO>() };
+        if (tid == 0 || !User32.GetGUIThreadInfo(tid, ref gti)) return true; // 확인 불가 → 포그라운드 확인만으로 판단
+        return gti.hwndActive == IntPtr.Zero || gti.hwndActive == hwnd;
     }
 
     private static bool AnyModifierDown() =>

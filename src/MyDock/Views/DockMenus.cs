@@ -90,6 +90,35 @@ internal static class DockMenus
         }, isChecked: on);
     }
 
+    /// <summary>"독 숨기기" (Dock.Enabled=false 저장). 트레이 "독 보이기" 로 다시 켬.</summary>
+    public static MenuItem HideDock(AppServices services)
+        => Item("독 숨기기", () => Update(services, () => services.Settings.Current.Dock.Enabled = false));
+
+    /// <summary>"독 보이기" 체크 (Dock.Enabled 토글).</summary>
+    public static MenuItem ShowDock(AppServices services)
+    {
+        bool on = services.Settings.Current.Dock.Enabled;
+        return Item("독 보이기", () => Update(services, () => services.Settings.Current.Dock.Enabled = !on), isChecked: on);
+    }
+
+    /// <summary>"상단바 보이기" 체크 (TopBar.Enabled 토글).</summary>
+    public static MenuItem ShowTopBar(AppServices services)
+    {
+        bool on = services.Settings.Current.TopBar.Enabled;
+        return Item("상단바 보이기", () => Update(services, () => services.Settings.Current.TopBar.Enabled = !on), isChecked: on);
+    }
+
+    /// <summary>"일시 정지" 체크 (저장 안 하는 런타임 상태).</summary>
+    public static MenuItem Pause()
+        => Item("일시 정지", ViewModels.AppState.TogglePaused, isChecked: ViewModels.AppState.Paused);
+
+    /// <summary>"윈도우 작업 표시줄 숨기기" 체크 (HideWindowsTaskbar 저장, 실제 숨김은 TrayController 가 상태에 맞춰).</summary>
+    public static MenuItem HideTaskbar(AppServices services)
+    {
+        bool on = services.Settings.Current.HideWindowsTaskbar;
+        return Item("윈도우 작업 표시줄 숨기기", () => Update(services, () => services.Settings.Current.HideWindowsTaskbar = !on), isChecked: on);
+    }
+
     public static MenuItem OpenSettings(AppServices services)
         => Item("설정 파일 열기", () => services.Launcher.OpenFile(services.Settings.SettingsPath));
 

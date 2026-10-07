@@ -66,7 +66,7 @@ public partial class TopBarWindow
         {
             int index = i;
             var b = MakeTitleButton(CleanText(_appMenus[i].Title));
-            b.Click += (_, _) => ToggleAppMenu(b, () => BuildMenu(_appMenus[index]));
+            b.Click += (_, _) => ToggleAppMenu(b, () => BuildMenu(FreshMenu(index)));
             _titleButtons.Add(b);
             AppMenuBar.Children.Add(b);
         }
@@ -144,13 +144,36 @@ public partial class TopBarWindow
         return cm;
     }
 
+    /// <summary>
+    /// 드롭다운을 열 때마다 최신 메뉴 상태(체크·비활성 등)로 다시 읽음 (리뷰 M7).
+    /// 같은 제목을 찾고, 없으면 같은 위치, 그래도 없으면 처음 읽은 것.
+    /// </summary>
+    private AppMenu FreshMenu(int index)
+    {
+        var old = _appMenus[index];
+        if (_currentApp == null || _currentApp.Hwnd != _menuHwnd) return old;
+        try
+        {
+            var fresh = (_services.AppMenus.GetMenus(_currentApp) ?? Array.Empty<AppMenu>())
+                .Where(m => !string.IsNullOrWhiteSpace(m.Title)).ToList();
+            return fresh.FirstOrDefault(m => m.Title == old.Title)
+                   ?? (index < fresh.Count ? fresh[index] : old);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("앱 메뉴 다시 읽기 실패", ex);
+            return old;
+        }
+    }
+
     private ContextMenu BuildOverflowMenu()
     {
         var cm = new ContextMenu();
         for (int i = _firstHidden; i < _appMenus.Count; i++)
         {
-            var parent = new MenuItem { Header = CleanText(_appMenus[i].Title) };
-            foreach (var item in _appMenus[i].Items) parent.Items.Add(BuildItem(item));
+            var fresh = FreshMenu(i);
+            var parent = new MenuItem { Header = CleanText(fresh.Title) };
+            foreach (var item in fresh.Items) parent.Items.Add(BuildItem(item));
             cm.Items.Add(parent);
         }
         return cm;
@@ -273,7 +296,7 @@ public partial class TopBarWindow
                 if (!OutsideClickWatcher.ScreenRect(b).Contains(c)) continue;
                 int index = i;
                 CloseAppMenu();
-                OpenAppMenu(b, () => BuildMenu(_appMenus[index]));
+                OpenAppMenu(b, () => BuildMenu(FreshMenu(index)));
                 return;
             }
             if (_overflowButton is { Visibility: Visibility.Visible } ob && ob != _openTitle

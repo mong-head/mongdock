@@ -28,8 +28,6 @@ internal static class MenuApi
     public const uint MIIM_STRING = 0x40;
     public const uint MIIM_FTYPE = 0x100;
 
-    public const uint MFT_BITMAP = 0x04;
-    public const uint MFT_OWNERDRAW = 0x100;
     public const uint MFT_SEPARATOR = 0x800;
 
     public const uint MFS_DISABLED = 0x03; // MFS_GRAYED | MFS_DISABLED

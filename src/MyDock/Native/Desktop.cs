@@ -189,7 +189,8 @@ internal class VirtualDesktopManagerClass
 {
 }
 
-[StructLayout(LayoutKind.Sequential)]
+/// <summary>dwmapi.h 는 이 구조체를 pshpack1 (1바이트 정렬)로 선언 → Pack=1 (45바이트).</summary>
+[StructLayout(LayoutKind.Sequential, Pack = 1)]
 internal struct DWM_THUMBNAIL_PROPERTIES
 {
     public uint dwFlags;

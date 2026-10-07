@@ -99,6 +99,7 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
             // 탐색기 재시작 → 셸 훅 등록이 사라졌을 수 있으므로 다시 등록 (이미 등록돼 있어도 무해)
             try
             {
+                VirtualDesktopHelper.Invalidate(); // 가상 데스크톱 COM 도 탐색기 소속이라 다시 만듦
                 User32.DeregisterShellHookWindow(hwnd);
                 if (!User32.RegisterShellHookWindow(hwnd)) Log.Warn("TaskbarCreated 후 RegisterShellHookWindow 실패");
                 else Log.Info("TaskbarCreated → 셸 훅 재등록");

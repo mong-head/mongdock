@@ -239,7 +239,22 @@ internal sealed class StatusPanelWindow : Window
         t.Foreground = on ? _p.AccentText : _p.CircleOffGlyph;
     }
 
+    /// <summary>Wi-Fi 끄기는 원격 연결이 끊길 수 있으므로 확인 후에만 (리뷰 H1). 켜기는 즉시. 취소면 null.</summary>
+    private async Task<bool?> SetWifiConfirmed(bool on)
+    {
+        if (!on)
+        {
+            bool ok = await ConfirmCardWindow.AskAsync(_services, "Wi-Fi 를 끌까요?", "원격 연결이 끊길 수 있어요.", "끄기");
+            if (!ok) return null;
+        }
+        return await _services.Status.SetWifiAsync(on);
+    }
+
     private ToggleButton Switch(Func<bool, Task<bool>> set, TextBlock? errorLine)
+        => Switch(async on => (bool?)await set(on), errorLine);
+
+    /// <summary>set 결과: true 성공, false 실패(되돌리고 안내), null 취소(조용히 되돌림).</summary>
+    private ToggleButton Switch(Func<bool, Task<bool?>> set, TextBlock? errorLine)
     {
         var sw = new ToggleButton
         {
@@ -254,7 +269,7 @@ internal sealed class StatusPanelWindow : Window
             bool wanted = sw.IsChecked == true;
             sw.IsEnabled = false;
             if (errorLine != null) errorLine.Visibility = Visibility.Collapsed;
-            bool ok;
+            bool? ok;
             try { ok = await set(wanted); }
             catch (Exception ex)
             {
@@ -263,12 +278,12 @@ internal sealed class StatusPanelWindow : Window
             }
             if (!IsLoaded) return;
             sw.IsEnabled = true;
-            if (!ok)
+            if (ok != true)
             {
                 _updating = true;
                 sw.IsChecked = !wanted; // 되돌림
                 _updating = false;
-                if (errorLine != null)
+                if (ok == false && errorLine != null)
                 {
                     errorLine.Text = "여기서 바꿀 수 없어요. 설정에서 바꿔 주세요.";
                     errorLine.Visibility = Visibility.Visible;
@@ -329,7 +344,7 @@ internal sealed class StatusPanelWindow : Window
         var st = _services.Status;
         var root = new StackPanel();
         var error = ErrorLine();
-        var sw = Switch(on => st.SetWifiAsync(on), error);
+        var sw = Switch(SetWifiConfirmed, error);
         root.Children.Add(HeaderRow("Wi-Fi", sw));
         root.Children.Add(error);
         root.Children.Add(Divider());
@@ -710,7 +725,7 @@ internal sealed class StatusPanelWindow : Window
         var wifi = ToggleLine("", "Wi-Fi", async () =>
         {
             bool on = st.WifiRadioOn ?? st.Wifi == WifiState.Connected;
-            await st.SetWifiAsync(!on);
+            await SetWifiConfirmed(!on);
         });
         var bt = ToggleLine("", "블루투스", async () =>
         {

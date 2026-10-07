@@ -62,8 +62,10 @@ internal static partial class ChromiumProfiles
                 {
                     if (!cache.TryGetProperty(d, out var info)) continue;
                     string name = DisplayName(info, d);
-                    string pic = Path.Combine(dir, d, "Google Profile Picture.png");
-                    list.Add(new Profile(d, name, File.Exists(pic) ? pic : null));
+                    // 크롬/웨일: "Google Profile Picture.png", 엣지: "Edge Profile Picture.png"
+                    string? pic = new[] { "Google Profile Picture.png", "Edge Profile Picture.png" }
+                        .Select(f => Path.Combine(dir, d, f)).FirstOrDefault(File.Exists);
+                    list.Add(new Profile(d, name, pic));
                 }
             }
             lock (Gate) Cache[file] = (stamp, list);

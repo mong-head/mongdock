@@ -69,6 +69,8 @@ public sealed class PinItem
 
 public sealed class DockSettings
 {
+    /// <summary>독 표시 (트레이·로고 메뉴에서 켜고 끔).</summary>
+    public bool Enabled { get; set; } = true;
     /// <summary>창이 여러 개인 앱 아이콘 클릭: Picker = 창 선택 패널(미리보기), MostRecent = 가장 최근 창으로 바로.</summary>
     public MultiWindowClick MultiWindowClick { get; set; } = MultiWindowClick.Picker;
     /// <summary>다른 가상 데스크톱의 창도 독에 표시(실행 중 점, 창 선택에 "데스크톱 N").</summary>
@@ -136,6 +138,8 @@ public sealed class Settings
     public List<PinItem> Pins { get; set; } = new();
     /// <summary>상단바·메뉴·패널·독 말풍선 글꼴. "Pretendard" = 앱에 내장된 Pretendard(맥 느낌). 설치된 글꼴 이름을 쓰면 그 글꼴. 쉼표로 대체 글꼴 나열 가능.</summary>
     public string FontFamily { get; set; } = "Pretendard";
+    /// <summary>MyDock 이 켜져 있는 동안 윈도우 작업 표시줄 숨김. 일시 정지·종료·크래시 시 원래대로 복원.</summary>
+    public bool HideWindowsTaskbar { get; set; }
     public bool StartWithWindows { get; set; }
     /// <summary>MyDockFinder ico.ini 를 한 번 가져왔는지. true 면 다시 가져오지 않음.</summary>
     public bool ImportedFromMyDockFinder { get; set; }

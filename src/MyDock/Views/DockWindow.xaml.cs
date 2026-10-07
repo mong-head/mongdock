@@ -118,6 +118,7 @@ public partial class DockWindow : Window
         _services.DesktopWindows.DisplayChanged += OnDisplayChanged;
         _services.DesktopWindows.FullscreenAppChanged += OnFullscreenChanged;
         SystemTheme.Changed += OnSystemThemeChanged;
+        AppState.Changed += OnSettingsChanged; // 일시 정지/해제
         _subscribed = true;
 
         ApplyAll();
@@ -137,6 +138,7 @@ public partial class DockWindow : Window
             _services.DesktopWindows.DisplayChanged -= OnDisplayChanged;
             _services.DesktopWindows.FullscreenAppChanged -= OnFullscreenChanged;
             SystemTheme.Changed -= OnSystemThemeChanged;
+            AppState.Changed -= OnSettingsChanged;
             _subscribed = false;
         }
         ReleaseReservation();
@@ -218,7 +220,32 @@ public partial class DockWindow : Window
         RefreshItems(rebuildViews: true, place: false);
         UpdateReservation();
         Place();
-        ApplyMode(initial: false);
+        if (!DockActive)
+        {
+            Deactivate();
+            return;
+        }
+        bool wasInactive = _inactive;
+        _inactive = false;
+        ApplyMode(initial: wasInactive); // 다시 켜지면 시작할 때처럼 (자동 숨김이면 숨긴 상태로)
+    }
+
+    /// <summary>독을 쓰는 중인지: Dock.Enabled 이고 일시 정지가 아님.</summary>
+    private bool DockActive => _services.Settings.Current.Dock.Enabled && !AppState.Paused;
+
+    private bool _inactive;
+
+    /// <summary>독 끄기/일시 정지: 창 숨김, 예약 해제(UpdateReservation 에서), 폴링 정지, 열린 메뉴·패널 닫기.</summary>
+    private void Deactivate()
+    {
+        _inactive = true;
+        _pollTimer.Stop();
+        StopSlide();
+        _hide = _hideTo = 1;
+        if (PanelBorder.ContextMenu?.IsOpen == true) PanelBorder.ContextMenu.IsOpen = false;
+        _picker?.Close();
+        _ghost?.Hide();
+        HideWindows();
     }
 
     private void ApplyLayout()
@@ -276,7 +303,7 @@ public partial class DockWindow : Window
     private void UpdateReservation()
     {
         var l = _layout;
-        bool want = l.Mode == DockMode.Reserve;
+        bool want = l.Mode == DockMode.Reserve && DockActive;
         double t = l.ReserveThickness;
         if (_reservation != null && (!want || _reservedEdge != l.Edge || Math.Abs(_reservedThickness - t) > 0.5))
             ReleaseReservation();
@@ -461,6 +488,11 @@ public partial class DockWindow : Window
     private void ApplyMode(bool initial)
     {
         if (_closed || !IsLoaded) return;
+        if (!DockActive)
+        {
+            Deactivate();
+            return;
+        }
         if (_fullscreen)
         {
             HideWindows();
@@ -578,6 +610,7 @@ public partial class DockWindow : Window
 
     private void ShowWindows()
     {
+        if (!DockActive) return;
         if (!_windowsHidden && IsVisible) return;
         _windowsHidden = false;
         ApplySlidePosition();
@@ -1304,6 +1337,10 @@ public partial class DockWindow : Window
             _services.Settings.Save();
         }, enabled: Math.Abs(dock.Offset - 0.5) > 0.0005));
         menu.Items.Add(new Separator());
+        menu.Items.Add(DockMenus.HideDock(_services));
+        menu.Items.Add(DockMenus.Pause());
+        menu.Items.Add(DockMenus.HideTaskbar(_services));
+        menu.Items.Add(new Separator());
         menu.Items.Add(DockMenus.StartWithWindows(_services));
         menu.Items.Add(DockMenus.OpenSettings(_services));
         menu.Items.Add(DockMenus.Quit());
@@ -1314,9 +1351,7 @@ public partial class DockWindow : Window
     // ───────────────────────── 메뉴 동작 ─────────────────────────
 
     private void CloseAll(DockItemViewModel item)
-    {
-        foreach (var w in item.Windows.ToList()) _services.Launcher.Close(w.Hwnd);
-    }
+        => ConfirmCardWindow.CloseWindows(_services, item.Name, item.Windows.ToList());
 
     private void MovePin(PinItem pin, int delta)
     {

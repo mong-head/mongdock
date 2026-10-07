@@ -16,6 +16,7 @@ internal sealed class ConfirmCardWindow : Window
     private readonly OutsideClickWatcher _watch;
     private readonly Border _card;
     private Action? _onConfirm;
+    private Action? _onCancel;
 
     public ConfirmCardWindow(AppServices services, UiPalette p, string title, string message, string confirmText, Action onConfirm)
     {
@@ -104,7 +105,12 @@ internal sealed class ConfirmCardWindow : Window
             Top = Math.Round(screen.Top + screen.Height * 0.32 - ActualHeight / 2);
             _watch.Start();
         };
-        Closed += (_, _) => _watch.Stop();
+        Closed += (_, _) =>
+        {
+            _watch.Stop();
+            // 확인 없이 닫힘 (취소 버튼·바깥 클릭·다른 창 활성화)
+            if (_onConfirm != null) _onCancel?.Invoke();
+        };
     }
 
     private static Button MakeButton(string text, Brush background, Brush foreground) => new()
@@ -115,6 +121,37 @@ internal sealed class ConfirmCardWindow : Window
         Foreground = foreground,
         Height = 30,
     };
+
+    /// <summary>확인 카드를 띄우고 결과를 기다림 (확인 = true, 취소/바깥 클릭 = false).</summary>
+    public static Task<bool> AskAsync(AppServices services, string title, string message, string confirmText)
+    {
+        var tcs = new TaskCompletionSource<bool>();
+        var p = UiTheme.Palette(services.Settings.Current);
+        var card = new ConfirmCardWindow(services, p, title, message, confirmText, () => tcs.TrySetResult(true));
+        card._onCancel = () => tcs.TrySetResult(false);
+        card.Show();
+        return tcs.Task;
+    }
+
+    /// <summary>
+    /// 창 N개 닫기 확인 (리뷰 M4): 닫을 창이 2개 이상이거나 다른 데스크톱 창이 섞여 있으면 확인 카드, 1개면 바로.
+    /// </summary>
+    public static void CloseWindows(AppServices services, string appName, IReadOnlyList<Models.AppWindowInfo> windows)
+    {
+        void Run()
+        {
+            foreach (var w in windows) services.Launcher.Close(w.Hwnd);
+        }
+        if (windows.Count == 0) return;
+        if (windows.Count == 1 && windows[0].OnCurrentDesktop)
+        {
+            Run();
+            return;
+        }
+        Ask(services, $"{appName} 창 {windows.Count}개를 모두 닫을까요?",
+            windows.Any(w => !w.OnCurrentDesktop) ? "다른 데스크톱에 있는 창도 함께 닫혀요." : "저장하지 않은 내용은 사라질 수 있어요.",
+            "닫기", Run);
+    }
 
     /// <summary>확인 카드를 띄움. 확인을 눌렀을 때만 onConfirm 실행.</summary>
     public static void Ask(AppServices services, string title, string message, string confirmText, Action onConfirm)

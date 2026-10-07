@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using MyDock.Services;
+using MyDock.ViewModels;
 using MyDock.Views;
 
 namespace MyDock;
@@ -14,6 +15,10 @@ public partial class App : Application
     private AppServices? _services;
     private DockWindow? _dock;
     private TopBarWindow? _topBar;
+    private TrayController? _tray;
+    private const string ResumeEventName = @"Local\MyDock.Resume";
+    private EventWaitHandle? _resumeEvent;
+    private RegisteredWaitHandle? _resumeWait;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -22,9 +27,15 @@ public partial class App : Application
         _singleInstance = new Mutex(true, @"Local\MyDock.SingleInstance", out bool isFirst);
         if (!isFirst)
         {
+            // 이미 실행 중이면 그 MyDock 을 깨운다 (일시 정지 해제 / 다 꺼져 있으면 독 켜기).
+            if (EventWaitHandle.TryOpenExisting(ResumeEventName, out var resume))
+                using (resume) resume.Set();
             Shutdown();
             return;
         }
+        _resumeEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ResumeEventName);
+        _resumeWait = ThreadPool.RegisterWaitForSingleObject(_resumeEvent,
+            (_, _) => Dispatcher.BeginInvoke(ResumeFromSecondLaunch), null, Timeout.Infinite, executeOnlyOnce: false);
 
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
@@ -51,7 +62,7 @@ public partial class App : Application
             new AppMenuService(settings),
             new StartupService());
 
-        ImportMyDockFinderPinsOnce(settings);
+        InitializePinsOnce(settings);
 
         tracker.Start();
         _services.Status.Start();
@@ -60,25 +71,52 @@ public partial class App : Application
         _dock.Show();
         _topBar = new TopBarWindow(_services);
         _topBar.Show();
+        _tray = new TrayController(_services);
         Log.Info("MyDock 시작");
     }
 
-    private static void ImportMyDockFinderPinsOnce(SettingsService settings)
+    /// <summary>
+    /// 첫 실행에만 핀을 채운다: MyDockFinder 의 ico.ini 가 있으면 그것을, 없으면 기본 핀(Finder·Launchpad·브라우저·설정).
+    /// ImportedFromMyDockFinder 를 "초기 핀 설정 완료" 표시로 써서, 사용자가 핀을 다 지워도 다시 채우지 않는다.
+    /// </summary>
+    private static void InitializePinsOnce(SettingsService settings)
     {
         var current = settings.Current;
-        if (current.ImportedFromMyDockFinder || current.Pins.Count > 0 || !File.Exists(MyDockFinderIni))
+        if (current.ImportedFromMyDockFinder || current.Pins.Count > 0)
             return;
 
         try
         {
-            current.Pins.AddRange(new MyDockFinderImporter(settings).Import(MyDockFinderIni));
+            if (File.Exists(MyDockFinderIni))
+            {
+                current.Pins.AddRange(new MyDockFinderImporter(settings).Import(MyDockFinderIni));
+                Log.Info($"MyDockFinder 핀 {current.Pins.Count}개 가져옴");
+            }
+            else
+            {
+                current.Pins.AddRange(DefaultPins.Create());
+                Log.Info($"기본 핀 {current.Pins.Count}개 설정");
+            }
             current.ImportedFromMyDockFinder = true;
             settings.Save();
-            Log.Info($"MyDockFinder 핀 {current.Pins.Count}개 가져옴");
         }
         catch (Exception ex)
         {
-            Log.Error("MyDockFinder 핀 가져오기 실패", ex);
+            Log.Error("초기 핀 설정 실패", ex);
+        }
+    }
+
+    /// <summary>MyDock 을 한 번 더 실행했을 때: 트레이가 숨김 아이콘 영역에 있어도 다시 켤 수 있게.</summary>
+    private void ResumeFromSecondLaunch()
+    {
+        if (_services is null) return;
+        Log.Info("다시 실행됨 → 일시 정지 해제");
+        AppState.Paused = false;
+        var current = _services.Settings.Current;
+        if (!current.Dock.Enabled && !current.TopBar.Enabled)
+        {
+            current.Dock.Enabled = true;
+            _services.Settings.Save();
         }
     }
 
@@ -91,6 +129,9 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        if (_services is not null) Log.Info("MyDock 종료");
+        // 트레이 아이콘을 내리고, 숨겨 둔 작업 표시줄을 복원한다.
+        _tray?.Dispose();
         // 창을 닫아야 AppBar 가 해제된다.
         _topBar?.Close();
         _dock?.Close();
@@ -106,6 +147,8 @@ public partial class App : Application
                 catch (Exception ex) { Log.Error("종료 정리 실패", ex); }
             }
         }
+        _resumeWait?.Unregister(null);
+        _resumeEvent?.Dispose();
         _singleInstance?.Dispose();
         base.OnExit(e);
     }

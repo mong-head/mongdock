@@ -127,51 +127,31 @@ public sealed class AppLauncher : IAppLauncher
             ActivateWindow(hwnd);
     }
 
-    private const int DesktopKeyGapMs = 120;
-    private bool _switching;
-
     /// <summary>
-    /// 창이 있는 데스크톱 번호와 현재 번호의 차이만큼 Ctrl+Win+←/→ 를 보내고(키 사이 120ms), 도착을 확인한 뒤 활성화.
-    /// UI 스레드에서 비동기로 진행 (대기 중에도 UI 가 멈추지 않음). 진행 중 재요청은 무시.
+    /// 창이 있는 데스크톱으로 이동(VirtualDesktopService 의 공유 게이트 사용) → 도착하면 활성화.
+    /// 이동이 진행 중이거나, 수식키가 눌려 있거나, 도착을 확인하지 못하면 활성화하지 않고 로그만 남김.
     /// </summary>
-    private async Task SwitchDesktopThenActivateAsync(IntPtr hwnd)
+    private static async Task SwitchDesktopThenActivateAsync(IntPtr hwnd)
     {
-        if (_switching) return;
-        _switching = true;
         try
         {
-            var ids = VirtualDesktopService.ReadDesktopIds();
-            int target = VirtualDesktopHelper.GetDesktopIndex(hwnd, ids);
-            var (current, _) = VirtualDesktopService.Read();
-            if (target <= 0 || current <= 0)
+            int target = VirtualDesktopHelper.GetDesktopIndex(hwnd, VirtualDesktopService.ReadDesktopIds());
+            if (target <= 0)
             {
-                Log.Warn($"창의 데스크톱 번호를 알 수 없음 (target={target}, current={current}) → 바로 활성화 시도");
+                Log.Warn("창의 데스크톱 번호를 알 수 없음 → 바로 활성화 시도");
                 ActivateWindow(hwnd);
                 return;
             }
-            int diff = target - current;
-            for (int i = 0; i < Math.Abs(diff); i++)
+            if (!await VirtualDesktopService.MoveToAsync(target))
             {
-                if (i > 0) await Task.Delay(DesktopKeyGapMs);
-                KeyChord.Send(diff > 0 ? "next" : "prev", User32.VK_LCONTROL, User32.VK_LWIN, diff > 0 ? User32.VK_RIGHT : User32.VK_LEFT);
+                Log.Warn($"데스크톱 {target} 로 이동하지 못해 활성화 생략 hwnd=0x{hwnd.ToInt64():X}");
+                return;
             }
-            // 전환 애니메이션 동안 도착 확인 (최대 ~1초)
-            for (int i = 0; i < 10; i++)
-            {
-                await Task.Delay(100);
-                if (VirtualDesktopService.Read().Current == target) break;
-            }
-            int now = VirtualDesktopService.Read().Current;
-            if (now != target) Log.Warn($"가상 데스크톱 이동 확인 실패: 목표 {target}, 현재 {now}");
             ActivateWindow(hwnd);
         }
         catch (Exception ex)
         {
             Log.Error("다른 데스크톱 창 활성화 실패", ex);
-        }
-        finally
-        {
-            _switching = false;
         }
     }
 

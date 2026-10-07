@@ -37,11 +37,86 @@ public sealed class VirtualDesktopService : IVirtualDesktopService, IDisposable
         _watcher.Start();
     }
 
-    public void Previous() => KeyChord.Send("prev", User32.VK_LCONTROL, User32.VK_LWIN, User32.VK_LEFT);
+    public void Previous() => _ = RunGatedAsync("prev", async () => { SendStep(-1); await Task.Delay(KeyGapMs); return true; });
 
-    public void Next() => KeyChord.Send("next", User32.VK_LCONTROL, User32.VK_LWIN, User32.VK_RIGHT);
+    public void Next() => _ = RunGatedAsync("next", async () => { SendStep(+1); await Task.Delay(KeyGapMs); return true; });
 
-    public void New() => KeyChord.Send("new", User32.VK_LCONTROL, User32.VK_LWIN, User32.VK_D);
+    public void New() => _ = RunGatedAsync("new", async () =>
+    {
+        KeyChord.Send("new", User32.VK_LCONTROL, User32.VK_LWIN, User32.VK_D);
+        await Task.Delay(KeyGapMs);
+        return true;
+    });
+
+    // ───────────────────────── 이동 게이트 ─────────────────────────
+    // Previous/Next/New/MoveToAsync(AppLauncher 의 다른 데스크톱 창 활성화) 가 하나의 게이트를 공유:
+    // 진행 중이면 새 요청은 무시(로그), 수식키가 눌려 있으면 최대 300ms 기다렸다가 그래도 눌려 있으면 취소.
+
+    private const int KeyGapMs = 120;
+    private static int _busy;
+
+    private static void SendStep(int dir) =>
+        KeyChord.Send(dir > 0 ? "next" : "prev", User32.VK_LCONTROL, User32.VK_LWIN, dir > 0 ? User32.VK_RIGHT : User32.VK_LEFT);
+
+    private static async Task<bool> RunGatedAsync(string what, Func<Task<bool>> body)
+    {
+        if (Interlocked.CompareExchange(ref _busy, 1, 0) != 0)
+        {
+            Log.Info($"가상 데스크톱 이동 진행 중 → '{what}' 요청 무시");
+            return false;
+        }
+        try
+        {
+            for (int i = 0; i < 10 && AnyModifierDown(); i++) await Task.Delay(30);
+            if (AnyModifierDown())
+            {
+                Log.Warn($"수식키가 눌려 있어 가상 데스크톱 '{what}' 취소");
+                return false;
+            }
+            return await body();
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"가상 데스크톱 '{what}' 실패", ex);
+            return false;
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _busy, 0);
+        }
+    }
+
+    private static bool AnyModifierDown() =>
+        MenuApi.IsKeyDown(0x10) || MenuApi.IsKeyDown(0x11) || MenuApi.IsKeyDown(0x12) ||
+        MenuApi.IsKeyDown(0x5B) || MenuApi.IsKeyDown(0x5C);
+
+    /// <summary>
+    /// target 번호(1부터)의 데스크톱으로 이동: 차이만큼 Ctrl+Win+←/→ (키 사이 120ms) → 최대 1초 도착 확인.
+    /// 도착하면 true. 게이트가 사용 중이거나 수식키가 눌려 있거나 도착 실패면 false (로그).
+    /// </summary>
+    internal static Task<bool> MoveToAsync(int target) => RunGatedAsync($"move to {target}", async () =>
+    {
+        var (current, count) = Read();
+        if (target <= 0 || current <= 0 || target > Math.Max(count, 1))
+        {
+            Log.Warn($"가상 데스크톱 이동 불가: target={target} current={current} count={count}");
+            return false;
+        }
+        int diff = target - current;
+        for (int i = 0; i < Math.Abs(diff); i++)
+        {
+            if (i > 0) await Task.Delay(KeyGapMs);
+            SendStep(Math.Sign(diff));
+        }
+        for (int i = 0; i < 10; i++)
+        {
+            if (Read().Current == target) return true;
+            await Task.Delay(100);
+        }
+        bool ok = Read().Current == target;
+        if (!ok) Log.Warn($"가상 데스크톱 이동 확인 실패: 목표 {target}, 현재 {Read().Current}");
+        return ok;
+    });
 
     /// <summary>데스크톱 전환/추가/삭제 (백그라운드 스레드에서 발생 — 받는 쪽이 UI 스레드로 넘길 것). WindowTracker 가 목록 갱신에 사용.</summary>
     internal static event EventHandler? DesktopsChangedStatic;
@@ -100,19 +175,27 @@ public sealed class VirtualDesktopService : IVirtualDesktopService, IDisposable
         RegistryKey? key = null;
         try
         {
+            bool armed = false; // 알림이 등록돼 있고 아직 신호되지 않음
+            var handles = new WaitHandle[] { _stop, changed };
             while (!_stop.WaitOne(0))
             {
-                // 키가 없다가 생길 수 있으므로(첫 데스크톱 추가) 매번 확인
-                key ??= Registry.CurrentUser.OpenSubKey(KeyPath);
-                if (key is not null)
+                // 등록은 신호를 받은 뒤(또는 처음/키가 새로 생겼을 때)에만 다시 한다.
+                // 키가 없다가 생길 수 있으므로(첫 데스크톱 추가) 열리지 않았으면 매번 시도.
+                if (!armed)
                 {
-                    int rc = RegNotifyChangeKeyValue(key.Handle, true,
-                        REG_NOTIFY_CHANGE_NAME | REG_NOTIFY_CHANGE_LAST_SET, changed.SafeWaitHandle, true);
-                    if (rc != 0) { key.Dispose(); key = null; }
+                    key ??= Registry.CurrentUser.OpenSubKey(KeyPath);
+                    if (key is not null)
+                    {
+                        int rc = RegNotifyChangeKeyValue(key.Handle, true,
+                            REG_NOTIFY_CHANGE_NAME | REG_NOTIFY_CHANGE_LAST_SET, changed.SafeWaitHandle, true);
+                        if (rc == 0) armed = true;
+                        else { key.Dispose(); key = null; }
+                    }
                 }
-                // 알림 또는 1초 타임아웃(세션별 키 fallback 대비) 후 재확인
-                WaitHandle.WaitAny(new WaitHandle[] { _stop, changed }, TimeSpan.FromSeconds(1));
-                if (_stop.WaitOne(0)) break;
+                // 알림 → 재등록 필요. 1초 타임아웃(세션별 키 fallback 대비) → Check 만.
+                int which = WaitHandle.WaitAny(handles, TimeSpan.FromSeconds(1));
+                if (which == 0) break;
+                if (which == 1) armed = false;
                 Check();
             }
         }

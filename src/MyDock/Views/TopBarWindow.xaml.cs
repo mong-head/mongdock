@@ -66,7 +66,7 @@ public partial class TopBarWindow : Window
         ContextMenu = BuildContextMenu();
 
         SourceInitialized += OnSourceInitialized;
-        Loaded += (_, _) => { if (!_services.Settings.Current.TopBar.Enabled || _fullscreen) Hide(); };
+        Loaded += (_, _) => { if (!_services.Settings.Current.TopBar.Enabled || AppState.Paused || _fullscreen) Hide(); };
         ContentRendered += (_, _) => { Remeasure(LeftSection); Remeasure(RightSection); };
         Closed += OnClosed;
     }
@@ -85,6 +85,7 @@ public partial class TopBarWindow : Window
         _services.DesktopWindows.FullscreenAppChanged += OnFullscreenChanged;
         _services.Status.Changed += OnStatusChanged;
         _services.VirtualDesktops.Changed += OnDesktopChanged;
+        AppState.Changed += OnSettingsChanged; // 일시 정지/해제
         _subscribed = true;
 
         ApplySettings();
@@ -109,6 +110,7 @@ public partial class TopBarWindow : Window
             _services.DesktopWindows.FullscreenAppChanged -= OnFullscreenChanged;
             _services.Status.Changed -= OnStatusChanged;
             _services.VirtualDesktops.Changed -= OnDesktopChanged;
+            AppState.Changed -= OnSettingsChanged;
             _subscribed = false;
         }
         UnregisterIfNeeded();
@@ -155,7 +157,7 @@ public partial class TopBarWindow : Window
             _panel?.Close();
             if (IsVisible) Hide();
         }
-        else if (_services.Settings.Current.TopBar.Enabled && IsLoaded && !IsVisible)
+        else if (_services.Settings.Current.TopBar.Enabled && !AppState.Paused && IsLoaded && !IsVisible)
         {
             Show();
             UpdateColors();
@@ -186,14 +188,18 @@ public partial class TopBarWindow : Window
         ImeButton.Visibility = Vis(s.ShowImeToggle);
         _imeState = 0; // 배지 색 다시 칠하기
 
-        SetStatusPolling(s.Enabled && s.ShowNetworkSpeed, s.Enabled && s.ShowStatusIcons);
+        bool active = s.Enabled && !AppState.Paused; // 일시 정지 중이면 꺼진 것처럼
+        SetStatusPolling(active && s.ShowNetworkSpeed, active && s.ShowStatusIcons);
 
-        if (!s.Enabled)
+        if (!active)
         {
             UnregisterIfNeeded();
             SetWallpaperWatch(false);
             StopTimers();
             _panel?.Close();
+            CloseAppMenu();
+            if (_logoMenu?.IsOpen == true) _logoMenu.IsOpen = false;
+            if (ContextMenu?.IsOpen == true) ContextMenu.IsOpen = false;
             if (IsLoaded && IsVisible) Hide(); // 첫 표시 중이면 Loaded 에서 숨김
             return;
         }
@@ -798,10 +804,9 @@ public partial class TopBarWindow : Window
             foreach (var w in appWindows.Where(w => !w.IsMinimized))
                 _services.Launcher.Minimize(w.Hwnd);
         }, enabled: hasApp && appWindows.Any(w => !w.IsMinimized)));
-        menu.Items.Add(DockMenus.Item($"{name} 종료", () =>
-        {
-            foreach (var w in appWindows) _services.Launcher.Close(w.Hwnd);
-        }, enabled: hasApp && appWindows.Count > 0));
+        menu.Items.Add(DockMenus.Item($"{name} 종료",
+            () => ConfirmCardWindow.CloseWindows(_services, name, appWindows),
+            enabled: hasApp && appWindows.Count > 0));
         menu.Items.Add(new Separator());
         if (pin != null)
         {
@@ -880,6 +885,10 @@ public partial class TopBarWindow : Window
         mydock.Items.Add(DockMenus.DockBehavior(_services));
         mydock.Items.Add(DockMenus.DockThemeMenu(_services));
         mydock.Items.Add(DockMenus.TopBarColor(_services));
+        mydock.Items.Add(new Separator());
+        mydock.Items.Add(DockMenus.HideDock(_services));
+        mydock.Items.Add(DockMenus.Pause());
+        mydock.Items.Add(DockMenus.HideTaskbar(_services));
         mydock.Items.Add(new Separator());
         mydock.Items.Add(DockMenus.StartWithWindows(_services));
         mydock.Items.Add(DockMenus.OpenSettings(_services));
