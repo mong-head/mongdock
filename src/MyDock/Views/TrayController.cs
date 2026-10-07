@@ -31,7 +31,7 @@ public sealed class TrayController : IDisposable
         _services = services;
         _normalIcon = DrawIcon(paused: false);
         _pausedIcon = DrawIcon(paused: true);
-        _icon = new WinForms.NotifyIcon { Icon = _normalIcon, Text = "MyDock", Visible = true };
+        _icon = new WinForms.NotifyIcon { Icon = _normalIcon, Text = AppInfo.Name, Visible = true };
         _icon.MouseUp += OnMouseUp;
 
         _services.Settings.SettingsChanged += OnStateChanged;
@@ -47,7 +47,7 @@ public sealed class TrayController : IDisposable
         if (_disposed) return;
         bool paused = AppState.Paused;
         _icon.Icon = paused ? _pausedIcon : _normalIcon;
-        _icon.Text = paused ? "MyDock (일시 정지)" : "MyDock";
+        _icon.Text = paused ? $"{AppInfo.Name} (일시 정지)" : AppInfo.Name;
 
         bool hide = _services.Settings.Current.HideWindowsTaskbar && !paused;
         if (_taskbarHidden == hide) return;

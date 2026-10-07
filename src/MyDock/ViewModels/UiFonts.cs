@@ -21,7 +21,7 @@ public static class UiFonts
         if (string.IsNullOrWhiteSpace(name) || name.Trim().Equals("Pretendard", StringComparison.OrdinalIgnoreCase))
         {
             // 이 어셈블리의 리소스 (미리보기 등 다른 실행 파일에서 써도 동작하도록 component URI)
-            string asm = typeof(UiFonts).Assembly.GetName().Name ?? "MyDock";
+            string asm = typeof(UiFonts).Assembly.GetName().Name ?? AppInfo.Name;
             return new FontFamily(new Uri($"pack://application:,,,/{asm};component/"), "./Fonts/#Pretendard, " + Fallback);
         }
         return new FontFamily(name.Trim());

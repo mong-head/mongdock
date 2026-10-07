@@ -33,7 +33,7 @@ public sealed class VirtualDesktopService : IVirtualDesktopService, IDisposable
     {
         _dispatcher = Dispatcher.CurrentDispatcher;
         (_current, _count) = Read();
-        _watcher = new Thread(WatchLoop) { IsBackground = true, Name = "MyDock.VirtualDesktops" };
+        _watcher = new Thread(WatchLoop) { IsBackground = true, Name = "mongdock.VirtualDesktops" };
         _watcher.Start();
     }
 

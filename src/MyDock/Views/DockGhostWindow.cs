@@ -25,7 +25,7 @@ internal sealed class DockGhostWindow : Window
         ResizeMode = ResizeMode.NoResize;
         Focusable = false;
         IsHitTestVisible = false;
-        Title = "MyDock Ghost";
+        Title = "mongdock Ghost";
         Opacity = 0.55;
 
         _box = new Border { BorderThickness = new Thickness(1.5) };

@@ -31,7 +31,7 @@ internal sealed class ConfirmCardWindow : Window
         Focusable = false;
         SizeToContent = SizeToContent.WidthAndHeight;
         UseLayoutRounding = true;
-        Title = "MyDock Confirm";
+        Title = "mongdock Confirm";
         SetResourceReference(FontFamilyProperty, UiFonts.Key);
         FontSize = 13;
         Foreground = p.Text;

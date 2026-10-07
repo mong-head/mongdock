@@ -123,7 +123,7 @@ internal static class DockMenus
         => Item("설정 파일 열기", () => services.Launcher.OpenFile(services.Settings.SettingsPath));
 
     public static MenuItem Quit()
-        => Item("MyDock 종료", () => System.Windows.Application.Current.Shutdown());
+        => Item($"{AppInfo.Name} 종료", () => System.Windows.Application.Current.Shutdown());
 
     private static void Update(AppServices services, Action change)
     {

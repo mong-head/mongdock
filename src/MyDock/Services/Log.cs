@@ -11,9 +11,9 @@ public static class Log
     private static readonly object Gate = new();
 
     public static string LogDirectory { get; } =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MyDock", "logs");
+        Path.Combine(AppInfo.DataDirectory, "logs");
 
-    public static string LogPath { get; } = Path.Combine(LogDirectory, "mydock.log");
+    public static string LogPath { get; } = Path.Combine(LogDirectory, AppInfo.Name + ".log");
 
     public static void Info(string message) => Write("INFO ", message, null);
 

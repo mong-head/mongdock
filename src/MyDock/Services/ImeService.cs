@@ -30,7 +30,7 @@ public sealed class ImeService : IImeService, IDisposable
 
     public ImeService()
     {
-        _worker = new Thread(WorkerLoop) { IsBackground = true, Name = "MyDock.Ime" };
+        _worker = new Thread(WorkerLoop) { IsBackground = true, Name = "mongdock.Ime" };
         _worker.Start();
     }
 

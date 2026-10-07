@@ -27,7 +27,7 @@ internal sealed class DockBackdropWindow : Window
         ResizeMode = ResizeMode.NoResize;
         Focusable = false;
         IsHitTestVisible = false;
-        Title = "MyDock Backdrop";
+        Title = "mongdock Backdrop";
         Left = -32000;
         Top = -32000;
         Width = 1;

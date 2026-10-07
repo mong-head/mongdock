@@ -2,11 +2,11 @@ using Microsoft.Win32;
 
 namespace MyDock.Services;
 
-/// <summary>HKCU\Software\Microsoft\Windows\CurrentVersion\Run 의 "MyDock" 값으로 시작 프로그램 등록.</summary>
+/// <summary>HKCU\Software\Microsoft\Windows\CurrentVersion\Run 의 "mongdock" 값으로 시작 프로그램 등록.</summary>
 public sealed class StartupService : IStartupService
 {
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string ValueName = "MyDock";
+    private const string ValueName = AppInfo.Name;
 
     public bool IsEnabled
     {

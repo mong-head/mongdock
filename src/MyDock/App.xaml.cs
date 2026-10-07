@@ -16,7 +16,7 @@ public partial class App : Application
     private DockWindow? _dock;
     private TopBarWindow? _topBar;
     private TrayController? _tray;
-    private const string ResumeEventName = @"Local\MyDock.Resume";
+    private const string ResumeEventName = @"Local\mongdock.Resume";
     private EventWaitHandle? _resumeEvent;
     private RegisteredWaitHandle? _resumeWait;
 
@@ -24,7 +24,9 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
-        _singleInstance = new Mutex(true, @"Local\MyDock.SingleInstance", out bool isFirst);
+        _singleInstance = new Mutex(true, @"Local\mongdock.SingleInstance", out bool isFirst);
+        if (isFirst)
+            AppInfo.MigrateLegacyInstall();
         if (!isFirst)
         {
             // 이미 실행 중이면 그 MyDock 을 깨운다 (일시 정지 해제 / 다 꺼져 있으면 독 켜기).
@@ -72,7 +74,7 @@ public partial class App : Application
         _topBar = new TopBarWindow(_services);
         _topBar.Show();
         _tray = new TrayController(_services);
-        Log.Info("MyDock 시작");
+        Log.Info($"{AppInfo.Name} 시작");
     }
 
     /// <summary>
@@ -129,7 +131,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
-        if (_services is not null) Log.Info("MyDock 종료");
+        if (_services is not null) Log.Info($"{AppInfo.Name} 종료");
         // 트레이 아이콘을 내리고, 숨겨 둔 작업 표시줄을 복원한다.
         _tray?.Dispose();
         // 창을 닫아야 AppBar 가 해제된다.

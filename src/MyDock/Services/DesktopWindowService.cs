@@ -107,12 +107,12 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     public DesktopWindowService()
     {
         _dispatcher = Dispatcher.CurrentDispatcher;
-        _callbackMsg = User32.RegisterWindowMessage("MyDock.AppBarCallback");
+        _callbackMsg = User32.RegisterWindowMessage("mongdock.AppBarCallback");
         _taskbarCreatedMsg = User32.RegisterWindowMessage("TaskbarCreated");
         InstallExitHooks();
 
         // 브로드캐스트(WM_DISPLAYCHANGE / WM_SETTINGCHANGE / TaskbarCreated)는 메시지 전용 창으로 오지 않으므로 숨은 최상위 창.
-        _broadcastWindow = CreateHiddenWindow("MyDock.DesktopEvents");
+        _broadcastWindow = CreateHiddenWindow("mongdock.DesktopEvents");
         _broadcastWindow.AddHook(BroadcastWndProc);
 
         _fullscreenTimer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background,
@@ -752,7 +752,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         var res = new EdgeReservation(this);
         try
         {
-            var src = CreateHiddenWindow("MyDock.EdgeReservation");
+            var src = CreateHiddenWindow("mongdock.EdgeReservation");
             var slot = new Slot
             {
                 Hwnd = src.Handle,

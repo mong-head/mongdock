@@ -36,7 +36,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
     private bool _disposed;
 
     public SettingsService()
-        : this(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MyDock"))
+        : this(AppInfo.DataDirectory)
     {
     }
 

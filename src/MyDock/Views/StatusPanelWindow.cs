@@ -51,7 +51,7 @@ internal sealed class StatusPanelWindow : Window
         Focusable = false;
         SizeToContent = SizeToContent.WidthAndHeight;
         UseLayoutRounding = true;
-        Title = "MyDock Status";
+        Title = "mongdock Status";
         SetResourceReference(FontFamilyProperty, UiFonts.Key);
         FontSize = 15;
         Foreground = _p.Text;

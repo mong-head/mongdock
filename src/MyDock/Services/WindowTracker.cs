@@ -45,7 +45,7 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
         _dispatcher = Dispatcher.CurrentDispatcher;
 
         // 보이지 않는 최상위 팝업 창 (메시지 전용 창은 셸 훅 브로드캐스트를 못 받는 경우가 있어 숨김 창 사용).
-        var p = new HwndSourceParameters("MyDock.ShellHook")
+        var p = new HwndSourceParameters("mongdock.ShellHook")
         {
             Width = 0,
             Height = 0,

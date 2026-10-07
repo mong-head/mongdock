@@ -32,7 +32,7 @@ internal sealed class DockLabelWindow : Window
         Width = BoxWidth;
         Height = BoxHeight;
         UseLayoutRounding = true;
-        Title = "MyDock Label";
+        Title = "mongdock Label";
 
         _text = new TextBlock
         {

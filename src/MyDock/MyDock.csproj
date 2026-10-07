@@ -2,6 +2,8 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
+    <AssemblyName>mongdock</AssemblyName>
+    <Product>mongdock</Product>
     <!-- 10.0.19041.0: 블루투스 상태(Windows.Devices.Radios) WinRT 투영용 -->
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>

@@ -49,7 +49,7 @@ internal sealed class WindowPickerWindow : Window
         Focusable = false;
         SizeToContent = SizeToContent.WidthAndHeight;
         UseLayoutRounding = true;
-        Title = "MyDock Windows";
+        Title = "mongdock Windows";
         SetResourceReference(FontFamilyProperty, UiFonts.Key);
         FontSize = 13;
         Foreground = _p.Text;

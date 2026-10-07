@@ -837,7 +837,7 @@ public partial class TopBarWindow : Window
         menu.Items.Add(new Separator());
         menu.Items.Add(DockMenus.Item("바탕 화면 보기", () => _services.Shell.ShowDesktop()));
         menu.Items.Add(new Separator());
-        menu.Items.Add(DockMenus.Item("MyDock 설정 파일 열기", () => _services.Launcher.OpenFile(_services.Settings.SettingsPath)));
+        menu.Items.Add(DockMenus.Item($"{AppInfo.Name} 설정 파일 열기", () => _services.Launcher.OpenFile(_services.Settings.SettingsPath)));
         menu.Items.Add(DockMenus.Quit());
         menu.IsOpen = true;
     }
@@ -891,7 +891,7 @@ public partial class TopBarWindow : Window
             "지금 로그아웃할까요?", "열려 있는 앱이 모두 닫혀요.", "로그아웃", shell.SignOut)));
         menu.Items.Add(new Separator());
 
-        var mydock = new MenuItem { Header = "MyDock" };
+        var mydock = new MenuItem { Header = AppInfo.Name };
         mydock.Items.Add(DockMenus.DockPosition(_services));
         mydock.Items.Add(DockMenus.DockBehavior(_services));
         mydock.Items.Add(DockMenus.DockThemeMenu(_services));
