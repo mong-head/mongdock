@@ -66,6 +66,7 @@ public partial class TopBarWindow : Window
         ContextMenu = BuildContextMenu();
 
         SourceInitialized += OnSourceInitialized;
+        DpiChanged += (_, _) => Dispatcher.BeginInvoke(() => OnDisplayChanged(this, EventArgs.Empty), DispatcherPriority.Loaded);
         Loaded += (_, _) => { if (!_services.Settings.Current.TopBar.Enabled || AppState.Paused || _fullscreen) Hide(); };
         ContentRendered += (_, _) => { Remeasure(LeftSection); Remeasure(RightSection); };
         Closed += OnClosed;
@@ -140,7 +141,14 @@ public partial class TopBarWindow : Window
 
     private void OnDisplayChanged(object? sender, EventArgs e)
     {
+        // 옛 좌표로 떠 있는 패널·메뉴는 닫고 위치·폭(AppBar 포함) 다시 계산
+        _panel?.Close();
+        CloseAppMenu();
+        if (_logoMenu?.IsOpen == true) _logoMenu.IsOpen = false;
+        // AppBar 는 다시 등록하지 않음: 작업 영역 변경도 DisplayChanged 로 오므로 재등록하면 무한 반복될 수 있음
+        // (배율 변경 시 AppBar 재배치는 백엔드 RegisterTopAppBar 가 처리)
         ApplySettings();
+        FixClockWidth();
     }
 
     private void OnWallpaperChanged(object? sender, EventArgs e)

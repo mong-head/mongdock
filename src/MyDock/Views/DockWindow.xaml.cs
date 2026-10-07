@@ -26,7 +26,7 @@ public partial class DockWindow : Window
 
     private readonly AppServices _services;
     private DockLayout _layout;
-    private readonly DockBackdropWindow _backdrop;
+    private DockBackdropWindow _backdrop;
     private DockLabelWindow? _label;
     private DockGhostWindow? _ghost;
     private bool _subscribed;
@@ -101,6 +101,7 @@ public partial class DockWindow : Window
         Owner = _backdrop;
 
         SourceInitialized += OnSourceInitialized;
+        DpiChanged += OnWindowDpiChanged;
         Loaded += (_, _) => ApplyMode(initial: true);
         Closed += OnClosed;
     }
@@ -174,7 +175,47 @@ public partial class DockWindow : Window
 
     private void OnSettingsChanged(object? sender, EventArgs e) => ApplyAll();
 
-    private void OnDisplayChanged(object? sender, EventArgs e) => Place();
+    /// <summary>
+    /// 해상도·배율(DPI)·작업 영역 변경. 화면 크기(DIP)·트리거 영역·창 위치를 전부 다시 계산하고,
+    /// 옛 좌표로 떠 있던 말풍선·창 선택 패널은 닫는다. 자동 숨김이면 숨긴 상태(트리거 대기)로 되돌린다.
+    /// </summary>
+    private void OnDisplayChanged(object? sender, EventArgs e)
+    {
+        if (_closed) return;
+        var oldScreen = _screen;
+        _label?.Hide();
+        Place();
+        // 작업 영역만 바뀐 경우(다른 AppBar 등)는 위치만 갱신. 화면 크기(배율·해상도)가 바뀌었을 때만 상태 초기화
+        if (_screen == oldScreen) return;
+        _picker?.Close();
+        RecreateHelperWindows();
+        ResetMagnification();
+        if (_layout.Mode == DockMode.AutoHide && !_fullscreen && DockActive)
+            ApplyMode(initial: true); // 슬라이드 중이던 옛 좌표 상태를 버리고 깨끗하게 (숨김 + 트리거 대기)
+    }
+
+    /// <summary>블러 창·이름 말풍선·드래그 고스트를 새로 만듦 (새 DPI 로 생성되도록).</summary>
+    private void RecreateHelperWindows()
+    {
+        _label?.Close();
+        _label = null;
+        _ghost?.Close();
+        _ghost = null;
+
+        var old = _backdrop;
+        var fresh = new DockBackdropWindow(_services) { Topmost = !_fullscreen };
+        fresh.Show();
+        fresh.Hide();          // 핸들만 만들고 숨김 → SyncBackdrop 이 필요할 때 보임
+        _backdrop = fresh;
+        Owner = fresh;         // z-order: 독 창은 항상 블러 창 바로 위
+        old.Close();
+        if (_layout.Blur) _backdrop.Apply(_layout.Tint);
+        SyncBackdrop();
+    }
+
+    /// <summary>이 창의 DPI 가 바뀜 (배율 변경·다른 모니터). 레이아웃이 끝난 뒤 다시 배치.</summary>
+    private void OnWindowDpiChanged(object sender, DpiChangedEventArgs e)
+        => Dispatcher.BeginInvoke(() => OnDisplayChanged(this, EventArgs.Empty), DispatcherPriority.Loaded);
 
     private void OnSystemThemeChanged(object? sender, EventArgs e)
     {
@@ -198,6 +239,8 @@ public partial class DockWindow : Window
         }
         else
         {
+            // 전체 화면 판정이 배율 전환 중 잠깐 켜졌다 꺼지는 경우도 있으므로 화면 크기부터 다시 계산
+            Place();
             ApplyMode(initial: true);
         }
     }
@@ -457,7 +500,7 @@ public partial class DockWindow : Window
         if (Width != r.Width) Width = r.Width;
         if (Height != r.Height) Height = r.Height;
         // 위쪽 독은 상단바 아래로 미끄러져 들어가는 대신 흐려지며 사라짐
-        Opacity = l.Edge == DockEdge.Top ? 1 - _hide : 1;
+        Opacity = _windowsHidden ? 0 : l.Edge == DockEdge.Top ? 1 - _hide : 1;
         SyncBackdrop();
         UpdateLabelPosition();
     }
@@ -506,7 +549,7 @@ public partial class DockWindow : Window
                 // 시작 시에는 숨긴 상태
                 StopSlide();
                 _hide = _hideTo = 1;
-                HideWindows();
+                HideWindows(soft: true);
             }
             _lastInsideTicks = Environment.TickCount64;
             _pollTimer.Start();
@@ -527,6 +570,15 @@ public partial class DockWindow : Window
             _lastInsideTicks = Environment.TickCount64;
             return;
         }
+
+        // 배율·해상도가 바뀌었는데 DisplayChanged 가 늦거나 안 오면 옛 화면 크기로 트리거를 판정하게 됨
+        // → 폴링마다 화면 크기를 확인해 달라졌으면 바로 다시 배치 (가벼운 호출)
+        try
+        {
+            var screen = _services.DesktopWindows.GetPrimaryScreenBounds();
+            if (!screen.IsEmpty && screen != _screen) OnDisplayChanged(this, EventArgs.Empty);
+        }
+        catch { }
 
         Point? cursor;
         try { cursor = _services.DesktopWindows.GetCursorPosition(); }
@@ -574,7 +626,7 @@ public partial class DockWindow : Window
         {
             StopSlide();
             _hide = _hideTo = target;
-            if (hidden) HideWindows();
+            if (hidden) HideWindows(soft: true);
             else
             {
                 ShowWindows();
@@ -613,19 +665,34 @@ public partial class DockWindow : Window
         if (!DockActive) return;
         if (!_windowsHidden && IsVisible) return;
         _windowsHidden = false;
-        ApplySlidePosition();
+        Root.IsHitTestVisible = true;
+        ApplySlidePosition();               // 투명도도 여기서 복원
         if (!IsVisible) Show();
         SyncBackdrop(); // 블러 창 표시 여부는 SyncBackdrop 에서 결정 (이 창이 보인 뒤)
     }
 
-    private void HideWindows()
+    /// <summary>
+    /// 독 숨김. soft = 자동 숨김: 창은 띄워 둔 채 완전히 투명 + 클릭 통과
+    /// (숨긴(Hide) 창은 WM_DPICHANGED 를 못 받아 배율이 바뀐 뒤 옛 배율로 배치되는 문제가 있었음).
+    /// soft 가 아니면(전체 화면 앱·일시 정지·독 끄기) 실제로 Hide.
+    /// </summary>
+    private void HideWindows(bool soft = false)
     {
         _windowsHidden = true;
         _label?.Hide();
         _picker?.Close();
         ResetMagnification();
         if (_backdrop.IsVisible) _backdrop.Hide();
-        if (IsVisible) Hide();
+        if (soft)
+        {
+            Root.IsHitTestVisible = false;
+            Opacity = 0;
+            if (!IsVisible && IsLoaded) Show();
+        }
+        else if (IsVisible)
+        {
+            Hide();
+        }
         DockState.VisiblePanel = Rect.Empty;
     }
 
@@ -665,7 +732,7 @@ public partial class DockWindow : Window
             {
                 _sliding = false;
                 _hide = _hideTo;
-                if (_hideTo >= 1) HideWindows();
+                if (_hideTo >= 1) HideWindows(soft: true);
             }
             else active = true;
         }

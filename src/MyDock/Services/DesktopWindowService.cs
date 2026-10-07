@@ -116,7 +116,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         _broadcastWindow.AddHook(BroadcastWndProc);
 
         _fullscreenTimer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background,
-            (_, _) => EvaluateFullscreen(), _dispatcher);
+            (_, _) => { CheckPrimaryMetrics(); EvaluateFullscreen(); }, _dispatcher);
         _fullscreenTimer.Start();
 
         // 가상 데스크톱 전환(데스크톱별 배경)·슬라이드쇼 감지: 백그라운드에서 2초마다 서명 비교
@@ -606,11 +606,61 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         {
             Log.Warn($"전체 화면 확인 실패: {e.Message}");
         }
-        if (fs == _fullscreen) return;
+        // 디바운스: 같은 판정이 700ms 이상 유지돼야 발생 (배율·해상도 전환 순간 창이 잠깐 화면을 덮는 경우 무시)
+        if (fs == _fullscreen)
+        {
+            _fullscreenPendingSince = null;
+            return;
+        }
+        var now = DateTime.UtcNow;
+        if (_fullscreenPending != fs || _fullscreenPendingSince is null)
+        {
+            _fullscreenPending = fs;
+            _fullscreenPendingSince = now;
+            // 1초 타이머를 기다리지 않고 750ms 뒤 다시 확인
+            _dispatcher.InvokeAsync(async () => { await Task.Delay(750); EvaluateFullscreen(); });
+            return;
+        }
+        if (now - _fullscreenPendingSince.Value < FullscreenDebounce) return;
+        _fullscreenPendingSince = null;
         _fullscreen = fs;
         Log.Info($"전체 화면 앱: {fs}");
         try { FullscreenAppChanged?.Invoke(this, fs); }
         catch (Exception e) { Log.Error("FullscreenAppChanged 핸들러 예외", e); }
+    }
+
+    private static readonly TimeSpan FullscreenDebounce = TimeSpan.FromMilliseconds(700);
+    private bool _fullscreenPending;
+    private DateTime? _fullscreenPendingSince;
+
+    // ───────────────────────── 주 모니터 DPI/해상도 감시 ─────────────────────────
+    // 시스템 배율이 바뀌어도(원격 접속 시 100%→125% 등) 숨은 창에는 WM_DPICHANGED 가 오지 않고
+    // WM_DISPLAYCHANGE·WM_SETTINGCHANGE 도 오지 않을 수 있어, 1초 타이머에서 주 모니터 DPI·영역을 비교한다.
+
+    private uint _lastDpi;
+    private RECT _lastBounds;
+
+    private void CheckPrimaryMetrics()
+    {
+        try
+        {
+            IntPtr mon = DesktopApi.PrimaryMonitor;
+            uint dpi = (uint)Math.Round(DesktopApi.GetMonitorScale(mon) * 96);
+            RECT b = PrimaryBoundsPx;
+            if (_lastDpi == 0) { _lastDpi = dpi; _lastBounds = b; return; }
+            bool dpiChanged = dpi != _lastDpi;
+            bool boundsChanged = b.Left != _lastBounds.Left || b.Top != _lastBounds.Top || b.Right != _lastBounds.Right || b.Bottom != _lastBounds.Bottom;
+            if (!dpiChanged && !boundsChanged) return;
+            if (dpiChanged) Log.Info($"DPI 변경 {_lastDpi}→{dpi}");
+            if (boundsChanged) Log.Info($"주 모니터 영역 변경 {_lastBounds}→{b}");
+            _lastDpi = dpi;
+            _lastBounds = b;
+            QueueDisplayChanged();
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"DPI 확인 실패: {e.Message}");
+        }
     }
 
     private static uint _explorerPid;
@@ -654,7 +704,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
                     break;
                 case User32.WM_SETTINGCHANGE:
                     int spi = (int)wParam.ToInt64();
-                    if (spi == DesktopApi.SPI_SETWORKAREA) QueueDisplayChanged();
+                    if (spi is DesktopApi.SPI_SETWORKAREA or DesktopApi.SPI_SETLOGICALDPIOVERRIDE) QueueDisplayChanged();
                     else if (spi == DesktopApi.SPI_SETDESKWALLPAPER) QueueWallpaperChanged();
                     break;
             }
@@ -676,7 +726,11 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
             {
                 await Task.Delay(300);
                 _displayQueued = false;
+                // 어느 경로로 왔든 기준값을 맞춰 두어 DPI 폴링이 같은 변경으로 한 번 더 발생시키지 않게
+                _lastDpi = (uint)Math.Round(PrimaryScale * 96);
+                _lastBounds = PrimaryBoundsPx;
                 foreach (var s in _slots.ToList()) Reposition(s);
+                Log.Info($"DisplayChanged (주 모니터 {_lastBounds}, DPI {_lastDpi}, DIP {GetPrimaryScreenBounds()})");
                 DisplayChanged?.Invoke(this, EventArgs.Empty);
             }
             catch (Exception e)

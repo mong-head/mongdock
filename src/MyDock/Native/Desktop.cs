@@ -59,6 +59,7 @@ internal static class DesktopApi
     // 브로드캐스트/설정 변경
     public const int SPI_SETDESKWALLPAPER = 0x0014;
     public const int SPI_SETWORKAREA = 0x002F;
+    public const int SPI_SETLOGICALDPIOVERRIDE = 0x009F;
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
