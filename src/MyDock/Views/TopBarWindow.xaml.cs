@@ -741,7 +741,12 @@ public partial class TopBarWindow : Window
         _imeRecheck.Start();
     }
 
-    private void OnSearch(object sender, RoutedEventArgs e) => Safe(() => _services.Shell.OpenSearch());
+    /// <summary>검색 버튼: Spotlight 모드면 몽독 검색창(열려 있으면 닫기), Windows 모드면 Win+S.</summary>
+    private void OnSearch(object sender, RoutedEventArgs e) => Safe(() =>
+    {
+        if (_services.Settings.Current.TopBar.SearchMode == SearchMode.Spotlight) SpotlightWindow.Toggle(_services);
+        else _services.Shell.OpenSearch();
+    });
     /// <summary>제어 센터: Win+A 대신 MyDockFinder 같은 타일 패널.</summary>
     private void OnQuickSettings(object sender, RoutedEventArgs e) => TogglePanel(StatusPanelKind.ControlCenter, QuickSettingsButton);
     /// <summary>시계 클릭 = 알림 센터 + 달력 (MyDockFinder 와 동일). 잠깐 알약 하이라이트.</summary>
