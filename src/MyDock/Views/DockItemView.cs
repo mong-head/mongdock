@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using MyDock.Models;
 using MyDock.ViewModels;
@@ -13,6 +14,8 @@ namespace MyDock.Views;
 /// 독 항목 하나의 화면 (코드로 구성). 아이콘 + 실행 중 점(아이콘 아래 = 가장자리 쪽) + 알림 점(아이콘 모서리).
 /// 확대는 DockWindow 가 매 프레임 <see cref="ApplyScale"/> 로 지정 — 아이콘은 가장자리 반대쪽으로 커지고
 /// 슬롯은 독 방향으로 늘어나 이웃과 겹치지 않는다. 바운스/흔들림 없음.
+/// 누르면 <see cref="Pressed"/> 만 알리고, 클릭/드래그 구분·실행은 DockWindow 가 마우스 캡처로 처리한다.
+/// 드래그로 순서를 바꿀 때 이웃 아이콘이 비켜서는 움직임은 <see cref="AnimateShift"/> (RenderTransform 이동).
 /// </summary>
 internal sealed class DockItemView : Grid
 {
@@ -20,7 +23,9 @@ internal sealed class DockItemView : Grid
     private readonly ScaleTransform? _scale;
     private readonly Ellipse? _runningDot;
     private readonly Ellipse? _notifyDot;
-    private bool _pressed;
+    /// <summary>드래그 정렬 중 비켜서기 이동 (독 방향). 레이아웃은 그대로 두고 그림만 옮긴다.</summary>
+    private readonly TranslateTransform _shift = new();
+    private const double ShiftMs = 150;
 
     public DockItemViewModel Item { get; }
 
@@ -32,7 +37,11 @@ internal sealed class DockItemView : Grid
 
     public event EventHandler? HoverStarted;
     public event EventHandler? HoverEnded;
-    public event EventHandler? Clicked;
+    /// <summary>왼쪽 버튼 누름 (자동 구분선 제외). 클릭인지 드래그인지는 DockWindow 가 판단.</summary>
+    public event EventHandler<MouseButtonEventArgs>? Pressed;
+
+    /// <summary>현재 비켜서기 목표 이동량 (독 방향, DIP).</summary>
+    public double ShiftTarget { get; private set; }
 
     public DockItemView(DockItemViewModel item, DockLayout layout)
     {
@@ -40,6 +49,7 @@ internal sealed class DockItemView : Grid
         _layout = layout;
         Focusable = false;
         Background = Brushes.Transparent; // 슬롯 전체를 클릭 영역으로
+        RenderTransform = _shift;
 
         if (item.IsSeparator)
         {
@@ -179,21 +189,32 @@ internal sealed class DockItemView : Grid
         if (!Item.IsSeparator) HoverEnded?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>독 방향으로 along 만큼 비켜섬. animate 면 150ms ease-out (가벼운 RenderTransform 애니메이션).</summary>
+    public void AnimateShift(double along, bool animate)
+    {
+        var prop = _layout.IsVertical ? TranslateTransform.YProperty : TranslateTransform.XProperty;
+        if (animate && Math.Abs(along - ShiftTarget) < 0.01 && _shift.HasAnimatedProperties) return;
+        ShiftTarget = along;
+        if (!animate)
+        {
+            _shift.BeginAnimation(prop, null);
+            _shift.SetValue(prop, along);
+            return;
+        }
+        var anim = new DoubleAnimation(along, TimeSpan.FromMilliseconds(ShiftMs))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+        };
+        _shift.BeginAnimation(prop, anim);
+    }
+
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonDown(e);
-        // 구분선은 처리하지 않음 → 패널로 올라가 독 드래그 이동 시작점이 됨
-        if (Item.IsSeparator) return;
-        _pressed = true;
+        // "실행 중 앱" 앞의 자동 구분선은 처리하지 않음 → 패널로 올라가 독 드래그 이동 시작점이 됨.
+        // 핀 구분선(설정에 있는 구분선)은 아이콘처럼 끌어서 순서를 바꾼다.
+        if (Item.IsAutoSeparator) return;
         e.Handled = true;
-    }
-
-    protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
-    {
-        base.OnMouseLeftButtonUp(e);
-        if (Item.IsSeparator) return;
-        if (_pressed && IsMouseOver) Clicked?.Invoke(this, EventArgs.Empty);
-        _pressed = false;
-        e.Handled = true;
+        Pressed?.Invoke(this, e);
     }
 }
