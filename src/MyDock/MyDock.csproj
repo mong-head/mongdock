@@ -12,4 +12,10 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- 내장 글꼴 Pretendard (SIL OFL 1.1) — 라이선스 파일을 함께 배포 -->
+    <Resource Include="Fonts\*.otf" />
+    <None Include="Fonts\OFL.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

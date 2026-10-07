@@ -1,7 +1,8 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <FontFamily x:Key="BarFont">Segoe UI Variable Text, Noto Sans KR, Malgun Gothic</FontFamily>
+    <!-- UI 글꼴: 기본값(설계용). 실행 시 UiFonts.Apply 가 설정(Settings.FontFamily, 기본 내장 Pretendard)으로 교체 -->
+    <FontFamily x:Key="UiFont">Segoe UI Variable Text, Malgun Gothic</FontFamily>
     <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
 
     <!-- 상단바 버튼: 포커스 없음, 호버 시 글자색을 옅게 깐 둥근 배경 (밝은/어두운 바 모두 자연스럽게).

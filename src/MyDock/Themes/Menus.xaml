@@ -12,7 +12,6 @@
     <SolidColorBrush x:Key="Menu.Accent" Color="#FF0A64D6" />
     <SolidColorBrush x:Key="Menu.AccentText" Color="#FFFFFFFF" />
     <sys:Double x:Key="Menu.ShadowOpacity">0.22</sys:Double>
-    <FontFamily x:Key="Menu.Font">Segoe UI Variable Text, Noto Sans KR, Malgun Gothic</FontFamily>
 
     <!-- 카드 (그림자는 별도 Border 에만 걸어 글자가 흐려지지 않게) -->
     <ControlTemplate x:Key="MenuCardTemplate" TargetType="{x:Type ContentControl}">
@@ -33,7 +32,7 @@
     <Style TargetType="{x:Type ContextMenu}">
         <Setter Property="HasDropShadow" Value="False" />
         <Setter Property="Focusable" Value="False" />
-        <Setter Property="FontFamily" Value="{StaticResource Menu.Font}" />
+        <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
         <Setter Property="FontSize" Value="14" />
         <Setter Property="Foreground" Value="{DynamicResource Menu.Text}" />
         <Setter Property="MinWidth" Value="0" />
@@ -66,7 +65,7 @@
     <Style TargetType="{x:Type MenuItem}">
         <Setter Property="Focusable" Value="False" />
         <Setter Property="Foreground" Value="{DynamicResource Menu.Text}" />
-        <Setter Property="FontFamily" Value="{StaticResource Menu.Font}" />
+        <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
         <Setter Property="FontSize" Value="14" />
         <Setter Property="Template">
             <Setter.Value>
@@ -96,7 +95,7 @@
                                AllowsTransparency="True" Focusable="False" PopupAnimation="None"
                                IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}">
                             <ContentControl Template="{StaticResource MenuCardTemplate}"
-                                            FontFamily="{StaticResource Menu.Font}" FontSize="14"
+                                            FontFamily="{DynamicResource UiFont}" FontSize="14"
                                             TextOptions.TextFormattingMode="Display" Grid.IsSharedSizeScope="True">
                                 <StackPanel IsItemsHost="True" MinWidth="150" />
                             </ContentControl>

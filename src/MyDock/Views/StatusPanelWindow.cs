@@ -52,7 +52,7 @@ internal sealed class StatusPanelWindow : Window
         SizeToContent = SizeToContent.WidthAndHeight;
         UseLayoutRounding = true;
         Title = "MyDock Status";
-        FontFamily = new FontFamily("Segoe UI Variable Text, Noto Sans KR, Malgun Gothic");
+        SetResourceReference(FontFamilyProperty, UiFonts.Key);
         FontSize = 15;
         Foreground = _p.Text;
         TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
@@ -157,7 +157,7 @@ internal sealed class StatusPanelWindow : Window
     {
         Text = text,
         FontSize = 15,
-        FontWeight = FontWeights.Bold,
+        FontWeight = FontWeights.SemiBold,
         VerticalAlignment = VerticalAlignment.Center,
     };
 
@@ -654,7 +654,7 @@ internal sealed class StatusPanelWindow : Window
             RefreshAll();
         };
         var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        texts.Children.Add(new TextBlock { Text = label, FontSize = 13.5, FontWeight = FontWeights.Bold });
+        texts.Children.Add(new TextBlock { Text = label, FontSize = 13.5, FontWeight = FontWeights.SemiBold });
         var state = Sub("", 11.5);
         texts.Children.Add(state);
         var row = new DockPanel { LastChildFill = true };
@@ -760,7 +760,7 @@ internal sealed class StatusPanelWindow : Window
         DockPanel.SetDock(playBtn, Dock.Right);
         mediaRow.Children.Add(nextBtn);
         mediaRow.Children.Add(playBtn);
-        var mediaTitle = new TextBlock { FontSize = 13.5, FontWeight = FontWeights.Bold, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+        var mediaTitle = new TextBlock { FontSize = 13.5, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         mediaRow.Children.Add(mediaTitle);
         var mediaTile = Tile(mediaRow, new Thickness(12, 9, 8, 9));
         mediaTile.Margin = new Thickness(0, 10, 0, 0);

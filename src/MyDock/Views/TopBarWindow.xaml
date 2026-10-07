@@ -13,7 +13,7 @@
         Focusable="False"
         UseLayoutRounding="True"
         TextOptions.TextFormattingMode="Display"
-        FontFamily="{StaticResource BarFont}"
+        FontFamily="{DynamicResource UiFont}"
         Width="800" Height="32">
     <!-- 기본은 흰 바 + 아주 옅은 하단 구분선(코드에서 색 결정). 투명 모드에서도 Bar 배경은 알파 1 → 빈 곳 클릭/오른쪽 클릭을 바가 받음 -->
     <Border x:Name="Bar" BorderThickness="0,0,0,1">
@@ -83,7 +83,7 @@
 
                 <!-- 시계: 클릭 = 알림 센터 + 달력 (MyDockFinder 와 동일) -->
                 <Button x:Name="ClockButton" Style="{StaticResource BarButton}" Padding="8,0" Margin="4,4,0,4" Click="OnClockClick">
-                    <TextBlock x:Name="Clock" FontSize="17" TextAlignment="Right" />
+                    <TextBlock x:Name="Clock" FontSize="16.5" TextAlignment="Right" />
                 </Button>
             </StackPanel>
 

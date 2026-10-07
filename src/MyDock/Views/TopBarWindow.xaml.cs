@@ -48,6 +48,7 @@ public partial class TopBarWindow : Window
     public TopBarWindow(AppServices services)
     {
         _services = services;
+        UiFonts.Apply(services.Settings.Current); // 내장 Pretendard 등 UI 글꼴 리소스
         InitializeComponent();
         Bar.Background = _barBrush;
 
@@ -168,6 +169,7 @@ public partial class TopBarWindow : Window
     private void ApplySettings()
     {
         if (!_initialized) return;
+        UiFonts.Apply(_services.Settings.Current);
         var s = _services.Settings.Current.TopBar;
         double height = Math.Clamp(double.IsNaN(s.Height) ? 32 : s.Height, 16, 80);
 

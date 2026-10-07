@@ -36,7 +36,6 @@ internal sealed class DockLabelWindow : Window
 
         _text = new TextBlock
         {
-            FontFamily = new FontFamily("Segoe UI Variable Text, Noto Sans KR, Malgun Gothic"),
             FontSize = 12.5,
             Foreground = new SolidColorBrush(Color.FromRgb(0xF2, 0xF2, 0xF2)),
             TextTrimming = TextTrimming.CharacterEllipsis,
@@ -56,6 +55,7 @@ internal sealed class DockLabelWindow : Window
             Child = _text,
         };
         Content = _bubble;
+        _text.SetResourceReference(TextBlock.FontFamilyProperty, ViewModels.UiFonts.Key);
 
         SourceInitialized += (_, _) => services.DesktopWindows.MakeOverlay(this);
     }

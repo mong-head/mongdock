@@ -134,6 +134,8 @@ public sealed class Settings
     public DockSettings Dock { get; set; } = new();
     public TopBarSettings TopBar { get; set; } = new();
     public List<PinItem> Pins { get; set; } = new();
+    /// <summary>상단바·메뉴·패널·독 말풍선 글꼴. "Pretendard" = 앱에 내장된 Pretendard(맥 느낌). 설치된 글꼴 이름을 쓰면 그 글꼴. 쉼표로 대체 글꼴 나열 가능.</summary>
+    public string FontFamily { get; set; } = "Pretendard";
     public bool StartWithWindows { get; set; }
     /// <summary>MyDockFinder ico.ini 를 한 번 가져왔는지. true 면 다시 가져오지 않음.</summary>
     public bool ImportedFromMyDockFinder { get; set; }
