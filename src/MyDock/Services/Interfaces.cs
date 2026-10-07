@@ -408,6 +408,53 @@ public interface ITrayIconService
     void Hover(TrayIconInfo icon, Rect iconScreenRect);
 }
 
+/// <summary>
+/// 시계 달력에 펼쳐 보일 구독 일정 한 회차 (로컬 시각). 종일이면 Start = 그 날 0시, End = 끝 다음 날 0시(배타).
+/// Color = 그 캘린더 색 "#RRGGBB".
+/// </summary>
+public sealed record CalendarOccurrence(string FeedId, string Title, string? Location, DateTime Start, DateTime End, bool AllDay, string Color)
+{
+    /// <summary>그 날(0시~다음 날 0시)에 걸치는지. 길이 0 인 일정은 시작한 날만.</summary>
+    public bool OccursOn(DateTime day)
+    {
+        day = day.Date;
+        return End > Start ? Start < day.AddDays(1) && End > day : Start >= day && Start < day.AddDays(1);
+    }
+}
+
+/// <summary>구독 캘린더 상태. LastSync = 마지막으로 성공(304 포함)한 시각, Error = 사용자에게 보일 마지막 오류(성공하면 null).</summary>
+public sealed record CalendarFeedStatus(DateTime? LastSync, string? Error, bool Busy, int EventCount);
+
+/// <summary>구독 추가 결과. Ok 면 Feed 가 추가됨 (가져오기가 네트워크 오류로 실패했어도 추가하고 Message 로 안내).</summary>
+public sealed record CalendarAddResult(bool Ok, string Message, CalendarFeed? Feed);
+
+/// <summary>
+/// iCal(ICS) 구독 캘린더 (Services/CalendarFeedService). 구독 목록은 calendars.json(주소 DPAPI 암호화),
+/// 받은 ICS 는 cache\calendars\ 에 (역시 암호화) 캐시해 재시작 직후에도 바로 보인다.
+/// 이벤트는 UI 스레드. 주소(URL)는 로그·예외 메시지에 남기지 않는다.
+/// </summary>
+public interface ICalendarFeedService
+{
+    /// <summary>구독 목록 (복사본 — 바꾸려면 <see cref="Update"/>).</summary>
+    IReadOnlyList<CalendarFeed> Feeds { get; }
+    CalendarFeedStatus GetStatus(string feedId);
+    /// <summary>구독 목록·상태·일정이 바뀜 (UI 스레드).</summary>
+    event EventHandler? Changed;
+    /// <summary>켜진 캘린더의 [from, to) 로컬 범위 회차 (종일 먼저, 그다음 시작 시각 순). 반복은 이 범위만 펼침.</summary>
+    IReadOnlyList<CalendarOccurrence> GetOccurrences(DateTime from, DateTime to);
+    /// <summary>http(s)/webcal 주소면 가져와서 추가 (이름 = X-WR-CALNAME, 없으면 호스트별 기본 이름). 주소가 아니거나 ICS 가 아니면 Ok=false.</summary>
+    Task<CalendarAddResult> AddAsync(string url);
+    void Remove(string feedId);
+    /// <summary>이름·색·켜기 변경 후 저장 + Changed. 켜면 바로 새로고침.</summary>
+    void Update(string feedId, Action<CalendarFeed> change);
+    void Refresh(string feedId);
+    void RefreshAll();
+    /// <summary>주기 새로고침·절전 복귀·네트워크 복귀 감시 시작 (일시 정지 해제 시).</summary>
+    void Start();
+    /// <summary>주기 새로고침 정지 (일시 정지). 캐시된 일정은 계속 보임.</summary>
+    void Stop();
+}
+
 /// <summary>App.xaml.cs 에서 만들어 창들에 넘겨주는 서비스 묶음.</summary>
 public sealed record AppServices(
     ISettingsService Settings,
@@ -423,4 +470,5 @@ public sealed record AppServices(
     IAppMenuService AppMenus,
     IStartupService Startup,
     INotificationService Notifications,
-    ITrayIconService TrayIcons);
+    ITrayIconService TrayIcons,
+    ICalendarFeedService Calendars);
