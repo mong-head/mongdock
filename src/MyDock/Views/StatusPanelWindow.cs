@@ -97,6 +97,7 @@ internal sealed class StatusPanelWindow : Window
         };
         Closed += (_, _) =>
         {
+            _closed = true;
             _watch.Stop();
             _mediaTimer.Stop();
             _services.Status.Changed -= OnChanged;
@@ -304,7 +305,7 @@ internal sealed class StatusPanelWindow : Window
     };
 
     /// <summary>장치/네트워크 목록의 한 줄 (원형 아이콘 + 이름 [+ 보조 글]), 클릭 가능.</summary>
-    private Button DeviceRow(string glyph, bool on, string name, string? sub, Action? onClick)
+    private Button DeviceRow(string glyph, bool on, string name, string? sub, Action? onClick, Brush? subBrush = null)
     {
         var dock = new DockPanel { LastChildFill = true };
         var circle = Circle(glyph, on);
@@ -312,7 +313,16 @@ internal sealed class StatusPanelWindow : Window
         dock.Children.Add(circle);
         var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         texts.Children.Add(new TextBlock { Text = name, FontSize = 15, TextTrimming = TextTrimming.CharacterEllipsis });
-        if (!string.IsNullOrEmpty(sub)) texts.Children.Add(Sub(sub, 12.5));
+        if (!string.IsNullOrEmpty(sub))
+        {
+            var s = Sub(sub, 12.5);
+            if (subBrush != null)
+            {
+                s.Foreground = subBrush;
+                s.TextWrapping = TextWrapping.Wrap;
+            }
+            texts.Children.Add(s);
+        }
         dock.Children.Add(texts);
 
         var b = new Button
@@ -627,17 +637,99 @@ internal sealed class StatusPanelWindow : Window
             sw.IsChecked = st.BluetoothOn == true;
             sw.IsEnabled = st.BluetoothOn != null;
             var list = st.BluetoothOn == true ? st.BluetoothDevices ?? Array.Empty<BluetoothDeviceInfo>() : Array.Empty<BluetoothDeviceInfo>();
-            string sig = (st.BluetoothOn?.ToString() ?? "null") + string.Join("|", list.Select(d => $"{d.Id}:{d.Connected}:{d.Name}"));
+            // 기다리던 상태가 DeviceWatcher 로 반영되면 "연결 중…" 해제
+            foreach (var d in list)
+                if (_btPending.TryGetValue(d.Id, out var p) && p.Target == d.Connected) _btPending.Remove(d.Id);
+            string sig = (st.BluetoothOn?.ToString() ?? "null")
+                + string.Join("|", list.Select(d => $"{d.Id}:{d.Connected}:{d.Name}:{d.Kind}:{d.CanConnect}"))
+                + "#" + string.Join("|", _btPending.Select(kv => $"{kv.Key}:{kv.Value.Target}"))
+                + "#" + string.Join("|", _btErrors.Select(kv => $"{kv.Key}:{kv.Value}"));
             if (sig == signature) return;
             signature = sig;
             devices.Children.Clear();
             foreach (var d in list.OrderByDescending(d => d.Connected))
-                devices.Children.Add(DeviceRow("", d.Connected, d.Name, d.Connected ? "연결됨" : null, null));
+            {
+                var dev = d;
+                string? sub;
+                Brush? subBrush = null;
+                if (_btPending.TryGetValue(d.Id, out var pending)) sub = pending.Target ? "연결 중…" : "연결 해제 중…";
+                else if (_btErrors.TryGetValue(d.Id, out var err)) { sub = err; subBrush = ErrorBrush; }
+                else if (d.Connected) sub = "연결됨";
+                else sub = d.CanConnect ? null : "설정에서 연결";
+                Action onClick = d.CanConnect
+                    ? () => ToggleBluetoothDevice(dev)
+                    : () => { st.OpenBluetoothSettings(); Close(); };
+                devices.Children.Add(DeviceRow(BluetoothGlyph(d.Kind), d.Connected, d.Name, sub, onClick, subBrush));
+            }
             if (list.Count == 0)
                 devices.Children.Add(Sub(st.BluetoothOn switch { true => "페어링된 기기 없음", false => "블루투스가 꺼져 있음", null => "어댑터를 찾을 수 없음" }));
         });
         return root;
     }
+
+    /// <summary>연결 요청 후 DeviceWatcher 반영을 기다리는 기기 (Id → 목표 상태, 요청 번호).</summary>
+    private readonly Dictionary<string, (bool Target, int Token)> _btPending = new();
+    /// <summary>마지막 시도가 실패한 기기의 짧은 오류 문구.</summary>
+    private readonly Dictionary<string, string> _btErrors = new();
+    private int _btToken;
+    private bool _closed;
+    private static readonly TimeSpan BtConnectWait = TimeSpan.FromSeconds(10);
+    private static readonly Brush ErrorBrush = Converters.BrushParser.Frozen(Converters.BrushParser.Hex("#FFFF3B30"));
+
+    /// <summary>
+    /// 오디오 기기 행 클릭: 연결 안 됨 → 연결, 연결됨 → 해제. 요청을 못 보내면 블루투스 설정을 연다.
+    /// 요청 후 10초 안에 DeviceWatcher 로 목표 상태가 안 오면 원래 상태로 두고 오류 문구.
+    /// </summary>
+    private async void ToggleBluetoothDevice(BluetoothDeviceInfo d)
+    {
+        if (_btPending.ContainsKey(d.Id)) return;
+        var st = _services.Status;
+        bool target = !d.Connected;
+        int token = ++_btToken;
+        _btErrors.Remove(d.Id);
+        _btPending[d.Id] = (target, token);
+        RefreshAll();
+
+        BluetoothConnectResult result;
+        try { result = await st.SetBluetoothDeviceConnectedAsync(d.Id, target); }
+        catch (Exception ex)
+        {
+            Log.Error("블루투스 기기 연결 요청 실패", ex);
+            result = BluetoothConnectResult.Failed;
+        }
+        if (_closed) return;
+        if (result != BluetoothConnectResult.Requested)
+        {
+            _btPending.Remove(d.Id);
+            Log.Info($"블루투스 '{d.Name}' 직접 {(target ? "연결" : "해제")} 불가({result}) → 설정 열기");
+            st.OpenBluetoothSettings();
+            Close();
+            return;
+        }
+
+        await Task.Delay(BtConnectWait);
+        if (_closed) return;
+        if (_btPending.TryGetValue(d.Id, out var p) && p.Token == token)
+        {
+            _btPending.Remove(d.Id);
+            _btErrors[d.Id] = target
+                ? "연결하지 못했습니다 — 기기가 켜져 있고 가까이 있는지 확인"
+                : "연결을 해제하지 못했습니다";
+            RefreshAll();
+        }
+    }
+
+    private static string BluetoothGlyph(BluetoothDeviceKind kind) => kind switch
+    {
+        BluetoothDeviceKind.Headphones => "", // Headphone
+        BluetoothDeviceKind.Speaker => "",    // Speakers
+        BluetoothDeviceKind.Mouse => "",      // Mouse
+        BluetoothDeviceKind.Keyboard => "",   // KeyboardClassic
+        BluetoothDeviceKind.Gamepad => "",    // Game
+        BluetoothDeviceKind.Phone => "",      // CellPhone
+        BluetoothDeviceKind.Computer => "",   // DeviceLaptopNoPic
+        _ => "",                              // Bluetooth
+    };
 
     // ───────────────────────── 제어 센터 ─────────────────────────
 

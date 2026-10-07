@@ -165,7 +165,16 @@ public enum WifiState { Unknown, Disconnected, Connected, Ethernet }
 /// <summary>상단바 상태 아이콘(와이파이·블루투스·볼륨·네트워크 속도). 값이 바뀌면 Changed (UI 스레드).</summary>
 public sealed record AudioDevice(string Id, string Name, bool IsDefault, AudioDeviceKind Kind);
 public enum AudioDeviceKind { Speakers, Headphones, Display, Digital, Other }
-public sealed record BluetoothDeviceInfo(string Id, string Name, bool Connected);
+/// <summary>
+/// 페어링된 블루투스 기기. CanConnect = 블루투스 오디오 KS 필터가 있어 패널에서 바로 연결/해제 가능
+/// (아니면 UI 는 블루투스 설정을 연다).
+/// </summary>
+public sealed record BluetoothDeviceInfo(string Id, string Name, bool Connected,
+    BluetoothDeviceKind Kind = BluetoothDeviceKind.Other, bool CanConnect = false);
+public enum BluetoothDeviceKind { Other, Headphones, Speaker, Mouse, Keyboard, Gamepad, Phone, Computer }
+/// <summary>Requested = 드라이버에 연결/해제 요청을 보냄(실제 결과는 BluetoothDevices 의 Connected 로 확인).
+/// NotSupported = 오디오 기기가 아니거나 필터를 못 찾음. Failed = 요청 실패/시간 초과.</summary>
+public enum BluetoothConnectResult { Requested, NotSupported, Failed }
 
 /// <summary>현재 재생 중인 미디어 (GlobalSystemMediaTransportControlsSessionManager). 변경 시 Changed (UI 스레드).</summary>
 public interface IMediaService
@@ -221,6 +230,11 @@ public interface IStatusService
     bool SetDefaultOutput(string deviceId);
     /// <summary>페어링된 블루투스 장치 (연결 여부 포함).</summary>
     IReadOnlyList<BluetoothDeviceInfo> BluetoothDevices { get; }
+    /// <summary>
+    /// 블루투스 오디오 기기 연결(connect=true)/해제. 백그라운드 스레드에서 KS 속성을 보내고 결과만 돌려줌 (UI 스레드를 막지 않음, 예외 없음).
+    /// 실제 연결 반영은 DeviceWatcher → Changed 로 옴.
+    /// </summary>
+    Task<BluetoothConnectResult> SetBluetoothDeviceConnectedAsync(string id, bool connect);
     /// <summary>표시 안 하는 항목의 폴링을 끔 (상단바 설정 반영).</summary>
     void SetPolling(bool networkSpeed, bool wifiAndBluetooth);
     void Start();
