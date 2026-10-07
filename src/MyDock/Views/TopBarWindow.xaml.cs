@@ -221,6 +221,7 @@ public partial class TopBarWindow : Window
         ApplyColorMode();
 
         _lastClockText = null;
+        FixClockWidth();
         UpdateClock();
         UpdateIme();
         UpdateAppName(force: true);
@@ -454,6 +455,31 @@ public partial class TopBarWindow : Window
         Remeasure(RightSection); // 글자 길이가 바뀌면 오른쪽 구역 폭도 다시 계산 (시계가 잘리는 현상 방지)
     }
 
+    /// <summary>
+    /// 시계 영역 고정 폭: 현재 포맷으로 만들 수 있는 가장 넓은 문자열(요일 7개 × 오전/오후 × 12:58/23:58 등)을 재서 MinWidth.
+    /// 시각이 바뀌어도 오른쪽 구역(데스크톱 ‹ › 포함)이 좌우로 밀리지 않게 한다.
+    /// </summary>
+    private void FixClockWidth()
+    {
+        string fmt = _services.Settings.Current.TopBar.ClockFormat;
+        if (string.IsNullOrWhiteSpace(fmt)) fmt = DefaultClockFormat;
+        var typeface = new Typeface(Clock.FontFamily, Clock.FontStyle, Clock.FontWeight, Clock.FontStretch);
+        double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        double max = 0;
+        var baseDay = new DateTime(2026, 9, 27); // 일요일, 9월(두 자리 월 포함하려면 아래 12월도)
+        foreach (var month in new[] { 9, 12 })
+            for (int d = 0; d < 7; d++)
+                foreach (var (h, m) in new[] { (0, 0), (10, 58), (12, 58), (22, 58), (23, 59) })
+                {
+                    string text;
+                    try { text = new DateTime(2026, month, 20 + d, h, m, 58).ToString(fmt, Korean); }
+                    catch (FormatException) { text = baseDay.ToString(DefaultClockFormat, Korean); }
+                    var ft = new FormattedText(text, Korean, FlowDirection.LeftToRight, typeface, Clock.FontSize, Brushes.Black, dpi);
+                    max = Math.Max(max, ft.WidthIncludingTrailingWhitespace);
+                }
+        Clock.MinWidth = Math.Ceiling(max);
+    }
+
     private int _imeState; // 0 = 아직 안 그림, 1 = 한, 2 = A, 3 = 모름
 
     private void UpdateIme()
@@ -663,7 +689,6 @@ public partial class TopBarWindow : Window
 
     private void OnPreviousDesktop(object sender, RoutedEventArgs e) => SwitchDesktop(() => _services.VirtualDesktops.Previous());
     private void OnNextDesktop(object sender, RoutedEventArgs e) => SwitchDesktop(() => _services.VirtualDesktops.Next());
-    private void OnNewDesktop(object sender, RoutedEventArgs e) => SwitchDesktop(() => _services.VirtualDesktops.New());
 
     private void SwitchDesktop(Action action)
     {
@@ -713,7 +738,7 @@ public partial class TopBarWindow : Window
 
         bool known = index > 0 && count > 0;
         DesktopIndex.Text = known ? $"{index} / {count}" : "";
-        DesktopIndex.Visibility = known ? Visibility.Visible : Visibility.Collapsed;
+        DesktopIndexButton.Visibility = known ? Visibility.Visible : Visibility.Collapsed;
         PrevDesktopButton.Opacity = known && index <= 1 ? 0.35 : 1;
         NextDesktopButton.Opacity = known && index >= count ? 0.35 : 1;
     }
