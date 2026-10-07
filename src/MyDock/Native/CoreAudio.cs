@@ -7,7 +7,17 @@ namespace MyDock.Native;
 internal static class CoreAudio
 {
     public const int eRender = 0;
+    public const int eConsole = 0;
     public const int eMultimedia = 1;
+    public const int eCommunications = 2;
+    public const int DEVICE_STATE_ACTIVE = 0x1;
+    public const int STGM_READ = 0;
+
+    public static readonly PROPERTYKEY PKEY_Device_FriendlyName = new(new Guid("a45c254e-df1c-4efd-8020-67d146a850e0"), 14);
+    public static readonly PROPERTYKEY PKEY_AudioEndpoint_FormFactor = new(new Guid("1da5d803-d492-4edd-8c23-e0c0ffee7f0e"), 0);
+
+    // EndpointFormFactor
+    public const int FF_Speakers = 1, FF_Headphones = 3, FF_Headset = 5, FF_UnknownDigitalPassthrough = 7, FF_SPDIF = 8, FF_DigitalAudioDisplayDevice = 9;
     public const int CLSCTX_ALL = 0x17;
 }
 
@@ -19,7 +29,7 @@ internal class MMDeviceEnumeratorClass
 [ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IMMDeviceEnumerator
 {
-    [PreserveSig] int EnumAudioEndpoints(int dataFlow, int stateMask, out IntPtr devices);
+    [PreserveSig] int EnumAudioEndpoints(int dataFlow, int stateMask, [MarshalAs(UnmanagedType.Interface)] out IMMDeviceCollection? devices);
     [PreserveSig] int GetDefaultAudioEndpoint(int dataFlow, int role, [MarshalAs(UnmanagedType.Interface)] out IMMDevice? endpoint);
     [PreserveSig] int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string id, [MarshalAs(UnmanagedType.Interface)] out IMMDevice? device);
     [PreserveSig] int RegisterEndpointNotificationCallback([MarshalAs(UnmanagedType.Interface)] IMMNotificationClient client);
@@ -30,6 +40,40 @@ internal interface IMMDeviceEnumerator
 internal interface IMMDevice
 {
     [PreserveSig] int Activate(ref Guid iid, int clsCtx, IntPtr activationParams, [MarshalAs(UnmanagedType.IUnknown)] out object? iface);
+    [PreserveSig] int OpenPropertyStore(int stgmAccess, [MarshalAs(UnmanagedType.Interface)] out IPropertyStore? properties);
+    [PreserveSig] int GetId([MarshalAs(UnmanagedType.LPWStr)] out string? id);
+    [PreserveSig] int GetState(out int state);
+}
+
+[ComImport, Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IMMDeviceCollection
+{
+    [PreserveSig] int GetCount(out uint count);
+    [PreserveSig] int Item(uint index, [MarshalAs(UnmanagedType.Interface)] out IMMDevice? device);
+}
+
+/// <summary>
+/// 비공개 IPolicyConfig (Windows 10/11, IID f8679f50-...). 기본 재생 장치 변경용. SetDefaultEndpoint 까지 vtable 순서만 맞춤.
+/// </summary>
+[ComImport, Guid("f8679f50-850a-41cf-9c72-430f290290c8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IPolicyConfig
+{
+    [PreserveSig] int GetMixFormat(IntPtr deviceName, IntPtr format);
+    [PreserveSig] int GetDeviceFormat(IntPtr deviceName, int defaultFormat, IntPtr format);
+    [PreserveSig] int ResetDeviceFormat(IntPtr deviceName);
+    [PreserveSig] int SetDeviceFormat(IntPtr deviceName, IntPtr endpointFormat, IntPtr mixFormat);
+    [PreserveSig] int GetProcessingPeriod(IntPtr deviceName, int defaultPeriod, IntPtr defPeriod, IntPtr minPeriod);
+    [PreserveSig] int SetProcessingPeriod(IntPtr deviceName, IntPtr period);
+    [PreserveSig] int GetShareMode(IntPtr deviceName, IntPtr mode);
+    [PreserveSig] int SetShareMode(IntPtr deviceName, IntPtr mode);
+    [PreserveSig] int GetPropertyValue(IntPtr deviceName, int fxStore, IntPtr key, IntPtr value);
+    [PreserveSig] int SetPropertyValue(IntPtr deviceName, int fxStore, IntPtr key, IntPtr value);
+    [PreserveSig] int SetDefaultEndpoint([MarshalAs(UnmanagedType.LPWStr)] string deviceId, int role);
+}
+
+[ComImport, Guid("870af99c-171d-4f9e-af0d-e63df40c2bc9")]
+internal class PolicyConfigClient
+{
 }
 
 [ComImport, Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]

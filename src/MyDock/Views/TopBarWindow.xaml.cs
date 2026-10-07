@@ -165,9 +165,9 @@ public partial class TopBarWindow : Window
     {
         if (!_initialized) return;
         var s = _services.Settings.Current.TopBar;
-        double height = Math.Clamp(double.IsNaN(s.Height) ? 28 : s.Height, 16, 80);
+        double height = Math.Clamp(double.IsNaN(s.Height) ? 32 : s.Height, 16, 80);
 
-        FontSize = Math.Clamp(double.IsNaN(s.FontSize) ? 13 : s.FontSize, 8, 32);
+        FontSize = Math.Clamp(double.IsNaN(s.FontSize) ? 14 : s.FontSize, 8, 32);
         LogoButton.Visibility = Vis(s.ShowLogo);
         AppName.Visibility = Vis(s.ShowActiveAppName);
         DesktopButtons.Visibility = Vis(s.ShowDesktopButtons);
@@ -254,11 +254,14 @@ public partial class TopBarWindow : Window
     {
         var s = _services.Settings.Current.TopBar;
         _colorTimer.Stop();
+        Bar.BorderBrush = Brushes.Transparent; // 구분선은 Fixed 모드에서만
+        UiTheme.Apply(_services.Settings.Current);
         SetWallpaperWatch(s.Enabled && s.ColorMode == TopBarColorMode.Transparent);
 
         if (s.ColorMode == TopBarColorMode.Blur)
         {
             var tint = BrushParser.ParseColor(s.Background, BrushParser.Hex("#E0F6F6F6"));
+            if (tint.A > 0xE0) tint.A = 0xC0; // 불투명 흰색 기본값이면 블러가 안 보이므로 살짝 투명하게
             try
             {
                 _services.DesktopWindows.EnableBlur(this, tint);
@@ -280,9 +283,12 @@ public partial class TopBarWindow : Window
         switch (s.ColorMode)
         {
             case TopBarColorMode.Fixed:
-                var bg = BrushParser.ParseColor(s.Background, BrushParser.Hex("#E0F6F6F6"));
+                var bg = BrushParser.ParseColor(s.Background, BrushParser.Hex("#FFFFFFFF"));
                 SetBarColor(bg, animate: false);
                 SetTextColors(AutoText(bg), AutoText(bg));
+                // 아주 옅은 하단 구분선 (흰 바 기준 #14000000)
+                Bar.BorderBrush = BrushParser.Frozen(BrushParser.Luminance(bg) > 0.45
+                    ? BrushParser.Hex("#14000000") : BrushParser.Hex("#14FFFFFF"));
                 break;
             case TopBarColorMode.Auto:
                 UpdateAutoColor();
@@ -577,6 +583,8 @@ public partial class TopBarWindow : Window
         return mb.ToString("0", CultureInfo.InvariantCulture) + "MB/s";
     }
 
+    private FrameworkElement? _panelAnchor;
+
     private void TogglePanel(StatusPanelKind kind, FrameworkElement anchor)
     {
         bool same = _panel?.Kind == kind;
@@ -586,10 +594,24 @@ public partial class TopBarWindow : Window
 
         var p = anchor.TranslatePoint(new Point(0, 0), this);
         var rect = new Rect(Left + p.X, Top + p.Y, anchor.ActualWidth, anchor.ActualHeight);
-        var panel = new StatusPanelWindow(_services, kind, SystemTheme.AppsUseLightTheme());
-        panel.Closed += (_, _) => { if (_panel == panel) _panel = null; };
+        var panel = new StatusPanelWindow(_services, kind, UiTheme.Palette(_services.Settings.Current));
+        panel.Closed += (_, _) =>
+        {
+            if (_panel != panel) return;
+            _panel = null;
+            SetActiveAnchor(null);
+        };
         _panel = panel;
+        SetActiveAnchor(anchor);
         panel.ShowBelow(rect, Top + ActualHeight);
+    }
+
+    /// <summary>패널이 열린 아이콘에 회색 알약 하이라이트 (BarButton 의 Tag="Active" 트리거).</summary>
+    private void SetActiveAnchor(FrameworkElement? anchor)
+    {
+        if (_panelAnchor != null) _panelAnchor.Tag = null;
+        _panelAnchor = anchor;
+        if (anchor != null) anchor.Tag = "Active";
     }
 
     private void OnBluetoothClick(object sender, RoutedEventArgs e) => TogglePanel(StatusPanelKind.Bluetooth, BluetoothButton);
@@ -630,32 +652,57 @@ public partial class TopBarWindow : Window
     }
 
     private void OnSearch(object sender, RoutedEventArgs e) => Safe(() => _services.Shell.OpenSearch());
-    private void OnQuickSettings(object sender, RoutedEventArgs e) => Safe(() => _services.Shell.OpenQuickSettings());
+    /// <summary>제어 센터: Win+A 대신 MyDockFinder 같은 타일 패널.</summary>
+    private void OnQuickSettings(object sender, RoutedEventArgs e) => TogglePanel(StatusPanelKind.ControlCenter, QuickSettingsButton);
     private void OnNotifications(object sender, RoutedEventArgs e) => Safe(() => _services.Shell.OpenNotificationCenter());
 
-    /// <summary>로고 클릭 → 로고 아래에 MyDock 메뉴.</summary>
+    /// <summary>로고 클릭 → 맥 Apple 메뉴 같은 시스템 메뉴 (MyDock 설정은 하위 메뉴로).</summary>
     private void OnLogoClick(object sender, RoutedEventArgs e)
     {
         _panel?.Close();
+        UiTheme.Apply(_services.Settings.Current);
         var menu = new ContextMenu
         {
             PlacementTarget = LogoButton,
             Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+            HorizontalOffset = -10, // 카드 그림자 여백만큼 당겨 로고 왼쪽에 맞춤
+            VerticalOffset = 0,
         };
         OutsideClickWatcher.Attach(menu, _services, BarArea);
         _logoMenu = menu;
-        menu.Items.Add(DockMenus.Item("시작 메뉴", () => _services.Shell.OpenStartMenu()));
-        menu.Items.Add(DockMenus.Item("작업 보기", () => _services.Shell.OpenTaskView()));
+        LogoButton.Tag = "Active";
+        menu.Closed += (_, _) => LogoButton.Tag = null;
+
+        var shell = _services.Shell;
+        menu.Items.Add(DockMenus.Item("이 PC 정보", shell.OpenAbout));
         menu.Items.Add(new Separator());
-        menu.Items.Add(DockMenus.DockPosition(_services));
-        menu.Items.Add(DockMenus.DockBehavior(_services));
-        menu.Items.Add(DockMenus.DockThemeMenu(_services));
-        menu.Items.Add(DockMenus.TopBarColor(_services));
+        menu.Items.Add(DockMenus.Item("설정…", shell.OpenSettings));
+        menu.Items.Add(DockMenus.Item("Microsoft Store", shell.OpenStore));
         menu.Items.Add(new Separator());
-        menu.Items.Add(DockMenus.StartWithWindows(_services));
-        menu.Items.Add(DockMenus.OpenSettings(_services));
+        menu.Items.Add(DockMenus.Item("작업 관리자", shell.OpenTaskManager));
         menu.Items.Add(new Separator());
-        menu.Items.Add(DockMenus.Quit());
+        menu.Items.Add(DockMenus.Item("절전", shell.Sleep));
+        menu.Items.Add(DockMenus.Item("다시 시작…", () => ConfirmCardWindow.Ask(_services,
+            "지금 컴퓨터를 다시 시작할까요?", "저장하지 않은 작업은 사라질 수 있어요.", "다시 시작", shell.Restart)));
+        menu.Items.Add(DockMenus.Item("시스템 종료…", () => ConfirmCardWindow.Ask(_services,
+            "지금 시스템을 종료할까요?", "저장하지 않은 작업은 사라질 수 있어요.", "종료", shell.Shutdown)));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(DockMenus.Item("화면 잠금", shell.LockScreen));
+        menu.Items.Add(DockMenus.Item("로그아웃…", () => ConfirmCardWindow.Ask(_services,
+            "지금 로그아웃할까요?", "열려 있는 앱이 모두 닫혀요.", "로그아웃", shell.SignOut)));
+        menu.Items.Add(new Separator());
+
+        var mydock = new MenuItem { Header = "MyDock" };
+        mydock.Items.Add(DockMenus.DockPosition(_services));
+        mydock.Items.Add(DockMenus.DockBehavior(_services));
+        mydock.Items.Add(DockMenus.DockThemeMenu(_services));
+        mydock.Items.Add(DockMenus.TopBarColor(_services));
+        mydock.Items.Add(new Separator());
+        mydock.Items.Add(DockMenus.StartWithWindows(_services));
+        mydock.Items.Add(DockMenus.OpenSettings(_services));
+        mydock.Items.Add(new Separator());
+        mydock.Items.Add(DockMenus.Quit());
+        menu.Items.Add(mydock);
         menu.IsOpen = true;
     }
 

@@ -206,6 +206,7 @@ public partial class DockWindow : Window
         if (_closed) return;
         CancelDrag();
         _layout = DockLayout.From(_services.Settings.Current.Dock, SystemTheme.AppsUseLightTheme());
+        UiTheme.Apply(_services.Settings.Current); // 메뉴 색 (라이트/다크)
         _label?.Hide();
         _cursorAlong = null;
         Root.Background = null;

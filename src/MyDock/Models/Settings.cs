@@ -90,20 +90,20 @@ public sealed class DockSettings
     public string NotificationColor { get; set; } = "#FFFF453A";
     public double CornerRadius { get; set; } = 16;
     /// <summary>화면 가장자리와 독 사이 여백 (DIP).</summary>
-    public double Margin { get; set; } = 4;
+    public double Margin { get; set; } = 10;
     public bool ShowRunningApps { get; set; } = true;
 }
 
 public sealed class TopBarSettings
 {
     public bool Enabled { get; set; } = true;
-    public double Height { get; set; } = 28;
-    public TopBarColorMode ColorMode { get; set; } = TopBarColorMode.Transparent;
+    public double Height { get; set; } = 32;
+    public TopBarColorMode ColorMode { get; set; } = TopBarColorMode.Fixed;
     /// <summary>Fixed 모드의 배경색 / Blur 모드의 틴트.</summary>
-    public string Background { get; set; } = "#E0F6F6F6";
+    public string Background { get; set; } = "#FFFFFFFF";
     /// <summary>"" 이면 배경 밝기에 따라 검정/흰색 자동.</summary>
     public string Foreground { get; set; } = "";
-    public double FontSize { get; set; } = 13;
+    public double FontSize { get; set; } = 14;
     public string ClockFormat { get; set; } = "ddd tt h:mm";
     public bool ShowDesktopButtons { get; set; } = true;
     /// <summary>왼쪽 로고 버튼 (클릭 시 MyDock 메뉴: 시작 메뉴, 설정, 종료 등).</summary>

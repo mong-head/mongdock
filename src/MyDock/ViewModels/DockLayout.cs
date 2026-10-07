@@ -101,7 +101,7 @@ public sealed class DockLayout
             Spacing = Clamp(s.IconSpacing, 0, 64, 5),
             HoverScale = Clamp(s.HoverScale, 1, 3, 1.36),
             Padding = Math.Round(Math.Max(5, icon * 0.12)),
-            EdgeMargin = Clamp(s.Margin, 0, 200, 4),
+            EdgeMargin = Clamp(s.Margin, 0, 200, 10),
             // 아크릴은 region 으로 잘리지 않고 DWM 둥근 모서리(약 8px 고정)로만 둥글어짐 → 블러일 땐 8 에 맞춤
             CornerRadius = s.Blur ? BlurCornerRadius : Clamp(s.CornerRadius, 0, 128, 16),
             IndicatorSize = Math.Round(Math.Clamp(icon * 0.085, 4, 6)),

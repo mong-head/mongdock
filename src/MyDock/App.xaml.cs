@@ -47,12 +47,14 @@ public partial class App : Application
             new ShellActions(),
             new ImeService(),
             new StatusService(),
+            new MediaService(),
             new StartupService());
 
         ImportMyDockFinderPinsOnce(settings);
 
         tracker.Start();
         _services.Status.Start();
+        _services.Media.Start();
         _dock = new DockWindow(_services);
         _dock.Show();
         _topBar = new TopBarWindow(_services);
@@ -95,7 +97,8 @@ public partial class App : Application
         {
             _services.Windows.Stop();
             _services.Status.Stop();
-            object[] all = [_services.Settings, _services.Windows, _services.DesktopWindows, _services.Ime, _services.Status];
+            _services.Media.Stop();
+            object[] all = [_services.Settings, _services.Windows, _services.DesktopWindows, _services.Ime, _services.Status, _services.Media];
             foreach (var disposable in all.OfType<IDisposable>())
             {
                 try { disposable.Dispose(); }

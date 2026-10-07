@@ -14,7 +14,7 @@ namespace MyDock.Services;
 /// 오디오 COM 호출은 모두 UI 스레드에서 하고, COM 콜백 스레드에서는 값만 받아 UI 스레드로 넘긴다.
 /// 와이파이/속도는 스레드풀 타이머(1초: 속도, 5초: 와이파이 + NetworkChange 이벤트 즉시).
 /// </summary>
-public sealed class StatusService : IStatusService, IDisposable
+public sealed partial class StatusService : IStatusService, IDisposable
 {
     private readonly object _gate = new();
     private Dispatcher? _dispatcher;
@@ -90,7 +90,8 @@ public sealed class StatusService : IStatusService, IDisposable
                 _netEventsHooked = true;
             }
             _wifiTimer?.Change(TimeSpan.Zero, TimeSpan.FromSeconds(5));
-            if (_radio is null) _ = StartBluetoothAsync();
+            if (_radio is null && _wifiRadio is null) _ = StartRadiosAsync();
+            StartBluetoothWatcher();
         }
         else
         {
@@ -112,6 +113,12 @@ public sealed class StatusService : IStatusService, IDisposable
             try { _radio.StateChanged -= OnRadioStateChanged; } catch { }
             _radio = null;
         }
+        if (_wifiRadio is not null)
+        {
+            try { _wifiRadio.StateChanged -= OnWifiRadioStateChanged; } catch { }
+            _wifiRadio = null;
+        }
+        StopBluetoothWatcher();
     }
 
     public void Stop()
@@ -180,6 +187,7 @@ public sealed class StatusService : IStatusService, IDisposable
             int hr = _enumerator.RegisterEndpointNotificationCallback(_deviceCallback);
             if (hr != 0) Log.Warn($"오디오 장치 변경 알림 등록 실패 hr=0x{hr:X8}");
             ConnectDefaultDevice();
+            RefreshOutputDevices();
         }
         catch (Exception ex)
         {
@@ -311,12 +319,16 @@ public sealed class StatusService : IStatusService, IDisposable
     {
         private readonly StatusService _owner;
         public DeviceCallback(StatusService owner) => _owner = owner;
-        public int OnDeviceStateChanged(string deviceId, int newState) => 0;
-        public int OnDeviceAdded(string deviceId) => 0;
-        public int OnDeviceRemoved(string deviceId) => 0;
+        public int OnDeviceStateChanged(string deviceId, int newState) { _owner.QueueDeviceListRefresh(); return 0; }
+        public int OnDeviceAdded(string deviceId) { _owner.QueueDeviceListRefresh(); return 0; }
+        public int OnDeviceRemoved(string deviceId) { _owner.QueueDeviceListRefresh(); return 0; }
         public int OnDefaultDeviceChanged(int flow, int role, string? defaultDeviceId)
         {
-            if (flow == CoreAudio.eRender && role == CoreAudio.eMultimedia) _owner.QueueReconnect();
+            if (flow == CoreAudio.eRender && role == CoreAudio.eMultimedia)
+            {
+                _owner.QueueReconnect();
+                _owner.QueueDeviceListRefresh();
+            }
             return 0;
         }
         public int OnPropertyValueChanged(string deviceId, PROPERTYKEY key) => 0;
@@ -326,25 +338,23 @@ public sealed class StatusService : IStatusService, IDisposable
 
     private Radio? _radio;
 
-    private async Task StartBluetoothAsync()
+    /// <summary>블루투스·와이파이 라디오 조회 (UI 스레드에서 시작 → await 후에도 UI 스레드).</summary>
+    private async Task StartRadiosAsync()
     {
         try
         {
             var radios = await Radio.GetRadiosAsync();
-            var radio = radios.FirstOrDefault(r => r.Kind == RadioKind.Bluetooth);
-            if (!_started || !_pollWifiBt || _radio is not null) return; // 그 사이 꺼졌거나 이미 연결됨
-            _radio = radio;
-            if (_radio is null)
-            {
-                Update(() => { bool c = _bluetooth is not null; _bluetooth = null; return c; });
-                return;
-            }
-            _radio.StateChanged += OnRadioStateChanged;
+            if (!_started || !_pollWifiBt || _radio is not null || _wifiRadio is not null) return; // 그 사이 꺼졌거나 이미 연결됨
+            _radio = radios.FirstOrDefault(r => r.Kind == RadioKind.Bluetooth);
+            _wifiRadio = radios.FirstOrDefault(r => r.Kind == RadioKind.WiFi);
+            if (_radio is not null) _radio.StateChanged += OnRadioStateChanged;
+            if (_wifiRadio is not null) _wifiRadio.StateChanged += OnWifiRadioStateChanged;
             ReadRadio();
+            ReadWifiRadio();
         }
         catch (Exception ex)
         {
-            Log.Error("블루투스 라디오 조회 실패", ex);
+            Log.Error("라디오 조회 실패", ex);
         }
     }
 
@@ -413,6 +423,7 @@ public sealed class StatusService : IStatusService, IDisposable
                 _wifiName = name;
                 return true;
             });
+            UpdateIpInfo(state);
         }
         finally
         {

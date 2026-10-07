@@ -118,11 +118,44 @@ public interface IShellActions
     void OpenQuickSettings();    // Win+A (와이파이/볼륨/블루투스)
     void OpenNotificationCenter(); // Win+N
     void OpenTaskView();         // Win+Tab
+    // 로고 메뉴 (맥 Apple 메뉴 대응). 전원 동작은 UI 가 확인 카드를 띄운 뒤에만 호출.
+    void OpenAbout();            // ms-settings:about
+    void OpenSettings();         // ms-settings:
+    void OpenStore();            // ms-windows-store:
+    void OpenTaskManager();      // taskmgr
+    void Sleep();                // SetSuspendState
+    void Restart();              // shutdown /r /t 0
+    void Shutdown();             // shutdown /s /t 0
+    void LockScreen();           // LockWorkStation
+    void SignOut();              // ExitWindowsEx(EWX_LOGOFF)
 }
 
 public enum WifiState { Unknown, Disconnected, Connected, Ethernet }
 
 /// <summary>상단바 상태 아이콘(와이파이·블루투스·볼륨·네트워크 속도). 값이 바뀌면 Changed (UI 스레드).</summary>
+public sealed record AudioDevice(string Id, string Name, bool IsDefault, AudioDeviceKind Kind);
+public enum AudioDeviceKind { Speakers, Headphones, Display, Digital, Other }
+public sealed record BluetoothDeviceInfo(string Id, string Name, bool Connected);
+
+/// <summary>현재 재생 중인 미디어 (GlobalSystemMediaTransportControlsSessionManager). 변경 시 Changed (UI 스레드).</summary>
+public interface IMediaService
+{
+    bool HasSession { get; }
+    string? Title { get; }
+    string? Artist { get; }
+    /// <summary>앨범 아트/썸네일. 없으면 null. Frozen.</summary>
+    ImageSource? Thumbnail { get; }
+    bool IsPlaying { get; }
+    TimeSpan Position { get; }
+    TimeSpan Duration { get; }
+    event EventHandler? Changed;
+    Task PlayPauseAsync();
+    Task NextAsync();
+    Task PreviousAsync();
+    void Start();
+    void Stop();
+}
+
 public interface IStatusService
 {
     WifiState Wifi { get; }
@@ -145,6 +178,19 @@ public interface IStatusService
     void OpenWifiSettings();      // ms-settings:network-wifi
     void OpenBluetoothSettings(); // ms-settings:bluetooth
     void OpenSoundSettings();     // ms-settings:sound
+    void OpenAvailableNetworks();  // 다른 네트워크 목록 (ms-availablenetworks:)
+    /// <summary>와이파이 라디오 켜짐 여부. 알 수 없으면 null.</summary>
+    bool? WifiRadioOn { get; }
+    Task<bool> SetWifiAsync(bool on);
+    /// <summary>현재 연결의 IPv4 주소와 링크 속도(bps). 모르면 null / 0.</summary>
+    string? IpAddress { get; }
+    long LinkSpeedBps { get; }
+    /// <summary>재생 장치 목록 (활성 장치만). IsDefault 가 현재 기본 장치.</summary>
+    IReadOnlyList<AudioDevice> OutputDevices { get; }
+    /// <summary>기본 재생 장치 변경 (IPolicyConfig). 실패 시 false.</summary>
+    bool SetDefaultOutput(string deviceId);
+    /// <summary>페어링된 블루투스 장치 (연결 여부 포함).</summary>
+    IReadOnlyList<BluetoothDeviceInfo> BluetoothDevices { get; }
     /// <summary>표시 안 하는 항목의 폴링을 끔 (상단바 설정 반영).</summary>
     void SetPolling(bool networkSpeed, bool wifiAndBluetooth);
     void Start();
@@ -176,4 +222,5 @@ public sealed record AppServices(
     IShellActions Shell,
     IImeService Ime,
     IStatusService Status,
+    IMediaService Media,
     IStartupService Startup);
