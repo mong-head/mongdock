@@ -16,7 +16,7 @@ using Ellipse = System.Windows.Shapes.Ellipse;
 namespace MyDock.Views;
 
 /// <summary>
-/// 맥 "시스템 설정" 같은 설정 창: 왼쪽 사이드바(일반/독/상단바/검색/정보) + 오른쪽 내용.
+/// 맥 "시스템 설정" 같은 설정 창: 왼쪽 사이드바(일반/독/상단바/캘린더/검색/정보) + 오른쪽 내용.
 /// - 독·상단바와 달리 일반 창 (포커스를 받아도 됨, 작업 표시줄에 보임). 한 개만 열림 → <see cref="Open"/>.
 /// - 원격(StarDesk)에서 마우스만으로: 토글·세그먼트·드롭다운(메뉴)·슬라이더만 쓰고 키보드 입력 칸은 없다.
 /// - 바꾸면 바로 Settings.Save() → SettingsChanged 로 독·상단바에 즉시 반영 (DockMenus 와 같은 경로).
@@ -25,7 +25,7 @@ namespace MyDock.Views;
 /// </summary>
 internal sealed class SettingsWindow : Window
 {
-    private enum Page { General, Dock, TopBar, Search, About }
+    private enum Page { General, Dock, TopBar, Calendar, Search, About }
 
     private const string GitHubUrl = "https://github.com/mong-head/mongdock";
     private const double SidebarWidth = 200;
@@ -45,17 +45,34 @@ internal sealed class SettingsWindow : Window
     private bool _closed;
 
     /// <summary>설정 창 열기. 이미 열려 있으면 (최소화 해제 후) 앞으로.</summary>
-    public static void Open(AppServices services)
+    public static void Open(AppServices services) => Open(services, null);
+
+    /// <summary>설정 창을 "캘린더" 페이지로 열기 (시계 달력의 "캘린더 일정 연결하기…").</summary>
+    public static void OpenCalendarPage(AppServices services) => Open(services, Page.Calendar);
+
+    private static void Open(AppServices services, Page? page)
     {
         try
         {
             if (_instance is { } w)
             {
                 if (w.WindowState == WindowState.Minimized) w.WindowState = WindowState.Normal;
+                if (page is Page pg && w._page != pg)
+                {
+                    w.FlushSlider();
+                    w._page = pg;
+                    w._scroll = null;
+                    w.Rebuild();
+                }
                 w.Activate();
                 return;
             }
             _instance = new SettingsWindow(services);
+            if (page is Page first)
+            {
+                _instance._page = first;
+                _instance.Rebuild();
+            }
             _instance.Show();
             _instance.Activate();
         }
@@ -90,6 +107,7 @@ internal sealed class SettingsWindow : Window
 
         SourceInitialized += (_, _) => ApplyTitleBarTheme();
         _services.Settings.SettingsChanged += OnSettingsChanged;
+        _services.Calendars.Changed += OnCalendarsChanged;
         SystemTheme.Changed += OnSystemThemeChanged;
         Closed += (_, _) =>
         {
@@ -97,6 +115,8 @@ internal sealed class SettingsWindow : Window
             _closed = true;
             _sliderTimer.Stop();
             _services.Settings.SettingsChanged -= OnSettingsChanged;
+            _services.Calendars.Changed -= OnCalendarsChanged;
+            _relativeTimer?.Stop();
             SystemTheme.Changed -= OnSystemThemeChanged;
             if (_instance == this) _instance = null;
         };
@@ -132,6 +152,12 @@ internal sealed class SettingsWindow : Window
         // 내가 저장한 것은 이미 화면에 반영됨. 슬라이더 조작 중이면 끝난 뒤 저장할 때까지 그대로 둠.
         if (_selfSave || _sliderDragging || _pendingSlider != null) return;
         QueueRebuild();
+    }
+
+    /// <summary>구독 캘린더 상태(동기화·오류·목록)가 바뀜 → 캘린더 페이지면 다시 그림.</summary>
+    private void OnCalendarsChanged(object? sender, EventArgs e)
+    {
+        if (_page == Page.Calendar && !_sliderDragging) QueueRebuild();
     }
 
     private void OnSystemThemeChanged(object? sender, EventArgs e)
@@ -185,6 +211,7 @@ internal sealed class SettingsWindow : Window
             case Page.General: BuildGeneral(body); break;
             case Page.Dock: BuildDock(body); break;
             case Page.TopBar: BuildTopBar(body); break;
+            case Page.Calendar: BuildCalendar(body); break;
             case Page.Search: BuildSearch(body); break;
             default: BuildAbout(body); break;
         }
@@ -211,6 +238,7 @@ internal sealed class SettingsWindow : Window
         Page.General => "일반",
         Page.Dock => "독",
         Page.TopBar => "상단바",
+        Page.Calendar => "캘린더",
         Page.Search => "검색",
         _ => "정보",
     };
@@ -229,6 +257,7 @@ internal sealed class SettingsWindow : Window
         panel.Children.Add(SidebarItem(Page.General, "\uE713", Color.FromRgb(0x8E, 0x8E, 0x93)));
         panel.Children.Add(SidebarItem(Page.Dock, "\uE8A9", Color.FromRgb(0x0A, 0x84, 0xFF)));
         panel.Children.Add(SidebarItem(Page.TopBar, "\uE700", Color.FromRgb(0x5E, 0x5C, 0xE6)));
+        panel.Children.Add(SidebarItem(Page.Calendar, "\uE787", Color.FromRgb(0xFF, 0x3B, 0x30)));
         panel.Children.Add(SidebarItem(Page.Search, "\uE721", Color.FromRgb(0xFF, 0x9F, 0x0A)));
         panel.Children.Add(SidebarItem(Page.About, "\uE946", Color.FromRgb(0x34, 0xC7, 0x59)));
         return panel;
@@ -459,10 +488,6 @@ internal sealed class SettingsWindow : Window
             Row("한/영", null, Toggle(t.ShowImeToggle, on => Commit(() => T().ShowImeToggle = on))),
             Row("네트워크 속도", null, Toggle(t.ShowNetworkSpeed, on => Commit(() => T().ShowNetworkSpeed = on)))));
 
-        body.Children.Add(Group(
-            Row("캘린더 앱", "시계 달력에서 날짜를 두 번 누르거나 '캘린더에서 열기' 를 누르면 엽니다. 웹은 기본 브라우저로 그 날짜를 엽니다.",
-                CalendarAppDropdown())));
-
         body.Children.Add(SectionTitle("알림"));
         body.Children.Add(Group(
             Row("알림 배너", "윈도우 알림이 오면 상단바 아래 오른쪽에 맥처럼 표시합니다.",
@@ -473,6 +498,252 @@ internal sealed class SettingsWindow : Window
                     on => Commit(() => _services.Settings.Current.Notifications.HideWindowsToastPopups = on))),
             Row("알림 소리", "윈도우 알림 소리를 바꿉니다. 모든 앱 알림에 같이 적용되고, 몽독을 꺼도 유지됩니다. 처음 한 번은 다시 로그인한 뒤부터 적용돼요. ‘원래대로’로 되돌릴 수 있어요.",
                 NotificationSoundDropdown())));
+    }
+
+    // ───────────────────────── 페이지: 캘린더 ─────────────────────────
+
+    private const string GoogleCalendarSettingsUrl = "https://calendar.google.com/calendar/r/settings";
+    private const string OutlookCalendarSettingsUrl = "https://outlook.live.com/calendar/0/options/calendar/SharedCalendars";
+    private const string NaverCalendarUrl = "https://calendar.naver.com/";
+
+    /// <summary>"클립보드에서 추가" 결과 문구 (페이지를 다시 그려도 남게 창에 보관).</summary>
+    private string? _calendarMessage;
+    private bool _calendarAdding;
+    /// <summary>캘린더 페이지가 열려 있는 동안 "10분 전 동기화" 를 갱신 (1분마다).</summary>
+    private DispatcherTimer? _relativeTimer;
+
+    /// <summary>
+    /// 캘린더: 구독 목록(색 점·이름·상태·켜기·새로고침·삭제) + 클립보드에서 추가(클릭만으로) + 새로고침 주기 + 캘린더 앱 + 주소 얻는 법.
+    /// 주소는 화면에 보이지 않는다 (비밀 링크 — 호스트 이름만).
+    /// </summary>
+    private void BuildCalendar(Panel body)
+    {
+        var cals = _services.Calendars;
+        var feeds = cals.Feeds;
+
+        if (_relativeTimer == null)
+        {
+            _relativeTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMinutes(1) };
+            _relativeTimer.Tick += (_, _) => { if (_page == Page.Calendar) QueueRebuild(); else _relativeTimer.Stop(); };
+        }
+        _relativeTimer.Start();
+
+        body.Children.Add(new TextBlock
+        {
+            Text = "Google·Outlook 같은 캘린더의 iCal(ICS) 주소를 연결하면 시계 달력에 일정이 보여요. 주소는 이 PC 의 내 계정에서만 풀리도록 암호화해 저장합니다.",
+            Foreground = _p.SubText,
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(4, 0, 0, 12),
+        });
+
+        body.Children.Add(SectionTitle("구독 캘린더"));
+        var rows = new List<UIElement>();
+        foreach (var feed in feeds) rows.Add(CalendarFeedRow(feed, cals.GetStatus(feed.Id)));
+        if (rows.Count == 0)
+        {
+            rows.Add(new TextBlock
+            {
+                Text = "아직 연결한 캘린더가 없어요. 아래 방법으로 iCal 주소를 복사한 뒤 \"클립보드에서 추가\" 를 누르세요.",
+                Foreground = _p.SubText,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(14, 12, 14, 12),
+            });
+        }
+        // 추가 버튼 + 결과 문구
+        var addRow = new Grid { MinHeight = 44, Margin = new Thickness(14, 7, 14, 7) };
+        addRow.ColumnDefinitions.Add(new ColumnDefinition());
+        addRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var message = new TextBlock
+        {
+            Text = _calendarAdding ? "가져오는 중…" : _calendarMessage ?? "iCal 주소를 복사한 뒤 누르세요. (https:// 또는 webcal://)",
+            Foreground = _p.SubText,
+            FontSize = 11.5,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 14, 0),
+        };
+        addRow.Children.Add(message);
+        var addButton = ActionButton(_calendarAdding ? "가져오는 중…" : "클립보드에서 추가", AddCalendarFromClipboard);
+        addButton.IsEnabled = !_calendarAdding;
+        addButton.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(addButton, 1);
+        addRow.Children.Add(addButton);
+        rows.Add(addRow);
+        body.Children.Add(Group(rows.ToArray()));
+
+        body.Children.Add(Group(
+            Row("새로고침 주기", "몽독을 일시 정지하면 멈추고, 절전에서 깨어나거나 네트워크가 다시 연결되면 한 번 새로고칩니다.", RefreshIntervalDropdown()),
+            Row("캘린더 앱", "시계 달력에서 날짜를 두 번 누르거나 '캘린더에서 열기'·일정을 누르면 엽니다. 웹은 기본 브라우저로 그 날짜를 엽니다.",
+                CalendarAppDropdown())));
+
+        body.Children.Add(SectionTitle("iCal 주소 얻는 법"));
+        body.Children.Add(Group(
+            Row("Google 캘린더", "설정 → 왼쪽 '내 캘린더의 설정'에서 캘린더 선택 → 캘린더 통합 → 'iCal 형식의 비공개 주소' 복사",
+                ActionButton("설정 열기", () => _services.Launcher.OpenFile(GoogleCalendarSettingsUrl))),
+            Row("Outlook.com", "설정 → 캘린더 → 공유 캘린더 → 캘린더 게시 → 캘린더와 '모든 세부 정보 보기' 선택 → 게시 → ICS 링크 복사",
+                ActionButton("설정 열기", () => _services.Launcher.OpenFile(OutlookCalendarSettingsUrl))),
+            Row("네이버 캘린더", "네이버 캘린더는 구독용 iCal 주소를 제공하지 않아요 (.ics 파일 내보내기·CalDAV 만). 네이버 웍스는 캘린더 설정 → 외부 공개 → '캘린더 공개' → iCal URL 복사.",
+                ActionButton("열기", () => _services.Launcher.OpenFile(NaverCalendarUrl)))));
+    }
+
+    /// <summary>구독 한 줄: [색 점] 이름 + 상태 · 켜기 · 새로고침 · 삭제.</summary>
+    private Grid CalendarFeedRow(CalendarFeed feed, CalendarFeedStatus status)
+    {
+        var grid = new Grid { MinHeight = 44, Margin = new Thickness(10, 6, 14, 6) };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition());
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        // 색 점: 누르면 8색 팔레트
+        var swatch = new Ellipse { Width = 14, Height = 14, Fill = Converters.BrushParser.Parse(feed.Color, Colors.DodgerBlue) };
+        var colorButton = new Button
+        {
+            Style = (Style)FindResource("CardButton"),
+            Background = Brushes.Transparent,
+            Padding = new Thickness(6),
+            Margin = new Thickness(0, 0, 6, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Content = swatch,
+            ToolTip = "색 바꾸기",
+        };
+        colorButton.Click += (_, _) =>
+        {
+            UiTheme.Apply(_services.Settings.Current);
+            var menu = new ContextMenu { PlacementTarget = colorButton, Placement = PlacementMode.Bottom, HorizontalOffset = -10 };
+            for (int i = 0; i < CalendarFeed.Palette.Length; i++)
+            {
+                string hex = CalendarFeed.Palette[i];
+                var header = new StackPanel { Orientation = Orientation.Horizontal };
+                header.Children.Add(new Ellipse
+                {
+                    Width = 12,
+                    Height = 12,
+                    Fill = Converters.BrushParser.Parse(hex, Colors.DodgerBlue),
+                    Margin = new Thickness(0, 0, 8, 0),
+                    VerticalAlignment = VerticalAlignment.Center,
+                });
+                header.Children.Add(new TextBlock { Text = CalendarFeed.PaletteNames[i], VerticalAlignment = VerticalAlignment.Center });
+                var item = new MenuItem
+                {
+                    Header = header,
+                    IsCheckable = false,
+                    IsChecked = string.Equals(hex, feed.Color, StringComparison.OrdinalIgnoreCase),
+                };
+                item.Click += (_, _) => _services.Calendars.Update(feed.Id, f => f.Color = hex);
+                menu.Items.Add(item);
+            }
+            menu.IsOpen = true;
+        };
+        grid.Children.Add(colorButton);
+
+        var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 14, 0) };
+        texts.Children.Add(new TextBlock
+        {
+            Text = feed.Name,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Foreground = feed.Enabled ? _p.Text : _p.SubText,
+        });
+        string host = Uri.TryCreate(feed.Url, UriKind.Absolute, out var u) ? u.Host : "";
+        bool failed = status.Error != null;
+        texts.Children.Add(new TextBlock
+        {
+            Text = FeedStatusText(feed, status) + (host.Length > 0 ? $" · {host}" : ""),
+            FontSize = 11.5,
+            Foreground = failed ? _p.HolidayText : _p.SubText,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(0, 2, 0, 0),
+        });
+        Grid.SetColumn(texts, 1);
+        grid.Children.Add(texts);
+
+        var controls = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        var toggle = Toggle(feed.Enabled, on => _services.Calendars.Update(feed.Id, f => f.Enabled = on));
+        toggle.ToolTip = "달력에 표시";
+        toggle.Margin = new Thickness(0, 0, 8, 0);
+        controls.Children.Add(toggle);
+        var refresh = ActionButton(status.Busy ? "가져오는 중…" : "새로고침", () => _services.Calendars.Refresh(feed.Id));
+        refresh.IsEnabled = !status.Busy;
+        refresh.Margin = new Thickness(0, 0, 6, 0);
+        controls.Children.Add(refresh);
+        controls.Children.Add(ActionButton("삭제", async () =>
+        {
+            bool ok = await ConfirmCardWindow.AskAsync(_services, $"'{feed.Name}' 구독을 삭제할까요?", "달력에서 이 캘린더의 일정이 사라집니다. 원래 캘린더는 그대로예요.", "삭제");
+            if (ok) _services.Calendars.Remove(feed.Id);
+        }));
+        Grid.SetColumn(controls, 2);
+        grid.Children.Add(controls);
+        return grid;
+    }
+
+    /// <summary>"10분 전 동기화" / "가져오는 중…" / 오류 문구 / "아직 동기화 안 됨".</summary>
+    private static string FeedStatusText(CalendarFeed feed, CalendarFeedStatus status)
+    {
+        if (status.Busy) return "가져오는 중…";
+        if (status.Error != null)
+            return status.LastSync is DateTime t ? $"{status.Error} (마지막 동기화 {RelativeTime(t)})" : status.Error;
+        if (status.LastSync is DateTime last)
+            return $"{RelativeTime(last)} 동기화 · 일정 {status.EventCount}개" + (feed.Enabled ? "" : " · 꺼짐");
+        return feed.Enabled ? "아직 동기화 안 됨" : "꺼짐";
+    }
+
+    private static string RelativeTime(DateTime t)
+    {
+        var d = DateTime.Now - t;
+        if (d.TotalMinutes < 1) return "방금";
+        if (d.TotalHours < 1) return $"{(int)d.TotalMinutes}분 전";
+        if (d.TotalDays < 1) return $"{(int)d.TotalHours}시간 전";
+        return $"{(int)d.TotalDays}일 전";
+    }
+
+    /// <summary>클립보드 텍스트가 캘린더 주소면 바로 추가 (키보드 입력 없이). 결과는 추가 버튼 옆 문구로.</summary>
+    private async void AddCalendarFromClipboard()
+    {
+        if (_calendarAdding) return;
+        string? text = null;
+        try { if (Clipboard.ContainsText()) text = Clipboard.GetText(); }
+        catch (Exception ex) { Log.Warn($"클립보드 읽기 실패: {ex.GetType().Name}"); }
+        if (!CalendarFeedService.TryNormalizeUrl(text, out _))
+        {
+            _calendarMessage = "클립보드에 캘린더 주소가 없어요. 아래 방법으로 iCal 주소(https:// 또는 webcal://)를 복사한 뒤 다시 누르세요.";
+            QueueRebuild();
+            return;
+        }
+        _calendarAdding = true;
+        _calendarMessage = null;
+        QueueRebuild();
+        try
+        {
+            var result = await _services.Calendars.AddAsync(text!);
+            _calendarMessage = result.Message;
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"캘린더 추가 실패: {ex.GetType().Name}");
+            _calendarMessage = "캘린더를 추가하지 못했어요.";
+        }
+        finally
+        {
+            _calendarAdding = false;
+        }
+        if (!_closed) QueueRebuild();
+    }
+
+    private UIElement RefreshIntervalDropdown()
+    {
+        int[] options = { 5, 15, 30, 60 };
+        int cur = _services.Settings.Current.Calendar?.RefreshMinutes ?? 15;
+        string label = options.Contains(cur) ? $"{cur}분마다" : $"{cur}분마다 (사용자 지정)";
+        return Dropdown(label, () =>
+        {
+            int now = _services.Settings.Current.Calendar?.RefreshMinutes ?? 15;
+            return options.Select(m => ($"{m}분마다", m == now, (Action)(() => Commit(() =>
+            {
+                var s = _services.Settings.Current;
+                s.Calendar ??= new CalendarSettings();
+                s.Calendar.RefreshMinutes = m;
+            }, rebuild: true))));
+        });
     }
 
     // ───────────────────────── 페이지: 검색 ─────────────────────────

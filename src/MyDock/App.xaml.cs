@@ -89,13 +89,15 @@ public partial class App : Application
             new AppMenuService(settings),
             new StartupService(),
             new NotificationService(tracker, launcher),
-            new TrayIconService());
+            new TrayIconService(),
+            new CalendarFeedService(settings));
 
         InitializePinsOnce(settings);
 
         tracker.Start();
         _services.Status.Start();
         _services.Media.Start();
+        if (!AppState.Paused) _services.Calendars.Start();
         _dock = new DockWindow(_services);
         _dock.Show();
         // 상단바 창들보다 먼저 구독 → 모니터가 분리되면 그 상단바가 이벤트를 처리하기 전에 닫힘
@@ -125,10 +127,10 @@ public partial class App : Application
     {
         SyncToastSuppressor();
         SyncTrayIcons();
-        // 일시 정지 중엔 알림 DB 감시·폴링도 멈춤 (재개하면 그 사이 알림은 배너 없이 목록에만)
+        // 일시 정지 중엔 알림 DB 감시·폴링, 구독 캘린더 주기 새로고침도 멈춤 (재개하면 그 사이 알림은 배너 없이 목록에만)
         if (_services is null || _exiting) return;
-        if (AppState.Paused) _services.Notifications.Stop();
-        else _services.Notifications.Start();
+        if (AppState.Paused) { _services.Notifications.Stop(); _services.Calendars.Stop(); }
+        else { _services.Notifications.Start(); _services.Calendars.Start(); }
     }
 
     /// <summary>윈도우 기본 알림 팝업 숨기기: 설정이 켜져 있고, 몽독 배너도 켜져 있고, 일시 정지가 아닐 때만.</summary>
@@ -278,10 +280,11 @@ public partial class App : Application
         if (_services is not null)
         {
             _services.Notifications.Stop();
+            _services.Calendars.Stop();
             _services.Windows.Stop();
             _services.Status.Stop();
             _services.Media.Stop();
-            object[] all = [_services.Settings, _services.Windows, _services.DesktopWindows, _services.VirtualDesktops, _services.Ime, _services.Status, _services.Media, _services.Notifications];
+            object[] all = [_services.Settings, _services.Windows, _services.DesktopWindows, _services.VirtualDesktops, _services.Ime, _services.Status, _services.Media, _services.Notifications, _services.Calendars];
             foreach (var disposable in all.OfType<IDisposable>())
             {
                 try { disposable.Dispose(); }

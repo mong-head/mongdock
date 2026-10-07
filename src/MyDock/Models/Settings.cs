@@ -243,6 +243,17 @@ public sealed class SearchSettings
     public static string DefaultFileSearchFolder => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 }
 
+/// <summary>
+/// 시계 달력에 겹쳐 보일 iCal(ICS) 구독 일정 (설정 창 "캘린더" 페이지).
+/// 구독 목록(이름·주소·색)은 비밀 링크가 들어 있어 settings.json 이 아니라 %APPDATA%\mongdock\calendars.json 에
+/// 주소를 DPAPI(현재 사용자)로 암호화해 따로 저장한다 (Services/CalendarFeedService). 여기에는 주기만.
+/// </summary>
+public sealed class CalendarSettings
+{
+    /// <summary>구독 캘린더 새로고침 주기 (분, 5~1440). 몽독 일시 정지 중엔 멈춤.</summary>
+    public int RefreshMinutes { get; set; } = 15;
+}
+
 public sealed class Settings
 {
     /// <summary>settings.json 형식 버전. 이관은 파일에 적힌 버전이 이보다 낮을 때만 한 번 (SettingsService.Migrate).</summary>
@@ -258,6 +269,8 @@ public sealed class Settings
     public NotificationSettings Notifications { get; set; } = new();
     /// <summary>Spotlight 검색 항목·파일 검색 위치·웹 검색 엔진.</summary>
     public SearchSettings Search { get; set; } = new();
+    /// <summary>시계 달력의 구독 일정 (새로고침 주기). 구독 목록은 calendars.json.</summary>
+    public CalendarSettings Calendar { get; set; } = new();
     public List<PinItem> Pins { get; set; } = new();
     /// <summary>상단바·메뉴·패널·독 말풍선 글꼴. "Pretendard" = 앱에 내장된 Pretendard(맥 느낌). 설치된 글꼴 이름을 쓰면 그 글꼴. 쉼표로 대체 글꼴 나열 가능.</summary>
     public string FontFamily { get; set; } = "Pretendard";
