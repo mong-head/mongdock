@@ -535,40 +535,27 @@ public partial class TopBarWindow : Window
         switch (st.Wifi)
         {
             case WifiState.Connected:
-                int bars = st.WifiSignal switch { >= 75 => 4, >= 50 => 3, >= 25 => 2, _ => 1 };
-                WifiBack.Visibility = bars == 4 ? Visibility.Collapsed : Visibility.Visible;
-                WifiBack.Text = "";
-                WifiFront.Text = bars switch { 4 => "", 3 => "", 2 => "", _ => "" };
+                int bars = st.WifiSignal switch { >= 60 => 3, >= 30 => 2, _ => 1 };
+                WifiBack.Visibility = bars == 3 ? Visibility.Collapsed : Visibility.Visible;
+                WifiBack.Data = BarIcons.WifiFull;
+                WifiFront.Data = BarIcons.Wifi(bars);
+                WifiFront.Visibility = Visibility.Visible;
                 break;
             case WifiState.Ethernet:
                 WifiBack.Visibility = Visibility.Collapsed;
-                WifiFront.Text = "";
-                break;
-            case WifiState.Disconnected:
-                WifiBack.Visibility = Visibility.Collapsed;
-                WifiFront.Text = "";
+                WifiFront.Data = BarIcons.Ethernet;
+                WifiFront.Visibility = Visibility.Visible;
                 break;
             default:
-                WifiBack.Visibility = Visibility.Collapsed;
-                WifiFront.Text = "";
+                // 끊김/모름: 맥처럼 전체를 흐리게만
+                WifiBack.Data = BarIcons.WifiFull;
+                WifiBack.Visibility = Visibility.Visible;
+                WifiFront.Visibility = Visibility.Collapsed;
                 break;
         }
 
-        VolumeButton.Content = VolumeGlyph(st.Volume, st.Muted);
+        VolumeIcon.Data = BarIcons.Speaker(st.Volume, st.Muted);
         RightSection.InvalidateMeasure();
-    }
-
-    /// <summary>볼륨 글리프 (음소거 / 0 / 낮음 / 중간 / 높음).</summary>
-    public static string VolumeGlyph(double volume, bool muted)
-    {
-        if (muted) return "";
-        return volume switch
-        {
-            <= 0.001 => "",
-            < 0.34 => "",
-            < 0.67 => "",
-            _ => "",
-        };
     }
 
     private static string FormatSpeed(long bytesPerSec)

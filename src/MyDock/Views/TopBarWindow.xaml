@@ -1,6 +1,7 @@
 <Window x:Class="MyDock.Views.TopBarWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:v="clr-namespace:MyDock.Views"
         Title="MyDock TopBar"
         WindowStyle="None"
         AllowsTransparency="True"
@@ -30,45 +31,34 @@
                 </StackPanel>
 
                 <StackPanel x:Name="StatusIcons" Orientation="Horizontal">
-                    <Button x:Name="BluetoothButton" Style="{StaticResource BarIconButton}" Content="&#xE702;" Click="OnBluetoothClick" />
+                    <!-- 상태 아이콘: 맥 SF Symbols 같은 굵은 채움 도형 (BarIcons) -->
+                    <Button x:Name="BluetoothButton" Style="{StaticResource BarIconButton}" Click="OnBluetoothClick">
+                        <Path Width="12" Height="18" Data="{x:Static v:BarIcons.Bluetooth}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                    </Button>
                     <Button x:Name="WifiButton" Style="{StaticResource BarIconButton}" Click="OnWifiClick">
-                        <Grid>
-                            <!-- 신호 칸: 흐린 전체 부채꼴 위에 현재 칸 수만큼 진하게 -->
-                            <TextBlock x:Name="WifiBack" Text="&#xE701;" Opacity="0.3" />
-                            <TextBlock x:Name="WifiFront" Text="&#xE701;" />
+                        <Grid Width="21" Height="16">
+                            <!-- 꺼진 칸은 같은 모양을 30% 로, 켜진 칸만 진하게 -->
+                            <Path x:Name="WifiBack" Data="{x:Static v:BarIcons.WifiFull}" Opacity="0.3" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                            <Path x:Name="WifiFront" Data="{x:Static v:BarIcons.WifiFull}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
                         </Grid>
                     </Button>
-                    <Button x:Name="VolumeButton" Style="{StaticResource BarIconButton}" Content="&#xE995;"
-                            Click="OnVolumeClick" MouseWheel="OnVolumeWheel" />
+                    <Button x:Name="VolumeButton" Style="{StaticResource BarIconButton}"
+                            Click="OnVolumeClick" MouseWheel="OnVolumeWheel">
+                        <Path x:Name="VolumeIcon" Width="23" Height="18" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                    </Button>
                 </StackPanel>
 
                 <StackPanel x:Name="QuickButtons" Orientation="Horizontal">
-                    <Button Style="{StaticResource BarIconButton}" Content="&#xE721;" Click="OnSearch" />
+                    <Button Style="{StaticResource BarIconButton}" Click="OnSearch">
+                        <Path Width="18" Height="18" Data="{x:Static v:BarIcons.Search}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                    </Button>
                     <!-- 제어 센터 (빠른 설정) : 토글 두 개 -->
                     <Button x:Name="QuickSettingsButton" Style="{StaticResource BarButton}" Click="OnQuickSettings">
-                        <Viewbox Width="21" Height="19">
-                            <Canvas Width="16" Height="14">
-                                <Path StrokeThickness="1.3"
-                                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}">
-                                    <Path.Data>
-                                        <GeometryGroup>
-                                            <RectangleGeometry Rect="0.65,0.65,14.7,5.2" RadiusX="2.6" RadiusY="2.6" />
-                                            <RectangleGeometry Rect="0.65,8.15,14.7,5.2" RadiusX="2.6" RadiusY="2.6" />
-                                        </GeometryGroup>
-                                    </Path.Data>
-                                </Path>
-                                <Path Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}">
-                                    <Path.Data>
-                                        <GeometryGroup>
-                                            <EllipseGeometry Center="12.5,3.25" RadiusX="1.55" RadiusY="1.55" />
-                                            <EllipseGeometry Center="3.5,10.75" RadiusX="1.55" RadiusY="1.55" />
-                                        </GeometryGroup>
-                                    </Path.Data>
-                                </Path>
-                            </Canvas>
-                        </Viewbox>
+                        <Path Width="18" Height="16" Data="{x:Static v:BarIcons.ControlCenter}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
                     </Button>
-                    <Button Style="{StaticResource BarIconButton}" Content="&#xEA8F;" Click="OnNotifications" />
+                    <Button Style="{StaticResource BarIconButton}" Click="OnNotifications">
+                        <Path Width="17" Height="17" Data="{x:Static v:BarIcons.Bell}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                    </Button>
                 </StackPanel>
 
                 <!-- 한/영 배지: "한" = 글자색으로 채운 배경 + 반전 글자, "A" = 테두리만 -->
