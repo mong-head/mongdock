@@ -13,7 +13,7 @@ if (Test-Path $out) { Remove-Item $out -Recurse -Force }
 
 & $dotnet publish (Join-Path $root "src\MyDock\MyDock.csproj") -c Release -r win-x64 --self-contained true `
     -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none `
-    -o $out --nologo
+    $(if ($Version) { "-p:Version=$($Version.TrimStart('v', 'V'))" }) -o $out --nologo
 if ($LASTEXITCODE -ne 0) { throw "publish 실패" }
 
 Copy-Item (Join-Path $root "README.md") $out
