@@ -13,7 +13,7 @@ namespace MyDock.Services;
 public interface ISettingsService
 {
     Settings Current { get; }
-    /// <summary>settings.json 이 (외부 편집 포함) 바뀌어 다시 로드됐을 때.</summary>
+    /// <summary>설정이 바뀌었을 때: Save() 직후, 또는 외부에서 settings.json 을 편집해 다시 로드했을 때.</summary>
     event EventHandler? SettingsChanged;
     void Save();
     string SettingsPath { get; }
@@ -35,6 +35,8 @@ public interface IWindowTracker
     bool Matches(PinItem pin, AppWindowInfo window);
     /// <summary>같은 앱으로 묶기 위한 키 (AUMID 우선, 없으면 소문자 exe 경로).</summary>
     string GetAppKey(AppWindowInfo window);
+    /// <summary>실행 중 창으로 핀 생성. WindowsApps 패키지 앱이면 Kind=Aumid(버전 경로 저장 금지), 아니면 Kind=Exe.</summary>
+    PinItem CreatePin(AppWindowInfo window);
     void Start();
     void Stop();
 }
@@ -47,6 +49,8 @@ public interface IAppLauncher
     /// <summary>이미 앞에 있으면 최소화, 아니면 Activate. (맥 독 클릭 동작)</summary>
     void ToggleActivate(IntPtr hwnd);
     void Close(IntPtr hwnd);
+    /// <summary>파일/폴더를 기본 프로그램으로 엶 (settings.json 편집 등).</summary>
+    void OpenFile(string path);
 }
 
 public interface IIconService
@@ -60,13 +64,15 @@ public interface IDesktopWindowService
 {
     /// <summary>WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW 적용 (포커스 안 뺏고 Alt+Tab 에서 숨김). SourceInitialized 이후 호출.</summary>
     void MakeOverlay(Window window);
-    /// <summary>AppBar 로 등록하고 창 위치/크기를 시스템이 정해준 영역으로 맞춤. thickness 는 DIP.</summary>
+    /// <summary>AppBar 로 등록하고 창 위치/크기를 시스템이 정해준 영역으로 맞춤. thickness 는 DIP. edge=Top 이면 상단바 아래에 쌓임.</summary>
     void RegisterAppBar(Window window, DockEdge edge, double thickness);
     /// <summary>상단 AppBar.</summary>
     void RegisterTopAppBar(Window window, double thickness);
     void UnregisterAppBar(Window window);
     /// <summary>주 모니터 작업 영역이 아닌 전체 화면 영역 (DIP).</summary>
     Rect GetPrimaryScreenBounds();
+    /// <summary>주 모니터 작업 영역 (DIP). ReserveSpace=false 일 때 배치용.</summary>
+    Rect GetPrimaryWorkArea();
 }
 
 public interface IVirtualDesktopService
@@ -74,6 +80,16 @@ public interface IVirtualDesktopService
     void Previous();
     void Next();
     void New();
+}
+
+public interface IShellActions
+{
+    // 원격(StarDesk)에서 Win 단축키가 안 넘어가므로 로컬에서 SendInput 으로 대신 보냄.
+    void OpenStartMenu();        // Win
+    void OpenSearch();           // Win+S
+    void OpenQuickSettings();    // Win+A (와이파이/볼륨/블루투스)
+    void OpenNotificationCenter(); // Win+N
+    void OpenTaskView();         // Win+Tab
 }
 
 public interface IImeService
@@ -104,5 +120,6 @@ public sealed record AppServices(
     IIconService Icons,
     IDesktopWindowService DesktopWindows,
     IVirtualDesktopService VirtualDesktops,
+    IShellActions Shell,
     IImeService Ime,
     IStartupService Startup);

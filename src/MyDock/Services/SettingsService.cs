@@ -1,0 +1,329 @@
+using System.IO;
+using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Windows;
+using MyDock.Models;
+
+namespace MyDock.Services;
+
+/// <summary>
+/// %APPDATA%\MyDock\settings.json 로드/저장 + 외부 편집 감지.
+/// - 저장은 임시파일 → File.Replace/Move 로 원자적.
+/// - 외부 편집은 FileSystemWatcher + 300ms 디바운스 → 다시 로드 → UI Dispatcher 에서 SettingsChanged.
+/// - 자기 Save 로 생긴 변경은 파일 내용이 마지막 저장 내용과 같으면 무시.
+/// - JSON 손상 시 기존 값 유지 + 로그.
+/// </summary>
+public sealed class SettingsService : ISettingsService, IDisposable
+{
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, // 한글을 \uXXXX 로 바꾸지 않음
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
+
+    private const int DebounceMs = 300;
+
+    private readonly object _gate = new();
+    private readonly string _dir;
+    private readonly FileSystemWatcher? _watcher;
+    private readonly Timer _debounce;
+    private string? _lastText; // 마지막으로 저장했거나 로드한 파일 내용
+    private bool _disposed;
+
+    public SettingsService()
+    {
+        _dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MyDock");
+        SettingsPath = Path.Combine(_dir, "settings.json");
+        IconsDirectory = Path.Combine(_dir, "icons");
+        Directory.CreateDirectory(_dir);
+
+        Current = LoadInitial();
+
+        _debounce = new Timer(_ => OnDebounced(), null, Timeout.Infinite, Timeout.Infinite);
+        try
+        {
+            _watcher = new FileSystemWatcher(_dir, "settings.json")
+            {
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size | NotifyFilters.CreationTime,
+                IncludeSubdirectories = false,
+            };
+            _watcher.Changed += OnFileEvent;
+            _watcher.Created += OnFileEvent;
+            _watcher.Renamed += OnFileEvent;
+            _watcher.Error += (_, e) => Log.Error("settings.json 감시 오류", e.GetException());
+            _watcher.EnableRaisingEvents = true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("settings.json FileSystemWatcher 생성 실패", ex);
+        }
+    }
+
+    public Settings Current { get; private set; }
+
+    public event EventHandler? SettingsChanged;
+
+    public string SettingsPath { get; }
+
+    public string IconsDirectory { get; }
+
+    // ───────────────────────── 로드 ─────────────────────────
+
+    private Settings LoadInitial()
+    {
+        if (!File.Exists(SettingsPath))
+        {
+            var s = new Settings();
+            Current = s;
+            Save();
+            Log.Info($"기본 설정 파일 생성: {SettingsPath}");
+            return s;
+        }
+
+        try
+        {
+            string text = ReadAllTextShared(SettingsPath);
+            var s = Deserialize(text);
+            _lastText = text;
+            return s;
+        }
+        catch (Exception ex)
+        {
+            // 손상된 파일은 덮어쓰기 전에 백업해 둔다 (다음 Save 가 덮어쓸 수 있으므로).
+            Log.Error("settings.json 파싱 실패 → 기본값으로 시작 (원본은 백업)", ex);
+            try
+            {
+                string backup = SettingsPath + ".corrupt-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                File.Copy(SettingsPath, backup, overwrite: false);
+                Log.Info($"손상된 설정 백업: {backup}");
+            }
+            catch (Exception bex)
+            {
+                Log.Error("손상된 설정 백업 실패", bex);
+            }
+            return new Settings();
+        }
+    }
+
+    private static Settings Deserialize(string text)
+    {
+        var s = JsonSerializer.Deserialize<Settings>(text, JsonOptions)
+                ?? throw new JsonException("settings.json 이 null 입니다.");
+        // 수동 편집으로 null 이 들어와도 UI 가 죽지 않게 보정.
+        s.Dock ??= new DockSettings();
+        s.TopBar ??= new TopBarSettings();
+        s.Pins ??= new List<PinItem>();
+        s.Pins.RemoveAll(p => p is null);
+        foreach (var p in s.Pins)
+        {
+            p.Name ??= "";
+            p.Target ??= "";
+        }
+        return s;
+    }
+
+    private static string ReadAllTextShared(string path)
+    {
+        // 편집기가 쓰는 중일 수 있으므로 몇 번 재시도.
+        for (int i = 0; ; i++)
+        {
+            try
+            {
+                using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                using var sr = new StreamReader(fs, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+                return sr.ReadToEnd();
+            }
+            catch (IOException) when (i < 5)
+            {
+                Thread.Sleep(100);
+            }
+        }
+    }
+
+    // ───────────────────────── 저장 ─────────────────────────
+
+    public void Save()
+    {
+        lock (_gate)
+        {
+            string text = JsonSerializer.Serialize(Current, JsonOptions);
+            string tmp = SettingsPath + ".tmp";
+            try
+            {
+                File.WriteAllText(tmp, text, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+                _lastText = text; // watcher 이벤트보다 먼저 기록 → 자기 저장 무시
+                if (File.Exists(SettingsPath))
+                {
+                    try
+                    {
+                        File.Replace(tmp, SettingsPath, destinationBackupFileName: null, ignoreMetadataErrors: true);
+                    }
+                    catch (IOException)
+                    {
+                        // 대상이 다른 프로세스에 열려 있는 경우 등 → 덮어쓰기 이동으로 대체.
+                        File.Move(tmp, SettingsPath, overwrite: true);
+                    }
+                }
+                else
+                {
+                    File.Move(tmp, SettingsPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("settings.json 저장 실패", ex);
+                try { if (File.Exists(tmp)) File.Delete(tmp); } catch { /* 무시 */ }
+            }
+        }
+
+        // 독 ↔ 상단바처럼 UI 안에서 바꾼 설정도 다른 창에 반영되게 알림.
+        RunOnUi(() => SettingsChanged?.Invoke(this, EventArgs.Empty));
+    }
+
+    // ───────────────────────── 감시 ─────────────────────────
+
+    private void OnFileEvent(object sender, FileSystemEventArgs e)
+    {
+        if (e is RenamedEventArgs r && !string.Equals(r.Name, "settings.json", StringComparison.OrdinalIgnoreCase))
+            return;
+        if (_disposed) return;
+        _debounce.Change(DebounceMs, Timeout.Infinite);
+    }
+
+    private void OnDebounced()
+    {
+        if (_disposed) return;
+        Settings? loaded;
+        lock (_gate)
+        {
+            string text;
+            try
+            {
+                if (!File.Exists(SettingsPath)) return;
+                text = ReadAllTextShared(SettingsPath);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("settings.json 다시 읽기 실패", ex);
+                return;
+            }
+
+            if (text == _lastText) return; // 자기 Save 이거나 내용 변화 없음
+
+            try
+            {
+                loaded = Deserialize(text);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("외부에서 편집된 settings.json 파싱 실패 → 기존 값 유지", ex);
+                _lastText = text; // 같은 손상 내용으로 반복 로그 방지
+                return;
+            }
+            _lastText = text;
+        }
+
+        Log.Info("settings.json 외부 변경 감지 → 다시 로드");
+        RunOnUi(() =>
+        {
+            // UI 가 잡고 있는 참조가 유효하도록 Current / Dock / TopBar / Pins 객체는 그대로 두고 값만 복사.
+            lock (_gate) CopyInto(loaded, Current);
+            SettingsChanged?.Invoke(this, EventArgs.Empty);
+        });
+    }
+
+    private static void CopyInto(Settings src, Settings dst)
+    {
+        CopyProperties(src.Dock, dst.Dock);
+        CopyProperties(src.TopBar, dst.TopBar);
+        dst.Pins.Clear();
+        dst.Pins.AddRange(src.Pins);
+        dst.StartWithWindows = src.StartWithWindows;
+        dst.ImportedFromMyDockFinder = src.ImportedFromMyDockFinder;
+    }
+
+    /// <summary>public 읽기/쓰기 속성을 얕게 복사 (DockSettings/TopBarSettings 는 값 타입·문자열 속성만 가짐).</summary>
+    private static void CopyProperties<T>(T src, T dst) where T : class
+    {
+        foreach (var p in typeof(T).GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            if (p.CanRead && p.CanWrite && p.GetIndexParameters().Length == 0)
+                p.SetValue(dst, p.GetValue(src));
+    }
+
+    private static void RunOnUi(Action action)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+        {
+            SafeInvoke(action);
+        }
+        else
+        {
+            dispatcher.InvokeAsync(() => SafeInvoke(action));
+        }
+    }
+
+    private static void SafeInvoke(Action action)
+    {
+        try { action(); }
+        catch (Exception ex) { Log.Error("SettingsChanged 처리 중 예외", ex); }
+    }
+
+    // ───────────────────────── 아이콘 ─────────────────────────
+
+    /// <summary>
+    /// 원본 이미지를 %APPDATA%\MyDock\icons\ 로 복사하고 복사본 경로를 반환.
+    /// 이미 icons 폴더 안이면 그대로 반환. 같은 이름의 다른 파일이 있으면 "이름-2.png" 처럼 고유 이름 사용,
+    /// 같은 내용의 파일이 이미 있으면 그 경로를 재사용. 원본이 없으면 FileNotFoundException.
+    /// </summary>
+    public string ImportIcon(string sourcePath)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath)) throw new ArgumentException("경로가 비어 있습니다.", nameof(sourcePath));
+        string src = Path.GetFullPath(Environment.ExpandEnvironmentVariables(sourcePath.Trim().Trim('"')));
+        string iconsDir = Path.GetFullPath(IconsDirectory);
+
+        if (src.StartsWith(iconsDir.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase) && File.Exists(src))
+            return src;
+        if (!File.Exists(src)) throw new FileNotFoundException("아이콘 파일이 없습니다.", src);
+
+        Directory.CreateDirectory(iconsDir);
+        string name = Path.GetFileNameWithoutExtension(src);
+        string ext = Path.GetExtension(src);
+        string dest = Path.Combine(iconsDir, name + ext);
+        for (int i = 2; File.Exists(dest); i++)
+        {
+            if (SameContent(src, dest)) return dest;
+            dest = Path.Combine(iconsDir, $"{name}-{i}{ext}");
+        }
+        File.Copy(src, dest);
+        Log.Info($"아이콘 복사: {src} → {dest}");
+        return dest;
+    }
+
+    private static bool SameContent(string a, string b)
+    {
+        try
+        {
+            var fa = new FileInfo(a);
+            var fb = new FileInfo(b);
+            if (fa.Length != fb.Length) return false;
+            return File.ReadAllBytes(a).AsSpan().SequenceEqual(File.ReadAllBytes(b));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _watcher?.Dispose();
+        _debounce.Dispose();
+    }
+}
