@@ -29,7 +29,10 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
 {
     private const int TimerRaise = 1;       // 100ms: Z 순서 맨 위 유지
     private const int TimerHousekeep = 2;   // 2s: explorer 창 다시 찾기·위치 맞추기·죽은 아이콘 정리
-    private const int TimerReplay = 3;      // 시작 직후 1회: TaskbarCreated 재등록 요청
+    private const int TimerReplay = 3;      // 시작 직후: TaskbarCreated 재등록 요청 (ReplayPasses 간격으로 여러 번)
+    /// <summary>재등록 요청 간격 (ms): 시작 0.2초 뒤, 그 뒤 2초, 다시 4초 뒤.</summary>
+    private static readonly uint[] ReplayPasses = { 200, 2000, 4000 };
+    private int _replayCount;
     private const uint ForwardTimeoutMs = 3000;
     private const uint AppBarForwardTimeoutMs = 5000;
 
@@ -166,7 +169,8 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
             RaiseTopmost();
             T.SetTimer(hwnd, (UIntPtr)TimerRaise, 100, IntPtr.Zero);
             T.SetTimer(hwnd, (UIntPtr)TimerHousekeep, 2000, IntPtr.Zero);
-            T.SetTimer(hwnd, (UIntPtr)TimerReplay, 200, IntPtr.Zero);
+            _replayCount = 0;
+            T.SetTimer(hwnd, (UIntPtr)TimerReplay, ReplayPasses[0], IntPtr.Zero);
             Log.Info($"트레이 가로채기 시작 (explorer 트레이 0x{_explorerTray.ToInt64():X})");
             ready.Set();
 
@@ -433,8 +437,15 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
                 break;
             case TimerReplay:
                 T.KillTimer(_trayHwnd, (UIntPtr)TimerReplay);
+                // 보내기 직전에 몽독 창이 맨 위인지 확인 (시작 직후 작업 표시줄 숨기기 등으로 explorer 창이 다시 올라와
+                // 앱들의 NIM_ADD 가 explorer 로 새는 경우가 있음 — 실측: 재시작 후 14개 중 5개만 잡힘)
+                if (T.FindWindow(T.TrayWndClass, null) != _trayHwnd) RaiseTopmost();
                 int n = SendTaskbarCreatedToApps(_explorerTray);
-                Log.Info($"트레이 아이콘 재등록 요청 (TaskbarCreated → 창 {n}개)");
+                _replayCount++;
+                Log.Info($"트레이 아이콘 재등록 요청 {_replayCount}회차 (TaskbarCreated → 창 {n}개)");
+                // 늦게 반응하는 앱·위의 경우를 위해 2초, 6초 뒤 한 번씩 더 (중복 NIM_ADD 는 같은 아이콘으로 합쳐짐)
+                if (_replayCount < ReplayPasses.Length)
+                    T.SetTimer(_trayHwnd, (UIntPtr)TimerReplay, ReplayPasses[_replayCount], IntPtr.Zero);
                 break;
         }
     }
