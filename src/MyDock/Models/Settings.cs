@@ -55,6 +55,24 @@ public enum SpotlightHotkey
     None,
 }
 
+/// <summary>시계 달력에서 날짜를 두 번 누르거나 "캘린더에서 열기" 로 열 캘린더 (Services/CalendarApps).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CalendarApp
+{
+    /// <summary>Google 캘린더 웹 (그 날 보기).</summary>
+    Google,
+    /// <summary>Outlook 웹 (outlook.live.com, 개인 계정, 그 날 보기).</summary>
+    OutlookWeb,
+    /// <summary>네이버 캘린더 웹 (날짜 지정 불가 — 기본 페이지).</summary>
+    Naver,
+    /// <summary>새 Outlook 데스크톱 (Microsoft.OutlookForWindows 패키지).</summary>
+    NewOutlook,
+    /// <summary>클래식 Outlook (outlook.exe, App Paths 로 감지).</summary>
+    ClassicOutlook,
+    /// <summary>윈도우 "메일 및 일정" (지원 종료 — 설치돼 있을 때만 표시).</summary>
+    WindowsCalendar,
+}
+
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TopBarColorMode
 {
@@ -161,6 +179,8 @@ public sealed class TopBarSettings
     public SearchMode SearchMode { get; set; } = SearchMode.Spotlight;
     /// <summary>Spotlight 검색창을 여는 전역 단축키 (맥 ⌘+Space 처럼). None 이면 끔.</summary>
     public SpotlightHotkey SpotlightHotkey { get; set; } = SpotlightHotkey.Auto;
+    /// <summary>시계 달력에서 날짜를 열 캘린더. 고른 데스크톱 앱이 지워졌으면 Google 웹으로 대신 엶.</summary>
+    public CalendarApp CalendarApp { get; set; } = CalendarApp.Google;
 }
 
 public sealed class NotificationSettings

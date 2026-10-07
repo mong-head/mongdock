@@ -1,6 +1,6 @@
-using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using MyDock.Services;
@@ -9,8 +9,11 @@ namespace MyDock.Views;
 
 /// <summary>
 /// 시계를 눌렀을 때 뜨는 달력 카드 (맥 알림 센터 달력 위젯 + 한국 공휴일).
-/// 오늘 날짜 크게 → 월 달력(‹ › 로 달 이동, 제목 클릭 = 이번 달) → 이번 달 공휴일 한 줄 → 링크.
-/// 6주 고정 높이라 달을 넘겨도 카드 크기가 튀지 않는다. 모든 동작은 클릭만으로.
+/// 오늘 날짜 크게 → 월 달력(‹ › 또는 휠로 달 이동, 제목 클릭 = 이번 달) → 선택한 날 정보 → 이번 달 공휴일 한 줄 → 링크.
+/// 날짜 칸: 호버 = 옅은 원, 클릭 = 선택(강조색 테두리 원), 다른 달 날짜 클릭 = 그 달로 이동 + 선택,
+/// 더블클릭 또는 "캘린더에서 열기" = 설정한 캘린더(TopBar.CalendarApp, Services/CalendarApps)로 열기.
+/// 선택은 패널이 열려 있는 동안만 (패널은 열 때마다 새로 만들어져 다시 열면 오늘).
+/// 6주·정보 줄 모두 고정 높이라 달·선택을 바꿔도 카드 크기가 튀지 않는다. 모든 동작은 마우스만으로.
 /// </summary>
 internal sealed partial class StatusPanelWindow
 {
@@ -24,6 +27,8 @@ internal sealed partial class StatusPanelWindow
         DateTime shown = new(DateTime.Today.Year, DateTime.Today.Month, 1); // 보고 있는 달
         DateTime drawnToday = DateTime.MinValue;
         DateTime drawnMonth = DateTime.MinValue;
+        DateTime selected = DateTime.Today; // 선택한 날 (패널 열 때 오늘)
+        DateTime drawnSelected = DateTime.MinValue;
 
         // ── 오늘: "10월 7일 수요일" + 작은 연도(·공휴일 이름)
         var bigDate = new TextBlock { FontSize = 22, FontWeight = FontWeights.SemiBold };
@@ -78,37 +83,97 @@ internal sealed partial class StatusPanelWindow
         var days = new Grid();
         for (int c = 0; c < 7; c++) days.ColumnDefinitions.Add(new ColumnDefinition());
         for (int r = 0; r < 6; r++) days.RowDefinitions.Add(new RowDefinition { Height = new GridLength(CalCellHeight) });
-        var cells = new (Grid Cell, Ellipse Today, TextBlock Text)[42];
+        var cells = new (Grid Cell, Ellipse Today, Ellipse Ring, TextBlock Text)[42];
+        var cellDates = new DateTime[42]; // 칸 i 가 지금 보여 주는 날짜 (클릭 처리용)
         for (int i = 0; i < 42; i++)
         {
-            var cell = new Grid { Background = Brushes.Transparent };
+            var cell = new Grid { Background = Brushes.Transparent, Cursor = Cursors.Hand };
+            // 호버: 옅은 원 (90ms 페이드)
+            var hover = new Ellipse { Width = CalTodaySize, Height = CalTodaySize, Fill = _p.Hover, Opacity = 0, IsHitTestVisible = false };
             var dot = new Ellipse { Width = CalTodaySize, Height = CalTodaySize, Fill = _p.Accent, Visibility = Visibility.Collapsed };
+            // 선택: 강조색 테두리 원 (오늘이 선택되면 기존 채움 원만)
+            var ring = new Ellipse
+            {
+                Width = CalTodaySize,
+                Height = CalTodaySize,
+                Stroke = _p.Accent,
+                StrokeThickness = 1.5,
+                Visibility = Visibility.Collapsed,
+            };
             var text = new TextBlock
             {
                 FontSize = 13.5,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             };
+            cell.Children.Add(hover);
             cell.Children.Add(dot);
+            cell.Children.Add(ring);
             cell.Children.Add(text);
+            cell.MouseEnter += (_, _) => Anim.Fade(hover, 1, 90);
+            cell.MouseLeave += (_, _) => Anim.Fade(hover, 0, 90);
             Grid.SetRow(cell, i / 7);
             Grid.SetColumn(cell, i % 7);
             days.Children.Add(cell);
-            cells[i] = (cell, dot, text);
+            cells[i] = (cell, dot, ring, text);
         }
-        root.Children.Add(days);
+        // 달이 바뀔 때 격자가 옆에서 미끄러져 들어오므로 카드 여백 밖으로 그려지지 않게 자름
+        var daysHost = new Border { ClipToBounds = true, Child = days };
+        root.Children.Add(daysHost);
 
-        // ── 이번 달 공휴일 한 줄 (최대 2줄 고정 높이)
+        // ── 선택한 날 (고정 높이). 나중에 그 날 일정 목록(ICS 등)을 이 StackPanel 의 정보 줄 아래에 붙이면 됨
+        // 1줄: "10월 9일 금요일 · 한글날"            [캘린더에서 열기]
+        // 2줄: "음력 8월 29일 · 2일 후"
+        var selectedDay = new StackPanel { Margin = new Thickness(2, 6, 2, 0) };
+        var infoTop = new DockPanel { LastChildFill = true, Height = 19 };
+        var openLink = new TextBlock
+        {
+            Text = "캘린더에서 열기",
+            FontSize = 12,
+            Foreground = _p.Accent,
+            Cursor = Cursors.Hand,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(8, 0, 0, 0),
+        };
+        openLink.MouseEnter += (_, _) => openLink.TextDecorations = TextDecorations.Underline;
+        openLink.MouseLeave += (_, _) => openLink.TextDecorations = null;
+        openLink.MouseLeftButtonDown += (_, e) =>
+        {
+            e.Handled = true;
+            OpenInCalendar(selected);
+        };
+        DockPanel.SetDock(openLink, Dock.Right);
+        infoTop.Children.Add(openLink);
+        var infoDate = new TextBlock
+        {
+            FontSize = 13,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+        var infoDateRun = new System.Windows.Documents.Run { FontWeight = FontWeights.SemiBold, Foreground = _p.Text };
+        var infoHolidayRun = new System.Windows.Documents.Run { Foreground = _p.HolidayText };
+        infoDate.Inlines.Add(infoDateRun);
+        infoDate.Inlines.Add(infoHolidayRun);
+        infoTop.Children.Add(infoDate);
+        selectedDay.Children.Add(infoTop);
+        var infoSub = new TextBlock
+        {
+            FontSize = 12,
+            Foreground = _p.SubText,
+            Height = 17,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+        selectedDay.Children.Add(infoSub);
+        root.Children.Add(selectedDay);
+
+        // ── 이번 달 공휴일 (선택한 날 정보가 우선이라 1줄 고정, 넘치면 … + 툴팁으로 전체)
         var holidayLine = new TextBlock
         {
             FontSize = 12,
             Foreground = _p.SubText,
-            TextWrapping = TextWrapping.Wrap,
             TextTrimming = TextTrimming.CharacterEllipsis,
-            LineHeight = 17,
-            LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
-            Height = 34,
-            Margin = new Thickness(2, 6, 2, 0),
+            Height = 17,
+            Margin = new Thickness(2, 4, 2, 0),
         };
         root.Children.Add(holidayLine);
 
@@ -124,18 +189,23 @@ internal sealed partial class StatusPanelWindow
         root.Children.Add(Divider());
         root.Children.Add(LinkRow("알림 센터 열기", () => _services.Shell.OpenNotificationCenter()));
         root.Children.Add(LinkRow("날짜 및 시간 설정…", () =>
-            Process.Start(new ProcessStartInfo("ms-settings:dateandtime") { UseShellExecute = true })?.Dispose()));
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:dateandtime") { UseShellExecute = true })?.Dispose()));
 
         void Draw()
         {
             var today = DateTime.Today;
-            if (today == drawnToday && shown == drawnMonth) return;
-            // 자정이 지나면 보고 있던 달이 "어제의 이번 달"이었을 때만 따라 넘어감
-            if (drawnToday != DateTime.MinValue && today != drawnToday
-                && shown == new DateTime(drawnToday.Year, drawnToday.Month, 1))
-                shown = new DateTime(today.Year, today.Month, 1);
+            if (today == drawnToday && shown == drawnMonth && selected == drawnSelected) return;
+            if (drawnToday != DateTime.MinValue && today != drawnToday)
+            {
+                // 자정이 지나면 보고 있던 달이 "어제의 이번 달"이었을 때만 따라 넘어감
+                if (shown == new DateTime(drawnToday.Year, drawnToday.Month, 1))
+                    shown = new DateTime(today.Year, today.Month, 1);
+                // 어제(그때의 오늘)를 선택해 두었으면 선택도 새 오늘로
+                if (selected == drawnToday) selected = today;
+            }
             drawnToday = today;
             drawnMonth = shown;
+            drawnSelected = selected;
 
             bigDate.Text = $"{today.Month}월 {today.Day}일 {DayNames[(int)today.DayOfWeek]}요일";
             yearRun.Text = $"{today.Year}년";
@@ -150,7 +220,8 @@ internal sealed partial class StatusPanelWindow
             for (int i = 0; i < 42; i++)
             {
                 var d = first.AddDays(i);
-                var (cell, dot, text) = cells[i];
+                cellDates[i] = d;
+                var (cell, dot, ring, text) = cells[i];
                 bool inMonth = d.Month == shown.Month;
                 bool isToday = d == today;
                 string? holiday = KoreanHolidays.NameOf(d);
@@ -162,28 +233,106 @@ internal sealed partial class StatusPanelWindow
                     : _p.Text;
                 text.Opacity = inMonth || isToday ? 1 : 0.35;
                 dot.Visibility = isToday ? Visibility.Visible : Visibility.Collapsed;
+                ring.Visibility = d == selected && !isToday ? Visibility.Visible : Visibility.Collapsed;
                 cell.ToolTip = holiday;
             }
 
+            // 선택한 날: "10월 9일 금요일 · 한글날" / "음력 8월 29일 · 2일 후" (다른 해면 연도도)
+            string? selHoliday = KoreanHolidays.NameOf(selected);
+            infoDateRun.Text = $"{selected.Month}월 {selected.Day}일 {DayNames[(int)selected.DayOfWeek]}요일"
+                + (selected.Year != today.Year ? $" ({selected.Year}년)" : "");
+            infoHolidayRun.Text = selHoliday != null ? $" · {selHoliday}" : "";
+            var parts = new List<string>(2);
+            if (KoreanHolidays.ToLunar(selected) is (int lm, int ld, bool leap))
+                parts.Add($"음력 {(leap ? "윤" : "")}{lm}월 {ld}일");
+            parts.Add(RelativeDay(selected, today));
+            infoSub.Text = string.Join(" · ", parts);
+
             var list = KoreanHolidays.ForMonth(shown.Year, shown.Month);
             holidayLine.Text = list.Count == 0 ? "이번 달 공휴일 없음" : FormatHolidays(list);
+            holidayLine.ToolTip = list.Count == 0 ? null : holidayLine.Text;
         }
 
-        void Move(int months)
+        // 달 이동 + 격자 슬라이드/페이드 (120ms, 다음 달 = 오른쪽에서, 이전 달 = 왼쪽에서). 시스템 애니메이션 꺼짐이면 바로.
+        void ShowMonth(DateTime month, DateTime? select = null)
         {
-            shown = shown.AddMonths(months);
+            month = new DateTime(month.Year, month.Month, 1);
+            int dir = month.CompareTo(shown);
+            shown = month;
+            if (select is DateTime s) selected = s;
             Draw();
+            if (dir != 0) Anim.Appear(days, 120, fromX: dir * 14, ease: Anim.EaseOut);
         }
-        prev.Click += (_, _) => Move(-1);
-        next.Click += (_, _) => Move(1);
-        monthButton.Click += (_, _) =>
+
+        // 날짜 칸 클릭: 같은 달이면 선택만, 다른 달(흐린 날짜)이면 그 달로 이동 + 선택
+        void Select(DateTime d)
         {
-            shown = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
-            Draw();
-        };
+            if (d.Year != shown.Year || d.Month != shown.Month) ShowMonth(d, d);
+            else
+            {
+                selected = d;
+                Draw();
+            }
+        }
+
+        for (int i = 0; i < 42; i++)
+        {
+            int index = i;
+            cells[i].Cell.MouseLeftButtonDown += (_, e) =>
+            {
+                e.Handled = true;
+                // 두 번째 클릭은 칸이 아니라 첫 클릭으로 고른 날짜를 연다 (다른 달 날짜는 첫 클릭에 격자가 바뀌므로)
+                if (e.ClickCount >= 2) OpenInCalendar(selected);
+                else Select(cellDates[index]);
+            };
+        }
+        prev.Click += (_, _) => ShowMonth(shown.AddMonths(-1));
+        next.Click += (_, _) => ShowMonth(shown.AddMonths(1));
+        monthButton.Click += (_, _) => ShowMonth(DateTime.Today, DateTime.Today);
+
+        // 마우스 휠로 달 이동 (위 = 이전 달). 트랙패드처럼 잘게 오는 휠은 한 칸(120)씩 모아서
+        int wheel = 0;
+        void OnWheel(object sender, MouseWheelEventArgs e)
+        {
+            e.Handled = true;
+            wheel += e.Delta;
+            while (Math.Abs(wheel) >= Mouse.MouseWheelDeltaForOneLine)
+            {
+                int step = wheel > 0 ? -1 : 1;
+                wheel += step * Mouse.MouseWheelDeltaForOneLine;
+                ShowMonth(shown.AddMonths(step));
+            }
+        }
+        header.MouseWheel += OnWheel;
+        weekHead.Grid.MouseWheel += OnWheel;
+        daysHost.MouseWheel += OnWheel;
+        selectedDay.MouseWheel += OnWheel;
 
         _refreshers.Add(Draw);
         return root;
+    }
+
+    /// <summary>설정한 캘린더(TopBar.CalendarApp)로 그 날을 열고 패널 닫기.</summary>
+    private void OpenInCalendar(DateTime date)
+    {
+        var app = _services.Settings.Current.TopBar.CalendarApp;
+        try { CalendarApps.Open(app, date); }
+        catch (Exception ex) { Log.Error($"캘린더 열기 실패 ({app}, {date:yyyy-MM-dd})", ex); }
+        Close();
+    }
+
+    /// <summary>"오늘" / "내일" / "어제" / "2일 후" / "3일 전".</summary>
+    private static string RelativeDay(DateTime date, DateTime today)
+    {
+        int diff = (date.Date - today.Date).Days;
+        return diff switch
+        {
+            0 => "오늘",
+            1 => "내일",
+            -1 => "어제",
+            > 0 => $"{diff}일 후",
+            _ => $"{-diff}일 전",
+        };
     }
 
     /// <summary>‹ › 같은 작은 원형 호버 버튼.</summary>
