@@ -431,7 +431,10 @@ internal sealed partial class SettingsWindow : Window
                 Toggle(d.ShowWindowsFromAllDesktops, on => Commit(() => D().ShowWindowsFromAllDesktops = on))),
             Row("창이 여러 개일 때 클릭", null, Segmented(d.MultiWindowClick,
                 new[] { (MultiWindowClick.Picker, "창 선택"), (MultiWindowClick.MostRecent, "최근 창") },
-                v => Commit(() => D().MultiWindowClick = v)))));
+                v => Commit(() => D().MultiWindowClick = v))),
+            Row("앱 켤 때", "창이 뜰 때까지 아이콘이 튀거나 실행 점이 깜빡입니다. 알림은 튀지 않습니다.", Segmented(d.LaunchAnimation,
+                new[] { (LaunchAnimation.Bounce, "통통 튀기"), (LaunchAnimation.Blink, "점 깜빡이기") },
+                v => Commit(() => D().LaunchAnimation = v)))));
     }
 
     /// <summary>"주 모니터" + 연결된 모니터 (장치 이름 \\.\DISPLAYn). 목록은 펼칠 때마다 새로 읽음.</summary>

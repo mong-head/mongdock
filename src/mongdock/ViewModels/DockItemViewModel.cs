@@ -35,6 +35,13 @@ public sealed class DockItemViewModel : ObservableObject
     /// <summary>창이 다른 가상 데스크톱에만 있음 → 실행 중 점을 흐리게.</summary>
     public bool RunningElsewhereOnly { get => _onlyElsewhere; set => Set(ref _onlyElsewhere, value); }
 
+    private bool _isLaunching;
+    /// <summary>
+    /// 독에서 눌러 실행했고 아직 창이 뜨지 않음 (최대 10초). 실행 점을 바로 보여 주고 튀기/깜빡임으로 반응.
+    /// 창이 나타나 IsRunning 이 되거나 시간이 지나면 DockWindow 가 false 로 내린다.
+    /// </summary>
+    public bool IsLaunching { get => _isLaunching; set => Set(ref _isLaunching, value); }
+
     private bool _hasNotification;
     public bool HasNotification { get => _hasNotification; set => Set(ref _hasNotification, value); }
 }

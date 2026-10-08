@@ -80,11 +80,14 @@ public partial class DockWindow
         _itemOutside = false;
         _itemTarget = -1;
         // 버튼을 이 창 위에서 누른 상태라 NOACTIVATE 창이어도 캡처가 창 밖까지 유지된다 (독 이동 드래그와 같은 방식)
+        view.PressDown(); // 누름 반응 (뗄 때 EndItemDrag 에서 되돌림)
         _itemArmed = Root.CaptureMouse();
         if (!_itemArmed)
         {
             // 캡처 실패 → 드래그 없이 바로 클릭으로
             _pressView = null;
+            view.PressUp();
+            _clickTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
             OnItemClicked(view, EventArgs.Empty);
         }
     }
@@ -92,6 +95,7 @@ public partial class DockWindow
     private void OnItemDragMouseUp(object sender, MouseButtonEventArgs e)
     {
         if (!_itemArmed) return;
+        _clickTimestamp = System.Diagnostics.Stopwatch.GetTimestamp(); // 클릭 → 실행 호출 지연 측정 기준
         e.Handled = true;
         var view = _pressView;
         bool dragged = _itemDragging;
@@ -156,6 +160,7 @@ public partial class DockWindow
         // 드래그 중에는 확대를 끈다: 들어갈 자리를 기본 크기 기준으로 계산하고, 확대가 섞이면 흔들려 보임
         ResetMagnification(animate: true);
         _itemTarget = ItemsHost.Children.IndexOf(view);
+        view.OnDragStarted(); // 누름 반응 즉시 되돌림 + 실행 튀기 멈춤
         view.Opacity = 0; // 원래 자리는 비움 (자리 자체는 이웃이 비켜서며 옮겨 감)
 
         if (_dragIcon != null && !_dragIcon.IsVisible && !MatchesMonitorDpi(_dragIcon))
@@ -321,7 +326,11 @@ public partial class DockWindow
         _escTimer.Stop();
         if (Root.IsMouseCaptured) Root.ReleaseMouseCapture();
         _dragIcon?.Hide();
-        if (view != null) view.Opacity = 1;
+        if (view != null)
+        {
+            view.Opacity = 1;
+            view.PressUp(animate: !wasDragging);
+        }
         if (wasDragging) ClearShifts(animateBack);
         _lastInsideTicks = Environment.TickCount64;
     }

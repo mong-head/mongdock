@@ -109,6 +109,7 @@ powershell -ExecutionPolicy Bypass -File build-release.ps1 -Version v0.2.0
 - 반투명 블러 배경, 라이트 / 다크 / 시스템 테마, 맥처럼 주변 아이콘이 함께 커지는 확대
 - 모든 아이콘을 macOS 규격(같은 크기·여백·둥근 사각형·그림자)으로 맞춤. 윈도우 앱은 흰 판 위에 표시
 - 알림은 바운스 없이 작은 빨간 점
+- **앱 켜기 반응**: 누르면 아이콘이 살짝 눌리고, 창이 뜰 때까지(최대 10초) 아이콘이 통통 튀며 실행 점이 바로 보인다. 설정 → 독 → "앱 켤 때" 에서 점 깜빡이기로 바꿀 수 있다. 창을 기다리는 동안 다시 눌러도 두 번 실행하지 않는다
 - 스토어 앱은 AUMID 로 저장 → 앱 업데이트 후에도 핀이 풀리지 않음
 
 <br clear="right">
@@ -151,7 +152,7 @@ zip 으로 썼다면:
 
 | 항목 | 예 |
 |---|---|
-| 독 위치·동작·크기·테마 | `dock.edge` (기본 `Bottom`), `dock.mode` (기본 `Reserve` = 항상 보이고 공간 차지), `dock.iconSize`, `dock.hoverScale`, `dock.theme` |
+| 독 위치·동작·크기·테마 | `dock.edge` (기본 `Bottom`), `dock.mode` (기본 `Reserve` = 항상 보이고 공간 차지), `dock.iconSize`, `dock.hoverScale`, `dock.theme`, `dock.launchAnimation` (앱 켤 때: 기본 `Bounce`, `Blink`) |
 | 독 모니터 | `dock.monitor` — 장치 이름(예 `"\\\\.\\DISPLAY2"`), `""` 이면 주 모니터 |
 | 상단바 크기 | `topBar.height` (기본 26), `topBar.fontSize` (기본 13) |
 | 상단바 색·표시 항목 | `topBar.colorMode` (`Auto`(기본, 앱 색에 맞춤)/`Fixed`/`Transparent`/`Blur`), `topBar.background`, `topBar.showAppMenus` … |
