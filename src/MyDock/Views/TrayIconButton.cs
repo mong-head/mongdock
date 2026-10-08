@@ -20,6 +20,8 @@ internal sealed class TrayIconButton : Button
     private bool _doubleClick;
     private Point? _downAt;
     private TrayIconDrag? _drag;
+    private bool _swallowRightUp;
+    private bool _swallowLeftUp;
 
     public TrayIconInfo Info { get; private set; }
     public double IconSize { get; }
@@ -41,6 +43,7 @@ internal sealed class TrayIconButton : Button
 
         PreviewMouseLeftButtonDown += (_, e) =>
         {
+            _swallowLeftUp = false;
             _doubleClick = e.ClickCount >= 2;
             _downAt = e.GetPosition(this);
         };
@@ -48,6 +51,13 @@ internal sealed class TrayIconButton : Button
         PreviewMouseLeftButtonUp += (_, e) =>
         {
             _downAt = null;
+            if (_swallowLeftUp)
+            {
+                _swallowLeftUp = false;
+                e.Handled = true; // 오른쪽 클릭으로 취소한 끌기의 왼쪽 떼기 → 클릭 아님
+                ReleaseCaptureIfIdle(e);
+                return;
+            }
             if (_drag is null) return;
             e.Handled = true; // Click 이 나가지 않게
             var d = _drag;
@@ -57,19 +67,33 @@ internal sealed class TrayIconButton : Button
         };
         LostMouseCapture += (_, _) =>
         {
+            _swallowLeftUp = false;
+            _swallowRightUp = false;
             if (_drag is null) return;
             var d = _drag; // 다른 창이 캡처를 가져감(Alt+Tab 등) → 취소
             _drag = null;
             d.End(cancel: true);
         };
-        KeyDown += (_, e) =>
+        // 끄는 중 오른쪽 클릭 = 취소 (상단바는 포커스를 받지 않아 Esc 가 오지 않음 — 원격에서도 클릭만으로).
+        // 캡처는 두 버튼을 다 뗄 때까지 유지해서, 이어지는 오른쪽·왼쪽 떼기가 다른 곳(상단바 메뉴·앱 클릭)으로 새지 않게 삼킨다.
+        PreviewMouseRightButtonDown += (_, e) =>
         {
-            if (e.Key != Key.Escape || _drag is null) return;
+            _swallowRightUp = false;
+            if (_drag is null) return;
             e.Handled = true;
             var d = _drag;
             _drag = null;
+            _downAt = null;
+            _swallowRightUp = true;
+            _swallowLeftUp = e.LeftButton == MouseButtonState.Pressed;
             d.End(cancel: true);
-            if (IsMouseCaptured) ReleaseMouseCapture();
+        };
+        PreviewMouseRightButtonUp += (_, e) =>
+        {
+            if (!_swallowRightUp) return;
+            _swallowRightUp = false;
+            e.Handled = true; // 끌기 취소용 오른쪽 클릭 → 앱 메뉴·상단바 메뉴 안 띄움
+            ReleaseCaptureIfIdle(e);
         };
         Click += (_, _) =>
         {
@@ -94,6 +118,14 @@ internal sealed class TrayIconButton : Button
             try { _services.TrayIcons.Hover(Info, ScreenRect()); }
             catch (Exception ex) { Log.Warn($"트레이 아이콘 호버 전달 실패: {ex.Message}"); }
         };
+    }
+
+    /// <summary>끌기 취소 뒤 남은 버튼까지 다 떼면 캡처 해제.</summary>
+    private void ReleaseCaptureIfIdle(MouseButtonEventArgs e)
+    {
+        if (_swallowLeftUp || _swallowRightUp) return;
+        if (e.LeftButton == MouseButtonState.Pressed || e.RightButton == MouseButtonState.Pressed) return;
+        if (IsMouseCaptured) ReleaseMouseCapture();
     }
 
     private void OnDragMove(object sender, MouseEventArgs e)

@@ -89,6 +89,9 @@ const
   EVENT_MODIFY_STATE = $0002;
   SYNCHRONIZE = $00100000;
   SW_SHOWNA = 8;
+  SoundCurrentKey = 'AppEvents\Schemes\Apps\.Default\Notification.Default\.Current';
+  SoundDefaultKey = 'AppEvents\Schemes\Apps\.Default\Notification.Default\.Default';
+  CP_UTF8 = 65001;
 
 function OpenEvent(dwDesiredAccess: DWORD; bInheritHandle: BOOL; lpName: String): THandle;
   external 'OpenEventW@kernel32.dll stdcall';
@@ -102,6 +105,10 @@ function FindWindowEx(hWndParent, hWndChildAfter: HWND; lpszClass: String; lpszW
   external 'FindWindowExW@user32.dll stdcall';
 function ShowWindowAsync(hWnd: HWND; nCmdShow: Integer): BOOL;
   external 'ShowWindowAsync@user32.dll stdcall';
+function MultiByteToWideChar(CodePage: Cardinal; dwFlags: DWORD; lpMultiByteStr: AnsiString; cbMultiByte: Integer; lpWideCharStr: String; cchWideChar: Integer): Integer;
+  external 'MultiByteToWideChar@kernel32.dll stdcall';
+function ExpandEnvironmentStrings(lpSrc: String; lpDst: String; nSize: DWORD): DWORD;
+  external 'ExpandEnvironmentStringsW@kernel32.dll stdcall';
 
 { mongdock 이 실행 중인지: 단일 인스턴스 뮤텍스가 있으면 실행 중 (프로세스가 끝나면 뮤텍스도 사라진다) }
 function IsMongdockRunning(): Boolean;
@@ -234,6 +241,133 @@ begin
       RegDeleteValue(HKEY_CURRENT_USER, RunKey, 'mongdock');
 end;
 
+{ UTF-8 바이트(settings.json, BOM 없음) → 문자열 }
+function Utf8ToStr(const S: AnsiString): String;
+var
+  Len: Integer;
+begin
+  Result := '';
+  if Length(S) = 0 then
+    Exit;
+  Len := MultiByteToWideChar(CP_UTF8, 0, S, Length(S), Result, 0);
+  if Len <= 0 then
+    Exit;
+  SetLength(Result, Len);
+  if MultiByteToWideChar(CP_UTF8, 0, S, Length(S), Result, Len) <> Len then
+    Result := '';
+end;
+
+{ %SystemRoot% 같은 환경 변수 펼치기 (없으면 그대로) }
+function ExpandEnv(const S: String): String;
+var
+  Buf: String;
+  N: DWORD;
+begin
+  Result := S;
+  if Pos('%', S) = 0 then
+    Exit;
+  SetLength(Buf, 2048);
+  N := ExpandEnvironmentStrings(S, Buf, 2048);
+  if (N > 0) and (N <= 2048) then
+    Result := Copy(Buf, 1, N - 1);
+end;
+
+function IsJsonSpace(C: Char): Boolean;
+begin
+  Result := (C = ' ') or (C = #9) or (C = #13) or (C = #10);
+end;
+
+{ settings.json 의 notifications.originalSound 문자열 값 (몽독이 처음 소리를 바꾸기 전의 레지스트리 값).
+  키가 없거나 null 이거나 읽을 수 없으면 False. 몽독 설정에서 이 키 이름은 하나뿐이라 단순 검색으로 찾는다. }
+function ReadOriginalSound(const Path: String; var Value: String): Boolean;
+var
+  Raw: AnsiString;
+  Text: String;
+  P, I, L: Integer;
+  C: Char;
+begin
+  Result := False;
+  Value := '';
+  if not FileExists(Path) then
+    Exit;
+  if not LoadStringFromFile(Path, Raw) then
+    Exit;
+  Text := Utf8ToStr(Raw);
+  P := Pos('"originalsound"', Lowercase(Text));
+  if P = 0 then
+    Exit;
+  L := Length(Text);
+  I := P + Length('"originalsound"');
+  while (I <= L) and IsJsonSpace(Text[I]) do
+    I := I + 1;
+  if (I > L) or (Text[I] <> ':') then
+    Exit;
+  I := I + 1;
+  while (I <= L) and IsJsonSpace(Text[I]) do
+    I := I + 1;
+  { null(아직 바꾼 적 없음) 등 문자열이 아니면 포기 }
+  if (I > L) or (Text[I] <> '"') then
+    Exit;
+  I := I + 1;
+  while I <= L do
+  begin
+    C := Text[I];
+    if C = '"' then
+    begin
+      Result := True;
+      Exit;
+    end;
+    if C = '\' then
+    begin
+      I := I + 1;
+      if I > L then
+        Exit;
+      C := Text[I];
+      case C of
+        'n': Value := Value + #10;
+        'r': Value := Value + #13;
+        't': Value := Value + #9;
+        'b', 'f', 'u': Exit; { 경로에는 나오지 않음 → 포기하고 .Default 로 }
+      else
+        Value := Value + C; { \\ \" \/ }
+      end;
+    end
+    else
+      Value := Value + C;
+    I := I + 1;
+  end;
+end;
+
+{ 몽독이 바꿔 둔 윈도우 알림 소리를 되돌린다.
+  .Current 가 몽독 파일(%APPDATA%\mongdock\sounds\notification.wav)을 가리킬 때만 (그 뒤 사용자가 직접 바꿨으면 그대로 둔다):
+  settings.json 의 originalSound 가 있으면 그 값, 없으면 같은 키의 .Default 값을 .Current 에 (REG_EXPAND_SZ). }
+procedure RestoreNotificationSound();
+var
+  Cur, Managed, Original, Def: String;
+begin
+  if not RegQueryStringValue(HKEY_CURRENT_USER, SoundCurrentKey, '', Cur) then
+    Exit;
+  Managed := ExpandConstant('{userappdata}\mongdock\sounds\notification.wav');
+  if (CompareText(Cur, Managed) <> 0) and (CompareText(ExpandEnv(Cur), Managed) <> 0) then
+    Exit;
+
+  if ReadOriginalSound(ExpandConstant('{userappdata}\mongdock\settings.json'), Original) then
+  begin
+    if Pos('%', Original) > 0 then
+      RegWriteExpandStringValue(HKEY_CURRENT_USER, SoundCurrentKey, '', Original)
+    else
+      RegWriteStringValue(HKEY_CURRENT_USER, SoundCurrentKey, '', Original);
+    Log('알림 소리 원래대로 (settings.json originalSound): "' + Original + '"');
+  end
+  else if RegQueryStringValue(HKEY_CURRENT_USER, SoundDefaultKey, '', Def) then
+  begin
+    RegWriteExpandStringValue(HKEY_CURRENT_USER, SoundCurrentKey, '', Def);
+    Log('알림 소리 윈도우 기본값으로 (.Default): "' + Def + '"');
+  end
+  else
+    Log('알림 소리: 원래 값과 .Default 를 찾지 못해 그대로 둠');
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   DataDir: String;
@@ -243,6 +377,8 @@ begin
     CloseMongdock();
     { 앱 메뉴에서 켠 자동 실행도 같은 값이므로 설치 때 선택 여부와 상관없이 지운다 }
     RegDeleteValue(HKEY_CURRENT_USER, RunKey, 'mongdock');
+    { 설정 폴더(originalSound 가 든 settings.json)를 지울지 묻기 전에 }
+    RestoreNotificationSound();
   end;
 
   if CurUninstallStep = usPostUninstall then

@@ -139,6 +139,8 @@ public sealed class SettingsService : ISettingsService, IDisposable
     /// - dock.background/borderColor/indicatorColor 가 이전 기본값과 정확히 같으면 "" (테마 기본값)
     /// - topBar.foreground 가 "#FFF2F2F2" 면 "", topBar.background 가 "#C0161618" 이면 새 기본값
     /// - topBar.height 32 / fontSize 14 (옛 기본값) 이면 새 기본값 26 / 13
+    /// 3 미만일 때 한 번:
+    /// - topBar.showTrayIcons 키가 없고 hideWindowsTaskbar=true 면 showTrayIcons=true (옛 기본값 true 유지)
     /// 끝나면 SettingsVersion = 현재 버전. 바뀐 게 있거나 버전을 올렸으면 true (호출자가 저장).
     /// </summary>
     internal static bool Migrate(string text, Settings s)
@@ -176,6 +178,18 @@ public sealed class SettingsService : ISettingsService, IDisposable
                 // 상단바를 맥 메뉴바 크기로 줄임 (32/14 → 26/13): 옛 기본값 그대로인 경우만, 한 번만
                 if (NumberIs(top, "height", OldTopBarHeight)) { s.TopBar.Height = new TopBarSettings().Height; notes.Add($"topBar.height → {s.TopBar.Height}"); }
                 if (NumberIs(top, "fontSize", OldTopBarFontSize)) { s.TopBar.FontSize = new TopBarSettings().FontSize; notes.Add($"topBar.fontSize → {s.TopBar.FontSize}"); }
+            }
+
+            // 3: 앱 트레이 아이콘 기본값 true → false. 키 없이(옛 기본값으로) 작업 표시줄을 숨기던 사용자는 지금처럼 켜 둔다.
+            if (version < 3)
+            {
+                bool hasShowTray = TryGetProp(root, "topBar", out var top3) && top3.ValueKind == JsonValueKind.Object
+                                   && TryGetProp(top3, "showTrayIcons", out _);
+                if (!hasShowTray && s.HideWindowsTaskbar && !s.TopBar.ShowTrayIcons)
+                {
+                    s.TopBar.ShowTrayIcons = true;
+                    notes.Add("topBar.showTrayIcons → true (작업 표시줄 숨김 사용 중)");
+                }
             }
         }
         catch (Exception ex)

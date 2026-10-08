@@ -173,8 +173,18 @@ public sealed class TopBarSettings
     /// <summary>
     /// 다른 앱의 트레이(알림 영역) 아이콘 — 카카오톡·디스코드 등 (작업 표시줄을 숨겨도 접근 가능하게).
     /// 켜져 있으면 몽독이 트레이 메시지를 먼저 받아 explorer 로 그대로 전달한다 (TrayIconService).
+    /// 기본 꺼짐. 사용자가 직접 정한 적 없으면(TrayIconsUserSet=false) "작업 표시줄 숨기기" 를 켤 때 자동으로 켜짐 (Settings.SetHideWindowsTaskbar).
     /// </summary>
-    public bool ShowTrayIcons { get; set; } = true;
+    public bool ShowTrayIcons { get; set; }
+    /// <summary>ShowTrayIcons 를 사용자가 설정 창/메뉴에서 직접 바꾼 적 있는지. true 면 작업 표시줄 숨기기와 연동하지 않음.</summary>
+    public bool TrayIconsUserSet { get; set; }
+
+    /// <summary>사용자가 UI 에서 "앱 트레이 아이콘" 을 바꿀 때 (사용자 지정으로 기록).</summary>
+    public void SetShowTrayIconsByUser(bool on)
+    {
+        ShowTrayIcons = on;
+        TrayIconsUserSet = true;
+    }
     /// <summary>
     /// 상단바에 바로 보일 트레이 아이콘의 <b>최대</b> 개수. 어느 아이콘이 바에 갈지는 TrayIconPlacement(몽독에서 옮김) &gt;
     /// 윈도우 설정("작업 표시줄에 항상 표시") &gt; 기본(⌃ 안) 순서로 정하고, 이 수를 넘으면 순서 뒤쪽부터 ⌃ 로.
@@ -273,11 +283,12 @@ public sealed class CalendarSettings
 public sealed class Settings
 {
     /// <summary>settings.json 형식 버전. 이관은 파일에 적힌 버전이 이보다 낮을 때만 한 번 (SettingsService.Migrate).</summary>
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     /// <summary>
     /// 이 파일이 어느 형식까지 이관됐는지. 키가 없는 옛 파일은 0 으로 본다 (원본 JSON 으로 판단 — 속성 기본값과 무관).
-    /// 1 이하: 옛 기본 색·상단바 32/14 를 새 기본값으로 바꾼 적 없음. 2: 현재.
+    /// 1 이하: 옛 기본 색·상단바 32/14 를 새 기본값으로 바꾼 적 없음.
+    /// 2: topBar.showTrayIcons 기본값이 true 였음 (3 부터 false — 키 없이 작업 표시줄을 숨기던 사용자는 true 로 이관). 3: 현재.
     /// </summary>
     public int SettingsVersion { get; set; } = CurrentVersion;
     public DockSettings Dock { get; set; } = new();
@@ -292,6 +303,16 @@ public sealed class Settings
     public string FontFamily { get; set; } = "Pretendard";
     /// <summary>MyDock 이 켜져 있는 동안 윈도우 작업 표시줄 숨김. 일시 정지·종료·크래시 시 원래대로 복원.</summary>
     public bool HideWindowsTaskbar { get; set; }
+
+    /// <summary>
+    /// UI 에서 "윈도우 작업 표시줄 숨기기" 를 바꿀 때. 켤 때 앱 트레이 아이콘을 사용자가 정한 적 없으면 같이 켬
+    /// (작업 표시줄이 없으면 트레이 아이콘에 접근할 곳이 상단바뿐이므로).
+    /// </summary>
+    public void SetHideWindowsTaskbar(bool on)
+    {
+        HideWindowsTaskbar = on;
+        if (on && !TopBar.TrayIconsUserSet) TopBar.ShowTrayIcons = true;
+    }
     public bool StartWithWindows { get; set; }
     /// <summary>MyDockFinder ico.ini 를 한 번 가져왔는지. true 면 다시 가져오지 않음.</summary>
     public bool ImportedFromMyDockFinder { get; set; }

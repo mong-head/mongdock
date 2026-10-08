@@ -116,7 +116,7 @@ internal static class DockMenus
     public static MenuItem HideTaskbar(AppServices services)
     {
         bool on = services.Settings.Current.HideWindowsTaskbar;
-        return Item("윈도우 작업 표시줄 숨기기", () => Update(services, () => services.Settings.Current.HideWindowsTaskbar = !on), isChecked: on);
+        return Item("윈도우 작업 표시줄 숨기기", () => Update(services, () => services.Settings.Current.SetHideWindowsTaskbar(!on)), isChecked: on);
     }
 
     /// <summary>설정 창 열기 (클릭으로 바꾸는 설정 화면). 이미 열려 있으면 앞으로.</summary>

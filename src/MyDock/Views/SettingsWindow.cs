@@ -108,6 +108,7 @@ internal sealed partial class SettingsWindow : Window
         SourceInitialized += (_, _) => ApplyTitleBarTheme();
         _services.Settings.SettingsChanged += OnSettingsChanged;
         _services.Calendars.Changed += OnCalendarsChanged;
+        _services.TrayIcons.Changed += OnTrayIconsChanged; // SettingsWindow.Tray.cs
         SystemTheme.Changed += OnSystemThemeChanged;
         Closed += (_, _) =>
         {
@@ -116,6 +117,7 @@ internal sealed partial class SettingsWindow : Window
             _sliderTimer.Stop();
             _services.Settings.SettingsChanged -= OnSettingsChanged;
             _services.Calendars.Changed -= OnCalendarsChanged;
+            StopTrayRefresh();
             _relativeTimer?.Stop();
             SystemTheme.Changed -= OnSystemThemeChanged;
             if (_instance == this) _instance = null;
@@ -334,7 +336,7 @@ internal sealed partial class SettingsWindow : Window
                     _services.Settings.Current.StartWithWindows = on;
                 }))),
             Row("윈도우 작업 표시줄 숨기기", "mongdock 이 켜져 있는 동안만 숨깁니다. 일시 정지·종료 시 복원.",
-                Toggle(s.HideWindowsTaskbar, on => Commit(() => _services.Settings.Current.HideWindowsTaskbar = on)))));
+                Toggle(s.HideWindowsTaskbar, on => Commit(() => _services.Settings.Current.SetHideWindowsTaskbar(on))))));
 
         body.Children.Add(Group(
             Row("글꼴", "상단바·메뉴·패널·독 이름표 글꼴", FontDropdown(s.FontFamily))));
@@ -479,8 +481,8 @@ internal sealed partial class SettingsWindow : Window
             Row("앱 이름", null, Toggle(t.ShowActiveAppName, on => Commit(() => T().ShowActiveAppName = on))),
             Row("앱 메뉴", "파일·편집·보기… (맥 메뉴 막대처럼)", Toggle(t.ShowAppMenus, on => Commit(() => T().ShowAppMenus = on))),
             Row("가상 데스크톱 버튼", null, Toggle(t.ShowDesktopButtons, on => Commit(() => T().ShowDesktopButtons = on))),
-            Row("앱 트레이 아이콘", "카카오톡·디스코드 같은 앱의 알림 영역 아이콘. 작업 표시줄을 숨겨도 여기서 열 수 있어요.",
-                Toggle(t.ShowTrayIcons, on => Commit(() => T().ShowTrayIcons = on))),
+            Row("앱 트레이 아이콘", "작업 표시줄 대신 상단바에 다른 앱 트레이 아이콘을 보여 줍니다(작업 표시줄 숨기기를 켜면 자동으로 켜짐).",
+                Toggle(t.ShowTrayIcons, on => Commit(() => T().SetShowTrayIconsByUser(on), rebuild: true))),
             Row("상단바 트레이 아이콘 최대 개수", "바에 둘 아이콘이 이보다 많으면 순서 뒤쪽부터 ⌃ 안으로 들어가요.",
                 ValueSlider(t.TrayIconsVisibleCount, 1, 20, 1, v => $"{v:0}개", v => T().TrayIconsVisibleCount = (int)Math.Round(v))),
             Row("상태 아이콘", "Wi-Fi·블루투스·볼륨", Toggle(t.ShowStatusIcons, on => Commit(() => T().ShowStatusIcons = on))),

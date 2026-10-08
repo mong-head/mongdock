@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using MyDock.Services;
 
 namespace MyDock.Views;
@@ -13,6 +14,37 @@ namespace MyDock.Views;
 internal sealed partial class SettingsWindow
 {
     private static readonly Dictionary<string, string> AppNames = new(StringComparer.OrdinalIgnoreCase);
+    private const int TrayRefreshDebounceMs = 300;
+    private DispatcherTimer? _trayRefreshTimer;
+
+    /// <summary>
+    /// 트레이 아이콘 목록이 바뀜(앱 추가·제거·아이콘 변경) → 상단바 페이지의 "트레이 아이콘 정리" 를 300ms 몰아서 다시 그림.
+    /// 생성자에서 구독, 창이 닫힐 때 <see cref="StopTrayRefresh"/> 로 해제.
+    /// </summary>
+    private void OnTrayIconsChanged(object? sender, EventArgs e)
+    {
+        if (_closed || _page != Page.TopBar || !_services.Settings.Current.TopBar.ShowTrayIcons) return;
+        if (_trayRefreshTimer is null)
+        {
+            _trayRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(TrayRefreshDebounceMs) };
+            _trayRefreshTimer.Tick += (_, _) =>
+            {
+                _trayRefreshTimer.Stop();
+                if (_closed || _page != Page.TopBar) return;
+                // 슬라이더를 끄는 중이면 끝난 뒤에 (다시 그리면 끌기가 끊김)
+                if (_sliderDragging || _pendingSlider != null) { _trayRefreshTimer.Start(); return; }
+                QueueRebuild();
+            };
+        }
+        _trayRefreshTimer.Stop();
+        _trayRefreshTimer.Start();
+    }
+
+    private void StopTrayRefresh()
+    {
+        _services.TrayIcons.Changed -= OnTrayIconsChanged;
+        _trayRefreshTimer?.Stop();
+    }
 
     private void AddTrayArrange(Panel body)
     {
