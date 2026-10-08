@@ -99,6 +99,13 @@ public static class Monitors
         return Create(DesktopApi.MonitorFromWindow(hwnd, DesktopApi.MONITOR_DEFAULTTONEAREST), 0) ?? GetPrimary();
     }
 
+    /// <summary>커서가 있는 모니터 (없으면 주 모니터). MONGDOCK_FAKE_SCREEN 이 반영된 값 — 화면 크기 계산은 DesktopApi 직접 호출 대신 이것을.</summary>
+    public static MonitorInfo FromCursor()
+    {
+        if (!DesktopApi.GetCursorPos(out POINT pt)) return GetPrimary();
+        return Create(DesktopApi.MonitorFromPoint(pt, DesktopApi.MONITOR_DEFAULTTONEAREST), 0) ?? GetPrimary();
+    }
+
     /// <summary>구성 비교용 서명: 장치·영역·DPI·주 모니터 (작업 영역 제외 — AppBar 변경으로 바뀌므로).</summary>
     internal static string Signature(IReadOnlyList<MonitorInfo> all) =>
         string.Join(";", all.Select(m => $"{m.DeviceName}|{m.BoundsRect}|{Math.Round(m.Scale * 96)}|{(m.IsPrimary ? 1 : 0)}"));
@@ -107,8 +114,11 @@ public static class Monitors
     {
         if (!DesktopApi.TryGetMonitorInfoEx(h, out MONITORINFOEX mi)) return null;
         string device = mi.szDevice ?? "";
-        return new MonitorInfo(device, mi.rcMonitor, mi.rcWork, DesktopApi.GetMonitorScale(h),
-            (mi.dwFlags & DesktopApi.MONITORINFOF_PRIMARY) != 0, ParseNumber(device, index + 1));
+        bool primary = (mi.dwFlags & DesktopApi.MONITORINFOF_PRIMARY) != 0;
+        double scale = DesktopApi.GetMonitorScale(h);
+        RECT bounds = mi.rcMonitor, work = mi.rcWork;
+        if (primary) FakeScreen.Apply(ref bounds, ref work, scale); // MONGDOCK_FAKE_SCREEN (없으면 그대로)
+        return new MonitorInfo(device, bounds, work, scale, primary, ParseNumber(device, index + 1));
     }
 
     private static int ParseNumber(string device, int fallback)

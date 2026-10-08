@@ -28,6 +28,12 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
     private Dispatcher? _dispatcher;
     private bool _refreshQueued;
     private IntPtr _foreground;
+    /// <summary>
+    /// 마지막으로 본 GetForegroundWindow 값. 셸 훅이 알려 준 창(작업 표시줄 단위 창)과 실제 포그라운드(그 창의 대화상자 등)가 다르면
+    /// 예전엔 다음 폴링(1.5초 안)에서 같은 활성화를 한 번 더 WindowActivated 로 보냈다 → 그사이 연 패널이 이유 없이 닫힘.
+    /// 이제 폴링은 실제 포그라운드가 이 값에서 바뀌었을 때만 알린다.
+    /// </summary>
+    private IntPtr _observedForeground;
 
     public IReadOnlyList<AppWindowInfo> Windows => _windows;
 
@@ -62,7 +68,7 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
         if (!User32.RegisterShellHookWindow(_hookSource.Handle))
             Log.Error($"RegisterShellHookWindow 실패 (err={System.Runtime.InteropServices.Marshal.GetLastWin32Error()}) → 타이머 재열거만 사용");
 
-        _foreground = User32.GetForegroundWindow();
+        _foreground = _observedForeground = User32.GetForegroundWindow();
         Refresh(force: true);
 
         VirtualDesktopService.DesktopsChangedStatic += OnDesktopsChanged;
@@ -123,7 +129,8 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
                     break;
                 case Shell32.HSHELL_WINDOWACTIVATED:
                 case Shell32.HSHELL_RUDEAPPACTIVATED:
-                    _foreground = target != IntPtr.Zero ? target : User32.GetForegroundWindow();
+                    _observedForeground = User32.GetForegroundWindow();
+                    _foreground = target != IntPtr.Zero ? target : _observedForeground;
                     WindowActivated?.Invoke(this, _foreground);
                     QueueRefresh(); // 최소화 상태 등이 바뀌었을 수 있음
                     break;
@@ -165,10 +172,12 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
         try
         {
             IntPtr fg = User32.GetForegroundWindow();
+            bool changed = fg != _observedForeground; // 셸 훅이 이미 알린 활성화는 다시 알리지 않음
+            _observedForeground = fg;
             if (fg != _foreground)
             {
                 _foreground = fg;
-                WindowActivated?.Invoke(this, fg);
+                if (changed) WindowActivated?.Invoke(this, fg);
             }
             Refresh(force: false);
         }

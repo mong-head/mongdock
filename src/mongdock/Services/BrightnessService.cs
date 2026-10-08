@@ -15,6 +15,8 @@ public sealed record DisplayBrightness(string Id, string Name, int Percent, bool
 /// 모든 조회·쓰기는 백그라운드 스레드에서 (DDC 는 호출 하나에 수십~수백 ms). UI 스레드에서 불러도 막지 않음.
 /// <see cref="Changed"/> 는 백그라운드 스레드에서 발생 — 받는 쪽이 UI 스레드로 넘길 것.
 /// 쓰기는 화면마다 "마지막 값만" 남기고 합쳐서 보낸다 (드래그 중 쌓이지 않게).
+/// 디버그: 환경 변수 MONGDOCK_FAKE_BRIGHTNESS="내장:70,DELL U2720Q:40" 이면 실제 조회 대신 그 목록을 쓰고,
+/// 바꾼 값은 메모리에만 저장 (WMI·DDC 쓰기 안 함, 로그만). 없으면 무시 (Release 에서도 무해).
 /// </summary>
 public sealed class BrightnessService
 {
@@ -22,6 +24,8 @@ public sealed class BrightnessService
 
     private const string WmiId = "wmi";
     private const string DdcPrefix = "ddc:";
+    private const string FakePrefix = "fake:";
+    private const string FakeVariable = "MONGDOCK_FAKE_BRIGHTNESS";
 
     private readonly object _gate = new();
     private IReadOnlyList<DisplayBrightness> _displays = Array.Empty<DisplayBrightness>();
@@ -31,8 +35,16 @@ public sealed class BrightnessService
     private bool _writing;
     private bool _loggedWmi;
     private readonly HashSet<string> _loggedDdc = new();
+    /// <summary>MONGDOCK_FAKE_BRIGHTNESS 목록 (없으면 null). 값은 Set 으로 바뀜 (_gate 로 보호).</summary>
+    private readonly List<DisplayBrightness>? _fake;
 
-    private BrightnessService() { }
+    private BrightnessService()
+    {
+        var spec = Environment.GetEnvironmentVariable(FakeVariable);
+        if (string.IsNullOrWhiteSpace(spec)) return;
+        _fake = ParseFake(spec);
+        Log.Info($"가짜 밝기 사용 ({FakeVariable}): {string.Join(", ", _fake.Select(d => $"{d.Name} {d.Percent}%"))}");
+    }
 
     /// <summary>마지막으로 확인한 조절 가능 화면 (없으면 빈 목록 = 행 숨김). 내장 화면 먼저.</summary>
     public IReadOnlyList<DisplayBrightness> Displays { get { lock (_gate) return _displays; } }
@@ -122,6 +134,11 @@ public sealed class BrightnessService
             }
             try
             {
+                if (_fake is not null)
+                {
+                    FakeSet(id, value);
+                    continue;
+                }
                 bool ok = id == WmiId ? WmiSet(value) : DdcSet(id, value);
                 if (!ok) Log.Warn($"밝기 설정 실패: {id} → {value}");
             }
@@ -139,6 +156,8 @@ public sealed class BrightnessService
 
     private List<DisplayBrightness> Enumerate()
     {
+        if (_fake is not null)
+            lock (_gate) return new List<DisplayBrightness>(_fake);
         var list = new List<DisplayBrightness>();
         List<(string GdiName, string FriendlyName, bool Internal)> targets;
         try { targets = DisplayApi.GetActiveTargets(); }
@@ -178,6 +197,47 @@ public sealed class BrightnessService
             if (DesktopApi.TryGetMonitorInfoEx(h, out var mi) && string.Equals(mi.szDevice, deviceName, StringComparison.OrdinalIgnoreCase))
                 return h;
         return IntPtr.Zero;
+    }
+
+    // ───────────────────────── 디버그 (가짜 밝기) ─────────────────────────
+
+    /// <summary>가짜 화면 값만 바꿈 (실제 밝기는 그대로).</summary>
+    private void FakeSet(string id, int percent)
+    {
+        lock (_gate)
+        {
+            int i = _fake!.FindIndex(d => d.Id == id);
+            if (i < 0) return;
+            _fake[i] = _fake[i] with { Percent = percent };
+        }
+        Log.Info($"가짜 밝기 설정 (실제 화면은 그대로): {id} → {percent}%");
+    }
+
+    /// <summary>
+    /// "내장:70,DELL U2720Q:40" → 가짜 목록. 이름에 내장/internal/built-in 이 있으면 내장 화면("내장" 만이면 "내장 디스플레이"),
+    /// 실제 조회처럼 내장 먼저. 퍼센트를 생략하거나 못 읽으면 50.
+    /// </summary>
+    internal static List<DisplayBrightness> ParseFake(string spec)
+    {
+        var list = new List<DisplayBrightness>();
+        foreach (var raw in spec.Split(',', ';'))
+        {
+            var part = raw.Trim();
+            if (part.Length == 0) continue;
+            int colon = part.LastIndexOf(':');
+            string name = colon > 0 ? part[..colon].Trim() : part;
+            int percent = 50;
+            if (colon > 0 && int.TryParse(part[(colon + 1)..].Trim().TrimEnd('%'), System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture, out int p))
+                percent = Math.Clamp(p, 0, 100);
+            if (name.Length == 0) continue;
+            bool isInternal = name.Contains("내장", StringComparison.Ordinal)
+                || name.Contains("internal", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("built-in", StringComparison.OrdinalIgnoreCase);
+            if (name == "내장") name = "내장 디스플레이";
+            list.Add(new DisplayBrightness($"{FakePrefix}{list.Count}", name, percent, isInternal));
+        }
+        return list.Where(d => d.Internal).Concat(list.Where(d => !d.Internal)).ToList();
     }
 
     // ───────────────────────── DDC/CI ─────────────────────────

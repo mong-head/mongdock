@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 터치 장치가 없는 PC 에서 몽독 상단바·독에 손가락 탭/길게 누르기/끌기를 흉내 내는 시험 도구 (InjectTouchInput).
+       앱 코드와 무관 — mongdock.sln 에 넣지 않음. 사용법은 README.md -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <AssemblyName>touch-test</AssemblyName>
+    <RootNamespace>TouchTest</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+</Project>

@@ -147,7 +147,11 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     {
         get
         {
-            if (DesktopApi.TryGetMonitorRects(DesktopApi.PrimaryMonitor, out RECT b, out _)) return b;
+            if (DesktopApi.TryGetMonitorRects(DesktopApi.PrimaryMonitor, out RECT b, out RECT w))
+            {
+                FakeScreen.Apply(ref b, ref w, PrimaryScale); // MONGDOCK_FAKE_SCREEN (없으면 그대로)
+                return b;
+            }
             return new RECT(0, 0, User32.GetSystemMetrics(User32.SM_CXSCREEN), User32.GetSystemMetrics(User32.SM_CYSCREEN));
         }
     }
@@ -164,8 +168,11 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     /// <summary>주 모니터 작업 영역 (DIP) — 작업표시줄과 등록된 AppBar 를 뺀 영역.</summary>
     public Rect GetPrimaryWorkArea()
     {
-        if (DesktopApi.TryGetMonitorRects(DesktopApi.PrimaryMonitor, out _, out RECT work))
+        if (DesktopApi.TryGetMonitorRects(DesktopApi.PrimaryMonitor, out RECT bounds, out RECT work))
+        {
+            FakeScreen.Apply(ref bounds, ref work, PrimaryScale);
             return ToDip(work, PrimaryScale);
+        }
         return SystemParameters.WorkArea;
     }
 

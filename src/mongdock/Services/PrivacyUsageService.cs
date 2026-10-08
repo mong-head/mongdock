@@ -21,7 +21,8 @@ public sealed record PrivacyUsage(PrivacyCapability Capability, string Name, str
 /// 패키지 앱은 하위 키 이름 = 패키지 패밀리, 데스크톱 앱은 NonPackaged\ 아래 경로의 \ 를 # 로 바꾼 이름.
 /// 읽기만 한다. RegNotifyChangeKeyValue(하위 트리, webcam·microphone) + 2초 폴링 보조, 백그라운드 스레드 하나.
 /// 상단바가 여러 개(모니터별)여도 하나만 돌도록 공유 인스턴스 + 참조 수(<see cref="Acquire"/>/<see cref="Release"/>).
-/// 디버그: 환경 변수 MONGDOCK_FAKE_PRIVACY=camera:Zoom,mic:Discord 면 레지스트리 대신 그 값.
+/// 사용이 끝난 항목은 <see cref="LingerMs"/> 동안 남겨 둔다 (<see cref="Linger"/>).
+/// 디버그: 환경 변수 MONGDOCK_FAKE_PRIVACY=camera:Zoom,mic:Discord 면 레지스트리 대신 그 값 (",blink" 를 붙이면 6초 사용·1초 끊김 반복).
 /// </summary>
 public sealed class PrivacyUsageService
 {
@@ -33,6 +34,8 @@ public sealed class PrivacyUsageService
     /// <summary>실행 중 프로세스 이름 캐시 (회의 중 2초마다 전체 프로세스 목록을 만들지 않게).</summary>
     private const int RunningCacheMs = 10000;
     private const int DebounceMs = 150;
+    /// <summary>사용이 끝난 뒤 점·카드 항목을 남겨 두는 시간 (잠깐 끊겼다 다시 쓰는 경우 깜빡임·카드 닫힘 방지).</summary>
+    internal const int LingerMs = 3000;
 
     private static readonly (PrivacyCapability Cap, string Key)[] Capabilities =
     {
@@ -104,15 +107,22 @@ public sealed class PrivacyUsageService
         if (changed) Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>ms-settings: URI 를 여는 함수. 시험 하네스가 실제 설정 앱을 띄우지 않게 바꿔 끼울 수 있음 (기본 = 셸 실행).</summary>
+    internal static Action<string> UriOpener = uri => Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true })?.Dispose();
+
+    public static string SettingsUri(PrivacyCapability cap) => cap switch
+    {
+        PrivacyCapability.Camera => "ms-settings:privacy-webcam",
+        PrivacyCapability.Microphone => "ms-settings:privacy-microphone",
+        _ => "ms-settings:privacy-location",
+    };
+
     public static void OpenSettings(PrivacyCapability cap)
     {
-        string uri = cap switch
-        {
-            PrivacyCapability.Camera => "ms-settings:privacy-webcam",
-            PrivacyCapability.Microphone => "ms-settings:privacy-microphone",
-            _ => "ms-settings:privacy-location",
-        };
-        try { Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true })?.Dispose(); }
+        string uri = SettingsUri(cap);
+        // 성공도 남김: "눌러도 아무 일 없음" 보고 때 클릭이 여기까지 왔는지 로그로 구분하려고
+        Log.Info($"개인 정보 설정 열기: {uri}");
+        try { UriOpener(uri); }
         catch (Exception ex) { Log.Error($"설정 열기 실패: {uri}", ex); }
     }
 
@@ -123,12 +133,11 @@ public sealed class PrivacyUsageService
         var fake = Environment.GetEnvironmentVariable(FakeVariable);
         if (!string.IsNullOrWhiteSpace(fake))
         {
-            Publish(ParseFake(fake), gen);
-            stop.WaitOne();
-            stop.Dispose();
+            RunFake(fake, stop, gen);
             return;
         }
 
+        var linger = new Linger();
         RegistryKey? cam = null, mic = null;
         AutoResetEvent? camEvt = null, micEvt = null;
         try
@@ -142,10 +151,14 @@ public sealed class PrivacyUsageService
             bool micOk = Register(mic, micEvt);
             var handles = new WaitHandle[] { stop, camEvt, micEvt };
 
-            Publish(Scan(), gen);
+            Publish(linger.Merge(Scan(), Environment.TickCount64), gen);
             while (true)
             {
-                int w = WaitHandle.WaitAny(handles, camOk && micOk ? SlowPollMs : PollMs);
+                int timeout = camOk && micOk ? SlowPollMs : PollMs;
+                // 끝난 항목을 잠깐 남겨 둔 경우: 그 시간이 지나면 다시 읽어 지움
+                long due = linger.MsUntilExpiry(Environment.TickCount64);
+                if (due >= 0) timeout = (int)Math.Min(timeout, due + 20);
+                int w = WaitHandle.WaitAny(handles, timeout);
                 if (w == 0) return;
                 if (w != WaitHandle.WaitTimeout)
                 {
@@ -160,7 +173,7 @@ public sealed class PrivacyUsageService
                     if (cam == null && (cam = Registry.CurrentUser.OpenSubKey(ConsentStore + @"\webcam", false)) != null) camOk = Register(cam, camEvt);
                     if (mic == null && (mic = Registry.CurrentUser.OpenSubKey(ConsentStore + @"\microphone", false)) != null) micOk = Register(mic, micEvt);
                 }
-                Publish(Scan(), gen);
+                Publish(linger.Merge(Scan(), Environment.TickCount64), gen);
             }
         }
         catch (Exception ex)
@@ -367,7 +380,82 @@ public sealed class PrivacyUsageService
         return s;
     }
 
+    // ───────────────────────── 끝난 사용 잠깐 유지 ─────────────────────────
+
+    /// <summary>
+    /// 사용이 끝난 항목을 <see cref="LingerMs"/> 동안 목록에 남겨 둠 (감시 스레드 전용, 세대마다 새로).
+    /// 마이크는 앱이 스트림을 닫았다 곧 다시 여는 일이 잦아(장치 전환·음성 감지·통화 재연결 등) 그대로 보내면 점이 깜빡이고,
+    /// 점이 사라지는 순간 상단바가 카드를 닫아 "마이크 개인 정보 설정…" 을 누르려던 클릭이 허공에 떨어진다.
+    /// 맥도 사용이 끝난 뒤 점을 몇 초 남긴다.
+    /// </summary>
+    internal sealed class Linger
+    {
+        private readonly Dictionary<string, (PrivacyUsage Usage, long GoneAt)> _gone = new();
+        private List<PrivacyUsage> _last = new();
+
+        private static string KeyOf(PrivacyUsage u) => $"{u.Capability}:{u.Key}";
+
+        /// <summary>이번에 읽은 목록 + 끝난 지 LingerMs 안 된 항목. <paramref name="now"/> = TickCount64.</summary>
+        public List<PrivacyUsage> Merge(List<PrivacyUsage> current, long now)
+        {
+            var keys = new HashSet<string>(current.Select(KeyOf));
+            foreach (var u in _last)
+            {
+                string k = KeyOf(u);
+                if (!keys.Contains(k) && !_gone.ContainsKey(k)) _gone[k] = (u, now);
+            }
+            foreach (var k in keys) _gone.Remove(k);
+            foreach (var k in _gone.Where(p => now - p.Value.GoneAt >= LingerMs).Select(p => p.Key).ToList()) _gone.Remove(k);
+            var result = new List<PrivacyUsage>(current);
+            result.AddRange(_gone.Values.Select(v => v.Usage));
+            _last = result;
+            return result;
+        }
+
+        /// <summary>남겨 둔 항목 중 가장 먼저 지울 때까지 남은 ms (없으면 -1).</summary>
+        public long MsUntilExpiry(long now)
+            => _gone.Count == 0 ? -1 : Math.Max(0, _gone.Values.Min(v => v.GoneAt) + LingerMs - now);
+    }
+
     // ───────────────────────── 디버그 ─────────────────────────
+
+    /// <summary>
+    /// MONGDOCK_FAKE_PRIVACY: 고정 목록. 값에 "blink" 가 있으면 6초 사용 → 1초 끊김을 되풀이 (마이크가 잠깐 끊기는 상황 재현,
+    /// 실제 감시와 같은 <see cref="Linger"/> 를 거치므로 점·카드가 그대로 남아야 정상).
+    /// </summary>
+    private void RunFake(string spec, ManualResetEvent stop, int gen)
+    {
+        try
+        {
+            var list = ParseFake(spec);
+            bool blink = spec.Split(',', ';').Any(p => p.Trim().Equals("blink", StringComparison.OrdinalIgnoreCase));
+            if (!blink)
+            {
+                Publish(list, gen);
+                stop.WaitOne();
+                return;
+            }
+            var linger = new Linger();
+            bool on = true;
+            long switchAt = Environment.TickCount64 + 6000;
+            while (true)
+            {
+                long now = Environment.TickCount64;
+                if (now >= switchAt)
+                {
+                    on = !on;
+                    switchAt = now + (on ? 6000 : 1000);
+                    Log.Info($"가짜 카메라·마이크 사용 {(on ? "다시 시작" : "잠깐 끊김")} (blink)");
+                }
+                Publish(linger.Merge(on ? new List<PrivacyUsage>(list) : new List<PrivacyUsage>(), now), gen);
+                long wait = switchAt - now;
+                long due = linger.MsUntilExpiry(now);
+                if (due >= 0) wait = Math.Min(wait, due + 20);
+                if (stop.WaitOne((int)Math.Max(10, wait))) return;
+            }
+        }
+        finally { stop.Dispose(); }
+    }
 
     /// <summary>"camera:Zoom,mic:Discord,location:지도" → 가짜 사용 목록.</summary>
     internal static List<PrivacyUsage> ParseFake(string spec)
