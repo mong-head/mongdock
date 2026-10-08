@@ -106,6 +106,7 @@ internal sealed partial class SettingsWindow : Window
         _services = services;
         _p = UiTheme.Palette(services.Settings.Current);
         Title = $"{AppInfo.Name} 설정";
+        AppIcon.Apply(this);
         Width = 780;
         Height = 620;
         MinWidth = 640;

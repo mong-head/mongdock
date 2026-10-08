@@ -19,6 +19,7 @@
     <NoWarn>$(NoWarn);WFAC010</NoWarn>
     <!-- PerMonitorV2 DPI 인식 -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\mongdock.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
@@ -30,6 +31,8 @@
   <ItemGroup>
     <!-- 내장 글꼴 Pretendard (SIL OFL 1.1) — 라이선스 파일을 함께 배포 -->
     <Resource Include="Fonts\*.otf" />
+    <!-- 앱 아이콘 (tools/make-icon/make-icon.ps1 로 생성): 창 Icon·트레이 아이콘 -->
+    <Resource Include="Assets\mongdock.ico" />
     <None Include="Fonts\OFL.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

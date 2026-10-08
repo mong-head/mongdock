@@ -1,4 +1,4 @@
-# mongdock (몽독)
+# <img src="docs/icon.png" width="40" align="absmiddle" alt=""> mongdock (몽독)
 
 윈도우 11을 맥처럼 쓰게 해 주는 독 + 상단바. C# / WPF / .NET 8, 외부 패키지 없음.
 

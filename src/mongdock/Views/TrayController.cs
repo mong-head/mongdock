@@ -20,8 +20,10 @@ public sealed class TrayController : IDisposable
 {
     private readonly AppServices _services;
     private readonly WinForms.NotifyIcon _icon;
-    private readonly Icon _normalIcon;
-    private readonly Icon _pausedIcon;
+    private Icon _normalIcon;
+    private Icon _pausedIcon;
+    /// <summary>현재 아이콘 픽셀 크기 (작업 표시줄 DPI 기준 16/20/24/32 …).</summary>
+    private int _iconPx;
     private ContextMenu? _menu;
     private bool? _taskbarHidden;
     private bool _disposed;
@@ -29,15 +31,34 @@ public sealed class TrayController : IDisposable
     public TrayController(AppServices services)
     {
         _services = services;
-        _normalIcon = DrawIcon(paused: false);
-        _pausedIcon = DrawIcon(paused: true);
+        _iconPx = TrayIconPx();
+        (_normalIcon, _pausedIcon) = CreateIcons(_iconPx);
         _icon = new WinForms.NotifyIcon { Icon = _normalIcon, Text = AppInfo.Name, Visible = true };
         _icon.MouseUp += OnMouseUp;
 
         _services.Settings.SettingsChanged += OnStateChanged;
         AppState.Changed += OnStateChanged;
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
         Refresh();
     }
+
+    /// <summary>원격 접속 등으로 DPI 가 바뀌면 그 크기의 아이콘으로 다시 (흐릿하게 늘어나지 않게).</summary>
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e)
+        => System.Windows.Application.Current?.Dispatcher.BeginInvoke(() =>
+        {
+            if (_disposed) return;
+            int px = TrayIconPx();
+            if (px == _iconPx) return;
+            var (normal, paused) = CreateIcons(px);
+            var oldNormal = _normalIcon;
+            var oldPaused = _pausedIcon;
+            _iconPx = px;
+            _normalIcon = normal;
+            _pausedIcon = paused;
+            Refresh();
+            oldNormal.Dispose();
+            oldPaused.Dispose();
+        });
 
     private void OnStateChanged(object? sender, EventArgs e) => Refresh();
 
@@ -46,7 +67,8 @@ public sealed class TrayController : IDisposable
     {
         if (_disposed) return;
         bool paused = AppState.Paused;
-        _icon.Icon = paused ? _pausedIcon : _normalIcon;
+        var icon = paused ? _pausedIcon : _normalIcon;
+        if (!ReferenceEquals(_icon.Icon, icon)) _icon.Icon = icon;
         _icon.Text = paused ? $"{AppInfo.Name} (일시 정지)" : AppInfo.Name;
 
         bool hide = _services.Settings.Current.HideWindowsTaskbar && !paused;
@@ -127,6 +149,71 @@ public sealed class TrayController : IDisposable
     [DllImport("user32.dll")]
     private static extern bool DestroyIcon(IntPtr handle);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr FindWindow(string? className, string? windowName);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForSystem();
+
+    /// <summary>
+    /// 알림 영역 아이콘 픽셀 크기 = 16 x 작업 표시줄 DPI / 96 (100% 16, 125% 20, 150% 24, 200% 32).
+    /// 작업 표시줄을 숨겨도 Shell_TrayWnd 창은 남아 있음. 못 찾으면 시스템 DPI.
+    /// </summary>
+    private static int TrayIconPx()
+    {
+        uint dpi = 0;
+        try
+        {
+            IntPtr tray = FindWindow("Shell_TrayWnd", null);
+            if (tray != IntPtr.Zero) dpi = GetDpiForWindow(tray);
+            if (dpi == 0) dpi = GetDpiForSystem();
+        }
+        catch { }
+        if (dpi == 0) dpi = 96;
+        return Math.Clamp((int)Math.Round(16 * dpi / 96.0), 16, 64);
+    }
+
+    /// <summary>앱 아이콘(ico 의 해당 크기 항목) + 일시 정지용 회색 버전. ico 를 못 읽으면 아래 그림 아이콘.</summary>
+    private static (Icon normal, Icon paused) CreateIcons(int px)
+    {
+        var normal = AppIcon.CreateTrayIcon(px);
+        if (normal is null) return (DrawIcon(paused: false), DrawIcon(paused: true));
+        try { return (normal, Grayscale(normal, px)); }
+        catch (Exception ex)
+        {
+            Log.Error("일시 정지 트레이 아이콘 만들기 실패", ex);
+            return (normal, DrawIcon(paused: true));
+        }
+    }
+
+    /// <summary>일시 정지 표시: 앱 아이콘을 회색·조금 투명하게.</summary>
+    private static Icon Grayscale(Icon source, int px)
+    {
+        using var src = source.ToBitmap();
+        using var bmp = new Bitmap(px, px, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(bmp))
+        using (var attrs = new System.Drawing.Imaging.ImageAttributes())
+        {
+            g.Clear(Color.Transparent);
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            attrs.SetColorMatrix(new System.Drawing.Imaging.ColorMatrix(new[]
+            {
+                new[] { 0.30f, 0.30f, 0.30f, 0f, 0f },
+                new[] { 0.59f, 0.59f, 0.59f, 0f, 0f },
+                new[] { 0.11f, 0.11f, 0.11f, 0f, 0f },
+                new[] { 0f, 0f, 0f, 0.85f, 0f },
+                new[] { 0f, 0f, 0f, 0f, 1f },
+            }));
+            g.DrawImage(src, new Rectangle(0, 0, px, px), 0, 0, src.Width, src.Height, GraphicsUnit.Pixel, attrs);
+        }
+        IntPtr h = bmp.GetHicon();
+        try { return (Icon)Icon.FromHandle(h).Clone(); }
+        finally { DestroyIcon(h); }
+    }
+
     /// <summary>둥근 독 모양 (둥근 판 + 아이콘 세 개 + 실행 점). 일시 정지면 회색 + 두 줄.</summary>
     private static Icon DrawIcon(bool paused)
     {
@@ -179,6 +266,7 @@ public sealed class TrayController : IDisposable
         _disposed = true;
         _services.Settings.SettingsChanged -= OnStateChanged;
         AppState.Changed -= OnStateChanged;
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
         if (_menu?.IsOpen == true) _menu.IsOpen = false;
         _icon.Visible = false;
         _icon.Dispose();

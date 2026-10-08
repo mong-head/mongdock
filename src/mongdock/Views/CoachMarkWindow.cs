@@ -76,6 +76,7 @@ internal sealed class CoachMarkWindow : Window
         SizeToContent = SizeToContent.WidthAndHeight;
         UseLayoutRounding = true;
         Title = "mongdock CoachMark";
+        AppIcon.Apply(this);
         SetResourceReference(FontFamilyProperty, UiFonts.Key);
         FontSize = 13;
         Foreground = p.Text;

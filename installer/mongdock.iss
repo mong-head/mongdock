@@ -46,6 +46,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.19041
 UninstallDisplayIcon={app}\{#AppExe}
+SetupIconFile=..\src\mongdock\Assets\mongdock.ico
 OutputDir={#OutputDir}
 OutputBaseFilename={#OutputName}
 Compression=lzma2/max
