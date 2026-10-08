@@ -187,7 +187,8 @@ public enum WifiState { Unknown, Disconnected, Connected, Ethernet }
 
 /// <summary>상단바 상태 아이콘(와이파이·블루투스·볼륨·네트워크 속도). 값이 바뀌면 Changed (UI 스레드).</summary>
 public sealed record AudioDevice(string Id, string Name, bool IsDefault, AudioDeviceKind Kind);
-public enum AudioDeviceKind { Speakers, Headphones, Display, Digital, Other }
+/// <summary>장치 종류. Microphone·LineIn·Loopback 은 입력 장치에만 (Loopback = "스테레오 믹스" 처럼 재생 소리를 되받는 입력).</summary>
+public enum AudioDeviceKind { Speakers, Headphones, Display, Digital, Other, Microphone, LineIn, Loopback }
 /// <summary>
 /// 페어링된 블루투스 기기. CanConnect = 블루투스 오디오 KS 필터가 있어 패널에서 바로 연결/해제 가능
 /// (아니면 UI 는 블루투스 설정을 연다).
@@ -261,6 +262,19 @@ public interface IStatusService
     IReadOnlyList<AudioDevice> OutputDevices { get; }
     /// <summary>기본 재생 장치 변경 (IPolicyConfig). 실패 시 false.</summary>
     bool SetDefaultOutput(string deviceId);
+    /// <summary>기본 입력(녹음) 장치가 있어 음량을 조절할 수 있음. false 면 입력 UI 를 숨긴다.</summary>
+    bool HasInput { get; }
+    /// <summary>기본 입력 장치 음량 0~1 / 음소거. 윈도우 설정·다른 앱이 바꿔도 Changed 로 따라감.</summary>
+    double InputVolume { get; }
+    bool InputMuted { get; }
+    void SetInputVolume(double volume);
+    void SetInputMuted(bool muted);
+    /// <summary>입력 장치 목록 (활성 장치만, 루프백 포함 — Kind 로 구분). IsDefault 가 기본 입력 장치.</summary>
+    IReadOnlyList<AudioDevice> InputDevices { get; }
+    /// <summary>기본 입력 장치 변경 (IPolicyConfig, 역할 세 개 모두). 실패 시 false.</summary>
+    bool SetDefaultInput(string deviceId);
+    /// <summary>기본 입력 장치의 지금 피크 레벨 0~1 (UI 스레드에서 폴링, Changed 없음). 녹음 중인 앱이 없으면 0.</summary>
+    double GetInputPeak();
     /// <summary>페어링된 블루투스 장치 (연결 여부 포함).</summary>
     IReadOnlyList<BluetoothDeviceInfo> BluetoothDevices { get; }
     /// <summary>

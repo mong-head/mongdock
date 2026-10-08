@@ -648,6 +648,9 @@ internal sealed partial class StatusPanelWindow : Window
         var devices = new StackPanel();
         root.Children.Add(devices);
 
+        // 입력(마이크) — StatusPanelWindow.Input.cs. 입력 장치가 없으면 숨김
+        root.Children.Add(BuildInputSection());
+
         var media = BuildMediaSection();
         root.Children.Add(media);
 
