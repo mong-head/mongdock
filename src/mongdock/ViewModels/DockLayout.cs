@@ -14,6 +14,8 @@ public sealed class DockLayout
     public bool IsLight { get; private init; }
     public bool Blur { get; private init; }
     public bool Wave { get; private init; }
+    /// <summary>앱을 켤 때 반응 (튀기 / 점 깜빡임).</summary>
+    public LaunchAnimation LaunchAnimation { get; private init; }
 
     public double IconSize { get; private init; }
     public double Spacing { get; private init; }
@@ -47,6 +49,11 @@ public sealed class DockLayout
 
     /// <summary>아이콘 창 두께: 패널 + 확대로 튀어나오는 부분 + 여유.</summary>
     public double WindowThickness => Math.Ceiling(EdgeMargin + PanelCross + IconSize * (HoverScale - 1) + 8);
+
+    /// <summary>
+    /// 실행 튀기 높이: 아이콘의 약 35%. 아이콘 창 안(확대 여유 + 패딩)에서 잘리지 않게 제한 (확대 1 배면 낮게 튐).
+    /// </summary>
+    public double BounceHeight => Math.Max(4, Math.Min(IconSize * 0.35, IconSize * (HoverScale - 1) + 8 + Padding - 2));
 
     /// <summary>확대로 패널이 독 방향으로 늘어날 수 있는 길이 (한쪽).</summary>
     public double GrowthRoom => Math.Ceiling(IconSize * (HoverScale - 1) * (Wave ? 1.7 : 0.6) + 12);
@@ -97,6 +104,7 @@ public sealed class DockLayout
             IsLight = light,
             Blur = s.Blur,
             Wave = s.WaveMagnification,
+            LaunchAnimation = s.LaunchAnimation,
             IconSize = icon,
             Spacing = Clamp(s.IconSpacing, 0, 64, 5),
             HoverScale = Clamp(s.HoverScale, 1, 3, 1.36),

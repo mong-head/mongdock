@@ -16,33 +16,54 @@ public sealed class AppLauncher : IAppLauncher
         _tracker = tracker;
     }
 
+    /// <summary>
+    /// 핀 실행. Exe/Aumid 는 별도 STA 스레드에서 실행해 바로 돌아온다 — ActivateApplication 은 앱이 뜰 때까지
+    /// (계산기 실측 ~390ms) 블록하고, ShellExecute 도 처음엔 100ms 넘게 걸릴 수 있어 UI 스레드(독 누름 반응)를 막지 않게.
+    /// 로그 줄의 "대기"는 호출~스레드 시작, "호출"은 실제 실행 API 가 걸린 시간.
+    /// </summary>
     public void Launch(PinItem pin)
     {
         if (pin is null) return;
+        if (pin.Kind is PinKind.Separator) return;
+        if (pin.Kind is PinKind.Special)
+        {
+            Guard(pin, () => LaunchSpecial(pin.Target.Trim()));
+            return;
+        }
+        long queued = Stopwatch.GetTimestamp();
+        RunSta(() => Guard(pin, () =>
+        {
+            if (pin.Kind == PinKind.Exe) LaunchExe(pin, queued);
+            else LaunchAumid(pin.Target.Trim(), pin.Arguments, queued);
+        }));
+    }
+
+    private static void Guard(PinItem pin, Action run)
+    {
+        try { run(); }
+        catch (Exception ex) { Log.Error($"실행 실패: {pin.Kind} '{pin.Target}'", ex); }
+    }
+
+    /// <summary>실행 호출 전용 백그라운드 STA 스레드 (ShellExecute·COM 활성화는 STA 권장).</summary>
+    private static void RunSta(Action run)
+    {
         try
         {
-            switch (pin.Kind)
-            {
-                case PinKind.Exe:
-                    LaunchExe(pin);
-                    break;
-                case PinKind.Aumid:
-                    LaunchAumid(pin.Target.Trim(), pin.Arguments);
-                    break;
-                case PinKind.Special:
-                    LaunchSpecial(pin.Target.Trim());
-                    break;
-                case PinKind.Separator:
-                    break;
-            }
+            var t = new Thread(() => run()) { IsBackground = true, Name = "mongdock-launch" };
+            t.SetApartmentState(ApartmentState.STA);
+            t.Start();
         }
         catch (Exception ex)
         {
-            Log.Error($"실행 실패: {pin.Kind} '{pin.Target}'", ex);
+            Log.Error("실행 스레드 시작 실패 → 현재 스레드에서 실행", ex);
+            run();
         }
     }
 
-    private static void LaunchExe(PinItem pin)
+    private static string Timing(long queued, long start) =>
+        $"(대기 +{Stopwatch.GetElapsedTime(queued, start).TotalMilliseconds:0}ms, 호출 {Stopwatch.GetElapsedTime(start).TotalMilliseconds:0}ms)";
+
+    private static void LaunchExe(PinItem pin, long queued)
     {
         string target = Environment.ExpandEnvironmentVariables((pin.Target ?? "").Trim().Trim('"'));
         if (target.Length == 0)
@@ -63,31 +84,43 @@ public sealed class AppLauncher : IAppLauncher
         };
         string? dir = File.Exists(target) ? Path.GetDirectoryName(target) : null;
         if (!string.IsNullOrEmpty(dir)) psi.WorkingDirectory = dir;
+        long start = Stopwatch.GetTimestamp();
         Process.Start(psi)?.Dispose();
-        Log.Info($"실행(exe): {target}");
+        Log.Info($"실행(exe): {target} {Timing(queued, start)}");
     }
 
-    private static void LaunchAumid(string aumid, string? arguments)
+    /// <summary>
+    /// 스토어 앱: IApplicationActivationManager 를 먼저 (계산기 실측: 창까지 ~390ms vs explorer shell:AppsFolder ~630~800ms),
+    /// 실패하면 explorer 경유. 인자가 있으면 explorer 로는 전달할 수 없어 ActivateApplication 만.
+    /// </summary>
+    private static void LaunchAumid(string aumid, string? arguments, long queued)
     {
         if (aumid.Length == 0) return;
 
-        // 인자가 있으면 IApplicationActivationManager (explorer 경유로는 인자 전달 불가)
-        if (!string.IsNullOrWhiteSpace(arguments) && TryActivateApplication(aumid, arguments)) return;
+        bool hasArgs = !string.IsNullOrWhiteSpace(arguments);
+        long start = Stopwatch.GetTimestamp();
+        if ((hasArgs || IsPackagedAumid(aumid)) && TryActivateApplication(aumid, arguments, queued, start)) return;
+        if (hasArgs) return;
 
-        try
-        {
-            var psi = new ProcessStartInfo("explorer.exe", @"shell:AppsFolder\" + aumid) { UseShellExecute = true };
-            Process.Start(psi)?.Dispose();
-            Log.Info($"실행(aumid via explorer): {aumid}");
-        }
-        catch (Exception ex)
-        {
-            Log.Error($"explorer shell:AppsFolder 실행 실패 → ActivateApplication 시도: {aumid}", ex);
-            TryActivateApplication(aumid, arguments);
-        }
+        start = Stopwatch.GetTimestamp();
+        var psi = new ProcessStartInfo("explorer.exe", @"shell:AppsFolder\" + aumid) { UseShellExecute = true };
+        Process.Start(psi)?.Dispose();
+        Log.Info($"실행(aumid via explorer): {aumid} {Timing(queued, start)}");
     }
 
-    private static bool TryActivateApplication(string aumid, string? arguments)
+    /// <summary>
+    /// 패키지 앱 AUMID 형태("패밀리이름_게시자해시!앱ID")인지. 데스크톱 앱 AUMID·AppsFolder 파싱 이름("{GUID}\app.exe" 등)은
+    /// ActivateApplication 이 실패하므로 처음부터 explorer 경유.
+    /// </summary>
+    private static bool IsPackagedAumid(string aumid)
+    {
+        int bang = aumid.IndexOf('!');
+        if (bang <= 0 || bang == aumid.Length - 1) return false;
+        string family = aumid[..bang];
+        return family.IndexOf('_') > 0 && family.IndexOfAny(new[] { '\\', '/', '{' }) < 0;
+    }
+
+    private static bool TryActivateApplication(string aumid, string? arguments, long queued, long start)
     {
         object? mgr = null;
         try
@@ -96,15 +129,15 @@ public sealed class AppLauncher : IAppLauncher
             int hr = ((IApplicationActivationManager)mgr).ActivateApplication(aumid, arguments, 0, out uint pid);
             if (hr != 0)
             {
-                Log.Error($"ActivateApplication 실패 hr=0x{hr:X8}: {aumid}");
+                Log.Warn($"ActivateApplication 실패 hr=0x{hr:X8} → explorer 경유 시도: {aumid}");
                 return false;
             }
-            Log.Info($"실행(aumid via ActivateApplication): {aumid} pid={pid}");
+            Log.Info($"실행(aumid via ActivateApplication): {aumid} pid={pid} {Timing(queued, start)}");
             return true;
         }
         catch (Exception ex)
         {
-            Log.Error($"ActivateApplication 예외: {aumid}", ex);
+            Log.Warn($"ActivateApplication 예외 → explorer 경유 시도: {aumid}", ex);
             return false;
         }
         finally

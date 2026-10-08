@@ -135,6 +135,7 @@ public partial class DockWindow : Window
     {
         _closed = true;
         _pollTimer.Stop();
+        _launchTimer?.Stop();
         UnhookRender();
         if (_subscribed)
         {
@@ -992,6 +993,7 @@ public partial class DockWindow : Window
             item.IsRunning = item.Windows.Count > 0;
             item.RunningElsewhereOnly = item.IsRunning && item.Windows.All(w => !w.OnCurrentDesktop);
             item.HasNotification = item.Windows.Any(w => _flashed.Contains(w.Hwnd));
+            UpdateLaunching(item);
         }
     }
 
@@ -1080,7 +1082,7 @@ public partial class DockWindow : Window
             if (item.Windows.Count == 0)
             {
                 // 창이 하나도 없을 때만, 그리고 실행 대상이 있는 핀만 실행 (빈 경로 Launch 금지)
-                if (item.Pin != null && CanLaunch(item.Pin)) _services.Launcher.Launch(item.Pin);
+                if (item.Pin != null && CanLaunch(item.Pin)) LaunchFromDock(item, item.Pin);
                 else if (item.Pin != null) Log.Warn($"실행 대상이 비어 있는 핀 '{item.Pin.Name}' — 실행 안 함");
                 return;
             }

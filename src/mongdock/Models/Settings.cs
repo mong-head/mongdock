@@ -19,6 +19,10 @@ public enum DockMode
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum MultiWindowClick { Picker, MostRecent }
 
+/// <summary>독에서 앱을 켤 때 반응: Bounce = 아이콘이 통통 튐, Blink = 실행 점이 깜빡임.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum LaunchAnimation { Bounce, Blink }
+
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum DockTheme { System, Light, Dark }
 
@@ -115,6 +119,8 @@ public sealed class DockSettings
     public bool Enabled { get; set; } = true;
     /// <summary>창이 여러 개인 앱 아이콘 클릭: Picker = 창 선택 패널(미리보기), MostRecent = 가장 최근 창으로 바로.</summary>
     public MultiWindowClick MultiWindowClick { get; set; } = MultiWindowClick.Picker;
+    /// <summary>독에서 앱을 켤 때(창이 뜰 때까지, 최대 10초) 보여 줄 반응. 알림은 어느 쪽이든 튀지 않는다.</summary>
+    public LaunchAnimation LaunchAnimation { get; set; } = LaunchAnimation.Bounce;
     /// <summary>다른 가상 데스크톱의 창도 독에 표시(실행 중 점, 창 선택에 "데스크톱 N").</summary>
     public bool ShowWindowsFromAllDesktops { get; set; } = true;
     public DockEdge Edge { get; set; } = DockEdge.Bottom;
