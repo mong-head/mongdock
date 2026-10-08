@@ -92,6 +92,14 @@ public partial class TopBarWindow : Window
         Loaded += (_, _) => { if (!_services.Settings.Current.TopBar.Enabled || AppState.Paused || _fullscreen) Hide(); };
         ContentRendered += (_, _) => { Remeasure(LeftSection); Remeasure(RightSection); };
         Closed += OnClosed;
+        AppNames.NamesChanged += OnAppNamesChanged;
+    }
+
+    /// <summary>시작 메뉴 이름 매핑이 늦게 끝나 앱 이름이 바뀜 → 지금 앱 이름 다시 표시.</summary>
+    private void OnAppNamesChanged(object? sender, EventArgs e)
+    {
+        if (_closed || _currentApp is not { } app) return;
+        SetAppNameText(AppNames.Get(app));
     }
 
     // ───────────────────────── 수명 주기 ─────────────────────────
@@ -123,6 +131,7 @@ public partial class TopBarWindow : Window
     private void OnClosed(object? sender, EventArgs e)
     {
         _closed = true;
+        AppNames.NamesChanged -= OnAppNamesChanged;
         UnhookUpdates();
         _pollTimer.Stop();
         _clockTimer.Stop();

@@ -14,7 +14,6 @@ internal sealed partial class SettingsWindow
     private bool _updateHooked;
     /// <summary>이 창에서 "업데이트 확인" 을 눌렀는지 (결과 문구는 그때만).</summary>
     private bool _updateManualChecked;
-    private bool _updateLaunched;
     private Border? _updateFill;
     private TextBlock? _updateProgressText;
 
@@ -79,7 +78,7 @@ internal sealed partial class SettingsWindow
             _updateManualChecked = true;
             await updates.CheckAsync(manual: true);
         });
-        check.IsEnabled = !updates.IsChecking && !updates.IsDownloading;
+        check.IsEnabled = !updates.IsChecking && !updates.IsDownloading && !updates.IsInstalling;
 
         body.Children.Add(Group(
             Row($"지금 버전 {VersionText()}", status, check),
@@ -141,7 +140,7 @@ internal sealed partial class SettingsWindow
         bool canSelf = UpdateService.CanSelfUpdate(out string why);
         var buttons = new WrapPanel { Orientation = Orientation.Horizontal };
 
-        if (_updateLaunched)
+        if (updates.IsInstalling)
         {
             stack.Children.Add(Note("설치 프로그램을 실행했어요. 잠시 뒤 몽독이 꺼졌다가 새 버전으로 다시 켜져요."));
         }
@@ -170,14 +169,10 @@ internal sealed partial class SettingsWindow
             _updateProgressText = null;
             if (canSelf && info.SetupUrl is not null)
             {
-                var now = ActionButton("지금 업데이트", async () =>
+                // 설치가 끝나지 않았으면(2분 안에 몽독이 안 꺼짐·setup 실패) DownloadError 와 함께 "다시 시도"
+                var now = ActionButton(updates.DownloadError is null ? "지금 업데이트" : "다시 시도", async () =>
                 {
-                    bool launched = await updates.DownloadAndInstallAsync(info);
-                    if (launched)
-                    {
-                        _updateLaunched = true;
-                        QueueRebuild();
-                    }
+                    if (await updates.DownloadAndInstallAsync(info)) QueueRebuild();
                 });
                 now.Background = _p.Accent;
                 now.Foreground = _p.AccentText;
@@ -186,7 +181,7 @@ internal sealed partial class SettingsWindow
             else
             {
                 stack.Children.Add(Note(canSelf ? "이 릴리스에는 설치 파일이 없어요. 릴리스 페이지에서 받아 주세요." : why));
-                var page = ActionButton("릴리스 페이지 열기", () => _services.Launcher.OpenFile(info.HtmlUrl));
+                var page = ActionButton("릴리스 페이지 열기", () => _services.Launcher.OpenFile(UpdateService.SafeReleaseUrl(info.HtmlUrl)));
                 page.Background = _p.Accent;
                 page.Foreground = _p.AccentText;
                 buttons.Children.Add(Spaced(page));
@@ -196,8 +191,8 @@ internal sealed partial class SettingsWindow
         }
 
         if (canSelf && info.SetupUrl is not null)
-            buttons.Children.Add(Spaced(ActionButton("릴리스 노트 보기", () => _services.Launcher.OpenFile(info.HtmlUrl))));
-        if (!updates.IsDownloading && !_updateLaunched)
+            buttons.Children.Add(Spaced(ActionButton("릴리스 노트 보기", () => _services.Launcher.OpenFile(UpdateService.SafeReleaseUrl(info.HtmlUrl)))));
+        if (!updates.IsDownloading && !updates.IsInstalling)
             buttons.Children.Add(Spaced(ActionButton("이 버전 건너뛰기", () => updates.Skip(info))));
         stack.Children.Add(buttons);
 

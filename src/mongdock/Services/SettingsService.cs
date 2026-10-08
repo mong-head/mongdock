@@ -87,7 +87,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
     {
         if (!File.Exists(SettingsPath))
         {
-            var s = new Settings();
+            var s = new Settings { FirstRunTourPending = true };
             Current = s;
             CreatedThisRun = true;
             Save();

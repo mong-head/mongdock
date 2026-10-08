@@ -26,7 +26,18 @@ internal sealed class NativeMenuHider : IDisposable
     private readonly object _gate = new();
     private readonly Dictionary<IntPtr, Entry> _hidden = new();
     private readonly string _statePath;
+    /// <summary>파일 쓰기 직렬화 (_gate 밖에서 씀 — 디스크가 느려도 UI 스레드의 GetHiddenMenu 가 막히지 않게).</summary>
+    private readonly object _fileGate = new();
+    private long _snapshotSeq;
+    private long _writtenSeq;
     private bool _disposed;
+    /// <summary>
+    /// 숨기기 세대: RestoreAll(기능 끔·일시 정지)·Dispose 때 _gate 안에서 올림. 그 전에 시작한 HideCore 는
+    /// SetMenu 직전·직후에 세대를 다시 보고, 바뀌었으면 떼지 않거나 바로 되돌린다.
+    /// </summary>
+    private int _generation;
+    /// <summary>SetMenu 를 진행 중인 HideCore 수 (Dispose 가 끝나길 기다림).</summary>
+    private int _inFlight;
 
     public NativeMenuHider()
     {
@@ -50,7 +61,7 @@ internal sealed class NativeMenuHider : IDisposable
                 if (MenuApi.GetMenu(hwnd) != IntPtr.Zero || !MenuApi.IsMenu(menu)) continue;
                 if (MenuApi.SetMenu(hwnd, menu)) restored++;
             }
-            File.Delete(_statePath);
+            lock (_fileGate) File.Delete(_statePath);
             if (restored > 0) Log.Warn($"지난 실행에서 숨긴 앱 메뉴 줄 {restored}개 복원");
         }
         catch (Exception ex)
@@ -62,42 +73,52 @@ internal sealed class NativeMenuHider : IDisposable
     /// <summary>hwnd 에서 떼어 둔 HMENU (없으면 Zero). 창이 없어졌으면 정리.</summary>
     public IntPtr GetHiddenMenu(IntPtr hwnd)
     {
+        (List<Entry> List, long Seq)? save = null;
+        IntPtr result;
         lock (_gate)
         {
             if (!_hidden.TryGetValue(hwnd, out var e)) return IntPtr.Zero;
             if (!User32.IsWindow(hwnd) || !MenuApi.IsMenu(new IntPtr(e.Menu)))
             {
                 _hidden.Remove(hwnd);
-                SaveLocked();
-                return IntPtr.Zero;
+                save = SnapshotLocked();
+                result = IntPtr.Zero;
             }
-            return new IntPtr(e.Menu);
+            else
+            {
+                result = new IntPtr(e.Menu);
+            }
         }
-    }
-
-    public bool IsHidden(IntPtr hwnd)
-    {
-        lock (_gate) return _hidden.ContainsKey(hwnd);
+        if (save is { } sv) Task.Run(() => Write(sv.List, sv.Seq));
+        return result;
     }
 
     /// <summary>상단바가 이 창의 Win32 메뉴를 읽은 직후 호출. 대상이면 백그라운드에서 메뉴 줄을 뗌.</summary>
     public void TryHide(IntPtr hwnd, string processPath)
     {
-        if (_disposed || hwnd == IntPtr.Zero) return;
+        if (hwnd == IntPtr.Zero) return;
         string exe = Path.GetFileName(processPath ?? "");
         if (!Allowed.Contains(exe)) return;
+        int gen;
         lock (_gate)
         {
+            if (_disposed) return;
             if (_hidden.ContainsKey(hwnd) && MenuApi.GetMenu(hwnd) == IntPtr.Zero) return;
+            gen = _generation;
         }
-        Task.Run(() => HideCore(hwnd, exe));
+        Task.Run(() => HideCore(hwnd, exe, gen));
     }
 
-    private void HideCore(IntPtr hwnd, string exe)
+    /// <summary>요청 이후 RestoreAll·Dispose 가 있었는지 (_gate 안에서).</summary>
+    private bool CancelledLocked(int gen) => _disposed || gen != _generation;
+
+    private void HideCore(IntPtr hwnd, string exe, int gen)
     {
+        bool counted = false;
         try
         {
-            if (_disposed || !User32.IsWindow(hwnd) || MenuApi.IsHungAppWindow(hwnd)) return;
+            if (!User32.IsWindow(hwnd) || MenuApi.IsHungAppWindow(hwnd)) return;
+            lock (_gate) if (CancelledLocked(gen)) return;
             User32.GetWindowThreadProcessId(hwnd, out uint pid);
             if (pid == 0 || pid == (uint)Environment.ProcessId) return;
             if (Kernel32.IsHigherIntegrity(pid)) return; // UIPI — 관리자 권한 창은 건드리지 않음
@@ -107,21 +128,48 @@ internal sealed class NativeMenuHider : IDisposable
             long start = StartTicks(pid);
             if (start == 0) return;
 
+            var entry = new Entry(hwnd.ToInt64(), menu.ToInt64(), pid, start, exe);
+            (List<Entry> List, long Seq) snap;
             lock (_gate)
             {
-                if (_disposed) return;
-                // 먼저 기록(파일까지) → 떼는 도중 몽독이 죽어도 다음 시작에 복원 가능
-                _hidden[hwnd] = new Entry(hwnd.ToInt64(), menu.ToInt64(), pid, start, exe);
-                SaveLocked();
+                if (CancelledLocked(gen)) return;
+                _hidden[hwnd] = entry;
+                _inFlight++;
+                counted = true;
+                snap = SnapshotLocked();
             }
-            if (!MenuApi.SetMenu(hwnd, IntPtr.Zero) || MenuApi.GetMenu(hwnd) != IntPtr.Zero)
+            // 먼저 기록(파일까지) → 떼는 도중 몽독이 죽어도 다음 시작에 복원 가능
+            Write(snap.List, snap.Seq);
+
+            // SetMenu 직전 재확인: 그 사이 기능을 끄거나 종료가 시작됐으면 떼지 않음
+            lock (_gate)
             {
-                Log.Warn($"앱 메뉴 줄 숨기기 실패 ({exe}) err={System.Runtime.InteropServices.Marshal.GetLastWin32Error()}");
-                lock (_gate)
+                if (CancelledLocked(gen))
                 {
-                    _hidden.Remove(hwnd);
-                    SaveLocked();
+                    RemoveIfSame(hwnd, entry);
+                    return;
                 }
+            }
+            bool ok = MenuApi.SetMenu(hwnd, IntPtr.Zero) && MenuApi.GetMenu(hwnd) == IntPtr.Zero;
+            int err = ok ? 0 : System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+
+            bool revert;
+            lock (_gate) revert = ok && CancelledLocked(gen);
+            if (revert)
+            {
+                // SetMenu 도중 해제·복원 요청이 옴 → RestoreAll 은 아직 붙어 있는 메뉴를 보고 지나갔을 수 있으므로 여기서 되돌림
+                if (MenuApi.GetMenu(hwnd) == IntPtr.Zero && MenuApi.IsMenu(menu) && !MenuApi.SetMenu(hwnd, menu))
+                {
+                    Log.Warn($"앱 메뉴 줄 되돌리기 실패 ({exe}) — 다음 시작 때 다시 시도");
+                    return; // 기록은 남겨 둠 (다음 시작 때 RecoverFromLastRun)
+                }
+                RemoveIfSame(hwnd, entry);
+                return;
+            }
+            if (!ok)
+            {
+                Log.Warn($"앱 메뉴 줄 숨기기 실패 ({exe}) err={err}");
+                RemoveIfSame(hwnd, entry);
                 return;
             }
             Log.Info($"앱 메뉴 줄 숨김: {exe}");
@@ -130,64 +178,113 @@ internal sealed class NativeMenuHider : IDisposable
         {
             Log.Error("앱 메뉴 줄 숨기기 실패", ex);
         }
+        finally
+        {
+            if (counted)
+            {
+                lock (_gate)
+                {
+                    _inFlight--;
+                    Monitor.PulseAll(_gate);
+                }
+            }
+        }
     }
 
-    /// <summary>숨긴 메뉴 줄을 모두 되돌림. wait 이면 최대 timeoutMs 만큼 기다림(종료 때).</summary>
+    /// <summary>목록에서 이 항목을 빼고 파일 갱신 (다른 항목으로 바뀌었으면 그대로).</summary>
+    private void RemoveIfSame(IntPtr hwnd, Entry entry)
+    {
+        (List<Entry> List, long Seq) snap;
+        lock (_gate)
+        {
+            if (!_hidden.TryGetValue(hwnd, out var cur) || cur != entry) return;
+            _hidden.Remove(hwnd);
+            snap = SnapshotLocked();
+        }
+        Write(snap.List, snap.Seq);
+    }
+
+    /// <summary>
+    /// 숨긴 메뉴 줄을 모두 되돌림 (기능 끔·일시 정지·종료). 진행 중인 숨기기는 세대 번호로 취소된다.
+    /// wait 이면 최대 timeoutMs 만큼 기다림(종료 때).
+    /// </summary>
     public void RestoreAll(bool wait = false, int timeoutMs = 1500)
     {
         List<(IntPtr Hwnd, Entry E)> list;
         lock (_gate)
         {
-            if (_hidden.Count == 0) return;
+            _generation++; // 먼저: 이후 SetMenu 하려던 HideCore 는 멈추거나 되돌림
             list = _hidden.Select(kv => (kv.Key, kv.Value)).ToList();
         }
-        var task = Task.Run(() =>
+        long deadline = Environment.TickCount64 + timeoutMs;
+        Task? task = null;
+        if (list.Count > 0)
         {
-            foreach (var (hwnd, e) in list)
+            task = Task.Run(() =>
             {
-                bool done = false;
-                try
+                foreach (var (hwnd, e) in list)
                 {
-                    IntPtr menu = new(e.Menu);
-                    if (!User32.IsWindow(hwnd) || !MenuApi.IsMenu(menu)) done = true;
-                    else if (MenuApi.GetMenu(hwnd) != IntPtr.Zero) done = true; // 앱이 직접 다시 붙임
-                    else if (!MenuApi.IsHungAppWindow(hwnd)) done = MenuApi.SetMenu(hwnd, menu);
-                }
-                catch (Exception ex)
-                {
-                    Log.Error("앱 메뉴 줄 복원 실패", ex);
-                }
-                if (done)
-                {
-                    lock (_gate)
+                    bool done = false;
+                    try
                     {
-                        if (_hidden.TryGetValue(hwnd, out var cur) && cur == e) _hidden.Remove(hwnd);
+                        IntPtr menu = new(e.Menu);
+                        if (!User32.IsWindow(hwnd) || !MenuApi.IsMenu(menu)) done = true;
+                        else if (MenuApi.GetMenu(hwnd) != IntPtr.Zero) done = true; // 아직 안 뗐거나 앱이 직접 다시 붙임
+                        else if (!MenuApi.IsHungAppWindow(hwnd)) done = MenuApi.SetMenu(hwnd, menu);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error("앱 메뉴 줄 복원 실패", ex);
+                    }
+                    if (done)
+                    {
+                        lock (_gate)
+                        {
+                            if (_hidden.TryGetValue(hwnd, out var cur) && cur == e) _hidden.Remove(hwnd);
+                        }
                     }
                 }
-            }
-            lock (_gate) SaveLocked(); // 복원 못 한 것(응답 없음)은 파일에 남아 다음 시작 때 다시 시도
-        });
-        if (wait)
+                (List<Entry> List, long Seq) snap;
+                lock (_gate) snap = SnapshotLocked();
+                Write(snap.List, snap.Seq); // 복원 못 한 것(응답 없음)은 파일에 남아 다음 시작 때 다시 시도
+            });
+        }
+        if (!wait) return;
+        try { task?.Wait(Math.Max(0, (int)(deadline - Environment.TickCount64))); }
+        catch (Exception ex) { Log.Error("앱 메뉴 줄 복원 대기 실패", ex); }
+        // SetMenu 중이던 HideCore 가 되돌리기까지 마치길 기다림
+        lock (_gate)
         {
-            try { task.Wait(timeoutMs); }
-            catch (Exception ex) { Log.Error("앱 메뉴 줄 복원 대기 실패", ex); }
+            while (_inFlight > 0)
+            {
+                int left = (int)(deadline - Environment.TickCount64);
+                if (left <= 0 || !Monitor.Wait(_gate, left)) break;
+            }
         }
     }
 
-    private void SaveLocked()
+    private (List<Entry> List, long Seq) SnapshotLocked() => (_hidden.Values.ToList(), ++_snapshotSeq);
+
+    /// <summary>목록을 파일에 씀 (_gate 밖). 더 새 스냅숏이 이미 쓰였으면 건너뜀.</summary>
+    private void Write(List<Entry> list, long seq)
     {
-        try
+        lock (_fileGate)
         {
-            if (_hidden.Count == 0)
+            if (seq <= _writtenSeq) return;
+            _writtenSeq = seq;
+            try
             {
-                if (File.Exists(_statePath)) File.Delete(_statePath);
-                return;
+                if (list.Count == 0)
+                {
+                    if (File.Exists(_statePath)) File.Delete(_statePath);
+                    return;
+                }
+                AtomicFile.WriteAllText(_statePath, JsonSerializer.Serialize(list));
             }
-            AtomicFile.WriteAllText(_statePath, JsonSerializer.Serialize(_hidden.Values.ToList()));
-        }
-        catch (Exception ex)
-        {
-            Log.Error("숨긴 앱 메뉴 줄 목록 저장 실패", ex);
+            catch (Exception ex)
+            {
+                Log.Error("숨긴 앱 메뉴 줄 목록 저장 실패", ex);
+            }
         }
     }
 
@@ -219,9 +316,12 @@ internal sealed class NativeMenuHider : IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
+        lock (_gate)
+        {
+            if (_disposed) return;
+            _disposed = true; // lock 안에서 먼저 → 이후 TryHide/HideCore 는 떼지 않음
+        }
         RestoreAll(wait: true);
-        _disposed = true;
         AppDomain.CurrentDomain.ProcessExit -= OnProcessExit;
         AppDomain.CurrentDomain.UnhandledException -= OnUnhandled;
     }

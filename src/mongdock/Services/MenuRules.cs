@@ -331,11 +331,13 @@ internal static class MenuRules
     }
 
     private const ushort VkCtrl = 0xA2, VkShift = 0xA0, VkAlt = 0xA4, VkWin = 0x5B;
-    private const ushort VkTab = 0x09, VkEsc = 0x1B, VkDelete = 0x2E;
+    private const ushort VkTab = 0x09, VkEsc = 0x1B, VkDelete = 0x2E, VkF4 = 0x73;
 
     /// <summary>
     /// 앱 메뉴 단축키로 쓸 수 없는 조합이면 이유. 주 키가 정확히 하나여야 하고(수식키만은 안 됨),
-    /// Win 조합은 모두 시스템 단축키(Win+L 잠금, Win+R 실행 등)라 거부, 그 밖에 시스템 전환·보안 조합도 거부.
+    /// Win 조합은 모두 시스템 단축키(Win+L 잠금, Win+R 실행 등)라 거부, 그 밖에 시스템 전환·보안 조합과
+    /// 되돌릴 수 없는 조합도 거부: Shift+Delete(휴지통 없이 영구 삭제), Alt+F4(창 닫기 — 규칙에서는 "action": "close" 로).
+    /// Ctrl+W·Ctrl+F4(탭·문서 닫기)는 앱 메뉴의 "닫기"로 흔히 쓰므로 허용. Ctrl+Shift+Delete(브라우저 기록 삭제 창)도 허용.
     /// </summary>
     internal static string? UnsafeReason(ushort[] vks)
     {
@@ -349,6 +351,8 @@ internal static class MenuRules
         if (k == VkEsc && (ctrl || alt)) return "시작 메뉴·작업 관리자·창 전환";
         if (k == VkDelete && ctrl && alt) return "Ctrl+Alt+Delete";
         if (k == VkTab && ctrl && alt) return "Ctrl+Alt+Tab";
+        if (k == VkF4 && alt) return "Alt+F4 창 닫기 — action \"close\" 를 쓰세요";
+        if (k == VkDelete && mods.Contains(VkShift) && !ctrl) return "Shift+Delete 영구 삭제";
         return null;
     }
 

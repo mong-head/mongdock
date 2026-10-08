@@ -16,7 +16,7 @@ namespace Mongdock.Services;
 /// </summary>
 internal sealed class MenuRulesService : IDisposable
 {
-    public const string RemoteUrl = "https://raw.githubusercontent.com/mong-head/mongdock/main/menus/app-menus.json";
+    public const string RemoteUrl = "https://raw.githubusercontent.com/mong-head/mongdock/menus-stable/menus/app-menus.json";
 
     private static readonly TimeSpan FirstDelay = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan Interval = TimeSpan.FromHours(24);
@@ -75,9 +75,9 @@ internal sealed class MenuRulesService : IDisposable
             if (ViewModels.AppState.Paused) next = PausedRetry;
             else if (_settings.Current.UpdateMenuRules) await CheckAsync(_cts.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+        catch (Exception ex) when (_cts.IsCancellationRequested && ex is OperationCanceledException or ObjectDisposedException or HttpRequestException)
         {
-            return;
+            return; // 종료 중 (Dispose 가 HttpClient 를 닫음) — 로그 없이
         }
         catch (Exception ex)
         {
@@ -102,7 +102,7 @@ internal sealed class MenuRulesService : IDisposable
         {
             resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is HttpRequestException || (ex is TaskCanceledException && !ct.IsCancellationRequested))
+        catch (Exception ex) when (!ct.IsCancellationRequested && ex is HttpRequestException or TaskCanceledException)
         {
             Log.Info($"앱 메뉴 규칙 확인 실패({(ex is TaskCanceledException ? "시간 초과" : ex.Message)}) → 지금 규칙 유지 ({_current.Source} revision {_current.Revision})");
             return;

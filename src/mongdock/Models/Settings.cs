@@ -327,6 +327,11 @@ public sealed class Settings
     /// (새 설치면 첫 둘러보기, 기존 설정 파일이면 0.2.0 에서 올라온 것으로 봄 — Views/CoachMarks).
     /// </summary>
     public string? LastSeenVersion { get; set; }
+    /// <summary>
+    /// 첫 설치 둘러보기를 아직 끝까지 보지(또는 건너뛰지) 않음. 첫 설치 때 true, 둘러보기 완료·건너뛰기 때 false.
+    /// 일시 정지·전체 화면·종료로 중간에 닫히면 true 로 남아 다음 실행에서 다시 둘러보기 (Views/CoachMarks).
+    /// </summary>
+    public bool FirstRunTourPending { get; set; }
     /// <summary>GitHub 릴리스에서 새 버전 자동 확인 (시작 1분 뒤 + 12시간마다, Services/UpdateService).</summary>
     public bool CheckForUpdates { get; set; } = true;
     /// <summary>"이 버전 건너뛰기" 한 버전 (예 "0.3.1"). 자동 확인은 이 버전을 알리지 않음 — 더 새 버전이 나오면 다시 알림.</summary>

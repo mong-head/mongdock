@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -32,7 +31,11 @@ internal sealed class CoachMarkWindow : Window
         {
             char c = text[i];
             sb.Append(c);
-            if (i + 1 < text.Length && !char.IsWhiteSpace(c) && !char.IsWhiteSpace(text[i + 1]) && c != '⁠') sb.Append('⁠');
+            if (i + 1 >= text.Length) continue;
+            char n = text[i + 1];
+            // 서로게이트 쌍(이모지 등) 사이에는 넣지 않음 — 글자가 깨짐
+            if (char.IsHighSurrogate(c) && char.IsLowSurrogate(n)) continue;
+            if (!char.IsWhiteSpace(c) && !char.IsWhiteSpace(n) && c != '\u2060' && n != '\u2060') sb.Append('\u2060');
         }
         return sb.ToString();
     }
@@ -537,7 +540,8 @@ internal sealed class CoachRingWindow : Window
             {
                 EasingFunction = Anim.EaseOut,
             };
-            var sb = new Storyboard { RepeatBehavior = RepeatBehavior.Forever, Duration = span };
+            // 맥박은 6번만 (계속 움직이면 거슬림·GPU 사용) → 끝나면 정적 링만 남음 (pulse 는 FillBehavior.Stop 으로 Opacity 0)
+            var sb = new Storyboard { RepeatBehavior = new RepeatBehavior(6), Duration = span, FillBehavior = FillBehavior.Stop };
             var ax = Make(1, sx);
             var ay = Make(1, sy);
             var ao = Make(0.65, 0);
@@ -574,22 +578,14 @@ internal sealed class CoachRingWindow : Window
         };
     }
 
-    private const int GWL_EXSTYLE = -20;
-    private const int WS_EX_TRANSPARENT = 0x20;
-
-    [DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
-    private static extern int GetWindowLong(IntPtr hwnd, int index);
-
-    [DllImport("user32.dll", EntryPoint = "SetWindowLongW")]
-    private static extern int SetWindowLong(IntPtr hwnd, int index, int value);
-
     private void MakeClickThrough()
     {
         try
         {
             IntPtr hwnd = new WindowInteropHelper(this).Handle;
             if (hwnd == IntPtr.Zero) return;
-            SetWindowLong(hwnd, GWL_EXSTYLE, GetWindowLong(hwnd, GWL_EXSTYLE) | WS_EX_TRANSPARENT);
+            const long WS_EX_TRANSPARENT = 0x20;
+            Native.User32.SetWindowLong(hwnd, Native.User32.GWL_EXSTYLE, Native.User32.GetWindowLong(hwnd, Native.User32.GWL_EXSTYLE) | WS_EX_TRANSPARENT);
         }
         catch (Exception ex) { Log.Warn($"강조 링 클릭 통과 설정 실패: {ex.Message}"); }
     }

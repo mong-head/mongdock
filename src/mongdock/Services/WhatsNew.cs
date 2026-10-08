@@ -46,8 +46,6 @@ public static class WhatsNew
     /// <summary>LastSeenVersion 이 없는데 설정 파일은 있던 사용자(= 0.2.0 이하에서 업데이트)의 이전 버전.</summary>
     public const string LegacyVersion = "0.2.0";
 
-    public const string ReleasesUrl = "https://github.com/mong-head/mongdock/releases";
-
     private static bool TopBarOn(Settings s) => s.TopBar.Enabled;
 
     /// <summary>
@@ -127,20 +125,5 @@ public static class WhatsNew
         var asm = Assembly.GetEntryAssembly() ?? typeof(WhatsNew).Assembly;
         string? info = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
         return Parse(info) ?? Parse(asm.GetName().Version?.ToString()) ?? new Version(0, 0, 0);
-    }
-
-    /// <summary>(after, upTo] 사이 버전의 새 기능 단계 — 버전 오름차순.</summary>
-    public static List<CoachStep> Between(Version after, Version upTo) =>
-        Releases.Select(r => (Step: r, Ver: Parse(r.Version)))
-            .Where(x => x.Ver is { } v && v > after && v <= upTo)
-            .OrderBy(x => x.Ver)
-            .Select(x => x.Step)
-            .ToList();
-
-    /// <summary>현재 버전(없으면 그 이하 가장 최근 버전)의 새 기능 — 트레이·정보 페이지 "새로운 기능 보기".</summary>
-    public static List<CoachStep> LatestUpTo(Version upTo)
-    {
-        var latest = Releases.Select(r => Parse(r.Version)).OfType<Version>().Where(v => v <= upTo).DefaultIfEmpty().Max();
-        return latest is null ? new List<CoachStep>() : Releases.Where(r => Parse(r.Version) == latest).ToList();
     }
 }

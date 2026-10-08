@@ -78,6 +78,12 @@ Name: "{userdesktop}\mongdock"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"
 ; 앱의 StartupService 와 같은 키·값 이름·형식 (따옴표로 감싼 exe 경로)
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "mongdock"; ValueData: """{app}\{#AppExe}"""; Tasks: autostart
 
+[UninstallDelete]
+; 앱이 받은 업데이트 설치 파일·캐시 (%LOCALAPPDATA%\mongdock — 설정 폴더 %APPDATA%\mongdock 은 [Code] 에서 따로 물어봄)
+Type: filesandordirs; Name: "{localappdata}\mongdock\updates"
+Type: filesandordirs; Name: "{localappdata}\mongdock\cache"
+Type: dirifempty; Name: "{localappdata}\mongdock"
+
 [Run]
 ; 대화형 설치: 마침 화면의 "mongdock 실행" 체크(기본 켬)로 결정.
 ; 조용한 설치(/SILENT, /VERYSILENT — 앱의 "지금 업데이트" 가 /SILENT 로 실행): skipifsilent 가 없으므로 체크된 것으로 보고 항상 다시 실행.

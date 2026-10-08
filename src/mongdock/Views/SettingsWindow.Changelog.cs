@@ -37,7 +37,7 @@ internal sealed partial class SettingsWindow
             body.Children.Add(card);
         }
 
-        body.Children.Add(LinkButton("GitHub 릴리스 전체 보기 ↗", () => _services.Launcher.OpenFile(WhatsNew.ReleasesUrl), HorizontalAlignment.Left));
+        body.Children.Add(LinkButton("GitHub 릴리스 전체 보기 ↗", () => _services.Launcher.OpenFile(UpdateService.ReleasesPageUrl), HorizontalAlignment.Left));
     }
 
     /// <summary>변경 내역 페이지의 버전 카드 (주요 업데이트에서 누르면 여기로 스크롤). 다시 그릴 때마다 새로.</summary>
@@ -168,9 +168,10 @@ internal sealed partial class SettingsWindow
 
     /// <summary>
     /// 둘러보기 재생: 설정 창을 숨겨(상단바·독을 가리지 않게) 말풍선을 보여 주고, 끝나면(완료·건너뛰기·다른 안내) 설정 창을 다시.
-    /// 보여 줄 카드가 없으면 창은 그대로.
+    /// 전체 화면 앱·일시 정지로 끝났으면 포커스를 뺏지 않게 Show 만 (Activate 안 함), 전체 화면 중이면 전체 화면이 끝난 뒤 Show.
+    /// 보여 줄 카드가 없으면 창은 그대로. isTour = 첫 설치 둘러보기 (다 보면 FirstRunTourPending 해제).
     /// </summary>
-    private void PlayCoach(Func<List<CoachPage>> build)
+    private void PlayCoach(Func<List<CoachPage>> build, bool isTour = false)
     {
         List<CoachPage> pages;
         try { pages = build(); }
@@ -182,13 +183,58 @@ internal sealed partial class SettingsWindow
         if (pages.Count == 0) return;
         FlushSlider();
         Hide();
-        bool started = CoachMarks.Play(() => pages, () => Dispatcher.BeginInvoke(() =>
+        bool started = CoachMarks.Play(() => pages, reason => Dispatcher.BeginInvoke(() => ReturnFromCoach(reason)), isTour);
+        if (!started) Show();
+    }
+
+    /// <summary>전체 화면이 끝나길 기다리는 중 (둘러보기가 전체 화면 앱 때문에 닫힘).</summary>
+    private EventHandler<bool>? _coachFullscreenWait;
+
+    private void ReturnFromCoach(CoachEndReason reason)
+    {
+        if (_closed || Dispatcher.HasShutdownStarted) return;
+        if (reason == CoachEndReason.Completed)
         {
-            if (_closed || Dispatcher.HasShutdownStarted) return;
             Show();
             Activate();
-        }));
-        if (!started) Show();
+            return;
+        }
+        if (reason == CoachEndReason.Fullscreen && FullscreenNow())
+        {
+            if (_coachFullscreenWait is not null) return;
+            _coachFullscreenWait = (_, _) => Dispatcher.BeginInvoke(() =>
+            {
+                if (_closed || FullscreenNow()) return;
+                StopFullscreenWait();
+                ShowQuietly();
+            });
+            _services.DesktopWindows.FullscreenAppChanged += _coachFullscreenWait;
+            return;
+        }
+        ShowQuietly();
+    }
+
+    private bool FullscreenNow()
+    {
+        try { return _services.DesktopWindows.IsFullscreenOn(""); }
+        catch { return false; }
+    }
+
+    private void StopFullscreenWait()
+    {
+        if (_coachFullscreenWait is null) return;
+        _services.DesktopWindows.FullscreenAppChanged -= _coachFullscreenWait;
+        _coachFullscreenWait = null;
+    }
+
+    /// <summary>포커스를 가져가지 않고 다시 표시 (전체 화면 게임·영상 위로 튀어나와 활성화되지 않게).</summary>
+    private void ShowQuietly()
+    {
+        if (_closed || IsVisible) return;
+        bool was = ShowActivated;
+        ShowActivated = false;
+        try { Show(); }
+        finally { ShowActivated = was; }
     }
 
     /// <summary>정보 페이지 머리글 아래: "이 버전 둘러보기 ▶"(현재 버전에 coach 단계가 있을 때) · "변경 내역 보기 ›".</summary>

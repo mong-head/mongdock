@@ -25,6 +25,19 @@ internal sealed class CoachPage
     public string? Hint { get; init; }
 }
 
+/// <summary>둘러보기가 끝난 이유 (설정 창이 다시 나타날 때 포커스를 가져갈지 정하는 데 씀).</summary>
+internal enum CoachEndReason
+{
+    /// <summary>끝까지 봄·건너뛰기·변경 내역 링크.</summary>
+    Completed,
+    /// <summary>전체 화면 앱이 켜져 닫힘.</summary>
+    Fullscreen,
+    /// <summary>일시 정지되어 닫힘.</summary>
+    Paused,
+    /// <summary>다른 안내로 바뀜·앱 종료.</summary>
+    Replaced,
+}
+
 /// <summary>
 /// 버전 업데이트 후 "새로운 기능" 코치마크와 첫 설치 둘러보기의 흐름.
 /// - 시작 2.5초 뒤(독·상단바가 자리 잡은 뒤) LastSeenVersion 과 현재 버전을 비교해 한 번 보여 줌.
@@ -67,16 +80,14 @@ internal static class CoachMarks
 
     /// <summary>
     /// 설정 창에서 둘러보기 재생. 만든 카드가 없으면 false. onEnded = 끝나거나 건너뛰거나 다른 안내로 바뀌면 (설정 창 다시 표시).
+    /// onEnded 는 Begin 전에 구독하므로 시작하자마자 끝나도(앵커가 모두 사라짐) 불린다.
     /// </summary>
-    public static bool Play(Func<List<CoachPage>> build, Action? onEnded)
+    public static bool Play(Func<List<CoachPage>> build, Action<CoachEndReason>? onEnded, bool isTour = false)
     {
         if (_services is null) return false;
         try
         {
-            var session = Start(build());
-            if (session is null) return false;
-            if (onEnded is not null) session.Ended += onEnded;
-            return true;
+            return Start(build(), onEnded, isTour) is not null;
         }
         catch (Exception ex)
         {
@@ -134,7 +145,7 @@ internal static class CoachMarks
     public static void ShowTour()
     {
         if (_services is null) return;
-        try { Start(BuildTour()); }
+        try { Start(BuildTour(), isTour: true); }
         catch (Exception ex) { Log.Error("둘러보기 실패", ex); }
     }
 
@@ -143,7 +154,7 @@ internal static class CoachMarks
     {
         _startupTimer?.Stop();
         _startupTimer = null;
-        _session?.Close(markSeen: false);
+        _session?.Close(markSeen: false, CoachEndReason.Replaced);
         _session = null;
     }
 
@@ -161,10 +172,11 @@ internal static class CoachMarks
     {
         var s = _services!.Settings.Current;
         var current = WhatsNew.Current;
-        if (s.LastSeenVersion is null && firstInstall)
+        // 첫 설치이거나, 첫 설치 둘러보기를 끝까지 못 봄(일시 정지·전체 화면·종료로 닫힘) → 이번에도 둘러보기
+        if (s.LastSeenVersion is null && firstInstall || s.FirstRunTourPending)
         {
             Log.Info($"첫 설치 → 둘러보기 (v{WhatsNew.CurrentText})");
-            Start(BuildTour());
+            if (Start(BuildTour(), isTour: true) is null) ClearTourPending();
             return;
         }
         var last = WhatsNew.Parse(s.LastSeenVersion) ?? WhatsNew.Parse(WhatsNew.LegacyVersion)!;
@@ -178,6 +190,16 @@ internal static class CoachMarks
             return;
         }
         Start(pages);
+    }
+
+    /// <summary>첫 설치 둘러보기를 다 봄(또는 건너뜀) → 다음 실행에 다시 띄우지 않음.</summary>
+    internal static void ClearTourPending()
+    {
+        if (_services is null) return;
+        var s = _services.Settings.Current;
+        if (!s.FirstRunTourPending) return;
+        s.FirstRunTourPending = false;
+        _services.Settings.Save();
     }
 
     /// <summary>LastSeenVersion = 현재 (더 새 버전이 적어 둔 값이면 그대로).</summary>
@@ -419,13 +441,26 @@ internal static class CoachMarks
 
     // ───────────────────────── 세션 ─────────────────────────
 
-    private static CoachSession? Start(List<CoachPage> pages)
+    /// <summary>
+    /// 세션 생성 → Ended 구독(onEnded 포함) → Begin 순서 — 시작하자마자 끝나도 onEnded 가 불림.
+    /// isTour = 첫 설치 둘러보기 (다 보거나 건너뛰면 FirstRunTourPending 해제).
+    /// </summary>
+    private static CoachSession? Start(List<CoachPage> pages, Action<CoachEndReason>? onEnded = null, bool isTour = false)
     {
-        _session?.Close(markSeen: false);
+        _session?.Close(markSeen: false, CoachEndReason.Replaced);
         _session = null;
         if (pages.Count == 0 || _services is null || _resolve is null) return null;
         var session = new CoachSession(_services, _resolve, _popupOpen, pages);
-        session.Ended += () => { if (_session == session) _session = null; };
+        session.Ended += reason =>
+        {
+            if (_session == session) _session = null;
+            if (isTour && reason == CoachEndReason.Completed)
+            {
+                try { ClearTourPending(); }
+                catch (Exception ex) { Log.Error("첫 둘러보기 상태 저장 실패", ex); }
+            }
+        };
+        if (onEnded is not null) session.Ended += onEnded;
         _session = session;
         session.Begin();
         return session;
@@ -453,7 +488,7 @@ internal sealed class CoachSession
     private int _index;
     private bool _closed;
 
-    public event Action? Ended;
+    public event Action<CoachEndReason>? Ended;
 
     public CoachSession(AppServices services, Func<CoachAnchor, (Rect Rect, MonitorInfo Monitor)?> resolve, Func<bool>? popupOpen, List<CoachPage> pages)
     {
@@ -472,9 +507,18 @@ internal sealed class CoachSession
 
     /// <summary>
     /// 맨 위 유지: 다른 앱을 켜거나 다른 Topmost 창(상단바·독·다른 앱)이 올라와도 말풍선·링이 가려지지 않게
-    /// 주기적으로 Topmost 맨 앞으로 다시 올림 (포커스는 건드리지 않음).
+    /// 포그라운드 창이 바뀔 때 + 2초마다 Topmost 맨 앞으로 다시 올림 (포커스는 건드리지 않음).
     /// </summary>
-    private readonly System.Windows.Threading.DispatcherTimer _keepOnTop = new() { Interval = TimeSpan.FromMilliseconds(400) };
+    private readonly System.Windows.Threading.DispatcherTimer _keepOnTop = new() { Interval = TimeSpan.FromSeconds(2) };
+
+    /// <summary>포그라운드 창이 바뀜 (WindowTracker, EVENT_SYSTEM_FOREGROUND) → 새 창이 올라온 뒤 맨 앞으로.</summary>
+    private void OnWindowActivated(object? sender, IntPtr hwnd)
+    {
+        System.Windows.Application.Current?.Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        {
+            if (!_closed && !_away) BringToFront();
+        });
+    }
 
     private void BringToFront()
     {
@@ -491,6 +535,7 @@ internal sealed class CoachSession
     {
         _keepOnTop.Tick += (_, _) => { if (!_closed && !_away) BringToFront(); };
         _keepOnTop.Start();
+        _services.Windows.WindowActivated += OnWindowActivated;
         UiFonts.Apply(_services.Settings.Current);
         AppState.Changed += OnPausedChanged;
         _services.DesktopWindows.DisplayChanged += OnDisplayChanged;
@@ -498,13 +543,13 @@ internal sealed class CoachSession
         _services.DesktopWindows.GlobalMouseDown += OnGlobalMouseDown;
         _card = new CoachMarkWindow(_services, UiTheme.Palette(_services.Settings.Current));
         _card.NextClicked += Next;
-        _card.SkipClicked += () => Close(markSeen: true);
+        _card.SkipClicked += () => Close(markSeen: true, CoachEndReason.Completed);
         _card.LinkClicked += () =>
         {
             // 설정 → 변경 내역. 마지막 카드에서 누르면 안내는 본 것으로 끝냄 (설정 창이 카드에 가리지 않게)
             try { SettingsWindow.OpenChangelogPage(_services); }
             catch (Exception ex) { Log.Error("변경 내역 열기 실패", ex); }
-            if (_index >= _pages.Count - 1) Close(markSeen: true);
+            if (_index >= _pages.Count - 1) Close(markSeen: true, CoachEndReason.Completed);
         };
         _index = 0;
         ShowCurrent(animate: true);
@@ -512,12 +557,12 @@ internal sealed class CoachSession
 
     private void OnPausedChanged(object? sender, EventArgs e)
     {
-        if (AppState.Paused) Close(markSeen: false);
+        if (AppState.Paused) Close(markSeen: false, CoachEndReason.Paused);
     }
 
     private void OnFullscreenChanged(object? sender, bool any)
     {
-        if (any && _services.DesktopWindows.IsFullscreenOn("")) Close(markSeen: false);
+        if (any && _services.DesktopWindows.IsFullscreenOn("")) Close(markSeen: false, CoachEndReason.Fullscreen);
     }
 
     /// <summary>배율·모니터 구성이 바뀌면 자리 잡은 뒤 다시 배치.</summary>
@@ -532,7 +577,7 @@ internal sealed class CoachSession
         if (_closed) return;
         if (_index >= _pages.Count - 1)
         {
-            Close(markSeen: true);
+            Close(markSeen: true, CoachEndReason.Completed);
             return;
         }
         _index++;
@@ -554,7 +599,7 @@ internal sealed class CoachSession
         }
         if (_index >= _pages.Count)
         {
-            Close(markSeen: true);
+            Close(markSeen: true, CoachEndReason.Completed);
             return;
         }
 
@@ -666,11 +711,12 @@ internal sealed class CoachSession
         }
     }
 
-    public void Close(bool markSeen)
+    public void Close(bool markSeen, CoachEndReason reason)
     {
         if (_closed) return;
         _closed = true;
         _keepOnTop.Stop();
+        _services.Windows.WindowActivated -= OnWindowActivated;
         _reposition.Stop();
         StopAway();
         _anchorRect = null;
@@ -687,6 +733,6 @@ internal sealed class CoachSession
             try { CoachMarks.MarkSeen(); }
             catch (Exception ex) { Log.Error("LastSeenVersion 저장 실패", ex); }
         }
-        Ended?.Invoke();
+        Ended?.Invoke(reason);
     }
 }

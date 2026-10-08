@@ -104,9 +104,9 @@ public sealed class AppMenuService : IAppMenuService, IDisposable
             var rule = _rules.Current.Find(exe, cls, window.Aumid);
             if (rule is not null) return TitlesOnly(GetBuiltin(rule));
 
-            if (UiaMenuReader.IsCandidate(window.Hwnd, cls))
+            if (UiaMenuReader.IsCandidate(window.Hwnd, cls, window.ProcessPath))
             {
-                var titles = _uia.GetTitles(window.Hwnd); // null = 조회 중 → 일단 대체 메뉴, 끝나면 MenusChanged
+                var titles = _uia.GetTitles(window.Hwnd, window.ProcessPath); // null = 조회 중 → 일단 대체 메뉴, 끝나면 MenusChanged
                 if (titles is { Count: > 0 })
                     return titles.Select(t => new AppMenu(t, Array.Empty<AppMenuItem>())).ToList();
             }
@@ -181,7 +181,8 @@ public sealed class AppMenuService : IAppMenuService, IDisposable
     /// <summary>
     /// 창의 메뉴 막대를 재귀로 읽음. 보통은 WM_INITMENUPOPUP 을 보내지 않으므로 상태는 앱이 마지막으로 정한 그대로.
     /// 메뉴 줄을 숨긴 창(<see cref="NativeMenuHider"/>)은 사용자가 앱 메뉴를 직접 열 수 없어 상태가 갱신되지 않으므로,
-    /// 읽기 전에 각 하위 메뉴에 WM_INITMENUPOPUP 을 보내(응답 없으면 100ms 에 포기) 체크·비활성 상태를 맞춘다.
+    /// 백그라운드에서 각 하위 메뉴에 WM_INITMENUPOPUP 을 보내(응답 없으면 100ms 에 포기) 체크·비활성 상태를 맞추고,
+    /// 상태가 바뀌었으면 MenusChanged 로 다시 그리게 한다 (UI 스레드는 기다리지 않음).
     /// </summary>
     private IReadOnlyList<AppMenu> ReadWin32Menu(IntPtr hwnd)
     {
@@ -190,7 +191,7 @@ public sealed class AppMenuService : IAppMenuService, IDisposable
         if (bar == IntPtr.Zero)
         {
             bar = _hider.GetHiddenMenu(hwnd);
-            if (bar != IntPtr.Zero) RefreshHiddenMenuState(hwnd, bar);
+            if (bar != IntPtr.Zero) QueueHiddenMenuRefresh(hwnd, bar);
         }
         if (bar == IntPtr.Zero || !MenuApi.IsMenu(bar)) return Array.Empty<AppMenu>();
         var result = new List<AppMenu>();
@@ -202,6 +203,71 @@ public sealed class AppMenuService : IAppMenuService, IDisposable
             result.Add(new AppMenu(top.Text, children));
         }
         return result;
+    }
+
+    /// <summary>숨긴 메뉴 상태 갱신 중인 창 + 마지막 갱신 시각 (같은 창을 2초 안에 다시 갱신하지 않음 — 다시 그리기 반복 방지).</summary>
+    private readonly Dictionary<IntPtr, long> _hiddenRefreshAt = new();
+    private readonly HashSet<IntPtr> _hiddenRefreshing = new();
+
+    private void QueueHiddenMenuRefresh(IntPtr hwnd, IntPtr bar)
+    {
+        long now = Environment.TickCount64;
+        lock (_hiddenRefreshAt)
+        {
+            if (_hiddenRefreshing.Contains(hwnd)) return;
+            if (_hiddenRefreshAt.TryGetValue(hwnd, out long at) && now - at < 2000) return;
+            _hiddenRefreshing.Add(hwnd);
+            _hiddenRefreshAt[hwnd] = now;
+            if (_hiddenRefreshAt.Count > 32)
+                foreach (var dead in _hiddenRefreshAt.Keys.Where(h => !User32.IsWindow(h)).ToList()) _hiddenRefreshAt.Remove(dead);
+        }
+        Task.Run(() =>
+        {
+            bool changed = false;
+            try
+            {
+                long before = MenuStateSignature(bar);
+                RefreshHiddenMenuState(hwnd, bar);
+                changed = MenuStateSignature(bar) != before;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"숨긴 앱 메뉴 상태 갱신 실패: {ex.Message}");
+            }
+            finally
+            {
+                lock (_hiddenRefreshAt)
+                {
+                    _hiddenRefreshing.Remove(hwnd);
+                    _hiddenRefreshAt[hwnd] = Environment.TickCount64;
+                }
+            }
+            if (changed)
+            {
+                try { MenusChanged?.Invoke(this, hwnd); }
+                catch (Exception ex) { Log.Error("앱 메뉴 갱신 알림 실패", ex); }
+            }
+        });
+    }
+
+    /// <summary>하위 메뉴 항목들의 상태(체크·비활성)·개수를 섞은 값 — 갱신 전후 비교용.</summary>
+    private static long MenuStateSignature(IntPtr bar)
+    {
+        long sig = 17;
+        int count = Math.Min(MenuApi.GetMenuItemCount(bar), 30);
+        for (int i = 0; i < count; i++)
+        {
+            IntPtr sub = MenuApi.GetSubMenu(bar, i);
+            if (sub == IntPtr.Zero) continue;
+            int n = Math.Min(MenuApi.GetMenuItemCount(sub), 200);
+            sig = sig * 31 + n;
+            for (uint j = 0; j < n; j++)
+            {
+                var mii = new MENUITEMINFO { cbSize = (uint)Marshal.SizeOf<MENUITEMINFO>(), fMask = MenuApi.MIIM_STATE | MenuApi.MIIM_ID };
+                if (MenuApi.GetMenuItemInfo(sub, j, true, ref mii)) sig = sig * 31 + mii.fState * 7 + mii.wID;
+            }
+        }
+        return sig;
     }
 
     private static void RefreshHiddenMenuState(IntPtr hwnd, IntPtr bar)

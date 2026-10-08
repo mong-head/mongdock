@@ -137,6 +137,7 @@ internal sealed partial class SettingsWindow : Window
             _services.Settings.SettingsChanged -= OnSettingsChanged;
             _services.Calendars.Changed -= OnCalendarsChanged;
             StopTrayRefresh();
+            StopFullscreenWait(); // SettingsWindow.Changelog.cs
             _relativeTimer?.Stop();
             SystemTheme.Changed -= OnSystemThemeChanged;
             if (_instance == this) _instance = null;
@@ -1048,7 +1049,7 @@ internal sealed partial class SettingsWindow : Window
         body.Children.Add(SectionTitle("안내"));
         body.Children.Add(Group(
             Row("처음 사용 둘러보기", "처음 설치했을 때의 기능 둘러보기를 상단바·독 위에서 다시 봐요.",
-                ActionButton("둘러보기 ▶", () => PlayCoach(CoachMarks.BuildTourPages)))));
+                ActionButton("둘러보기 ▶", () => PlayCoach(CoachMarks.BuildTourPages, isTour: true)))));
     }
 
     /// <summary>어셈블리 정보 버전 ("+커밋" 꼬리 제거). 없으면 어셈블리 버전.</summary>

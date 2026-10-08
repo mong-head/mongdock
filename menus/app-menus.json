@@ -1,16 +1,16 @@
 {
   "_doc": [
-    "몽독 상단바의 앱 전용 메뉴 규칙. 몽독은 이 파일을 내장하고, 하루 한 번 GitHub main 의 이 파일을 받아 적용한다 (새 버전 없이 갱신).",
+    "몽독 상단바의 앱 전용 메뉴 규칙. 몽독은 이 파일을 내장하고, 하루 한 번 GitHub menus-stable 브랜치의 이 파일을 받아 적용한다 (새 버전 없이 갱신). 변경은 main 에서 검토 후 menus-stable 로 옮긴다.",
     "schema: 형식 버전 (지금 1 — 바꾸면 그 schema 를 모르는 몽독은 파일 전체를 무시). revision: 규칙을 고칠 때마다 1씩 올리는 정수.",
     "apps: 위에서부터 처음 맞는 규칙 하나만 쓴다. id: 로그용 이름(영문·숫자·_.-).",
     "match.exe: exe 파일 이름 목록(대소문자 무시). match.aumid: 스토어 앱 AUMID 목록. match.windowClass(선택): 있으면 창 클래스도 이 중 하나여야 함.",
     "appMenu: 앱 이름(굵게) 메뉴 맨 위에 붙는 항목. menus: 상단바 메뉴 제목(title)과 항목(items).",
     "항목: { \"text\": \"새 탭\", \"keys\": \"Ctrl+T\" } / 연속 입력 { \"text\": \"폴더 열기…\", \"keys\": [\"Ctrl+K\", \"Ctrl+O\"] } / 구분선 \"-\" (또는 { \"separator\": true }) / 하위 메뉴 { \"text\": \"...\", \"items\": [...] } (한 단계까지) / 창 동작 { \"text\": \"창 닫기\", \"action\": \"close\" } (close·minimize·maximize·restore 만).",
-    "키 이름: A~Z, 0~9, F1~F24, Left/Right/Up/Down, Tab, Enter, Esc, Space, Backspace, Delete, Insert, Home, End, PageUp, PageDown, NumPad0~9, = - , . / ; ` [ \\ ] ' 와 수식키 Ctrl/Shift/Alt. Win 조합·Alt+Tab·Ctrl+Esc·Ctrl+Shift+Esc·Ctrl+Alt+Delete 는 거부.",
+    "키 이름: A~Z, 0~9, F1~F24, Left/Right/Up/Down, Tab, Enter, Esc, Space, Backspace, Delete, Insert, Home, End, PageUp, PageDown, NumPad0~9, = - , . / ; ` [ \\ ] ' 와 수식키 Ctrl/Shift/Alt. Win 조합·Alt+Tab·Ctrl+Esc·Ctrl+Shift+Esc·Ctrl+Alt+Delete·Shift+Delete(영구 삭제)·Alt+F4(창 닫기는 action \"close\") 는 거부.",
     "프로그램 실행·URL 열기 같은 동작은 없다. 잘못된 앱 항목은 그 항목만 무시된다. 자세한 설명은 README 의 '앱 메뉴 규칙'."
   ],
   "schema": 1,
-  "revision": 1,
+  "revision": 2,
   "apps": [
     {
       "id": "chrome",
@@ -285,7 +285,7 @@
           "-",
           { "text": "편집기 닫기", "keys": "Ctrl+F4" },
           { "text": "폴더 닫기", "keys": ["Ctrl+K", "F"] },
-          { "text": "창 닫기", "keys": "Alt+F4" }
+          { "text": "창 닫기", "action": "close" }
         ] },
         { "title": "편집", "items": [
           { "text": "실행 취소", "keys": "Ctrl+Z" },

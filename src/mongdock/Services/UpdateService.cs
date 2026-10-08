@@ -52,6 +52,10 @@ public sealed class UpdateService : IDisposable
     public const string ReleasesPageUrl = "https://github.com/" + Repo + "/releases";
     private const string LatestApiUrl = "https://api.github.com/repos/" + Repo + "/releases/latest";
     private const string DownloadPrefix = "https://github.com/" + Repo + "/releases/download/";
+    /// <summary>릴리스 페이지·노트로 열어도 되는 주소 접두 (API 응답의 html_url 이 다른 곳이면 고정 릴리스 페이지).</summary>
+    private const string RepoPagePrefix = "https://github.com/" + Repo + "/";
+    /// <summary>setup 실행 뒤 이 시간 안에 몽독이 꺼지지 않으면 설치가 안 된 것으로 보고 "다시 시도".</summary>
+    private static readonly TimeSpan InstallTimeout = TimeSpan.FromMinutes(2);
     /// <summary>installer/mongdock.iss 의 AppId (Inno 는 HKCU\...\Uninstall\{AppId}_is1 에 설치 정보를 남김).</summary>
     private const string InnoUninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\{E7300DFF-4D79-4C67-BF72-F83A83F78D73}_is1";
 
@@ -112,6 +116,9 @@ public sealed class UpdateService : IDisposable
     /// <summary>마지막 다운로드/실행 실패 이유 (사용자에게 보여 줄 한 줄). 성공·취소면 null.</summary>
     public string? DownloadError { get; private set; }
 
+    /// <summary>setup 을 실행했고 몽독이 꺼지길 기다리는 중 (2분 안에 안 꺼지거나 setup 이 실패하면 false + DownloadError).</summary>
+    public bool IsInstalling { get; private set; }
+
     /// <summary>Pending·확인 중·다운로드 시작/끝 등 상태가 바뀜 (UI 스레드).</summary>
     public event EventHandler? Changed;
     /// <summary>다운로드 진행률 (UI 스레드, 자주 옴).</summary>
@@ -127,7 +134,60 @@ public sealed class UpdateService : IDisposable
         if (_disposed) return;
         _timer.Interval = FirstDelay;
         _timer.Start();
+        Task.Run(CleanInstalledSetups);
     }
+
+    /// <summary>
+    /// 설치가 끝난 뒤(다음 실행) updates 폴더 정리: 지금 버전 이하의 setup 과 남은 .partial 삭제.
+    /// 더 새 버전 setup(받아 두고 아직 설치 안 함)은 남겨 재사용.
+    /// </summary>
+    private static void CleanInstalledSetups()
+    {
+        try
+        {
+            if (!Directory.Exists(UpdatesDirectory)) return;
+            int n = 0;
+            foreach (var f in Directory.GetFiles(UpdatesDirectory))
+            {
+                string name = Path.GetFileName(f);
+                bool old = name.EndsWith(".partial", StringComparison.OrdinalIgnoreCase);
+                if (!old && SetupNamePattern.IsMatch(name))
+                {
+                    var m = SetupVersionPattern.Match(name);
+                    old = !m.Success || WhatsNew.Parse(m.Groups[1].Value) is not { } v || v <= WhatsNew.Current;
+                }
+                if (old && TryDeleteFile(f)) n++;
+            }
+            if (n > 0) Log.Info($"설치가 끝난 업데이트 파일 {n}개 정리");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"업데이트 폴더 정리 실패: {ex.Message}");
+        }
+    }
+
+    private static readonly Regex SetupVersionPattern = new(@"^mongdock-v(\d+\.\d+(?:\.\d+)?)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static bool TryDeleteFile(string path)
+    {
+        try
+        {
+            File.Delete(path);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>릴리스 페이지로 열어도 되는 주소면 그대로, 아니면(다른 저장소·사이트) 고정 릴리스 페이지.</summary>
+    public static string SafeReleaseUrl(string? url) =>
+        url is not null && url.StartsWith(RepoPagePrefix, StringComparison.OrdinalIgnoreCase)
+                        && Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme == Uri.UriSchemeHttps
+                        && string.Equals(u.Host, "github.com", StringComparison.OrdinalIgnoreCase)
+            ? url
+            : ReleasesPageUrl;
 
     private void OnTimer(object? sender, EventArgs e)
     {
@@ -249,7 +309,7 @@ public sealed class UpdateService : IDisposable
                 break;
             }
         }
-        return new UpdateInfo(version, tag, Str(r, "body") ?? "", Str(r, "html_url") ?? ReleasesPageUrl,
+        return new UpdateInfo(version, tag, Str(r, "body") ?? "", SafeReleaseUrl(Str(r, "html_url")),
             setupName, setupUrl, size, sha);
     }
 
@@ -350,7 +410,7 @@ public sealed class UpdateService : IDisposable
     /// </summary>
     public async Task<bool> DownloadAndInstallAsync(UpdateInfo info)
     {
-        if (_disposed || IsDownloading) return false;
+        if (_disposed || IsDownloading || IsInstalling) return false;
         DownloadError = null;
         if (!CanSelfUpdate(out string why))
         {
@@ -413,15 +473,17 @@ public sealed class UpdateService : IDisposable
             // 지금 자동 실행이 꺼져 있으면 그 작업을 빼서 그대로 둔다 (켜져 있으면 설치 프로그램이 유지).
             string args = "/SILENT /SUPPRESSMSGBOXES /NORESTART";
             if (!AutoStartRegistered()) args += " /MERGETASKS=\"!autostart\"";
-            Process.Start(new ProcessStartInfo
+            var setup = Process.Start(new ProcessStartInfo
             {
                 FileName = path,
                 Arguments = args,
                 UseShellExecute = true,
                 WorkingDirectory = Path.GetDirectoryName(path)!,
-            })?.Dispose();
+            });
             Log.Info($"업데이트 설치 시작: {Path.GetFileName(path)} {args}");
+            IsInstalling = true;
             RaiseChanged();
+            _ = WatchInstallAsync(setup, info);
             return true;
         }
         catch (Exception ex)
@@ -431,6 +493,53 @@ public sealed class UpdateService : IDisposable
             RaiseChanged();
             return false;
         }
+    }
+
+    /// <summary>
+    /// setup 실행 뒤: 정상이면 설치 프로그램이 몽독을 끄므로 이 메서드는 끝까지 가지 않는다.
+    /// setup 이 0 이 아닌 코드로 끝나거나 2분이 지나도 몽독이 살아 있으면 설치 실패 → "다시 시도" 가능하게.
+    /// </summary>
+    private async Task WatchInstallAsync(Process? setup, UpdateInfo info)
+    {
+        string? failure = null;
+        try
+        {
+            using var timeout = new CancellationTokenSource(InstallTimeout);
+            if (setup is not null)
+            {
+                try
+                {
+                    await setup.WaitForExitAsync(timeout.Token).ConfigureAwait(true);
+                    int code = setup.ExitCode;
+                    if (code != 0) failure = $"setup 종료 코드 {code}";
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+                {
+                    // 핸들을 못 받음 → 시간 제한으로만 판단
+                }
+            }
+            if (failure is null)
+            {
+                // setup 이 정상 종료했거나 아직 도는 중 — 남은 시간 동안 몽독이 꺼지길 기다림
+                try { await Task.Delay(Timeout.InfiniteTimeSpan, timeout.Token).ConfigureAwait(true); }
+                catch (OperationCanceledException) { }
+                failure = $"{InstallTimeout.TotalMinutes:0}분 안에 몽독이 종료되지 않음";
+            }
+        }
+        catch (Exception ex)
+        {
+            failure ??= ex.Message;
+        }
+        finally
+        {
+            setup?.Dispose();
+        }
+        if (_disposed) return;
+        Log.Warn($"업데이트 설치가 끝나지 않음 ({info.Tag}): {failure}");
+        IsInstalling = false;
+        DownloadError = "설치가 끝나지 않았어요 — 다시 시도해 주세요.";
+        RaiseChanged();
     }
 
     /// <summary>HKCU Run 에 "mongdock" 값이 있는지 (StartupService·설치 프로그램과 같은 값).</summary>
@@ -507,21 +616,43 @@ public sealed class UpdateService : IDisposable
         }
     }
 
-    /// <summary>크기(GitHub size) · 실행 파일 머리(MZ) · SHA-256(GitHub digest 가 있으면) 확인.</summary>
+    /// <summary>
+    /// 크기(GitHub size) · 실행 파일 머리(MZ + PE 헤더: 서명·기계 종류·실행 이미지 플래그) · SHA-256(GitHub digest 가 있으면) 확인.
+    /// (릴리스에 Authenticode 서명이 없으므로 서명은 확인하지 않음.)
+    /// </summary>
     private static async Task VerifyAsync(string path, UpdateInfo info, CancellationToken ct)
     {
         var fi = new FileInfo(path);
         if (fi.Length != info.SetupSize)
             throw new InvalidDataException($"받은 파일 크기({fi.Length:N0})가 릴리스 정보({info.SetupSize:N0})와 달라요.");
         await using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
-        var head = new byte[2];
-        if (await fs.ReadAsync(head, ct).ConfigureAwait(false) != 2 || head[0] != (byte)'M' || head[1] != (byte)'Z')
+        var head = new byte[64];
+        if (await fs.ReadAsync(head, ct).ConfigureAwait(false) != head.Length || head[0] != (byte)'M' || head[1] != (byte)'Z')
             throw new InvalidDataException("받은 파일이 실행 파일이 아니에요.");
+        if (!await HasValidPeHeaderAsync(fs, head, ct).ConfigureAwait(false))
+            throw new InvalidDataException("받은 파일의 실행 파일 형식이 올바르지 않아요.");
         if (info.SetupSha256 is null) return;
         fs.Position = 0;
         byte[] hash = await SHA256.HashDataAsync(fs, ct).ConfigureAwait(false);
         if (!string.Equals(Convert.ToHexString(hash), info.SetupSha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("받은 파일의 SHA-256 이 릴리스 정보와 달라요.");
+    }
+
+    /// <summary>IMAGE_DOS_HEADER.e_lfanew → "PE" 서명 + IMAGE_FILE_HEADER (Machine x86/x64/ARM64, EXECUTABLE_IMAGE, DLL 아님).</summary>
+    private static async Task<bool> HasValidPeHeaderAsync(FileStream fs, byte[] dosHeader, CancellationToken ct)
+    {
+        int lfanew = BitConverter.ToInt32(dosHeader, 0x3C);
+        if (lfanew < 64 || lfanew > 4096 || lfanew + 24 > fs.Length) return false;
+        fs.Position = lfanew;
+        var pe = new byte[24]; // 서명 4 + IMAGE_FILE_HEADER 20
+        if (await fs.ReadAsync(pe, ct).ConfigureAwait(false) != pe.Length) return false;
+        if (pe[0] != (byte)'P' || pe[1] != (byte)'E' || pe[2] != 0 || pe[3] != 0) return false;
+        ushort machine = BitConverter.ToUInt16(pe, 4);
+        ushort characteristics = BitConverter.ToUInt16(pe, 22);
+        const ushort I386 = 0x014C, Amd64 = 0x8664, Arm64 = 0xAA64;
+        const ushort ExecutableImage = 0x0002, Dll = 0x2000;
+        if (machine is not (I386 or Amd64 or Arm64)) return false;
+        return (characteristics & ExecutableImage) != 0 && (characteristics & Dll) == 0;
     }
 
     private void Report(long done, long total)
