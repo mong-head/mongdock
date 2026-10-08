@@ -96,16 +96,7 @@ public partial class App : Application
         // 로그온 작업(--autostart)은 탐색기보다 먼저 뜰 수 있다 → 작업 표시줄이 생길 때까지 잠깐 기다린 뒤 시작
         // (AppBar·셸 훅·작업 표시줄 숨김·트레이 가로채기가 explorer 를 전제로 함). 손으로 실행할 땐 기다리지 않음.
         if (e.Args.Any(a => string.Equals(a, StartupService.AutoStartArgument, StringComparison.OrdinalIgnoreCase)))
-        {
             WaitForExplorerTray();
-            // 작업 스케줄러는 작업 프로세스를 job 에 넣는다 → 독에서 실행한 앱까지 그 job 에 묶여, 몽독이 끝나거나(업데이트)
-            // 작업이 멈출 때 같이 꺼질 수 있다. 탐색기(Shell.Application)를 통해 job 밖에서 다시 띄우고 이 인스턴스는 끝냄.
-            if (RelaunchOutsideJob())
-            {
-                Shutdown();
-                return;
-            }
-        }
         _resumeEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ResumeEventName);
         _resumeWait = ThreadPool.RegisterWaitForSingleObject(_resumeEvent,
             (_, _) => Dispatcher.BeginInvoke(ResumeFromSecondLaunch), null, Timeout.Infinite, executeOnlyOnce: false);
@@ -181,33 +172,6 @@ public partial class App : Application
         // --tour: 첫 설치 둘러보기를 지금 설정 그대로 다시 보기 (확인·시연용)
         bool tour = Environment.GetCommandLineArgs().Any(a => string.Equals(a, "--tour", StringComparison.OrdinalIgnoreCase));
         CoachMarks.ScheduleStartup(settings.CreatedThisRun, forceTour: tour);
-    }
-
-    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
-    private static extern bool IsProcessInJob(IntPtr process, IntPtr job, out bool result);
-
-    /// <summary>job 안에서 실행됐으면 탐색기를 통해 같은 exe 를 job 밖에서 다시 띄움. 띄웠으면 true (이 인스턴스는 종료).</summary>
-    private bool RelaunchOutsideJob()
-    {
-        try
-        {
-            if (!IsProcessInJob(System.Diagnostics.Process.GetCurrentProcess().Handle, IntPtr.Zero, out bool inJob) || !inJob) return false;
-            string exe = Environment.ProcessPath ?? "";
-            if (exe.Length == 0 || Type.GetTypeFromProgID("Shell.Application") is not { } shellType) return false;
-            // 새 인스턴스가 "이미 실행 중" 으로 끝나지 않게 먼저 단일 실행 잠금을 놓는다
-            _singleInstance?.ReleaseMutex();
-            _singleInstance?.Dispose();
-            _singleInstance = null;
-            dynamic shell = Activator.CreateInstance(shellType)!;
-            shell.ShellExecute(exe, "", System.IO.Path.GetDirectoryName(exe), "open", 1);
-            Log.Info("작업 스케줄러 job 안에서 시작됨 → 탐색기로 다시 실행");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Log.Warn($"job 밖 다시 실행 실패 → 그대로 시작: {ex.Message}");
-            return false;
-        }
     }
 
     /// <summary>탐색기의 작업 표시줄(Shell_TrayWnd)이 생길 때까지 최대 60초 기다림 (로그온 작업으로 시작했을 때만).</summary>
