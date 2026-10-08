@@ -318,8 +318,8 @@ internal sealed class CoachMarkWindow : Window
             });
         }
         if (page.Groups is { Count: > 0 } groups)
-            body.Children.Add(BuildGroups(groups));
-        if (page.ReleaseLink)
+            body.Children.Add(BuildGroups(groups, page.More));
+        if (page.ChangelogLink)
         {
             var link = new Button
             {
@@ -328,7 +328,7 @@ internal sealed class CoachMarkWindow : Window
                 Padding = new Thickness(6, 4, 6, 4),
                 Margin = new Thickness(-6, 6, 0, 0),
                 HorizontalAlignment = HorizontalAlignment.Left,
-                Content = new TextBlock { Text = "릴리스 노트 전체 보기 ↗", FontSize = 12.5, Foreground = _p.Accent },
+                Content = new TextBlock { Text = "변경 내역 보기 ›", FontSize = 12.5, Foreground = _p.Accent },
             };
             link.Click += (_, _) => LinkClicked?.Invoke();
             body.Children.Add(link);
@@ -369,8 +369,8 @@ internal sealed class CoachMarkWindow : Window
         return body;
     }
 
-    /// <summary>버전(묶음) 머리글 + 항목 한 줄씩. 길면 얇은 스크롤바.</summary>
-    private UIElement BuildGroups(List<(string Header, List<string> Items)> groups)
+    /// <summary>버전(묶음) 머리글 + 항목 (단어 단위 줄바꿈), 끝에 "외 N개". 길면 얇은 스크롤바.</summary>
+    private UIElement BuildGroups(List<(string Header, List<string> Items)> groups, int more)
     {
         var list = new StackPanel();
         bool first = true;
@@ -390,17 +390,28 @@ internal sealed class CoachMarkWindow : Window
                 var row = new Grid { Margin = new Thickness(0, 1, 0, 1) };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
                 row.ColumnDefinitions.Add(new ColumnDefinition());
-                row.Children.Add(new Ellipse { Width = 4, Height = 4, Fill = _p.Accent, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(2, 1, 0, 0) });
-                var text = new TextBlock { Text = item, TextTrimming = TextTrimming.CharacterEllipsis };
+                // 점은 첫 줄 가운데 높이에 (여러 줄로 감겨도)
+                row.Children.Add(new Ellipse { Width = 4, Height = 4, Fill = _p.Accent, VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(2, 8, 0, 0) });
+                var text = new TextBlock { Text = KeepAll(item), TextWrapping = TextWrapping.Wrap, LineHeight = 19 };
                 Grid.SetColumn(text, 1);
                 row.Children.Add(text);
                 list.Children.Add(row);
             }
         }
+        if (more > 0)
+        {
+            list.Children.Add(new TextBlock
+            {
+                Text = $"외 {more}개",
+                FontSize = 12,
+                Foreground = _p.SubText,
+                Margin = new Thickness(14, 4, 0, 0),
+            });
+        }
         var scroll = new ScrollViewer
         {
             Content = list,
-            MaxHeight = 220,
+            MaxHeight = 260,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             Focusable = false,

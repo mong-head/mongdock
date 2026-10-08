@@ -38,7 +38,7 @@ public sealed record CoachStep(string Version, string Key, string Title, string 
 }
 
 /// <summary>
-/// 버전별 "새로운 기능" 과 첫 설치 둘러보기 내용 (코드 안 데이터). 새 버전을 낼 때 <see cref="Releases"/> 에 단계를 추가한다.
+/// 버전별 "새로운 기능"(Changelog.json 에서 읽음)과 첫 설치 둘러보기 내용(코드 안 데이터). 새 버전을 낼 때는 src/MyDock/Changelog.json 에 항목을 추가한다.
 /// 버전 문자열은 "v" 접두·"-test" 같은 접미를 무시하고 System.Version(주.부.빌드)으로 비교한다.
 /// </summary>
 public static class WhatsNew
@@ -50,23 +50,27 @@ public static class WhatsNew
 
     private static bool TopBarOn(Settings s) => s.TopBar.Enabled;
 
-    /// <summary>버전별 새 기능 (오래된 버전 → 새 버전 순서는 상관없음, 정렬해서 씀).</summary>
-    public static readonly IReadOnlyList<CoachStep> Releases =
-    [
-        // ── 0.3.0 ──
-        new("0.3.0", "tray", "다른 앱 트레이 아이콘이 여기 생겼어요",
-            "끌어서 ⌃ 안팎으로 옮기고, 오른쪽 클릭하면 앱 메뉴가 떠요.",
-            CoachAnchor.Tray, s => TopBarOn(s) && s.TopBar.ShowTrayIcons),
-        new("0.3.0", "search", "검색이 넓어졌어요",
-            "{hotkey} 앱·파일·윈도우 설정·계산기까지 찾아요.",
-            CoachAnchor.Search, s => TopBarOn(s) && s.TopBar.ShowQuickButtons && s.TopBar.SearchMode == SearchMode.Spotlight),
-        new("0.3.0", "calendar", "달력을 눌러 보세요",
-            "날짜를 누르면 음력·공휴일이, 두 번 누르면 캘린더가 열려요. 설정 → 캘린더에서 구글 일정도 연결할 수 있어요.",
-            CoachAnchor.Clock, TopBarOn),
-        new("0.3.0", "sound", "알림 소리도 고를 수 있어요",
-            "설정 → 상단바 → 알림 소리에서 바꿀 수 있어요.",
-            CoachAnchor.Center),
-    ];
+    /// <summary>
+    /// 버전별 새 기능 — Changelog.json 의 coach 가 있는 feature 항목 (순서 상관없음, 정렬해서 씀).
+    /// condition 이름 → 그 기능이 켜져 있는지 (<see cref="Condition"/>).
+    /// </summary>
+    public static IReadOnlyList<CoachStep> Releases => _releases ??= Changelog.Releases
+        .SelectMany(r => r.Entries.Where(e => e.Coach is not null)
+            .Select(e => new CoachStep(r.VersionText, e.Coach!.Key, e.Coach.Title, e.Coach.Body, e.Coach.Anchor, Condition(e.Coach.Condition))))
+        .ToList();
+
+    private static IReadOnlyList<CoachStep>? _releases;
+
+    /// <summary>Changelog.json coach.condition → 조건. 없거나 모르는 이름이면 항상.</summary>
+    private static Func<Settings, bool>? Condition(string? name) => name?.Trim().ToLowerInvariant() switch
+    {
+        "topbar" => TopBarOn,
+        "trayicons" => s => TopBarOn(s) && s.TopBar.ShowTrayIcons,
+        "spotlight" => s => TopBarOn(s) && s.TopBar.ShowQuickButtons && s.TopBar.SearchMode == SearchMode.Spotlight,
+        "banners" => s => s.Notifications.ShowNotificationBanners,
+        "dock" => s => s.Dock.Enabled,
+        _ => null,
+    };
 
     /// <summary>첫 설치 둘러보기 — 현재 버전의 주요 기능 전부. 마지막 단계(settings)는 항상 마지막 카드.</summary>
     public static readonly IReadOnlyList<CoachStep> Tour =

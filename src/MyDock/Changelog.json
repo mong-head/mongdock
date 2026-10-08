@@ -1,0 +1,83 @@
+{
+  "_comment": "mongdock 변경 내역 단일 원본. 앱(설정 → 변경 내역, 새로운 기능 코치마크)과 build-release.ps1(GitHub 릴리스 노트)이 함께 읽는다. 최신 버전을 맨 위에. kind = feature | improvement | fix. coach 가 있는 feature 는 업데이트 후 상단바·독 위 말풍선으로 소개(anchor = Center|Dock|Logo|AppName|Desktops|Tray|Search|Clock, condition = topBar|trayIcons|spotlight|banners|dock, 없으면 항상). body 의 {hotkey} 는 실제 검색 단축키 문구로 바뀜.",
+  "versions": [
+    {
+      "version": "0.3.0",
+      "date": "2026-10-08",
+      "entries": [
+        {
+          "kind": "feature",
+          "text": "다른 앱 트레이 아이콘이 상단바에 생겼어요. 끌어서 ⌃ 안팎으로 옮기고, 윈도우 \"항상 표시\" 설정을 따라요.",
+          "coach": {
+            "key": "tray",
+            "anchor": "Tray",
+            "title": "다른 앱 트레이 아이콘이 여기 생겼어요",
+            "body": "끌어서 ⌃ 안팎으로 옮기고, 오른쪽 클릭하면 앱 메뉴가 떠요.",
+            "condition": "trayIcons"
+          }
+        },
+        {
+          "kind": "feature",
+          "text": "검색이 파일·폴더·윈도우 설정·계산기까지 찾아요. 설정의 \"검색\" 탭에서 고를 수 있어요.",
+          "coach": {
+            "key": "search",
+            "anchor": "Search",
+            "title": "검색이 넓어졌어요",
+            "body": "{hotkey} 앱·파일·윈도우 설정·계산기까지 찾아요.",
+            "condition": "spotlight"
+          }
+        },
+        {
+          "kind": "feature",
+          "text": "달력 날짜를 누르면 음력·며칠 후가 보이고 캘린더 앱이 열려요. 구글 캘린더 일정도 연결할 수 있어요.",
+          "coach": {
+            "key": "calendar",
+            "anchor": "Clock",
+            "title": "달력을 눌러 보세요",
+            "body": "날짜를 누르면 음력·공휴일이, 두 번 누르면 캘린더가 열려요. 설정 → 캘린더에서 구글 일정도 연결할 수 있어요.",
+            "condition": "topBar"
+          }
+        },
+        { "kind": "feature", "text": "상단바 앱 메뉴: 메모장·그림판은 실제 메뉴를, VS Code·카카오톡·디스코드·탐색기는 전용 메뉴를 보여 줘요." },
+        { "kind": "feature", "text": "새 버전이 나오면 로고에 빨간 점이 떠요. 설정 → 정보에서 바로 업데이트할 수 있어요." },
+        { "kind": "feature", "text": "업데이트하면 새로운 기능을 짚어 주고, 처음 설치하면 둘러보기를 보여 줘요." },
+        { "kind": "improvement", "text": "처음 설치하면 독은 아래에 항상 보이고, 상단바는 앱 색에 맞추고, 윈도우 알림 팝업은 숨겨요." },
+        { "kind": "improvement", "text": "앱 이름을 시작 메뉴 이름으로 보여 줘요(예: \"카카오톡\")." },
+        { "kind": "improvement", "text": "상단바 글자를 위아래 가운데에 맞췄어요." },
+        { "kind": "improvement", "text": "트레이·달력 패널에서 앱 메뉴를 띄워도 패널이 닫히지 않아요." },
+        { "kind": "fix", "text": "디스코드 알림이 위아래 두 군데 뜨던 문제를 고쳤어요." },
+        { "kind": "fix", "text": "앱 이름에 \"(32-bit)\"·\"memo.exe\" 같은 군더더기가 붙던 문제를 고쳤어요." },
+        { "kind": "fix", "text": "몽독을 다시 켜면 일부 트레이 아이콘이 안 보이던 문제를 고쳤어요." },
+        { "kind": "fix", "text": "몽독을 지워도 바꾼 알림 소리가 남던 문제를 고쳤어요." }
+      ],
+      "knownIssues": [
+        "카카오톡 알림은 자체 팝업이라 배너로 잡히지 않아요(독 아이콘의 빨간 점은 표시돼요).",
+        "알림 소리는 처음 한 번 바꾼 뒤 다시 로그인해야 적용돼요.",
+        "네이버 캘린더는 구독 주소(iCal)를 주지 않아 연결할 수 없어요."
+      ]
+    },
+    {
+      "version": "0.2.0",
+      "date": "2026-10-07",
+      "entries": [
+        { "kind": "feature", "text": "모든 설정을 클릭으로 바꾸는 설정 창이 생겼어요." },
+        { "kind": "feature", "text": "화면 가운데 몽독 검색(Win+Space)으로 앱을 찾아요." },
+        { "kind": "feature", "text": "맥 스타일 알림 배너, 앱별 알림 묶음과 모두 지우기가 생겼어요." },
+        { "kind": "feature", "text": "윈도우 기본 알림 팝업을 숨길 수 있어요." },
+        { "kind": "feature", "text": "시계를 누르면 몽독 달력이 떠요(한국 공휴일·대체공휴일 표시)." },
+        { "kind": "feature", "text": "블루투스 이어폰·헤드폰을 눌러서 연결하거나 끊어요." },
+        { "kind": "feature", "text": "독 아이콘을 끌어서 순서를 바꾸고, 끌어내 제거하고, 파일을 끌어다 고정해요." },
+        { "kind": "feature", "text": "여러 모니터를 지원해요(상단바는 모든 모니터, 독은 고른 모니터)." },
+        { "kind": "feature", "text": "설치 프로그램(setup.exe)으로 설치·업데이트·제거해요." },
+        { "kind": "feature", "text": "알림 소리를 고를 수 있어요(설정 → 상단바 → 알림 소리)." },
+        { "kind": "improvement", "text": "상단바를 맥 메뉴바 크기로 줄이고 글자를 부드럽게 했어요." },
+        { "kind": "improvement", "text": "패널·배너·메뉴가 부드럽게 열리고 닫혀요." },
+        { "kind": "fix", "text": "\"앱 색에 맞춤\"에서 상단바 아래 선이 보이던 문제를 고쳤어요." }
+      ],
+      "knownIssues": [
+        "카카오톡처럼 자체 팝업을 쓰는 앱 알림은 배너로 잡히지 않아요(독 아이콘의 빨간 점은 표시돼요).",
+        "알림 소리는 처음 한 번 바꾼 뒤 다시 로그인해야 적용돼요."
+      ]
+    }
+  ]
+}

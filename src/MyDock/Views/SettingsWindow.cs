@@ -16,7 +16,7 @@ using Ellipse = System.Windows.Shapes.Ellipse;
 namespace MyDock.Views;
 
 /// <summary>
-/// 맥 "시스템 설정" 같은 설정 창: 왼쪽 사이드바(일반/독/상단바/캘린더/검색/정보) + 오른쪽 내용.
+/// 맥 "시스템 설정" 같은 설정 창: 왼쪽 사이드바(일반/독/상단바/캘린더/검색/정보/변경 내역) + 오른쪽 내용.
 /// - 독·상단바와 달리 일반 창 (포커스를 받아도 됨, 작업 표시줄에 보임). 한 개만 열림 → <see cref="Open"/>.
 /// - 원격(StarDesk)에서 마우스만으로: 토글·세그먼트·드롭다운(메뉴)·슬라이더만 쓰고 키보드 입력 칸은 없다.
 /// - 바꾸면 바로 Settings.Save() → SettingsChanged 로 독·상단바에 즉시 반영 (DockMenus 와 같은 경로).
@@ -25,7 +25,7 @@ namespace MyDock.Views;
 /// </summary>
 internal sealed partial class SettingsWindow : Window
 {
-    private enum Page { General, Dock, TopBar, Calendar, Search, About }
+    private enum Page { General, Dock, TopBar, Calendar, Search, About, Changelog }
 
     private const string GitHubUrl = "https://github.com/mong-head/mongdock";
     private const double SidebarWidth = 200;
@@ -49,6 +49,9 @@ internal sealed partial class SettingsWindow : Window
 
     /// <summary>설정 창을 "캘린더" 페이지로 열기 (시계 달력의 "캘린더 일정 연결하기…").</summary>
     public static void OpenCalendarPage(AppServices services) => Open(services, Page.Calendar);
+
+    /// <summary>설정 창을 "변경 내역" 페이지로 열기 (정보 페이지 링크, 코치마크 "변경 내역 보기").</summary>
+    public static void OpenChangelogPage(AppServices services) => Open(services, Page.Changelog);
 
     private static void Open(AppServices services, Page? page)
     {
@@ -215,6 +218,7 @@ internal sealed partial class SettingsWindow : Window
             case Page.TopBar: BuildTopBar(body); break;
             case Page.Calendar: BuildCalendar(body); break;
             case Page.Search: BuildSearch(body); break;
+            case Page.Changelog: BuildChangelog(body); break; // SettingsWindow.Changelog.cs
             default: BuildAbout(body); break;
         }
         _scroll = new ScrollViewer
@@ -242,6 +246,7 @@ internal sealed partial class SettingsWindow : Window
         Page.TopBar => "상단바",
         Page.Calendar => "캘린더",
         Page.Search => "검색",
+        Page.Changelog => "변경 내역",
         _ => "정보",
     };
 
@@ -262,6 +267,7 @@ internal sealed partial class SettingsWindow : Window
         panel.Children.Add(SidebarItem(Page.Calendar, "\uE787", Color.FromRgb(0xFF, 0x3B, 0x30)));
         panel.Children.Add(SidebarItem(Page.Search, "\uE721", Color.FromRgb(0xFF, 0x9F, 0x0A)));
         panel.Children.Add(SidebarItem(Page.About, "\uE946", Color.FromRgb(0x34, 0xC7, 0x59)));
+        panel.Children.Add(SidebarItem(Page.Changelog, "\uE81C", Color.FromRgb(0xAF, 0x52, 0xDE)));
         return panel;
     }
 
@@ -1009,6 +1015,7 @@ internal sealed partial class SettingsWindow : Window
             HorizontalAlignment = HorizontalAlignment.Center,
             Margin = new Thickness(0, 2, 0, 0),
         });
+        head.Children.Add(ChangelogLinkButton()); // SettingsWindow.Changelog.cs
         body.Children.Add(head);
 
         string folder = Path.GetDirectoryName(_services.Settings.SettingsPath) ?? AppInfo.DataDirectory;
