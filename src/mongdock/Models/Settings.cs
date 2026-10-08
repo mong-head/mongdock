@@ -345,6 +345,9 @@ public sealed class Settings
     /// </summary>
     public bool HideWindowsTaskbar { get; set; }
 
+    /// <summary>가벼운 모드 (저사양 PC): 애니메이션·블러·독 호버 확대를 끄고 확인 주기를 2배로 (ViewModels/PerfMode).</summary>
+    public bool PerformanceMode { get; set; }
+
     /// <summary>
     /// UI 에서 "윈도우 작업 표시줄 숨기기" 를 바꿀 때. 켤 때 앱 트레이 아이콘을 사용자가 정한 적 없으면 같이 켬
     /// (작업 표시줄이 없으면 트레이 아이콘에 접근할 곳이 상단바뿐이므로).

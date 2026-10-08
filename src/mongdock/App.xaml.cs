@@ -36,6 +36,9 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        // 회사 인증 프록시(NTLM/Kerberos): 업데이트·캘린더·메뉴 규칙 요청이 로그인한 윈도우 계정으로 인증하게
+        try { System.Net.Http.HttpClient.DefaultProxy.Credentials = System.Net.CredentialCache.DefaultCredentials; }
+        catch (Exception ex) { Log.Warn($"프록시 자격 증명 설정 실패: {ex.Message}"); }
 
         if (e.Args.Any(a => string.Equals(a, "--exit", StringComparison.OrdinalIgnoreCase)))
         {

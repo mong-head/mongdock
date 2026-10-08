@@ -369,11 +369,10 @@ internal sealed partial class SettingsWindow : Window
         body.Children.Add(Group(
             Row("글꼴", "상단바·메뉴·패널·독 이름표 글꼴", FontDropdown(s.FontFamily))));
 
-        // 가벼운 모드: 설정 모델에 PerformanceMode 가 있을 때만 (ViewModels/PerfMode)
-        if (PerfMode.Available)
-            body.Children.Add(Group(
-                Row("가벼운 모드", "애니메이션·블러·파도 확대를 끄고 확인 주기를 늘려요. 저사양 PC·원격 접속에 좋아요.",
-                    Toggle(PerfMode.IsOn(s), on => Commit(() => PerfMode.Set(_services.Settings.Current, on), rebuild: true)))));
+        // 가벼운 모드 (ViewModels/PerfMode)
+        body.Children.Add(Group(
+            Row("가벼운 모드", "애니메이션·블러·파도 확대를 끄고 확인 주기를 늘려요. 저사양 PC·원격 접속에 좋아요.",
+                Toggle(PerfMode.IsOn(s), on => Commit(() => PerfMode.Set(_services.Settings.Current, on), rebuild: true)))));
     }
 
     private UIElement FontDropdown(string current)

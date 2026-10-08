@@ -518,7 +518,10 @@ public sealed class UpdateService : IDisposable
         }
         catch (Exception ex)
         {
-            DownloadError = "설치 프로그램을 실행하지 못했어요.";
+            // 1260 = ERROR_ACCESS_DISABLED_BY_POLICY (AppLocker·소프트웨어 제한 정책)
+            DownloadError = ex is System.ComponentModel.Win32Exception { NativeErrorCode: 1260 }
+                ? "회사 정책으로 설치 프로그램 실행이 막혀 있어요. IT 담당자에게 문의해 주세요."
+                : "설치 프로그램을 실행하지 못했어요.";
             Log.Error($"업데이트 설치 프로그램 실행 실패: {path}", ex);
             RaiseChanged();
             return false;
