@@ -953,7 +953,23 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
             try { slot.Source.Dispose(); } catch { }
         }
         foreach (var s in _slots) QueueReposition(s); // 남은 AppBar 가 빈 공간을 차지하도록
+        PublishTopBarRects();
         Log.Info($"AppBar 해제 edge={slot.Edge} topbar={slot.IsTopBar}");
+    }
+
+    private static RECT[] _topBarRectsPx = Array.Empty<RECT>();
+
+    /// <summary>
+    /// 지금 AppBar 로 등록된(=공간을 예약한) 상단바들의 화면 위치 (물리 px). 아무 스레드에서나 읽어도 된다 (교체만 하는 스냅샷).
+    /// 상단바가 꺼져 있거나 "공간 예약" 이 꺼져 있으면 비어 있다. WindowNudger 가 씀.
+    /// </summary>
+    internal static RECT[] TopBarRectsPx => Volatile.Read(ref _topBarRectsPx);
+
+    private void PublishTopBarRects()
+    {
+        var rects = _slots.Where(s => s.IsTopBar && s.Registered && s.LastRect.Height > 0 && s.LastRect.Width > 0)
+                          .Select(s => s.LastRect).ToArray();
+        Volatile.Write(ref _topBarRectsPx, rects);
     }
 
     private void Register(Slot slot)
@@ -1089,6 +1105,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
             bool changed = rc.Left != slot.LastRect.Left || rc.Top != slot.LastRect.Top ||
                            rc.Right != slot.LastRect.Right || rc.Bottom != slot.LastRect.Bottom;
             slot.LastRect = rc;
+            if (slot.IsTopBar) PublishTopBarRects();
 
             if (slot.Window is not null)
             {

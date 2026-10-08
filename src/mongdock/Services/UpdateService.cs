@@ -56,6 +56,13 @@ public sealed class UpdateService : IDisposable
     private const string RepoPagePrefix = "https://github.com/" + Repo + "/";
     /// <summary>setup 실행 뒤 이 시간 안에 몽독이 꺼지지 않으면 설치가 안 된 것으로 보고 "다시 시도".</summary>
     private static readonly TimeSpan InstallTimeout = TimeSpan.FromMinutes(2);
+    /// <summary>
+    /// setup 프로세스가 아직 도는 동안 기다리는 최대 시간. 런타임이 없는 PC 는 몽독을 끄기 전에
+    /// .NET 8 Desktop Runtime 다운로드(약 56MB) + 관리자 권한 확인 + 설치를 하므로 2분보다 길게 잡는다.
+    /// </summary>
+    private static readonly TimeSpan SetupRunTimeout = TimeSpan.FromMinutes(15);
+    /// <summary>Inno Setup 종료 코드 7: PrepareToInstall 실패 (런타임을 받지/설치하지 못함, 또는 몽독을 끄지 못함).</summary>
+    private const int SetupExitPrepareFailed = 7;
     /// <summary>installer/mongdock.iss 의 AppId (Inno 는 HKCU\...\Uninstall\{AppId}_is1 에 설치 정보를 남김).</summary>
     private const string InnoUninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\{E7300DFF-4D79-4C67-BF72-F83A83F78D73}_is1";
 
@@ -116,7 +123,7 @@ public sealed class UpdateService : IDisposable
     /// <summary>마지막 다운로드/실행 실패 이유 (사용자에게 보여 줄 한 줄). 성공·취소면 null.</summary>
     public string? DownloadError { get; private set; }
 
-    /// <summary>setup 을 실행했고 몽독이 꺼지길 기다리는 중 (2분 안에 안 꺼지거나 setup 이 실패하면 false + DownloadError).</summary>
+    /// <summary>setup 을 실행했고 몽독이 꺼지길 기다리는 중 (setup 이 끝나고(최대 15분) 2분 안에 안 꺼지거나 setup 이 실패하면 false + DownloadError).</summary>
     public bool IsInstalling { get; private set; }
 
     /// <summary>Pending·확인 중·다운로드 시작/끝 등 상태가 바뀜 (UI 스레드).</summary>
@@ -497,21 +504,24 @@ public sealed class UpdateService : IDisposable
 
     /// <summary>
     /// setup 실행 뒤: 정상이면 설치 프로그램이 몽독을 끄므로 이 메서드는 끝까지 가지 않는다.
-    /// setup 이 0 이 아닌 코드로 끝나거나 2분이 지나도 몽독이 살아 있으면 설치 실패 → "다시 시도" 가능하게.
+    /// setup 이 0 이 아닌 코드로 끝나거나 끝난(또는 15분이 지난) 뒤 2분이 지나도 몽독이 살아 있으면 설치 실패 → "다시 시도" 가능하게.
     /// </summary>
     private async Task WatchInstallAsync(Process? setup, UpdateInfo info)
     {
         string? failure = null;
+        string message = "설치가 끝나지 않았어요 — 다시 시도해 주세요.";
         try
         {
-            using var timeout = new CancellationTokenSource(InstallTimeout);
             if (setup is not null)
             {
                 try
                 {
-                    await setup.WaitForExitAsync(timeout.Token).ConfigureAwait(true);
+                    using (var running = new CancellationTokenSource(SetupRunTimeout))
+                        await setup.WaitForExitAsync(running.Token).ConfigureAwait(true);
                     int code = setup.ExitCode;
                     if (code != 0) failure = $"setup 종료 코드 {code}";
+                    if (code == SetupExitPrepareFailed)
+                        message = "설치 준비에 실패했어요 (.NET 런타임을 받지 못했거나 관리자 권한 확인이 취소됨) — 다시 시도해 주세요.";
                 }
                 catch (OperationCanceledException) { }
                 catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
@@ -521,10 +531,9 @@ public sealed class UpdateService : IDisposable
             }
             if (failure is null)
             {
-                // setup 이 정상 종료했거나 아직 도는 중 — 남은 시간 동안 몽독이 꺼지길 기다림
-                try { await Task.Delay(Timeout.InfiniteTimeSpan, timeout.Token).ConfigureAwait(true); }
-                catch (OperationCanceledException) { }
-                failure = $"{InstallTimeout.TotalMinutes:0}분 안에 몽독이 종료되지 않음";
+                // setup 이 정상 종료했거나 (핸들 없음/너무 오래 도는 중) — 조금 더 몽독이 꺼지길 기다림
+                await Task.Delay(InstallTimeout).ConfigureAwait(true);
+                failure = "설치 프로그램 실행 뒤에도 몽독이 종료되지 않음";
             }
         }
         catch (Exception ex)
@@ -538,7 +547,7 @@ public sealed class UpdateService : IDisposable
         if (_disposed) return;
         Log.Warn($"업데이트 설치가 끝나지 않음 ({info.Tag}): {failure}");
         IsInstalling = false;
-        DownloadError = "설치가 끝나지 않았어요 — 다시 시도해 주세요.";
+        DownloadError = message;
         RaiseChanged();
     }
 
