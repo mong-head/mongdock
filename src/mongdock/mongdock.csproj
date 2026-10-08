@@ -6,7 +6,7 @@
     <RootNamespace>Mongdock</RootNamespace>
     <Product>mongdock</Product>
     <!-- 릴리스 빌드는 build-release.ps1 -Version 이 덮어씀 -->
-    <Version>0.4.0</Version>
+    <Version>0.4.1</Version>
     <!-- 10.0.19041.0: 블루투스 상태(Windows.Devices.Radios) WinRT 투영용 -->
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>

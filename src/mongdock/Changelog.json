@@ -2,6 +2,43 @@
   "_comment": "mongdock 변경 내역 단일 원본. 앱(설정 → 변경 내역, 새로운 기능 코치마크)과 build-release.ps1(GitHub 릴리스 노트)이 함께 읽는다. 최신 버전을 맨 위에. kind = feature | improvement | fix. coach 가 있는 feature 는 업데이트 후 상단바·독 위 말풍선으로 소개(anchor = Center|Dock|Logo|AppName|Desktops|Tray|Search|Clock, condition = topBar|trayIcons|spotlight|banners|dock|appMenus, 없으면 항상). major = 그 버전의 주요 업데이트(버전당 1~4개, 오랜만에 업데이트한 사람·변경 내역 맨 위·릴리스 노트 \"이번 버전 핵심\"에 씀), headline = 그 버전 한 줄 요약. body 의 {hotkey} 는 실제 검색 단축키 문구로 바뀜.",
   "versions": [
     {
+      "version": "0.4.1",
+      "date": "2026-10-08",
+      "headline": "야간 모드 켜기·노트북 전용 항목·알림 놓침 수정",
+      "entries": [
+        {
+          "kind": "improvement",
+          "major": true,
+          "text": "제어 센터의 달 동그라미를 누르면 야간 모드가 바로 켜지고 꺼져요."
+        },
+        {
+          "kind": "improvement",
+          "major": false,
+          "text": "전원 모드는 배터리가 있는 기기(노트북·태블릿)에서만 보여요."
+        },
+        {
+          "kind": "fix",
+          "major": true,
+          "text": "이전 알림을 바꿔치기하는 알림(Claude 등)이 몽독 배너로 뜨지 않던 문제를 고쳤어요."
+        },
+        {
+          "kind": "fix",
+          "major": false,
+          "text": "카메라·마이크 카드: 마이크가 잠깐 끊겼다 다시 켜지거나 회의 앱 창이 앞으로 올 때 카드가 저절로 닫혀 '마이크 개인 정보 설정…'을 눌러도 반응이 없던 문제를 고쳤어요(사용이 끝난 뒤 점을 3초 남겨요)."
+        },
+        {
+          "kind": "fix",
+          "major": false,
+          "text": "다른 앱 대화상자로 전환한 직후 상단바 패널이 이유 없이 닫히던 문제를 고쳤어요."
+        }
+      ],
+      "knownIssues": [
+        "카카오톡 알림은 자체 팝업이라 배너로 잡히지 않아요(독 아이콘의 빨간 점은 표시돼요).",
+        "알림 소리는 처음 한 번 바꾼 뒤 다시 로그인해야 적용돼요.",
+        "네이버 캘린더는 구독 주소(iCal)를 주지 않아 연결할 수 없어요."
+      ]
+    },
+    {
       "version": "0.4.0",
       "date": "2026-10-08",
       "headline": "노트북·여러 환경 대응",
