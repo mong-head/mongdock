@@ -32,3 +32,6 @@ tools: Read, Write, Edit, Glob, Grep, Bash, PowerShell, WebSearch, WebFetch
 - 시스템 설정(작업표시줄 숨기기, 레지스트리 시작프로그램 등)을 **실제로 바꾸는 코드를 실행하지 말 것** — 코드는 작성하되 실행/적용은 메인 세션이 사용자 승인 후 한다.
 - 수정 후 `dotnet build` 가 경고 없이 통과하는지 확인.
 - 보고 형식: 변경 파일 / 공개 인터페이스(UI가 쓸 것) / 테스트·확인 결과 / 남은 위험.
+
+## 이 PC 에서 실행·시험할 때
+- Claude 데스크톱 앱 셸에서 띄운 프로세스는 MSIX 가상화를 받는다 (%APPDATA%·HKCU 쓰기가 Claude 패키지 전용 공간으로 감, Claude 업데이트 때 같이 종료). 레지스트리·AppData 를 실제로 바꾸거나 mongdock 을 띄우는 시험은 `C:\dev\mongdock-tmp\` 의 .cmd 를 `Start-Process explorer.exe -ArgumentList '<.cmd>'` 로 실행하고, 결과는 그 폴더에 파일로 남겨 읽는다.

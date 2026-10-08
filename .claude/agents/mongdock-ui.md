@@ -29,3 +29,6 @@ tools: Read, Write, Edit, Glob, Grep, Bash, PowerShell
 - 수정 후 반드시 `dotnet build` 가 경고 없이 통과하는지 확인한다(`C:\Program Files\dotnet\dotnet.exe`).
 - 실행해서 직접 확인할 수 있으면 실행하고, 확인한 것/못 한 것을 구분해서 보고한다.
 - 보고 형식: 변경 파일 목록 / 무엇을 했는지 / 백엔드에 요청할 것 / 확인 결과.
+
+## 이 PC 에서 실행·시험할 때
+- Claude 데스크톱 앱 셸에서 띄운 프로세스는 MSIX 가상화를 받는다 (%APPDATA%·HKCU 쓰기가 Claude 패키지 전용 공간으로 감, Claude 업데이트 때 같이 종료). 레지스트리·AppData 를 실제로 바꾸거나 mongdock 을 띄우는 시험은 `C:\dev\mongdock-tmp\` 의 .cmd 를 `Start-Process explorer.exe -ArgumentList '<.cmd>'` 로 실행하고, 결과는 그 폴더에 파일로 남겨 읽는다.
