@@ -335,4 +335,9 @@ public sealed class Settings
     public string? NotifiedUpdateVersion { get; set; }
     /// <summary>사용자 정의 앱 메뉴. 키 = exe 파일명(소문자, 예 "chrome.exe") 또는 AUMID. 있으면 기본 메뉴 대신 사용.</summary>
     public Dictionary<string, List<AppMenuDef>> AppMenus { get; set; } = new();
+    /// <summary>
+    /// 앱 전용 메뉴 규칙(menus/app-menus.json)을 GitHub 에서 하루 한 번 받아 갱신할지 (Services/MenuRulesService).
+    /// false 면 내장(또는 이전에 받아 둔 캐시) 규칙만 쓴다. 설정 창에는 없음.
+    /// </summary>
+    public bool UpdateMenuRules { get; set; } = true;
 }

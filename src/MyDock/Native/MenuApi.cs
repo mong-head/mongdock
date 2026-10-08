@@ -34,6 +34,13 @@ internal static class MenuApi
     public const uint MFS_CHECKED = 0x08;
 
     public const uint WM_COMMAND = 0x0111;
+    public const uint WM_SYSCOMMAND = 0x0112;
+
+    // WM_SYSCOMMAND wParam (앱 메뉴 규칙의 action)
+    public const int SC_MINIMIZE = 0xF020;
+    public const int SC_MAXIMIZE = 0xF030;
+    public const int SC_CLOSE = 0xF060;
+    public const int SC_RESTORE = 0xF120;
 
     [DllImport("user32.dll")]
     public static extern IntPtr GetMenu(IntPtr hWnd);

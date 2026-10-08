@@ -8,8 +8,10 @@ namespace MyDock.Services;
 /// <summary>
 /// 맥처럼 상단바에 포그라운드 앱의 메뉴를 보여 주기 위한 메뉴 정의.
 /// 우선순위: 1) settings.AppMenus[AUMID / exe 파일명 / exe 전체 경로] → 2) 창의 Win32 메뉴 막대(HMENU, 숨긴 것 포함)
-/// → 3) 앱 전용 내장 메뉴 → 4) UI 자동화 메뉴 막대(제목만, 누르면 앱 메뉴를 펼침) → 5) 범용 내장 메뉴(Electron·기본).
-/// Payload: Win32 메뉴 항목은 <see cref="Win32Command"/>(명령 ID), 단축키 항목은 단축키 문자열(예: "Ctrl+Shift+T", "Ctrl+K Ctrl+S").
+/// → 3) 앱 전용 메뉴 규칙(menus/app-menus.json — 내장 + GitHub 갱신, <see cref="MenuRulesService"/>)
+/// → 4) UI 자동화 메뉴 막대(제목만, 누르면 앱 메뉴를 펼침) → 5) 범용 내장 메뉴(Electron·기본, <see cref="BuiltinMenus"/>).
+/// Payload: Win32 메뉴 항목은 <see cref="Win32Command"/>(명령 ID), 단축키 항목은 단축키 문자열(예: "Ctrl+Shift+T", "Ctrl+K Ctrl+S"),
+/// 창 동작 항목은 <see cref="WindowAction"/>(WM_SYSCOMMAND).
 /// 제목이 "@app" 인 메뉴는 상단바 제목이 아니라 앱 이름 메뉴에 덧붙는다(<see cref="GetAppNameItems"/>).
 /// </summary>
 public sealed class AppMenuService : IAppMenuService, IDisposable
@@ -17,8 +19,13 @@ public sealed class AppMenuService : IAppMenuService, IDisposable
     /// <summary>Win32 메뉴 항목의 명령 ID (Invoke 시 WM_COMMAND).</summary>
     public sealed record Win32Command(uint Id);
 
+    /// <summary>창 동작 항목 (규칙의 "action": close/minimize/maximize/restore) — WM_SYSCOMMAND 값.</summary>
+    public sealed record WindowAction(string Name, int SysCommand);
+
     private readonly ISettingsService _settings;
-    private readonly Dictionary<string, IReadOnlyList<AppMenu>> _builtinCache = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>변환한 내장 메뉴. 키 = 범용 종류 문자열("electron"/"generic") 또는 <see cref="MenuRule"/>. 규칙이 바뀌면 비움.</summary>
+    private readonly Dictionary<object, IReadOnlyList<AppMenu>> _builtinCache = new();
+    private readonly MenuRulesService _rules;
     private readonly Dictionary<string, bool> _electronCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly NativeMenuHider _hider = new();
     private readonly UiaMenuReader _uia = new();
@@ -34,6 +41,16 @@ public sealed class AppMenuService : IAppMenuService, IDisposable
         _settings.SettingsChanged += OnSettingsOrPauseChanged;
         ViewModels.AppState.Changed += OnSettingsOrPauseChanged;
         _hideWanted = HideWanted();
+        _rules = new MenuRulesService(settings);
+        _rules.RulesChanged += OnRulesChanged;
+        _rules.Start();
+    }
+
+    /// <summary>원격 규칙이 반영됨 → 변환 캐시를 비우고 지금 포그라운드 창의 메뉴를 다시 그리게 함.</summary>
+    private void OnRulesChanged()
+    {
+        lock (_builtinCache) _builtinCache.Clear();
+        MenusChanged?.Invoke(this, User32.GetForegroundWindow());
     }
 
     /// <summary>실험 기능 "앱 창 안 메뉴 줄 숨기기" 가 지금 동작해야 하는지.</summary>
@@ -54,6 +71,8 @@ public sealed class AppMenuService : IAppMenuService, IDisposable
     {
         _settings.SettingsChanged -= OnSettingsOrPauseChanged;
         ViewModels.AppState.Changed -= OnSettingsOrPauseChanged;
+        _rules.RulesChanged -= OnRulesChanged;
+        _rules.Dispose();
         _hider.Dispose(); // 숨긴 메뉴 줄 복원 (최대 1.5초 대기)
     }
 
@@ -82,8 +101,8 @@ public sealed class AppMenuService : IAppMenuService, IDisposable
             string cls = User32.GetClassNameOf(window.Hwnd);
             if (IsConsole(exe, cls)) return Array.Empty<AppMenu>(); // Ctrl+C 등이 다른 의미
 
-            string kind = BuiltinKind(window, exe, cls);
-            if (BuiltinMenus.IsAppSpecific(kind)) return TitlesOnly(GetBuiltin(kind));
+            var rule = _rules.Current.Find(exe, cls, window.Aumid);
+            if (rule is not null) return TitlesOnly(GetBuiltin(rule));
 
             if (UiaMenuReader.IsCandidate(window.Hwnd, cls))
             {
@@ -91,7 +110,7 @@ public sealed class AppMenuService : IAppMenuService, IDisposable
                 if (titles is { Count: > 0 })
                     return titles.Select(t => new AppMenu(t, Array.Empty<AppMenuItem>())).ToList();
             }
-            return TitlesOnly(GetBuiltin(kind));
+            return TitlesOnly(GetBuiltin(IsElectron(window.ProcessPath) ? "electron" : "generic"));
         }
         catch (Exception ex)
         {
@@ -112,9 +131,9 @@ public sealed class AppMenuService : IAppMenuService, IDisposable
             {
                 string exe = Path.GetFileName(window.ProcessPath).ToLowerInvariant();
                 string cls = User32.GetClassNameOf(window.Hwnd);
-                string? kind = BuiltinMenus.KindOf(exe, cls);
-                if (kind is null) return Array.Empty<AppMenuItem>();
-                menus = GetBuiltin(kind);
+                var rule = _rules.Current.Find(exe, cls, window.Aumid);
+                if (rule is null) return Array.Empty<AppMenuItem>();
+                menus = GetBuiltin(rule);
             }
             return menus.FirstOrDefault(m => m.Title == BuiltinMenus.AppNameMenuTitle)?.Items ?? Array.Empty<AppMenuItem>();
         }
@@ -314,6 +333,12 @@ public sealed class AppMenuService : IAppMenuService, IDisposable
             if (it is null) continue;
             if (it.Text == "-") { list.Add(Separator); continue; }
             var children = it.Items is { Count: > 0 } ? ConvertItems(it.Items) : null;
+            if (children is null && !string.IsNullOrWhiteSpace(it.Action))
+            {
+                bool known = MenuRules.AllowedActions.TryGetValue(it.Action.Trim(), out int sc);
+                list.Add(new AppMenuItem(it.Text, false, known, false, null, null, known ? new WindowAction(it.Action.Trim(), sc) : null));
+                continue;
+            }
             string? keys = string.IsNullOrWhiteSpace(it.Keys) ? null : it.Keys.Trim();
             bool enabled = children is not null || (keys is not null && KeyParser.TryParseSequence(keys, out _));
             list.Add(new AppMenuItem(it.Text, false, enabled, false, keys, children, children is null ? keys : null));
@@ -323,17 +348,14 @@ public sealed class AppMenuService : IAppMenuService, IDisposable
 
     // ───────────────────────── 내장 기본 메뉴 ─────────────────────────
 
-    /// <summary>내장 메뉴 종류: 앱 전용(BuiltinMenus.KindOf) → Electron → generic.</summary>
-    private string BuiltinKind(AppWindowInfo w, string exe, string cls) =>
-        BuiltinMenus.KindOf(exe, cls) ?? (IsElectron(w.ProcessPath) ? "electron" : "generic");
-
-    private IReadOnlyList<AppMenu> GetBuiltin(string kind)
+    /// <summary>key: <see cref="MenuRule"/>(앱 전용 규칙) 또는 "electron"/"generic"(코드의 범용 메뉴).</summary>
+    private IReadOnlyList<AppMenu> GetBuiltin(object key)
     {
         lock (_builtinCache)
         {
-            if (_builtinCache.TryGetValue(kind, out var cached)) return cached;
-            var menus = Convert(BuiltinMenus.For(kind));
-            _builtinCache[kind] = menus;
+            if (_builtinCache.TryGetValue(key, out var cached)) return cached;
+            var menus = Convert(key is MenuRule rule ? rule.Menus : BuiltinMenus.For((string)key));
+            _builtinCache[key] = menus;
             return menus;
         }
     }
@@ -370,6 +392,10 @@ public sealed class AppMenuService : IAppMenuService, IDisposable
                 case Win32Command cmd:
                     if (!User32.PostMessage(hwnd, MenuApi.WM_COMMAND, new IntPtr(cmd.Id), IntPtr.Zero))
                         Log.Warn($"WM_COMMAND 전송 실패 id={cmd.Id} err={Marshal.GetLastWin32Error()}");
+                    break;
+                case WindowAction act:
+                    if (!User32.PostMessage(hwnd, MenuApi.WM_SYSCOMMAND, new IntPtr(act.SysCommand), IntPtr.Zero))
+                        Log.Warn($"창 동작 '{act.Name}' 전송 실패 err={Marshal.GetLastWin32Error()}");
                     break;
                 case string keys:
                     if (!KeyParser.TryParseSequence(keys, out var chords))
@@ -442,96 +468,4 @@ public sealed class AppMenuService : IAppMenuService, IDisposable
     private static bool AnyModifierDown() =>
         MenuApi.IsKeyDown(0x10) || MenuApi.IsKeyDown(0x11) || MenuApi.IsKeyDown(0x12) ||
         MenuApi.IsKeyDown(0x5B) || MenuApi.IsKeyDown(0x5C);
-}
-
-/// <summary>
-/// "Ctrl+Shift+T" 같은 단축키 문자열 → 가상 키 배열 (수식키 먼저, 마지막이 주 키).
-/// 공백으로 나눈 "Ctrl+K Ctrl+S" / "Ctrl+K S" 는 차례로 누르는 연속 입력(<see cref="TryParseSequence"/>).
-/// </summary>
-internal static class KeyParser
-{
-    /// <summary>공백으로 나눈 입력 여러 개 (최대 4개). 하나라도 해석 못 하면 false.</summary>
-    public static bool TryParseSequence(string text, out IReadOnlyList<ushort[]> chords)
-    {
-        chords = Array.Empty<ushort[]>();
-        if (string.IsNullOrWhiteSpace(text)) return false;
-        var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length is 0 or > 4) return false;
-        var list = new List<ushort[]>(parts.Length);
-        foreach (var p in parts)
-        {
-            if (!TryParse(p, out var keys)) return false;
-            list.Add(keys);
-        }
-        chords = list;
-        return true;
-    }
-
-    private static readonly Dictionary<string, ushort> Named = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["Ctrl"] = 0xA2, ["Control"] = 0xA2, ["Shift"] = 0xA0, ["Alt"] = 0xA4, ["Win"] = 0x5B, ["Windows"] = 0x5B,
-        ["Left"] = 0x25, ["Up"] = 0x26, ["Right"] = 0x27, ["Down"] = 0x28,
-        ["Tab"] = 0x09, ["Enter"] = 0x0D, ["Return"] = 0x0D, ["Esc"] = 0x1B, ["Escape"] = 0x1B,
-        ["Space"] = 0x20, ["Backspace"] = 0x08, ["Delete"] = 0x2E, ["Del"] = 0x2E, ["Insert"] = 0x2D, ["Ins"] = 0x2D,
-        ["Home"] = 0x24, ["End"] = 0x23, ["PageUp"] = 0x21, ["PgUp"] = 0x21, ["PageDown"] = 0x22, ["PgDn"] = 0x22,
-        ["="] = 0xBB, ["Plus"] = 0xBB, ["-"] = 0xBD, ["Minus"] = 0xBD, [","] = 0xBC, ["."] = 0xBE, ["/"] = 0xBF,
-        [";"] = 0xBA, ["`"] = 0xC0, ["["] = 0xDB, ["\\"] = 0xDC, ["]"] = 0xDD, ["'"] = 0xDE,
-    };
-
-    /// <summary>"NumPad0"~"NumPad9" / "Num0"~"Num9" → VK_NUMPAD0(0x60)~.</summary>
-    private static bool TryNumPad(string p, out ushort vk)
-    {
-        vk = 0;
-        string digits = p.StartsWith("NumPad", StringComparison.OrdinalIgnoreCase) ? p[6..]
-            : p.StartsWith("Num", StringComparison.OrdinalIgnoreCase) ? p[3..] : "";
-        if (digits.Length != 1 || digits[0] is < '0' or > '9') return false;
-        vk = (ushort)(0x60 + (digits[0] - '0'));
-        return true;
-    }
-
-    private static readonly HashSet<ushort> Modifiers = new() { 0xA2, 0xA0, 0xA4, 0x5B };
-
-    public static bool TryParse(string text, out ushort[] keys)
-    {
-        keys = Array.Empty<ushort>();
-        if (string.IsNullOrWhiteSpace(text)) return false;
-        string s = text.Trim();
-        var parts = new List<string>();
-        // "Ctrl++" 처럼 '+' 키 자체는 마지막 토큰
-        if (s.EndsWith("++")) { parts.AddRange(s[..^2].Split('+', StringSplitOptions.RemoveEmptyEntries)); parts.Add("="); }
-        else parts.AddRange(s.Split('+', StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim()));
-        if (parts.Count == 0) return false;
-
-        var result = new List<ushort>();
-        foreach (string p in parts)
-        {
-            if (!TryKey(p, out ushort vk)) return false;
-            result.Add(vk);
-        }
-        // 주 키는 정확히 하나 (마지막), 나머지는 수식키
-        if (result.Count(k => !Modifiers.Contains(k)) > 1) return false;
-        var ordered = result.Where(Modifiers.Contains).Concat(result.Where(k => !Modifiers.Contains(k))).ToArray();
-        if (ordered.Length == 0) return false;
-        keys = ordered;
-        return true;
-    }
-
-    private static bool TryKey(string p, out ushort vk)
-    {
-        vk = 0;
-        if (Named.TryGetValue(p, out vk)) return true;
-        if (TryNumPad(p, out vk)) return true;
-        if (p.Length == 1)
-        {
-            char c = char.ToUpperInvariant(p[0]);
-            if (c is >= 'A' and <= 'Z' or >= '0' and <= '9') { vk = c; return true; }
-            return false;
-        }
-        if ((p[0] == 'F' || p[0] == 'f') && int.TryParse(p[1..], out int n) && n is >= 1 and <= 24)
-        {
-            vk = (ushort)(0x70 + n - 1);
-            return true;
-        }
-        return false;
-    }
 }

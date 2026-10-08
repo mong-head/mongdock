@@ -163,11 +163,44 @@ zip 으로 썼다면:
 | 알림 | `notifications.showNotificationBanners` (기본 `true`), `notifications.hideWindowsToastPopups` (기본 `true`) |
 | 글꼴 | `fontFamily` — 기본 `"Pretendard"`(내장), 설치된 글꼴 이름도 가능 |
 | 앱 메뉴 직접 정의 | `appMenus` — 키는 exe 이름(예 `"chrome.exe"`), 항목마다 `text` 와 `keys`(예 `"Ctrl+Shift+T"`) |
+| 앱 메뉴 규칙 갱신 | `updateMenuRules` (기본 `true`) — `false` 면 [앱 메뉴 규칙](#앱-메뉴-규칙)을 GitHub 에서 받지 않음 |
 | 핀 목록 | `pins` |
 
 색 문자열이 `""` 이면 테마 기본값. 첫 실행 때 MyDockFinder 의 `ico.ini` 가 있으면 핀 목록을 가져온다.
 
 로그: `%APPDATA%\mongdock\logs\mongdock.log`
+
+## 앱 메뉴 규칙
+
+브라우저·탐색기·VS Code·카카오톡·디스코드·노션처럼 윈도우 메뉴가 없는 앱의 상단바 단축키 메뉴는 [`menus/app-menus.json`](menus/app-menus.json) 에 들어 있다. 몽독은 이 파일을 앱 안에 담아 두고(오프라인·첫 실행용), 켜진 지 2분 뒤와 그 뒤 하루에 한 번 GitHub `main` 의 같은 파일을 받아 바로 적용한다. 그래서 **새 앱 메뉴는 몽독 새 버전 없이 이 파일만 고치면** 모든 사용자에게 반영된다. 받은 파일은 `%APPDATA%\mongdock\cache\app-menus.json` 에 저장되고, 내장 파일과 비교해 `revision` 이 높은 쪽을 쓴다.
+
+```jsonc
+{
+  "schema": 1,          // 형식 버전. 몽독이 모르는 schema 면 파일 전체를 무시
+  "revision": 2,        // 고칠 때마다 1씩 올림 (로그에 남음)
+  "apps": [             // 위에서부터 처음 맞는 규칙 하나를 씀
+    {
+      "id": "vscode",
+      "match": { "exe": ["code.exe", "cursor.exe"], "aumid": ["..."], "windowClass": ["..."] },  // windowClass 는 선택
+      "appMenu": [ { "text": "설정…", "keys": "Ctrl+," } ],   // 앱 이름(굵게) 메뉴 맨 위에 붙는 항목
+      "menus": [
+        { "title": "파일", "items": [
+          { "text": "새 텍스트 파일", "keys": "Ctrl+N" },
+          { "text": "폴더 열기…", "keys": ["Ctrl+K", "Ctrl+O"] },  // 연속 입력 (최대 4개)
+          "-",                                                     // 구분선 ({ "separator": true } 도 가능)
+          { "text": "확대/축소", "items": [ { "text": "확대", "keys": "Ctrl+=" } ] },  // 하위 메뉴 (한 단계)
+          { "text": "창 닫기", "action": "close" }                 // 창 동작: close / minimize / maximize / restore
+        ] }
+      ]
+    }
+  ]
+}
+```
+
+- **추가 방법**: 저장소에서 `menus/app-menus.json` 을 고쳐 PR 을 보내거나(관리자는 직접 수정), `revision` 을 1 올린다. `main` 에 들어가면 하루 안에 모든 사용자에게 적용된다. 실제 파일은 주석 대신 맨 위 `_doc` 에 설명이 있다.
+- **키 이름**: `A`~`Z`, `0`~`9`, `F1`~`F24`, `Left`/`Right`/`Up`/`Down`, `Tab`, `Enter`, `Esc`, `Space`, `Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, `NumPad0`~`9`, `` = - , . / ; ` [ \ ] ' `` 와 수식키 `Ctrl`/`Shift`/`Alt`.
+- **안전 규칙**: 메뉴 글자와 단축키, 위의 창 동작 네 가지만 쓸 수 있다(프로그램 실행·URL 열기 없음). `Win` 조합·`Alt+Tab`·`Ctrl+Esc`·`Ctrl+Shift+Esc`·`Ctrl+Alt+Delete` 는 거부. 파일 512KB·앱 300개·메뉴당 항목 80개 상한. 잘못된 앱 항목은 그 앱만 버리고 로그에 남긴다.
+- 우선순위: 설정의 `appMenus` > 앱의 윈도우 메뉴 > 이 규칙 > UI 자동화 메뉴 막대 > Electron/기본 메뉴.
 
 ## 라이선스
 

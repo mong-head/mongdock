@@ -36,6 +36,8 @@
     <!-- 변경 내역 단일 원본 (설정 → 변경 내역, 새로운 기능 안내, build-release.ps1 릴리스 노트) -->
     <None Remove="Changelog.json" />
     <EmbeddedResource Include="Changelog.json" LogicalName="MyDock.Changelog.json" />
+    <!-- 앱 전용 메뉴 규칙 (저장소 루트 menus/). 오프라인·첫 실행 기본값 — 실행 중엔 GitHub 의 같은 파일로 갱신 (Services/MenuRulesService) -->
+    <EmbeddedResource Include="..\..\menus\app-menus.json" LogicalName="mongdock.app-menus.json" Link="menus\app-menus.json" />
   </ItemGroup>
 
 </Project>
