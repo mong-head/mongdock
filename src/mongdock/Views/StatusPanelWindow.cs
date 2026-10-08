@@ -35,9 +35,11 @@ internal sealed partial class StatusPanelWindow : Window
 
     public StatusPanelKind Kind { get; }
 
-    public StatusPanelWindow(AppServices services, StatusPanelKind kind, UiPalette palette)
+    /// <param name="trayFold">⌃ 카드: 상단바 폭 때문에 바에서 ⌃ 로 더 접은 트레이 아이콘 수 (TopBarWindow.Fit).</param>
+    public StatusPanelWindow(AppServices services, StatusPanelKind kind, UiPalette palette, int trayFold = 0)
     {
         _services = services;
+        _trayFold = trayFold;
         _p = palette;
         Kind = kind;
 
@@ -395,7 +397,7 @@ internal sealed partial class StatusPanelWindow : Window
             Style = (Style)FindStyle("CardLinkButton"),
             Content = new TextBlock { Text = text, FontSize = 15 },
             Foreground = _p.Text,
-            Padding = new Thickness(6, 4, 6, 4),
+            Padding = new Thickness(6, 4 + TouchSupport.RowPad, 6, 4 + TouchSupport.RowPad), // 터치 장치면 행 +4
             Margin = new Thickness(-6, 0, -6, 0),
         };
         b.Click += (_, _) =>
@@ -526,7 +528,7 @@ internal sealed partial class StatusPanelWindow : Window
             Content = dock,
             Foreground = _p.Text,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
-            Padding = new Thickness(6, 4, 6, 4),
+            Padding = new Thickness(6, 4 + TouchSupport.RowPad, 6, 4 + TouchSupport.RowPad), // 터치 장치면 행 +4
             Margin = new Thickness(-6, 0, -6, 0),
             IsHitTestVisible = onClick != null,
         };

@@ -13,11 +13,12 @@ namespace Mongdock.Views;
 /// </summary>
 internal static class Anim
 {
-    /// <summary>시스템 애니메이션 효과 켜짐 여부.</summary>
+    /// <summary>시스템 애니메이션 효과 켜짐 여부 (가벼운 모드면 항상 꺼짐 — ViewModels/PerfMode).</summary>
     public static bool Enabled
     {
         get
         {
+            if (ViewModels.PerfMode.Current) return false;
             try { return SystemParameters.ClientAreaAnimation; }
             catch { return true; }
         }

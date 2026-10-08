@@ -55,6 +55,7 @@ public partial class DockWindow : Window
 
     // 자동 숨김 / 슬라이드
     private readonly DispatcherTimer _pollTimer;
+    private int _pollCount;
     private const double SlideMs = 180;
     private double _hide;              // 0 = 보임, 1 = 숨김
     private double _hideFrom, _hideTo;
@@ -74,7 +75,7 @@ public partial class DockWindow : Window
     public DockWindow(AppServices services)
     {
         _services = services;
-        _layout = DockLayout.From(services.Settings.Current.Dock, SystemTheme.AppsUseLightTheme());
+        _layout = BuildLayout();
         _monitor = services.DesktopWindows.ResolveMonitor(services.Settings.Current.Dock.Monitor);
         UiFonts.Apply(services.Settings.Current);
         InitializeComponent();
@@ -97,8 +98,9 @@ public partial class DockWindow : Window
 
         // 아이콘 드래그로 순서 바꾸기 / 바깥 파일 끌어다 놓기 (DockWindow.ItemDrag.cs)
         InitItemDrag();
+        InitTouch(); // 터치: 뗀 뒤 확대 해제 등 (DockWindow.Touch.cs)
 
-        _pollTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(60) };
+        _pollTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = PerfMode.Interval(AutoHidePollMs) };
         _pollTimer.Tick += OnPoll;
 
         // 블러 배경 창: 먼저 띄우고 이 창의 owner 로 → z-order 가 항상 바로 아래
@@ -248,6 +250,7 @@ public partial class DockWindow : Window
         _backdrop.Topmost = !fullscreen;
         if (fullscreen)
         {
+            _pollTimer.Stop(); // 전체 화면 동안은 트리거 확인 불필요 (끝나면 ApplyMode 가 다시 시작)
             StopSlide();
             _hide = _hideTo = 1;
             HideWindows();
@@ -270,7 +273,8 @@ public partial class DockWindow : Window
         CancelItemDrag();
         EndFileDrag();
         _picker?.Close();
-        _layout = DockLayout.From(_services.Settings.Current.Dock, SystemTheme.AppsUseLightTheme());
+        _layout = BuildLayout();
+        _pollTimer.Interval = PerfMode.Interval(AutoHidePollMs);
         UiTheme.Apply(_services.Settings.Current); // 메뉴 색 (라이트/다크)
         UiFonts.Apply(_services.Settings.Current);
         _label?.Hide();
@@ -487,6 +491,7 @@ public partial class DockWindow : Window
         _baseLength = ComputeBaseLength();
 
         GetFrame(l.Edge, false, out double edgeLine, out double start, out double end);
+        CheckFit(end - start); // 화면보다 길면 아이콘 자동 축소 (DockWindow.Fit.cs)
         double center = PanelCenter(l.Edge, ClampOffset(_services.Settings.Current.Dock.Offset), _baseLength, start, end);
         double len = _baseLength + l.GrowthRoom * 2;
         double t = l.WindowThickness;
@@ -630,7 +635,8 @@ public partial class DockWindow : Window
         }
 
         // 배율·해상도가 바뀌었는데 DisplayChanged 가 늦거나 안 오면 옛 화면 크기로 트리거를 판정하게 됨
-        // → 폴링마다 화면 크기를 확인해 달라졌으면 바로 다시 배치 (가벼운 호출)
+        // → 화면 크기를 확인해 달라졌으면 바로 다시 배치. 모니터 조회는 매 틱(60ms)이 아니라 약 0.5초마다
+        if (++_pollCount % 8 == 0)
         try
         {
             var mon = _services.DesktopWindows.ResolveMonitor(_services.Settings.Current.Dock.Monitor);
@@ -654,7 +660,8 @@ public partial class DockWindow : Window
 
         var inside = _shownRect;
         inside.Inflate(4, 4);
-        if ((cursor is Point p && inside.Contains(p)) || IsMouseOver)
+        // 터치를 뗀 뒤엔 커서가 독 위에 남아 있어도 바깥으로 봄 (진짜 마우스가 움직이면 다시 판정)
+        if (!TouchReleasedAt(cursor) && ((cursor is Point p && inside.Contains(p)) || IsMouseOver))
             _lastInsideTicks = Environment.TickCount64;
         else if (Environment.TickCount64 - _lastInsideTicks > Math.Max(0, _services.Settings.Current.Dock.AutoHideDelayMs))
             SetHidden(true, animate: true);
@@ -683,6 +690,7 @@ public partial class DockWindow : Window
     private void SetHidden(bool hidden, bool animate)
     {
         double target = hidden ? 1 : 0;
+        animate &= Anim.Enabled; // 시스템 애니메이션 끔·가벼운 모드면 미끄러지지 않고 바로
         if (!animate)
         {
             StopSlide();
@@ -818,6 +826,7 @@ public partial class DockWindow : Window
 
     private void OnRootMouseMove(object sender, MouseEventArgs e)
     {
+        if (HandleTouchMove(e)) return; // 터치 이동은 확대 안 함 (DockWindow.Touch.cs)
         if (_dragArmed || _itemDragging || _fileDragOver || _windowsHidden || _hideTo >= 1) return;
         var p = e.GetPosition(PanelBorder);
         double along = _layout.IsVertical ? p.Y - PanelBorder.ActualHeight / 2 : p.X - PanelBorder.ActualWidth / 2;

@@ -14,11 +14,12 @@ internal sealed partial class StatusPanelWindow
     private const double TrayCell = 34;
     private const int TrayColumns = 6;
     private WrapPanel? _trayGrid;
+    private readonly int _trayFold; // 상단바 폭 때문에 ⌃ 로 더 접힌 아이콘 수 (생성자에서)
     private System.Windows.Threading.DispatcherTimer? _trayRetry;
 
     private double TrayCardWidth()
     {
-        int n = TrayIconButton.Split(_services).Overflow.Count;
+        int n = TrayIconButton.Split(_services, _trayFold).Overflow.Count;
         int cols = Math.Clamp(n, 1, TrayColumns);
         return cols * TrayCell + TrayCardPadding * 2 + 1.5; // 테두리 0.75 × 2
     }
@@ -58,7 +59,7 @@ internal sealed partial class StatusPanelWindow
             _trayRetry.Start();
             return;
         }
-        if (TrayIconButton.Split(_services).Overflow.Count == 0)
+        if (TrayIconButton.Split(_services, _trayFold).Overflow.Count == 0)
         {
             Close();
             return;
@@ -70,7 +71,7 @@ internal sealed partial class StatusPanelWindow
     private void FillTray()
     {
         if (_trayGrid is null) return;
-        var overflow = TrayIconButton.Split(_services).Overflow;
+        var overflow = TrayIconButton.Split(_services, _trayFold).Overflow;
         var style = (Style)FindStyle("CardButton");
         // 기존 버튼 재사용 (호버 상태 유지)
         var existing = _trayGrid.Children.OfType<TrayIconButton>().ToDictionary(b => b.Info.Key);

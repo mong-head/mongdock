@@ -27,6 +27,8 @@ internal sealed class TrayIconButton : Button
     private TrayIconDrag? _drag;
     private bool _swallowRightUp;
     private bool _swallowLeftUp;
+    private bool _touchDown;      // 터치로 눌림 (오래 누르면 클릭 아님)
+    private long _downTicks;
 
     public TrayIconInfo Info { get; private set; }
     public double IconSize { get; }
@@ -63,6 +65,8 @@ internal sealed class TrayIconButton : Button
         PreviewMouseLeftButtonDown += (_, e) =>
         {
             _swallowLeftUp = false;
+            _touchDown = TouchSupport.IsTouch(e);
+            _downTicks = Environment.TickCount64;
             _doubleClick = e.ClickCount >= 2;
             _downAt = e.GetPosition(this);
         };
@@ -77,7 +81,16 @@ internal sealed class TrayIconButton : Button
                 ReleaseCaptureIfIdle(e);
                 return;
             }
-            if (_drag is null) return;
+            if (_drag is null)
+            {
+                // 터치로 오래 누름 = "누르고 있기"(윈도우가 오른쪽 클릭으로 바꿔 보냄) → 왼쪽 클릭은 보내지 않음
+                if (_touchDown && Environment.TickCount64 - _downTicks >= TouchSupport.HoldMs)
+                {
+                    e.Handled = true;
+                    if (IsMouseCaptured) ReleaseMouseCapture(); // 버튼 눌림 상태 해제
+                }
+                return;
+            }
             e.Handled = true; // Click 이 나가지 않게
             var d = _drag;
             _drag = null;
@@ -222,6 +235,9 @@ internal sealed class TrayIconButton : Button
         _plate.Visibility = plate ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    /// <summary>오른쪽 클릭을 앱에 전달 (상단바 터치 길게 누르기 — TopBarWindow.Reorder).</summary>
+    public void SendRightClick() => Send(TrayMouseButton.Right, false);
+
     private void Send(TrayMouseButton button, bool doubleClick)
     {
         try
@@ -242,6 +258,20 @@ internal sealed class TrayIconButton : Button
     }
 
     /// <summary>상단바에 바로 보일 아이콘 / ⌃ 카드로 갈 아이콘 (TrayIconLayout: 몽독 저장값 &gt; 윈도우 설정 &gt; ⌃).</summary>
-    public static (List<TrayIconInfo> OnBar, List<TrayIconInfo> Overflow) Split(AppServices services) =>
-        TrayIconLayout.Split(services.TrayIcons.Icons, services.Settings.Current.TopBar);
+    public static (List<TrayIconInfo> OnBar, List<TrayIconInfo> Overflow) Split(AppServices services) => Split(services, 0);
+
+    /// <summary>
+    /// <paramref name="fold"/> = 상단바 폭이 모자라 바에서 ⌃ 로 더 접을 개수 (TopBarWindow.FitRightSection).
+    /// 접힌 아이콘은 바 순서 뒤쪽부터, ⌃ 카드 맨 앞에.
+    /// </summary>
+    public static (List<TrayIconInfo> OnBar, List<TrayIconInfo> Overflow) Split(AppServices services, int fold)
+    {
+        var (onBar, overflow) = TrayIconLayout.Split(services.TrayIcons.Icons, services.Settings.Current.TopBar);
+        fold = Math.Clamp(fold, 0, onBar.Count);
+        if (fold == 0) return (onBar, overflow);
+        var moved = onBar.GetRange(onBar.Count - fold, fold);
+        onBar.RemoveRange(onBar.Count - fold, fold);
+        moved.AddRange(overflow);
+        return (onBar, moved);
+    }
 }

@@ -107,10 +107,14 @@ internal sealed partial class SettingsWindow : Window
         _p = UiTheme.Palette(services.Settings.Current);
         Title = $"{AppInfo.Name} 설정";
         AppIcon.Apply(this);
-        Width = 780;
-        Height = 620;
-        MinWidth = 640;
-        MinHeight = 420;
+        // 세로 모니터·높은 배율(1080 px @200% = 540 DIP)에서도 화면 안에 들어오게 작업 영역에 맞춰 줄임
+        var work = SystemParameters.WorkArea;
+        double maxW = work.Width > 0 ? Math.Max(360, work.Width - 24) : 780;
+        double maxH = work.Height > 0 ? Math.Max(320, work.Height - 24) : 620;
+        Width = Math.Min(780, maxW);
+        Height = Math.Min(620, maxH);
+        MinWidth = Math.Min(640, maxW);
+        MinHeight = Math.Min(420, maxH);
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         ShowInTaskbar = true;
         UseLayoutRounding = true;
@@ -364,6 +368,12 @@ internal sealed partial class SettingsWindow : Window
 
         body.Children.Add(Group(
             Row("글꼴", "상단바·메뉴·패널·독 이름표 글꼴", FontDropdown(s.FontFamily))));
+
+        // 가벼운 모드: 설정 모델에 PerformanceMode 가 있을 때만 (ViewModels/PerfMode)
+        if (PerfMode.Available)
+            body.Children.Add(Group(
+                Row("가벼운 모드", "애니메이션·블러·파도 확대를 끄고 확인 주기를 늘려요. 저사양 PC·원격 접속에 좋아요.",
+                    Toggle(PerfMode.IsOn(s), on => Commit(() => PerfMode.Set(_services.Settings.Current, on), rebuild: true)))));
     }
 
     private UIElement FontDropdown(string current)
