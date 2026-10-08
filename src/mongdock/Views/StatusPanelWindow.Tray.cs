@@ -80,7 +80,8 @@ internal sealed partial class StatusPanelWindow
             if (existing.TryGetValue(info.Key, out var b)) b.Apply(info);
             else
             {
-                b = new TrayIconButton(_services, info, style, 18, beforeClick: null, onBar: false)
+                b = new TrayIconButton(_services, info, style, 18, beforeClick: null, onBar: false,
+                    background: () => (_p.CardBackground as SolidColorBrush)?.Color)
                 {
                     Width = TrayCell,
                     Height = TrayCell,

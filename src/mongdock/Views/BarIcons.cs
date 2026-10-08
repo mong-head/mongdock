@@ -192,23 +192,31 @@ internal static class BarIcons
     });
 
     // ───────────────────────── 배터리 (맥 battery.N / battery.100.bolt) ─────────────────────────
-    // 상자 27 x 16. 몸체 외곽(흐리게) + 오른쪽 꼭지 + 남은 양만큼 채움 + 충전 중이면 번개(채움에서 번개 둘레를 비워 대비).
+    // 상자 31 x 16 (BarIconScale 0.8 → 보이는 크기 ≈ 25 x 12, 맥 메뉴 막대 배터리 비율).
+    // 몸체 외곽(흐리게, 둥근 모서리) + 오른쪽 반원 꼭지 + 남은 양만큼 채움(외곽에서 띄움) + 충전 중이면 굵은 번개(채움에서 번개 둘레를 비워 대비).
 
-    private const double BatInnerX = 2.6, BatInnerY = 4.35, BatInnerW = 19.3, BatInnerH = 7.3, BatInnerR = 1.6;
+    public const double BatteryBoxWidth = 31, BatteryBoxHeight = 16;
+    // 외곽선: 중심선 사각형 (1.5, 1.5, 26, 13), 두께 1.5 → 바깥 0.75~28.25 × 0.75~15.25, 안쪽 2.25~27.5 × 2.25~13.75
+    private const double BatStroke = 1.5;
+    private static readonly Rect BatBody = new(1.5, 1.5, 26, 13);
+    private const double BatBodyR = 3.7;
+    // 채움: 외곽선 안쪽에서 1.9 띄움 (보이는 크기 ≈ 1.5)
+    private const double BatInnerX = 4.15, BatInnerY = 4.15, BatInnerW = 21.45, BatInnerH = 7.7, BatInnerR = 2.5;
 
     /// <summary>외곽선 + 꼭지 (Opacity 를 낮춰 칠한다).</summary>
     public static readonly Geometry BatteryShell = Freeze(Union(
-        new RectangleGeometry(new Rect(1, 2.75, 22.5, 10.5), 3.1, 3.1).GetWidenedPathGeometry(new Pen(Brushes.Black, 1.1)),
-        new RectangleGeometry(new Rect(24.3, 5.9, 1.9, 4.2), 0.95, 0.95)));
+        new RectangleGeometry(BatBody, BatBodyR, BatBodyR).GetWidenedPathGeometry(new Pen(Brushes.Black, BatStroke)),
+        // 꼭지: 높이의 1/3 쯤, 오른쪽이 반원(반타원)인 짧은 혹
+        Geometry.Parse("M29.0,5.6 A2.0,2.4 0 0 1 29.0,10.4 Z")));
 
     private static readonly Geometry BoltShape = Geometry.Parse(
-        "M13.5,3.4 L9.0,8.9 L11.9,8.9 L11.0,12.6 L15.5,7.1 L12.6,7.1 Z");
+        "M16.5,2.8 L11.5,8.75 L14.55,8.75 L13.4,13.2 L18.4,7.25 L15.35,7.25 Z");
 
-    /// <summary>충전 번개 (몸체 가운데).</summary>
-    public static readonly Geometry BatteryBolt = Freeze(Rounded(BoltShape.Clone(), 0.5));
+    /// <summary>충전 번개 (몸체 가운데, 채움 위로 살짝 넘침).</summary>
+    public static readonly Geometry BatteryBolt = Freeze(Rounded(BoltShape.Clone(), 0.9));
 
-    /// <summary>채움에서 비울 번개 둘레 (번개보다 한 펜만큼 넓게).</summary>
-    private static readonly Geometry BoltHalo = Freeze(Rounded(BoltShape.Clone(), 2.6));
+    /// <summary>채움에서 비울 번개 둘레 (번개보다 약 1 만큼 넓게 — 바 배경색 틈).</summary>
+    private static readonly Geometry BoltHalo = Freeze(Rounded(BoltShape.Clone(), 3.0));
 
     private static readonly Dictionary<int, Geometry> LevelCache = new();
 

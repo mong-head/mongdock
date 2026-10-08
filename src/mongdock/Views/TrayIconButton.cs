@@ -7,7 +7,8 @@ using Mongdock.Services;
 namespace Mongdock.Views;
 
 /// <summary>
-/// 다른 앱의 트레이 아이콘 하나 (상단바·⌃ 카드 공용). 아이콘은 원래 색 그대로.
+/// 다른 앱의 트레이 아이콘 하나 (상단바·⌃ 카드 공용). 컬러 아이콘은 원래 색 그대로, 거의 단색 아이콘은 버튼 글자색으로
+/// 다시 칠함(맥 템플릿 이미지처럼 — 흰 바의 흰 아이콘이 안 보이던 문제). 컬러 아이콘이 배경과 대비가 낮으면 옅은 판 (TrayIconTint).
 /// 왼쪽 클릭/더블 클릭/오른쪽 클릭/가운데 클릭을 탐색기와 같은 메시지로 앱에 전달 (TrayIconService).
 /// 왼쪽 버튼으로 6 DIP 넘게 끌면 클릭 대신 옮기기 (TrayIconDrag): 바 → ⌃, ⌃ 패널 → 바, 바 안 순서 바꾸기.
 /// </summary>
@@ -15,6 +16,10 @@ internal sealed class TrayIconButton : Button
 {
     private readonly AppServices _services;
     private readonly Image _image;
+    private readonly System.Windows.Shapes.Rectangle _mask;   // 단색 아이콘: 글자색 + 아이콘 알파
+    private readonly ImageBrush _maskBrush;
+    private readonly Border _plate;                           // 대비 낮은 컬러 아이콘 뒤 옅은 판
+    private readonly Func<Color?>? _background;
     private readonly Action? _beforeClick;
     private readonly bool _onBar;
     private bool _doubleClick;
@@ -27,8 +32,11 @@ internal sealed class TrayIconButton : Button
     public double IconSize { get; }
 
     /// <param name="onBar">상단바에 있는 버튼이면 true, ⌃ 패널 안이면 false (끌어 놓을 때 방향).</param>
-    public TrayIconButton(AppServices services, TrayIconInfo info, Style style, double iconSize, Action? beforeClick, bool onBar)
+    /// <param name="background">아이콘 뒤 배경색(불투명일 때만 의미, 모르면 null → 글자색 반대로 추정). 대비 판정용.</param>
+    public TrayIconButton(AppServices services, TrayIconInfo info, Style style, double iconSize, Action? beforeClick, bool onBar,
+        Func<Color?>? background = null)
     {
+        _background = background;
         _services = services;
         _beforeClick = beforeClick;
         _onBar = onBar;
@@ -37,7 +45,18 @@ internal sealed class TrayIconButton : Button
         Style = style;
         _image = new Image { Width = iconSize, Height = iconSize, Stretch = Stretch.Uniform };
         RenderOptions.SetBitmapScalingMode(_image, BitmapScalingMode.HighQuality);
-        Content = _image;
+        _maskBrush = new ImageBrush { Stretch = Stretch.Uniform };
+        RenderOptions.SetBitmapScalingMode(_maskBrush, BitmapScalingMode.HighQuality);
+        _mask = new System.Windows.Shapes.Rectangle { Width = iconSize, Height = iconSize, OpacityMask = _maskBrush, Visibility = Visibility.Collapsed };
+        _mask.SetBinding(System.Windows.Shapes.Shape.FillProperty, new System.Windows.Data.Binding(nameof(Foreground)) { Source = this });
+        _plate = new Border
+        {
+            CornerRadius = new CornerRadius(4),
+            Margin = new Thickness(-3), // 아이콘보다 조금 크게 (레이아웃 폭은 그대로)
+            IsHitTestVisible = false,
+            Visibility = Visibility.Collapsed,
+        };
+        Content = new Grid { Width = iconSize, Height = iconSize, Children = { _plate, _image, _mask } };
         ToolTipService.SetInitialShowDelay(this, 400);
         Apply(info);
 
@@ -67,6 +86,7 @@ internal sealed class TrayIconButton : Button
         };
         LostMouseCapture += (_, _) =>
         {
+            _downAt = null; // 상단바 길게 누르기(순서 바꾸기)가 캡처를 가져간 경우 등 → 끌기 시작 안 함
             _swallowLeftUp = false;
             _swallowRightUp = false;
             if (_drag is null) return;
@@ -155,11 +175,51 @@ internal sealed class TrayIconButton : Button
     public void Apply(TrayIconInfo info)
     {
         Info = info;
-        if (!ReferenceEquals(_image.Source, info.Icon)) _image.Source = info.Icon;
+        if (!ReferenceEquals(_image.Source, info.Icon))
+        {
+            _image.Source = info.Icon;
+            _maskBrush.ImageSource = info.Icon;
+        }
+        RefreshTint();
         string tip = string.IsNullOrWhiteSpace(info.Tooltip)
             ? System.IO.Path.GetFileNameWithoutExtension(info.ProcessName)
             : info.Tooltip.Trim();
         if (!Equals(ToolTip, tip)) ToolTip = tip.Length > 0 ? tip : null;
+    }
+
+    protected override void OnPropertyChanged(DependencyPropertyChangedEventArgs e)
+    {
+        base.OnPropertyChanged(e);
+        if (e.Property == ForegroundProperty && _plate != null) RefreshTint();
+    }
+
+    /// <summary>
+    /// 단색이면 글자색으로 칠하고, 컬러인데 배경과 대비가 낮으면 판을 깐다. 아이콘·글자색·바 색이 바뀔 때 호출
+    /// (글자색은 위 OnPropertyChanged 로 자동, 바 배경색만 바뀐 경우는 상단바가 직접 호출).
+    /// </summary>
+    public void RefreshTint()
+    {
+        var icon = Info.Icon;
+        var fg = (Foreground as SolidColorBrush)?.Color ?? Colors.Black;
+        var look = TrayIconTint.Analyze(icon);
+        bool tint = icon != null && look.Monochrome && _services.Settings.Current.TopBar.TintMonochromeTrayIcons;
+        _mask.Visibility = tint ? Visibility.Visible : Visibility.Collapsed;
+        _image.Visibility = tint ? Visibility.Collapsed : Visibility.Visible;
+
+        bool plate = false;
+        if (!tint && icon != null)
+        {
+            Color? bg = null;
+            try { bg = _background?.Invoke(); } catch { }
+            double bgLum = TrayIconTint.BackgroundLuminance(bg, fg);
+            plate = TrayIconTint.Contrast(look.Luminance, bgLum) < TrayIconTint.MinContrast;
+        }
+        if (plate)
+        {
+            var c = Color.FromArgb(TrayIconTint.PlateAlpha, fg.R, fg.G, fg.B);
+            if (_plate.Background is not SolidColorBrush b || b.Color != c) _plate.Background = Converters.BrushParser.Frozen(c);
+        }
+        _plate.Visibility = plate ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void Send(TrayMouseButton button, bool doubleClick)

@@ -22,7 +22,8 @@
              (열/도킹 레이아웃에서 오른쪽 구역이 처음 측정된 좁은 폭에 갇혀 시계가 잘리던 문제 회피) -->
         <Grid>
 
-            <!-- 오른쪽 (MyDockFinder 순서): 네트워크 속도 · 블루투스 · 와이파이 · 볼륨 · 검색 · 제어센터 · 알림 · 한/영 · 시계 -->
+            <!-- 오른쪽: 아래 항목들의 순서는 설정(TopBar.RightItemsOrder)대로 코드에서 다시 배치 (UpdateRightOrder, TopBarWindow.Reorder.cs).
+                 아이콘을 길게 눌러(0.4초) 끌면 순서 바꾸기. 시계는 항상 맨 오른쪽 -->
             <StackPanel x:Name="RightSection" HorizontalAlignment="Right" Orientation="Horizontal" Margin="0,0,10,0">
                 <!-- 가상 데스크톱 그룹 [‹] [1 / 4] [›] — 숫자 클릭 = 작업 보기. 시계 폭이 고정이라 위치가 항상 같음 -->
                 <Border x:Name="DesktopButtons" VerticalAlignment="Center" CornerRadius="7" Height="22" Margin="0,0,10,0">
@@ -39,7 +40,7 @@
                     </StackPanel>
                 </Border>
 
-                <StackPanel x:Name="NetSpeed" VerticalAlignment="Center" Margin="0,0,6,0" Width="60">
+                <StackPanel x:Name="NetSpeed" VerticalAlignment="Center" Margin="0,0,6,0" Width="60" Background="Transparent">
                     <TextBlock x:Name="UpSpeed" FontSize="9.5" FontWeight="Bold" LineHeight="11" LineStackingStrategy="BlockLineHeight"
                                TextAlignment="Right" Text="↑ 0KB/s" />
                     <TextBlock x:Name="DownSpeed" FontSize="9.5" FontWeight="Bold" LineHeight="11" LineStackingStrategy="BlockLineHeight"
@@ -49,33 +50,29 @@
                 <!-- 다른 앱의 트레이 아이콘 (원래 색). 개수 넘으면 ⌃ 하나로 묶고 누르면 아래 카드에 나머지 (TopBarWindow.Tray.cs) -->
                 <StackPanel x:Name="TrayArea" Orientation="Horizontal" Margin="0,0,2,0" />
 
-                <StackPanel x:Name="StatusIcons" Orientation="Horizontal">
-                    <!-- 상태 아이콘: 맥 SF Symbols 같은 굵은 채움 도형 (BarIcons) -->
-                    <Button x:Name="BluetoothButton" Style="{StaticResource BarIconButton}" Click="OnBluetoothClick">
-                        <Path Width="12" Height="18" LayoutTransform="{StaticResource BarIconScale}" Data="{x:Static v:BarIcons.Bluetooth}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
-                    </Button>
-                    <Button x:Name="WifiButton" Style="{StaticResource BarIconButton}" Click="OnWifiClick">
-                        <Grid Width="21" Height="16" LayoutTransform="{StaticResource BarIconScale}">
-                            <!-- 꺼진 칸은 같은 모양을 30% 로, 켜진 칸만 진하게 -->
-                            <Path x:Name="WifiBack" Data="{x:Static v:BarIcons.WifiFull}" Opacity="0.3" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
-                            <Path x:Name="WifiFront" Data="{x:Static v:BarIcons.WifiFull}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
-                        </Grid>
-                    </Button>
-                    <Button x:Name="VolumeButton" Style="{StaticResource BarIconButton}"
-                            Click="OnVolumeClick" MouseWheel="OnVolumeWheel">
-                        <Path x:Name="VolumeIcon" Width="23" Height="18" LayoutTransform="{StaticResource BarIconScale}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
-                    </Button>
-                </StackPanel>
+                <!-- 상태 아이콘: 맥 SF Symbols 같은 굵은 채움 도형 (BarIcons). 하나씩 따로 옮길 수 있게 묶지 않음 -->
+                <Button x:Name="BluetoothButton" Style="{StaticResource BarIconButton}" Click="OnBluetoothClick">
+                    <Path Width="12" Height="18" LayoutTransform="{StaticResource BarIconScale}" Data="{x:Static v:BarIcons.Bluetooth}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                </Button>
+                <Button x:Name="WifiButton" Style="{StaticResource BarIconButton}" Click="OnWifiClick">
+                    <Grid Width="21" Height="16" LayoutTransform="{StaticResource BarIconScale}">
+                        <!-- 꺼진 칸은 같은 모양을 30% 로, 켜진 칸만 진하게 -->
+                        <Path x:Name="WifiBack" Data="{x:Static v:BarIcons.WifiFull}" Opacity="0.3" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                        <Path x:Name="WifiFront" Data="{x:Static v:BarIcons.WifiFull}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                    </Grid>
+                </Button>
+                <Button x:Name="VolumeButton" Style="{StaticResource BarIconButton}"
+                        Click="OnVolumeClick" MouseWheel="OnVolumeWheel">
+                    <Path x:Name="VolumeIcon" Width="23" Height="18" LayoutTransform="{StaticResource BarIconScale}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                </Button>
 
-                <StackPanel x:Name="QuickButtons" Orientation="Horizontal">
-                    <Button x:Name="SearchButton" Style="{StaticResource BarIconButton}" Click="OnSearch">
-                        <Path Width="18" Height="18" LayoutTransform="{StaticResource BarIconScale}" Data="{x:Static v:BarIcons.Search}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
-                    </Button>
-                    <!-- 제어 센터 (빠른 설정) : 토글 두 개 -->
-                    <Button x:Name="QuickSettingsButton" Style="{StaticResource BarButton}" Click="OnQuickSettings">
-                        <Path Width="18" Height="16" LayoutTransform="{StaticResource BarIconScale}" Data="{x:Static v:BarIcons.ControlCenter}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
-                    </Button>
-                </StackPanel>
+                <Button x:Name="SearchButton" Style="{StaticResource BarIconButton}" Click="OnSearch">
+                    <Path Width="18" Height="18" LayoutTransform="{StaticResource BarIconScale}" Data="{x:Static v:BarIcons.Search}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                </Button>
+                <!-- 제어 센터 (빠른 설정) : 토글 두 개 -->
+                <Button x:Name="QuickSettingsButton" Style="{StaticResource BarButton}" Click="OnQuickSettings">
+                    <Path Width="18" Height="16" LayoutTransform="{StaticResource BarIconScale}" Data="{x:Static v:BarIcons.ControlCenter}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                </Button>
 
                 <!-- 한/영 배지: "한" = 글자색으로 채운 배경 + 반전 글자, "A" = 테두리만 -->
                 <Button x:Name="ImeButton" Style="{StaticResource BarButton}" Padding="5,0" Margin="2,3,2,3" Click="OnImeToggle">
@@ -86,13 +83,13 @@
                 </Button>
 
                 <!-- 배터리 (노트북만, 맥처럼 시계 옆): [57%] + 맥 배터리 아이콘. 배터리 없는 PC 는 숨김 (UpdateBattery) -->
-                <Button x:Name="BatteryButton" Style="{StaticResource BarIconButton}" Click="OnBatteryClick" Visibility="Collapsed">
+                <Button x:Name="BatteryButton" Style="{StaticResource BarIconButton}" Padding="4,0" Click="OnBatteryClick" Visibility="Collapsed">
                     <StackPanel Orientation="Horizontal">
                         <!-- 버튼 스타일의 아이콘 글꼴 대신 상단바 글꼴·글자 크기(설정) -->
-                        <TextBlock x:Name="BatteryPercent" VerticalAlignment="Center" TextAlignment="Right" Margin="0,0,4,0"
+                        <TextBlock x:Name="BatteryPercent" VerticalAlignment="Center" TextAlignment="Right" Margin="0,0,4,0" Typography.NumeralAlignment="Tabular"
                                    FontFamily="{DynamicResource UiFont}" FontWeight="Medium"
                                    FontSize="{Binding FontSize, RelativeSource={RelativeSource AncestorType=Window}}" />
-                        <Grid Width="27" Height="16" VerticalAlignment="Center" LayoutTransform="{StaticResource BarIconScale}">
+                        <Grid Width="31" Height="16" VerticalAlignment="Center" LayoutTransform="{StaticResource BarIconScale}">
                             <Path Data="{x:Static v:BarIcons.BatteryShell}" Opacity="0.45" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
                             <Path x:Name="BatteryLevel" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
                             <Path x:Name="BatteryBolt" Data="{x:Static v:BarIcons.BatteryBolt}" Visibility="Collapsed" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />

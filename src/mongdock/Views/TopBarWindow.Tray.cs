@@ -43,8 +43,8 @@ public partial class TopBarWindow
     {
         if (!_initialized || _closed) return;
         EnsureTrayHosted();
-        if (TrayIconDrag.IsActive)
-            return; // 끄는 중엔 자식을 바꾸지 않음 (캡처·비켜서기 유지) → 놓은 뒤 EndTrayDrag 에서 다시
+        if (TrayIconDrag.IsActive || IsReordering)
+            return; // 끄는 중엔 자식을 바꾸지 않음 (캡처·비켜서기 유지) → 놓은 뒤 EndTrayDrag / EndReorder 에서 다시
         var s = _services.Settings.Current.TopBar;
         bool show = s.Enabled && s.ShowTrayIcons && !AppState.Paused;
         if (!show)
@@ -65,7 +65,7 @@ public partial class TopBarWindow
             if (_trayButtons.TryGetValue(info.Key, out var b)) b.Apply(info);
             else
             {
-                b = new TrayIconButton(_services, info, style, 16, beforeClick: () => _panel?.Close(), onBar: true)
+                b = new TrayIconButton(_services, info, style, 16, beforeClick: () => _panel?.Close(), onBar: true, background: () => _barTarget)
                 {
                     Padding = new Thickness(5, 0, 5, 0),
                     MinWidth = 0,
@@ -87,6 +87,12 @@ public partial class TopBarWindow
         }
         TrayArea.Visibility = keys.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         if (overflow.Count == 0 && _panel?.Kind == StatusPanelKind.Tray) _panel.Close();
+    }
+
+    /// <summary>바 배경색이 바뀜(앱 색 맞춤 모드에서 앱 전환 등) → 트레이 아이콘 판 다시 판정. 글자색 변화는 버튼이 스스로.</summary>
+    private void RefreshTrayTint()
+    {
+        foreach (var b in _trayButtons.Values) b.RefreshTint();
     }
 
     private Button TrayMoreButton()

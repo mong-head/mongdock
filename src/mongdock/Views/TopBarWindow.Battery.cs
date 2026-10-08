@@ -64,14 +64,17 @@ public partial class TopBarWindow
         if (BatteryPercent.Text != text) BatteryPercent.Text = text;
     }
 
-    /// <summary>퍼센트 글자 고정 폭 ("100%" 너비) — 숫자가 바뀌어도 오른쪽 구역이 흔들리지 않게.</summary>
+    /// <summary>
+    /// 퍼센트 글자 최소 폭 = 두 자리("88%") 너비, 오른쪽 정렬 (숫자는 tabular 폭이라 두 자리끼리는 흔들리지 않음).
+    /// 예전처럼 "100%" 폭으로 고정하면 57% 일 때 왼쪽이 크게 비어 보였음 — 100% 일 때만 살짝 넓어짐.
+    /// </summary>
     private void FixBatteryPercentWidth()
     {
         var t = BatteryPercent;
         var typeface = new Typeface(t.FontFamily, t.FontStyle, t.FontWeight, t.FontStretch);
         double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         double max = 0;
-        foreach (var sample in new[] { "100%", "88%", "00%" })
+        foreach (var sample in new[] { "88%", "00%" })
         {
             var ft = new FormattedText(sample, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, typeface, FontSize, Brushes.Black, dpi);
             max = Math.Max(max, ft.WidthIncludingTrailingWhitespace);

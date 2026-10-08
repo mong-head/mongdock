@@ -86,6 +86,7 @@ public partial class TopBarWindow : Window
         _colorSoon.Tick += (_, _) => { _colorSoon.Stop(); UpdateColors(); };
 
         ContextMenu = BuildContextMenu();
+        HookReorder(); // 길게 눌러 끌어 오른쪽 아이콘 순서 바꾸기 (TopBarWindow.Reorder.cs)
 
         SourceInitialized += OnSourceInitialized;
         DpiChanged += (_, _) => Dispatcher.BeginInvoke(() => OnDisplayChanged(this, EventArgs.Empty), DispatcherPriority.Loaded);
@@ -233,10 +234,15 @@ public partial class TopBarWindow : Window
         DesktopButtons.Visibility = Vis(s.ShowDesktopButtons);
         DesktopButtons.Background = DesktopGroupPill ? BrushParser.Frozen(Color.FromArgb(0x0D, 0, 0, 0)) : Brushes.Transparent;
         NetSpeed.Visibility = Vis(s.ShowNetworkSpeed);
-        StatusIcons.Visibility = Vis(s.ShowStatusIcons);
-        QuickButtons.Visibility = Vis(s.ShowQuickButtons);
+        // 블루투스는 어댑터가 없으면 UpdateStatus 에서 다시 숨김
+        BluetoothButton.Visibility = Vis(s.ShowStatusIcons && _services.Status.BluetoothOn != null);
+        WifiButton.Visibility = Vis(s.ShowStatusIcons);
+        VolumeButton.Visibility = Vis(s.ShowStatusIcons);
+        SearchButton.Visibility = Vis(s.ShowQuickButtons);
+        QuickSettingsButton.Visibility = Vis(s.ShowQuickButtons);
         ImeButton.Visibility = Vis(s.ShowImeToggle);
         _imeState = 0; // 배지 색 다시 칠하기
+        UpdateRightOrder(); // TopBarWindow.Reorder.cs
 
         bool active = s.Enabled && !AppState.Paused; // 일시 정지 중이면 꺼진 것처럼
         SetStatusPolling(active && s.ShowNetworkSpeed, active && s.ShowStatusIcons);
@@ -473,8 +479,16 @@ public partial class TopBarWindow : Window
         return BrushParser.Luminance(background) > 0.45 ? DarkText : LightText;
     }
 
+    /// <summary>바 배경의 목표 색 (애니메이션 끝 값). 투명 모드면 알파 1 → 트레이 대비 판정에서 "모름".</summary>
+    private Color _barTarget = AlmostClear;
+
     private void SetBarColor(Color c, bool animate)
     {
+        if (_barTarget != c)
+        {
+            _barTarget = c;
+            RefreshTrayTint();
+        }
         if (_barBrush.Color == c && !animate) return;
         if (!animate)
         {

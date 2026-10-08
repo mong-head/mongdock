@@ -210,6 +210,13 @@ public sealed class TopBarSettings
     /// 몽독에서 직접 옮긴 트레이 아이콘 자리 (윈도우 설정보다 우선). 키 = GUID("d" 형식 소문자) 또는 "exe 파일 이름 소문자:uID".
     /// </summary>
     public Dictionary<string, TrayIconPlacement> TrayIconPlacement { get; set; } = new();
+    /// <summary>
+    /// 상단바 오른쪽 아이콘 순서 (왼쪽→오른쪽, 시계는 항상 맨 오른쪽이라 없음). 키: desktops, netSpeed, tray, bluetooth, wifi,
+    /// volume, search, controlCenter, ime, battery. 비어 있거나 빠진·모르는 키는 기본 위치로 (Views/TopBarRightOrder).
+    /// </summary>
+    public List<string> RightItemsOrder { get; set; } = new();
+    /// <summary>거의 단색인 트레이 아이콘(흰/검은 글리프)을 상단바 글자색으로 다시 칠해 바 색과 같아도 보이게 (맥 템플릿 이미지처럼).</summary>
+    public bool TintMonochromeTrayIcons { get; set; } = true;
     /// <summary>네트워크 업/다운 속도 (2줄 작은 글씨).</summary>
     public bool ShowNetworkSpeed { get; set; } = false;
     public bool ReserveSpace { get; set; } = true;

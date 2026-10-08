@@ -530,13 +530,16 @@ internal sealed partial class SettingsWindow : Window
                 Toggle(t.ShowTrayIcons, on => Commit(() => T().SetShowTrayIconsByUser(on), rebuild: true))),
             Row("상단바 트레이 아이콘 최대 개수", "바에 둘 아이콘이 이보다 많으면 순서 뒤쪽부터 ⌃ 안으로 들어가요.",
                 ValueSlider(t.TrayIconsVisibleCount, 1, 20, 1, v => $"{v:0}개", v => T().TrayIconsVisibleCount = (int)Math.Round(v))),
+            Row("단색 트레이 아이콘을 바 글자색으로", "흰색·검은색 한 가지 색 아이콘이 상단바 색과 같아 안 보이지 않게 바 글자색으로 칠합니다(맥처럼). 컬러 아이콘은 그대로 두고, 바와 색이 비슷하면 옅은 판을 깔아요.",
+                Toggle(t.TintMonochromeTrayIcons, on => Commit(() => T().TintMonochromeTrayIcons = on))),
             Row("상태 아이콘", "Wi-Fi·블루투스·볼륨", Toggle(t.ShowStatusIcons, on => Commit(() => T().ShowStatusIcons = on))),
             Row("배터리", "노트북에서만 보여요.", Toggle(t.ShowBattery, on => Commit(() => T().ShowBattery = on))),
             Row("배터리 % 표시", null, Toggle(t.ShowBatteryPercent, on => Commit(() => T().ShowBatteryPercent = on))),
-            Row("빠른 버튼", "검색·빠른 설정·알림 센터", Toggle(t.ShowQuickButtons, on => Commit(() => T().ShowQuickButtons = on))),
+            Row("빠른 버튼", "검색·제어 센터", Toggle(t.ShowQuickButtons, on => Commit(() => T().ShowQuickButtons = on))),
             Row("한/영", null, Toggle(t.ShowImeToggle, on => Commit(() => T().ShowImeToggle = on))),
             Row("네트워크 속도", null, Toggle(t.ShowNetworkSpeed, on => Commit(() => T().ShowNetworkSpeed = on)))));
 
+        AddRightOrder(body); // SettingsWindow.TopBarOrder.cs
         if (t.ShowTrayIcons) AddTrayArrange(body); // SettingsWindow.Tray.cs
 
         body.Children.Add(SectionTitle("알림"));

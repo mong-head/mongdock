@@ -2,6 +2,33 @@
   "_comment": "mongdock 변경 내역 단일 원본. 앱(설정 → 변경 내역, 새로운 기능 코치마크)과 build-release.ps1(GitHub 릴리스 노트)이 함께 읽는다. 최신 버전을 맨 위에. kind = feature | improvement | fix. coach 가 있는 feature 는 업데이트 후 상단바·독 위 말풍선으로 소개(anchor = Center|Dock|Logo|AppName|Desktops|Tray|Search|Clock, condition = topBar|trayIcons|spotlight|banners|dock|appMenus, 없으면 항상). major = 그 버전의 주요 업데이트(버전당 1~4개, 오랜만에 업데이트한 사람·변경 내역 맨 위·릴리스 노트 \"이번 버전 핵심\"에 씀), headline = 그 버전 한 줄 요약. body 의 {hotkey} 는 실제 검색 단축키 문구로 바뀜.",
   "versions": [
     {
+      "version": "0.3.5",
+      "date": "2026-10-08",
+      "headline": "상단바 순서 바꾸기",
+      "entries": [
+        {
+          "kind": "improvement",
+          "major": true,
+          "text": "상단바 오른쪽 아이콘을 길게 눌러(0.4초) 좌우로 끌면 순서를 바꿀 수 있어요. 설정 → 상단바 → 오른쪽 아이콘 순서에서 ▲▼ 로도 바꾸고 기본 순서로 되돌릴 수 있어요(시계는 항상 맨 오른쪽)."
+        },
+        {
+          "kind": "improvement",
+          "major": false,
+          "text": "배터리 아이콘을 맥처럼 통통하게 다듬었어요."
+        },
+        {
+          "kind": "fix",
+          "major": false,
+          "text": "상단바 색과 같아 안 보이던 트레이 아이콘(흰 바의 흰 아이콘 등)을 바 글자색으로 칠하거나, 컬러 아이콘이면 옅은 판을 깔아 보이게 했어요."
+        }
+      ],
+      "knownIssues": [
+        "카카오톡 알림은 자체 팝업이라 배너로 잡히지 않아요(독 아이콘의 빨간 점은 표시돼요).",
+        "알림 소리는 처음 한 번 바꾼 뒤 다시 로그인해야 적용돼요.",
+        "네이버 캘린더는 구독 주소(iCal)를 주지 않아 연결할 수 없어요."
+      ]
+    },
+    {
       "version": "0.3.4",
       "date": "2026-10-08",
       "headline": "노트북: 배터리·화면 맞춤·소리 끄기",
