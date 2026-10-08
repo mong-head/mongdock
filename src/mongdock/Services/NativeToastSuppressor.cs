@@ -28,6 +28,11 @@ namespace Mongdock.Services;
 /// 알림 센터("알림 센터")·빠른 설정·시작 메뉴·검색 창은 제목/프로세스가 달라 걸리지 않는다.
 /// 훅: EVENT_OBJECT_UNCLOAKED 는 전역(드문 이벤트), EVENT_OBJECT_LOCATIONCHANGE 는 ShellExperienceHost 프로세스로만 한정.
 /// UI 스레드(메시지 루프가 있는 스레드)에서만 만들고 호출할 것.
+///
+/// 윈도우 10 (빌드 22000 미만, 실기 확인 못 함): 토스트 창도 ShellExperienceHost 의 "Windows.UI.Core.CoreWindow" / "New notification"
+/// 으로 알려져 있으나(AutoHotkey 등 커뮤니티 스크립트) 대기 중에 클로킹 대신 숨김(SW_HIDE)일 수 있다 → 윈도우 10 에서는
+/// ShellExperienceHost 의 EVENT_OBJECT_SHOW 도 "새로 뜸" 으로 받고, 어느 버전이든 보이지 않는(!IsWindowVisible) 창은 대기 상태로 본다.
+/// 판별이 맞지 않으면 아무것도 옮기지 않으므로(윈도우 팝업이 그대로 보임) 최악의 경우도 "숨기기가 안 됨" 이다.
 /// </summary>
 public sealed class NativeToastSuppressor : IDisposable
 {
@@ -70,6 +75,9 @@ public sealed class NativeToastSuppressor : IDisposable
     private readonly DispatcherTimer _confirmTimer;
     private IntPtr _uncloakHook;
     private IntPtr _locationHook;
+    /// <summary>윈도우 10 전용: ShellExperienceHost 의 EVENT_OBJECT_SHOW (토스트 창이 클로킹 대신 숨김/표시로 바뀔 수 있음).</summary>
+    private IntPtr _showHook;
+    private static readonly bool IsWin10 = Environment.OSVersion.Version.Build < 22000;
     private uint _hostPid;
     private readonly Dictionary<uint, bool> _pidIsHost = new();
 
@@ -127,6 +135,7 @@ public sealed class NativeToastSuppressor : IDisposable
         if (_notifications is not null) _notifications.ToastActivity -= OnToastActivity;
         _confirmTimer.Stop();
         Unhook(ref _locationHook);
+        Unhook(ref _showHook);
         Unhook(ref _uncloakHook);
         _hostPid = 0;
         RestoreMoved();
@@ -152,6 +161,12 @@ public sealed class NativeToastSuppressor : IDisposable
             IntPtr.Zero, _proc, pid, 0, WinEventApi.WINEVENT_OUTOFCONTEXT);
         if (_locationHook == IntPtr.Zero)
             Log.Warn($"토스트 숨기기: 위치 변경 훅 실패 (오류 {System.Runtime.InteropServices.Marshal.GetLastWin32Error()})");
+        if (IsWin10)
+        {
+            Unhook(ref _showHook);
+            _showHook = WinEventApi.SetWinEventHook(WinEventApi.EVENT_OBJECT_SHOW, WinEventApi.EVENT_OBJECT_SHOW,
+                IntPtr.Zero, _proc, pid, 0, WinEventApi.WINEVENT_OUTOFCONTEXT);
+        }
     }
 
     private static uint FindHostPid()
@@ -177,7 +192,7 @@ public sealed class NativeToastSuppressor : IDisposable
         IntPtr h = IntPtr.Zero;
         while ((h = User32.FindWindowEx(IntPtr.Zero, h, ToastClass, null)) != IntPtr.Zero)
         {
-            if (IsToastWindow(h, out uint pid) && Dwm.GetCloaked(h) == 0)
+            if (IsToastWindow(h, out uint pid) && IsShowing(h))
             {
                 HookHost(pid);
                 BeginSession(h);
@@ -191,13 +206,13 @@ public sealed class NativeToastSuppressor : IDisposable
         try
         {
             if (!IsToastWindow(hwnd, out uint pid)) return;
-            if (Dwm.GetCloaked(hwnd) != 0)
+            if (!IsShowing(hwnd))
             {
                 // 평소 대기 상태 (토스트 끝남) → 다음 토스트는 새로
                 if (hwnd == _toastHwnd) EndSession();
                 return;
             }
-            if (eventType == WinEventApi.EVENT_OBJECT_UNCLOAKED)
+            if (eventType is WinEventApi.EVENT_OBJECT_UNCLOAKED or WinEventApi.EVENT_OBJECT_SHOW)
             {
                 HookHost(pid);
                 BeginSession(hwnd);
@@ -232,6 +247,9 @@ public sealed class NativeToastSuppressor : IDisposable
         }
         return ToastTitles.Contains(User32.GetWindowTitleNoMessage(hwnd));
     }
+
+    /// <summary>토스트가 떠 있음: 클로킹 안 됨 + WS_VISIBLE (윈도우 10 은 대기 중에 숨김일 수 있음).</summary>
+    private static bool IsShowing(IntPtr hwnd) => Dwm.GetCloaked(hwnd) == 0 && User32.IsWindowVisible(hwnd);
 
     private bool IsHostPid(uint pid)
     {
@@ -416,7 +434,7 @@ public sealed class NativeToastSuppressor : IDisposable
     {
         IntPtr hwnd = _toastHwnd;
         if (!keepHwnd) _toastHwnd = IntPtr.Zero;
-        if (hwnd == IntPtr.Zero || Dwm.GetCloaked(hwnd) != 0 || !User32.GetWindowRect(hwnd, out RECT r) || r.Left > OffscreenThreshold) return;
+        if (hwnd == IntPtr.Zero || !IsShowing(hwnd) || !User32.GetWindowRect(hwnd, out RECT r) || r.Left > OffscreenThreshold) return;
         int x = _origLeft, y = _origTop;
         if (!_hasOrig || !IsPlausiblePlacement(new RECT { Left = x, Top = y, Right = x + r.Width, Bottom = y + r.Height }))
         {

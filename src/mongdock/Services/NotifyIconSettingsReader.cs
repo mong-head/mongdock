@@ -27,12 +27,21 @@ public sealed class NotifyIconSetting
 
 /// <summary>
 /// NotifyIconSettings 를 <b>읽기만</b> 하는 공유 리더. 키가 바뀌면(윈도우 설정에서 아이콘 켜기/끄기) 다시 읽고
-/// 승격·순서가 달라졌으면 <see cref="Changed"/> (UI 스레드). 윈도우 10 처럼 키가 없으면 <see cref="IsAvailable"/> = false.
+/// 승격·순서가 달라졌으면 <see cref="Changed"/> (UI 스레드). 윈도우 10(빌드 22000 미만)은 TrayNotify\IconStreams 를 대신 읽는다.
+/// 둘 다 없으면 <see cref="IsAvailable"/> = false.
 /// 스레드 안전 (스냅숏 교체).
 /// </summary>
 public sealed class NotifyIconSettingsReader
 {
     private const string KeyPath = @"Control Panel\NotifyIconSettings";
+
+    /// <summary>윈도우 10 의 트레이 아이콘 기록 (IconStreams 값이 있는 키).</summary>
+    private const string Win10KeyPath = @"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\TrayNotify";
+
+    /// <summary>윈도우 11(22000) 미만이면 NotifyIconSettings 대신 IconStreams 를 읽는다.</summary>
+    private static bool UseIconStreams => Environment.OSVersion.Version.Build < 22000;
+
+    private static string WatchKeyPath => UseIconStreams ? Win10KeyPath : KeyPath;
 
     private static readonly Lazy<NotifyIconSettingsReader> _shared = new(() =>
     {
@@ -143,6 +152,7 @@ public sealed class NotifyIconSettingsReader
 
     private static Snapshot Read()
     {
+        if (UseIconStreams) return ReadIconStreams();
         using var root = Registry.CurrentUser.OpenSubKey(KeyPath, writable: false);
         if (root is null) return Snapshot.Empty;
 
@@ -173,6 +183,79 @@ public sealed class NotifyIconSettingsReader
         }
         return new Snapshot(true, list);
     }
+
+    // ───────────────────────── 윈도우 10: IconStreams ─────────────────────────
+
+    private const int StreamRecordSize = 1640;
+    private const int StreamPathBytes = 528;     // WCHAR[264], ROT13
+    private const int StreamPrefOffset = 528;    // DWORD: 0 = 알림만 표시(⌃, 기본), 1 = 아이콘·알림 숨김, 2 = 항상 표시
+    private const int StreamUidOffset = 0x428;   // DWORD uID (없으면 0xFFFFFFFF)
+    private const int StreamGuidOffset = 0x42C;  // GUID (없으면 0)
+
+    /// <summary>
+    /// 윈도우 10 의 "작업 표시줄에 표시할 아이콘 선택" 기록을 읽는다 (읽기 전용).
+    /// HKCU\Software\Classes\Local Settings\...\TrayNotify\IconStreams (REG_BINARY):
+    /// 머리글(첫 DWORD = 머리글 크기, 보통 20 / +12 DWORD = 항목 수) 뒤에 1640바이트 항목이 이어짐.
+    /// 항목: +0 실행 파일 경로(UTF-16, ROT13, "{KNOWNFOLDERID}\..." 접두 가능), +528 표시 설정(2 = 항상 표시),
+    /// +0x428 uID, +0x42C GUID. 비공식 구조 — 근거: sevenforums "VBScript to add program to notification area"(1640/20/+528),
+    /// Win11 26200 에 남아 있는 같은 값을 직접 덤프해 uID·GUID 위치 확인(시스템 아이콘 GUID 7820AE7x-23E3-4229-82C1-E41CB67D5B9C).
+    /// explorer 가 메모리에 들고 있다가 기록하므로 윈도우 설정에서 바꾼 직후에는 반영이 늦을 수 있다.
+    /// "알림 영역에 항상 모든 아이콘 표시"(Explorer\EnableAutoTray = 0)면 모두 항상 표시로 본다.
+    /// </summary>
+    private static Snapshot ReadIconStreams()
+    {
+        using var root = Registry.CurrentUser.OpenSubKey(Win10KeyPath, writable: false);
+        if (root?.GetValue("IconStreams") is not byte[] b || b.Length < 20) return Snapshot.Empty;
+
+        bool showAll;
+        using (var ex = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer", writable: false))
+            showAll = ex?.GetValue("EnableAutoTray") is int auto && auto == 0;
+
+        int header = BitConverter.ToInt32(b, 0);
+        if (header < 16 || header > 256 || header > b.Length) header = 20;
+        int count = (b.Length - header) / StreamRecordSize;
+        int declared = BitConverter.ToInt32(b, 12);
+        if (declared >= 0 && declared < count) count = declared;
+
+        var list = new List<NotifyIconSetting>(count);
+        for (int i = 0; i < count; i++)
+        {
+            int o = header + i * StreamRecordSize;
+            string path = Rot13(ReadZString(b, o, StreamPathBytes));
+            uint pref = BitConverter.ToUInt32(b, o + StreamPrefOffset);
+            uint uid = BitConverter.ToUInt32(b, o + StreamUidOffset);
+            var guid = new Guid(new ReadOnlySpan<byte>(b, o + StreamGuidOffset, 16));
+            bool promoted = showAll || pref == 2;
+            list.Add(new NotifyIconSetting
+            {
+                Id = (ulong)i,
+                ExecutablePath = ExpandPath(path),
+                Uid = uid == 0xFFFFFFFF ? null : uid,
+                IconGuid = guid,
+                IsPromoted = promoted,
+                IsPromotedSet = promoted || pref == 1,
+            });
+        }
+        return new Snapshot(true, list);
+    }
+
+    private static string ReadZString(byte[] b, int offset, int maxBytes)
+    {
+        var span = MemoryMarshal.Cast<byte, char>(new ReadOnlySpan<byte>(b, offset, maxBytes));
+        int end = span.IndexOf('\0');
+        return new string(end >= 0 ? span[..end] : span);
+    }
+
+    private static string Rot13(string s) => string.Create(s.Length, s, static (dst, src) =>
+    {
+        for (int i = 0; i < src.Length; i++)
+        {
+            char c = src[i];
+            dst[i] = c is >= 'a' and <= 'z' ? (char)('a' + (c - 'a' + 13) % 26)
+                   : c is >= 'A' and <= 'Z' ? (char)('A' + (c - 'A' + 13) % 26)
+                   : c;
+        }
+    });
 
     private static readonly Dictionary<Guid, string?> KnownFolders = new();
 
@@ -248,8 +331,8 @@ public sealed class NotifyIconSettingsReader
         try
         {
             Reload(raise: true);
-            using var root = Registry.CurrentUser.OpenSubKey(KeyPath, writable: false);
-            if (root is null) return; // 윈도우 10 등: 키 없음 → 감시 안 함
+            using var root = Registry.CurrentUser.OpenSubKey(WatchKeyPath, writable: false);
+            if (root is null) return; // 키 없음 → 감시 안 함
             using var evt = new AutoResetEvent(false);
             var handles = new WaitHandle[] { stop, evt };
             while (true)

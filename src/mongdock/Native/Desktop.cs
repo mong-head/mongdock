@@ -109,6 +109,17 @@ internal static class DesktopApi
     [DllImport("dwmapi.dll")]
     public static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref int pvAttribute, int cbAttribute);
 
+    // ── 윈도우 10 둥근 모서리 대체 (DWMWA_WINDOW_CORNER_PREFERENCE 는 Win11 22000+ 전용) ──
+    [DllImport("gdi32.dll")]
+    public static extern IntPtr CreateRoundRectRgn(int x1, int y1, int x2, int y2, int w, int h);
+
+    /// <summary>성공하면 hRgn 은 시스템 소유 (DeleteObject 하지 말 것). 실패하면 호출자가 DeleteObject.</summary>
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, [MarshalAs(UnmanagedType.Bool)] bool bRedraw);
+
+    [DllImport("user32.dll")]
+    public static extern uint GetDpiForWindow(IntPtr hwnd);
+
     // ── 저수준 마우스 훅 메시지 (훅 자체는 KeyboardHookApi / LowLevelHookThread) ──
     public const int WM_LBUTTONDOWN = 0x0201;
     public const int WM_RBUTTONDOWN = 0x0204;
