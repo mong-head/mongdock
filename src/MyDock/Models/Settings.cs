@@ -151,7 +151,8 @@ public sealed class TopBarSettings
 {
     public bool Enabled { get; set; } = true;
     public double Height { get; set; } = 26;
-    public TopBarColorMode ColorMode { get; set; } = TopBarColorMode.Fixed;
+    /// <summary>기본 Auto(앱 색에 맞춤). 저장된 colorMode 는 그대로 따름 (이관 없음).</summary>
+    public TopBarColorMode ColorMode { get; set; } = TopBarColorMode.Auto;
     /// <summary>Fixed 모드의 배경색 / Blur 모드의 틴트.</summary>
     public string Background { get; set; } = "#FFFFFFFF";
     /// <summary>"" 이면 배경 밝기에 따라 검정/흰색 자동.</summary>

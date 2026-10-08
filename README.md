@@ -149,7 +149,7 @@ zip 으로 썼다면:
 | 독 위치·동작·크기·테마 | `dock.edge`, `dock.mode`, `dock.iconSize`, `dock.hoverScale`, `dock.theme` |
 | 독 모니터 | `dock.monitor` — 장치 이름(예 `"\\\\.\\DISPLAY2"`), `""` 이면 주 모니터 |
 | 상단바 크기 | `topBar.height` (기본 26), `topBar.fontSize` (기본 13) |
-| 상단바 색·표시 항목 | `topBar.colorMode` (`Fixed`/`Auto`/`Transparent`/`Blur`), `topBar.background`, `topBar.showAppMenus` … |
+| 상단바 색·표시 항목 | `topBar.colorMode` (`Auto`(기본, 앱 색에 맞춤)/`Fixed`/`Transparent`/`Blur`), `topBar.background`, `topBar.showAppMenus` … |
 | 상단바 모니터 | `topBar.showOnAllMonitors` — `false` 면 주 모니터에만 |
 | 앱 트레이 아이콘 | `topBar.showTrayIcons` (기본 `false`, 작업 표시줄 숨기기를 켜면 자동으로 `true`), `topBar.trayIconsVisibleCount` (상단바에 바로 보일 최대 개수, 기본 10 — 넘으면 ⌃ 안으로), `topBar.trayIconPlacement` (몽독에서 옮긴 자리 — 키는 GUID 또는 `"exe이름:uID"`, 값 `{ "onBar": true, "order": 0 }`, 비우면 윈도우 설정대로) |
 | 시계 달력 | `topBar.calendarApp` (날짜를 두 번 누르면 열 캘린더: `Google`/`OutlookWeb`/`Naver`/`NewOutlook`/`ClassicOutlook`/`WindowsCalendar`), `calendar.refreshMinutes` (구독 캘린더 새로고침 주기, 기본 15분) |
