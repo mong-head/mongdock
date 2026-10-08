@@ -7,6 +7,7 @@ namespace Mongdock.Native;
 internal static class CoreAudio
 {
     public const int eRender = 0;
+    public const int eCapture = 1;
     public const int eConsole = 0;
     public const int eMultimedia = 1;
     public const int eCommunications = 2;
@@ -17,7 +18,8 @@ internal static class CoreAudio
     public static readonly PROPERTYKEY PKEY_AudioEndpoint_FormFactor = new(new Guid("1da5d803-d492-4edd-8c23-e0c0ffee7f0e"), 0);
 
     // EndpointFormFactor
-    public const int FF_Speakers = 1, FF_Headphones = 3, FF_Headset = 5, FF_UnknownDigitalPassthrough = 7, FF_SPDIF = 8, FF_DigitalAudioDisplayDevice = 9;
+    public const int FF_Speakers = 1, FF_LineLevel = 2, FF_Headphones = 3, FF_Microphone = 4, FF_Headset = 5, FF_Handset = 6,
+        FF_UnknownDigitalPassthrough = 7, FF_SPDIF = 8, FF_DigitalAudioDisplayDevice = 9;
     public const int CLSCTX_ALL = 0x17;
 }
 
@@ -92,6 +94,16 @@ internal interface IAudioEndpointVolume
     [PreserveSig] int GetChannelVolumeLevelScalar(uint channel, out float level);
     [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool mute, ref Guid eventContext);
     [PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool mute);
+}
+
+/// <summary>엔드포인트 피크 미터 (0~1). 캡처 장치는 어떤 앱이든 녹음 스트림을 열고 있을 때만 값이 나온다.</summary>
+[ComImport, Guid("C02216F6-8C67-4B5B-9D00-D008E73E0064"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IAudioMeterInformation
+{
+    [PreserveSig] int GetPeakValue(out float peak);
+    [PreserveSig] int GetMeteringChannelCount(out uint channelCount);
+    [PreserveSig] int GetChannelsPeakValues(uint channelCount, IntPtr peakValues);
+    [PreserveSig] int QueryHardwareSupport(out uint hardwareSupportMask);
 }
 
 [ComImport, Guid("657804FA-D6AD-4496-8A60-352752AF4F89"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]

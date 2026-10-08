@@ -189,7 +189,9 @@ public sealed partial class StatusService : IStatusService, IDisposable
             int hr = _enumerator.RegisterEndpointNotificationCallback(_deviceCallback);
             if (hr != 0) Log.Warn($"오디오 장치 변경 알림 등록 실패 hr=0x{hr:X8}");
             ConnectDefaultDevice();
+            ConnectDefaultInput();
             RefreshOutputDevices();
+            RefreshInputDevices();
         }
         catch (Exception ex)
         {
@@ -212,7 +214,7 @@ public sealed partial class StatusService : IStatusService, IDisposable
             var iid = typeof(IAudioEndpointVolume).GUID;
             if (device.Activate(ref iid, CoreAudio.CLSCTX_ALL, IntPtr.Zero, out object? o) != 0 || o is null) return;
             _endpoint = (IAudioEndpointVolume)o;
-            _volumeCallback = new VolumeCallback(this);
+            _volumeCallback = new VolumeCallback(SetVolumeValues);
             int hr = _endpoint.RegisterControlChangeNotify(_volumeCallback);
             if (hr != 0) Log.Warn($"볼륨 변경 알림 등록 실패 hr=0x{hr:X8}");
             ReadVolume();
@@ -239,6 +241,7 @@ public sealed partial class StatusService : IStatusService, IDisposable
     private void StopAudio()
     {
         DisconnectEndpoint();
+        DisconnectInput();
         if (_enumerator is not null)
         {
             try { if (_deviceCallback is not null) _enumerator.UnregisterEndpointNotificationCallback(_deviceCallback); } catch { }
@@ -298,11 +301,14 @@ public sealed partial class StatusService : IStatusService, IDisposable
         });
     }
 
-    /// <summary>볼륨 변경 알림 (오디오 스레드) — AUDIO_VOLUME_NOTIFICATION_DATA: Guid(16), BOOL bMuted(4), float fMasterVolume(4).</summary>
+    /// <summary>
+    /// 볼륨 변경 알림 (오디오 스레드) — AUDIO_VOLUME_NOTIFICATION_DATA: Guid(16), BOOL bMuted(4), float fMasterVolume(4).
+    /// 출력·입력 엔드포인트가 같은 클래스를 쓰고 받은 값만 넘긴다 (출력 = SetVolumeValues, 입력 = SetInputValues).
+    /// </summary>
     private sealed class VolumeCallback : IAudioEndpointVolumeCallback
     {
-        private readonly StatusService _owner;
-        public VolumeCallback(StatusService owner) => _owner = owner;
+        private readonly Action<double, bool> _apply;
+        public VolumeCallback(Action<double, bool> apply) => _apply = apply;
         public int OnNotify(IntPtr data)
         {
             try
@@ -310,7 +316,7 @@ public sealed partial class StatusService : IStatusService, IDisposable
                 if (data == IntPtr.Zero) return 0;
                 bool muted = Marshal.ReadInt32(data, 16) != 0;
                 float level = BitConverter.Int32BitsToSingle(Marshal.ReadInt32(data, 20));
-                _owner.SetVolumeValues(level, muted);
+                _apply(level, muted);
             }
             catch { }
             return 0;
@@ -329,6 +335,11 @@ public sealed partial class StatusService : IStatusService, IDisposable
             if (flow == CoreAudio.eRender && role == CoreAudio.eMultimedia)
             {
                 _owner.QueueReconnect();
+                _owner.QueueDeviceListRefresh();
+            }
+            else if (flow == CoreAudio.eCapture && role == CoreAudio.eConsole)
+            {
+                _owner.QueueInputReconnect();
                 _owner.QueueDeviceListRefresh();
             }
             return 0;
