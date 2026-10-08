@@ -264,12 +264,26 @@ public interface IStatusService
     void Stop();
 }
 
-/// <summary>포그라운드 앱의 메뉴. 일반 Win32 메뉴(HMENU)가 있으면 그것을 읽고, 없으면 settings.AppMenus → 내장 기본 메뉴(브라우저·탐색기 등) → 공통 편집 메뉴 순.</summary>
+/// <summary>
+/// 포그라운드 앱의 메뉴. 우선순위: settings.AppMenus → 표준 Win32 메뉴(HMENU) → 앱 전용 내장 메뉴(VS Code·브라우저·탐색기 등)
+/// → UI 자동화 메뉴 막대(Windows 11 메모장·그림판 등, 제목만) → 범용 내장 메뉴(Electron·기본).
+/// </summary>
 public interface IAppMenuService
 {
+    /// <summary>
+    /// 상단바 제목으로 보일 메뉴들. Items 가 비어 있는 메뉴 = 하위 항목을 미리 모름(UI 자동화) →
+    /// 제목을 누르면 <see cref="OpenNativeMenu"/> 로 앱의 실제 메뉴를 펼친다.
+    /// UI 자동화 조회는 백그라운드라 처음엔 대체 메뉴가 오고, 끝나면 <see cref="MenusChanged"/>.
+    /// </summary>
     IReadOnlyList<AppMenu> GetMenus(AppWindowInfo window);
-    /// <summary>항목 실행: Win32 메뉴는 WM_COMMAND 를 그 창에, 단축키 항목은 그 창을 포그라운드로 확인한 뒤 SendInput.</summary>
+    /// <summary>앱 이름(굵게) 메뉴에 덧붙일 앱 전용 항목 (예: VS Code 설정… Ctrl+,). 없으면 빈 목록. 실행은 <see cref="Invoke"/>.</summary>
+    IReadOnlyList<AppMenuItem> GetAppNameItems(AppWindowInfo window);
+    /// <summary>항목 실행: Win32 메뉴는 WM_COMMAND 를 그 창에, 단축키 항목은 그 창을 포그라운드로 확인한 뒤 SendInput("Ctrl+K Ctrl+S" 같은 연속 입력 포함).</summary>
     void Invoke(IntPtr hwnd, AppMenuItem item);
+    /// <summary>Items 가 빈 메뉴(UI 자동화 제목): 앱 창 안의 실제 메뉴를 펼침(이미 펼쳐져 있으면 접음). 비동기, 실패는 로그만.</summary>
+    void OpenNativeMenu(IntPtr hwnd, AppMenu menu, int index);
+    /// <summary>hwnd 의 메뉴가 바뀜 (백그라운드 UI 자동화 조회 완료 등) → GetMenus 다시 호출. UI 스레드 아님.</summary>
+    event EventHandler<IntPtr>? MenusChanged;
 }
 
 public sealed record AppMenu(string Title, IReadOnlyList<AppMenuItem> Items);

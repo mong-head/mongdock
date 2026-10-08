@@ -7,10 +7,12 @@ namespace MyDock.Services;
 
 /// <summary>
 /// 맥처럼 상단바에 포그라운드 앱의 메뉴를 보여 주기 위한 메뉴 정의.
-/// 우선순위: 1) 창의 Win32 메뉴 막대(HMENU, 읽기만) → 2) settings.AppMenus[AUMID / exe 파일명 / exe 전체 경로] → 3) 내장 기본 메뉴.
-/// Payload: Win32 메뉴 항목은 <see cref="Win32Command"/>(명령 ID), 단축키 항목은 단축키 문자열(예: "Ctrl+Shift+T").
+/// 우선순위: 1) settings.AppMenus[AUMID / exe 파일명 / exe 전체 경로] → 2) 창의 Win32 메뉴 막대(HMENU, 숨긴 것 포함)
+/// → 3) 앱 전용 내장 메뉴 → 4) UI 자동화 메뉴 막대(제목만, 누르면 앱 메뉴를 펼침) → 5) 범용 내장 메뉴(Electron·기본).
+/// Payload: Win32 메뉴 항목은 <see cref="Win32Command"/>(명령 ID), 단축키 항목은 단축키 문자열(예: "Ctrl+Shift+T", "Ctrl+K Ctrl+S").
+/// 제목이 "@app" 인 메뉴는 상단바 제목이 아니라 앱 이름 메뉴에 덧붙는다(<see cref="GetAppNameItems"/>).
 /// </summary>
-public sealed class AppMenuService : IAppMenuService
+public sealed class AppMenuService : IAppMenuService, IDisposable
 {
     /// <summary>Win32 메뉴 항목의 명령 ID (Invoke 시 WM_COMMAND).</summary>
     public sealed record Win32Command(uint Id);
@@ -18,10 +20,41 @@ public sealed class AppMenuService : IAppMenuService
     private readonly ISettingsService _settings;
     private readonly Dictionary<string, IReadOnlyList<AppMenu>> _builtinCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, bool> _electronCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly NativeMenuHider _hider = new();
+    private readonly UiaMenuReader _uia = new();
+    private bool _hideWanted;
+
+    public event EventHandler<IntPtr>? MenusChanged;
 
     public AppMenuService(ISettingsService settings)
     {
         _settings = settings;
+        _hider.RecoverFromLastRun();
+        _uia.Scanned += hwnd => MenusChanged?.Invoke(this, hwnd);
+        _settings.SettingsChanged += OnSettingsOrPauseChanged;
+        ViewModels.AppState.Changed += OnSettingsOrPauseChanged;
+        _hideWanted = HideWanted();
+    }
+
+    /// <summary>실험 기능 "앱 창 안 메뉴 줄 숨기기" 가 지금 동작해야 하는지.</summary>
+    private bool HideWanted()
+    {
+        var t = _settings.Current.TopBar;
+        return t.Enabled && t.ShowAppMenus && t.HideNativeMenuBars && !ViewModels.AppState.Paused;
+    }
+
+    private void OnSettingsOrPauseChanged(object? sender, EventArgs e)
+    {
+        bool wanted = HideWanted();
+        if (_hideWanted && !wanted) _hider.RestoreAll();
+        _hideWanted = wanted;
+    }
+
+    public void Dispose()
+    {
+        _settings.SettingsChanged -= OnSettingsOrPauseChanged;
+        ViewModels.AppState.Changed -= OnSettingsOrPauseChanged;
+        _hider.Dispose(); // 숨긴 메뉴 줄 복원 (최대 1.5초 대기)
     }
 
     // ───────────────────────── 메뉴 얻기 ─────────────────────────
@@ -31,13 +64,34 @@ public sealed class AppMenuService : IAppMenuService
         if (window is null) return Array.Empty<AppMenu>();
         try
         {
-            var win32 = ReadWin32Menu(window.Hwnd);
-            if (win32.Count > 0) return win32;
-
             var user = FindUserMenus(window);
-            if (user is not null) return Convert(user);
+            if (user is not null)
+            {
+                var own = TitlesOnly(Convert(user));
+                if (own.Count > 0) return own; // "@app" 만 정의했으면 아래 순서대로
+            }
 
-            return GetBuiltin(window);
+            var win32 = ReadWin32Menu(window.Hwnd);
+            if (win32.Count > 0)
+            {
+                if (_hideWanted) _hider.TryHide(window.Hwnd, window.ProcessPath);
+                return win32;
+            }
+
+            string exe = Path.GetFileName(window.ProcessPath).ToLowerInvariant();
+            string cls = User32.GetClassNameOf(window.Hwnd);
+            if (IsConsole(exe, cls)) return Array.Empty<AppMenu>(); // Ctrl+C 등이 다른 의미
+
+            string kind = BuiltinKind(window, exe, cls);
+            if (BuiltinMenus.IsAppSpecific(kind)) return TitlesOnly(GetBuiltin(kind));
+
+            if (UiaMenuReader.IsCandidate(window.Hwnd, cls))
+            {
+                var titles = _uia.GetTitles(window.Hwnd); // null = 조회 중 → 일단 대체 메뉴, 끝나면 MenusChanged
+                if (titles is { Count: > 0 })
+                    return titles.Select(t => new AppMenu(t, Array.Empty<AppMenuItem>())).ToList();
+            }
+            return TitlesOnly(GetBuiltin(kind));
         }
         catch (Exception ex)
         {
@@ -45,6 +99,49 @@ public sealed class AppMenuService : IAppMenuService
             return Array.Empty<AppMenu>();
         }
     }
+
+    public IReadOnlyList<AppMenuItem> GetAppNameItems(AppWindowInfo window)
+    {
+        if (window is null) return Array.Empty<AppMenuItem>();
+        try
+        {
+            IReadOnlyList<AppMenu> menus;
+            var user = FindUserMenus(window);
+            if (user is not null) menus = Convert(user);
+            else
+            {
+                string exe = Path.GetFileName(window.ProcessPath).ToLowerInvariant();
+                string cls = User32.GetClassNameOf(window.Hwnd);
+                string? kind = BuiltinMenus.KindOf(exe, cls);
+                if (kind is null) return Array.Empty<AppMenuItem>();
+                menus = GetBuiltin(kind);
+            }
+            return menus.FirstOrDefault(m => m.Title == BuiltinMenus.AppNameMenuTitle)?.Items ?? Array.Empty<AppMenuItem>();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("앱 이름 메뉴 항목 조회 실패", ex);
+            return Array.Empty<AppMenuItem>();
+        }
+    }
+
+    public void OpenNativeMenu(IntPtr hwnd, AppMenu menu, int index)
+    {
+        if (hwnd == IntPtr.Zero || menu is null) return;
+        _ = _uia.ExpandAsync(hwnd, menu.Title, index).ContinueWith(t =>
+        {
+            if (t.IsCompletedSuccessfully && !t.Result) Log.Warn($"앱 메뉴 '{menu.Title}' 를 펼치지 못함");
+        }, TaskScheduler.Default);
+    }
+
+    private static IReadOnlyList<AppMenu> TitlesOnly(IReadOnlyList<AppMenu> menus) =>
+        menus.Any(m => m.Title == BuiltinMenus.AppNameMenuTitle)
+            ? menus.Where(m => m.Title != BuiltinMenus.AppNameMenuTitle).ToList()
+            : menus;
+
+    private static bool IsConsole(string exe, string cls) =>
+        cls is "ConsoleWindowClass" or "CASCADIA_HOSTING_WINDOW_CLASS" or "mintty" or "VirtualConsoleClass" or "PuTTY"
+        || exe is "windowsterminal.exe" or "wt.exe" or "conhost.exe" or "openconsole.exe" or "mintty.exe" or "alacritty.exe" or "wezterm-gui.exe";
 
     private List<AppMenuDef>? FindUserMenus(AppWindowInfo w)
     {
@@ -62,11 +159,20 @@ public sealed class AppMenuService : IAppMenuService
 
     // ───────────────────────── Win32 HMENU ─────────────────────────
 
-    /// <summary>창의 메뉴 막대를 재귀로 읽음. WM_INITMENUPOPUP 은 보내지 않으므로 상태는 앱이 마지막으로 정한 그대로.</summary>
-    internal static IReadOnlyList<AppMenu> ReadWin32Menu(IntPtr hwnd)
+    /// <summary>
+    /// 창의 메뉴 막대를 재귀로 읽음. 보통은 WM_INITMENUPOPUP 을 보내지 않으므로 상태는 앱이 마지막으로 정한 그대로.
+    /// 메뉴 줄을 숨긴 창(<see cref="NativeMenuHider"/>)은 사용자가 앱 메뉴를 직접 열 수 없어 상태가 갱신되지 않으므로,
+    /// 읽기 전에 각 하위 메뉴에 WM_INITMENUPOPUP 을 보내(응답 없으면 100ms 에 포기) 체크·비활성 상태를 맞춘다.
+    /// </summary>
+    private IReadOnlyList<AppMenu> ReadWin32Menu(IntPtr hwnd)
     {
         if (hwnd == IntPtr.Zero) return Array.Empty<AppMenu>();
         IntPtr bar = MenuApi.GetMenu(hwnd);
+        if (bar == IntPtr.Zero)
+        {
+            bar = _hider.GetHiddenMenu(hwnd);
+            if (bar != IntPtr.Zero) RefreshHiddenMenuState(hwnd, bar);
+        }
         if (bar == IntPtr.Zero || !MenuApi.IsMenu(bar)) return Array.Empty<AppMenu>();
         var result = new List<AppMenu>();
         foreach (var top in ReadItems(bar, depth: 0))
@@ -78,6 +184,22 @@ public sealed class AppMenuService : IAppMenuService
         }
         return result;
     }
+
+    private static void RefreshHiddenMenuState(IntPtr hwnd, IntPtr bar)
+    {
+        if (MenuApi.IsHungAppWindow(hwnd)) return;
+        int count = Math.Min(MenuApi.GetMenuItemCount(bar), 30);
+        for (int i = 0; i < count; i++)
+        {
+            IntPtr sub = MenuApi.GetSubMenu(bar, i);
+            if (sub == IntPtr.Zero) continue;
+            // lParam: LOWORD = 위치, HIWORD = 시스템 메뉴 아님(0)
+            if (User32.SendMessageTimeout(hwnd, MenuApi.WM_INITMENUPOPUP, sub, new IntPtr(i), SmtoAbortIfHung, 100, out _) == IntPtr.Zero)
+                return; // 시간 초과·실패 → 나머지도 생략
+        }
+    }
+
+    private const uint SmtoAbortIfHung = 0x0002;
 
     private static List<AppMenuItem> ReadItems(IntPtr menu, int depth)
     {
@@ -193,7 +315,7 @@ public sealed class AppMenuService : IAppMenuService
             if (it.Text == "-") { list.Add(Separator); continue; }
             var children = it.Items is { Count: > 0 } ? ConvertItems(it.Items) : null;
             string? keys = string.IsNullOrWhiteSpace(it.Keys) ? null : it.Keys.Trim();
-            bool enabled = children is not null || (keys is not null && KeyParser.TryParse(keys, out _));
+            bool enabled = children is not null || (keys is not null && KeyParser.TryParseSequence(keys, out _));
             list.Add(new AppMenuItem(it.Text, false, enabled, false, keys, children, children is null ? keys : null));
         }
         return list;
@@ -201,22 +323,12 @@ public sealed class AppMenuService : IAppMenuService
 
     // ───────────────────────── 내장 기본 메뉴 ─────────────────────────
 
-    private IReadOnlyList<AppMenu> GetBuiltin(AppWindowInfo w)
+    /// <summary>내장 메뉴 종류: 앱 전용(BuiltinMenus.KindOf) → Electron → generic.</summary>
+    private string BuiltinKind(AppWindowInfo w, string exe, string cls) =>
+        BuiltinMenus.KindOf(exe, cls) ?? (IsElectron(w.ProcessPath) ? "electron" : "generic");
+
+    private IReadOnlyList<AppMenu> GetBuiltin(string kind)
     {
-        string exe = Path.GetFileName(w.ProcessPath).ToLowerInvariant();
-        string cls = User32.GetClassNameOf(w.Hwnd);
-        // 콘솔/터미널: Ctrl+C 등이 다른 의미라 메뉴를 보여 주지 않음
-        if (cls is "ConsoleWindowClass" or "CASCADIA_HOSTING_WINDOW_CLASS" or "mintty" or "VirtualConsoleClass" or "PuTTY"
-            || exe is "windowsterminal.exe" or "wt.exe" or "conhost.exe" or "openconsole.exe" or "mintty.exe" or "alacritty.exe" or "wezterm-gui.exe")
-            return Array.Empty<AppMenu>();
-        string kind = exe switch
-        {
-            "chrome.exe" or "msedge.exe" or "whale.exe" => exe,
-            "firefox.exe" => "firefox.exe",
-            "explorer.exe" when cls == "CabinetWClass" => "explorer",
-            "notion.exe" => "notion",
-            _ => IsElectron(w.ProcessPath) ? "electron" : "generic",
-        };
         lock (_builtinCache)
         {
             if (_builtinCache.TryGetValue(kind, out var cached)) return cached;
@@ -260,12 +372,12 @@ public sealed class AppMenuService : IAppMenuService
                         Log.Warn($"WM_COMMAND 전송 실패 id={cmd.Id} err={Marshal.GetLastWin32Error()}");
                     break;
                 case string keys:
-                    if (!KeyParser.TryParse(keys, out var vks))
+                    if (!KeyParser.TryParseSequence(keys, out var chords))
                     {
                         Log.Warn($"단축키 해석 실패: '{keys}'");
                         return;
                     }
-                    _ = SendKeysToWindowAsync(hwnd, keys, vks);
+                    _ = SendKeysToWindowAsync(hwnd, keys, chords);
                     break;
             }
         }
@@ -275,8 +387,11 @@ public sealed class AppMenuService : IAppMenuService
         }
     }
 
-    /// <summary>창을 포그라운드로 확인/전환 → 수식키가 모두 떼어질 때까지 잠깐 기다림 → 단축키 SendInput.</summary>
-    private static async Task SendKeysToWindowAsync(IntPtr hwnd, string text, ushort[] vks)
+    /// <summary>
+    /// 창을 포그라운드로 확인/전환 → 수식키가 모두 떼어질 때까지 잠깐 기다림 → 단축키 SendInput.
+    /// "Ctrl+K Ctrl+S" 처럼 여러 입력이면 차례로(사이 40ms), 매번 대상 창이 그대로인지 확인.
+    /// </summary>
+    private static async Task SendKeysToWindowAsync(IntPtr hwnd, string text, IReadOnlyList<ushort[]> chords)
     {
         try
         {
@@ -296,13 +411,17 @@ public sealed class AppMenuService : IAppMenuService
                 Log.Warn($"수식키가 눌려 있어 '{text}' 취소");
                 return;
             }
-            // 기다리는 사이 사용자가 다른 창으로 옮겼을 수 있음 → 보내기 직전 다시 확인
-            if (!IsTargetFocused(hwnd))
+            for (int c = 0; c < chords.Count; c++)
             {
-                Log.Warn($"단축키 보내기 직전 포그라운드가 바뀜 → '{text}' 취소");
-                return;
+                if (c > 0) await Task.Delay(40);
+                // 기다리는 사이 사용자가 다른 창으로 옮겼을 수 있음 → 보내기 직전 다시 확인
+                if (!IsTargetFocused(hwnd))
+                {
+                    Log.Warn($"단축키 보내기 직전 포그라운드가 바뀜 → '{text}' 취소");
+                    return;
+                }
+                KeyChord.Send(text, chords[c]);
             }
-            KeyChord.Send(text, vks);
         }
         catch (Exception ex)
         {
@@ -325,9 +444,29 @@ public sealed class AppMenuService : IAppMenuService
         MenuApi.IsKeyDown(0x5B) || MenuApi.IsKeyDown(0x5C);
 }
 
-/// <summary>"Ctrl+Shift+T" 같은 단축키 문자열 → 가상 키 배열 (수식키 먼저, 마지막이 주 키).</summary>
+/// <summary>
+/// "Ctrl+Shift+T" 같은 단축키 문자열 → 가상 키 배열 (수식키 먼저, 마지막이 주 키).
+/// 공백으로 나눈 "Ctrl+K Ctrl+S" / "Ctrl+K S" 는 차례로 누르는 연속 입력(<see cref="TryParseSequence"/>).
+/// </summary>
 internal static class KeyParser
 {
+    /// <summary>공백으로 나눈 입력 여러 개 (최대 4개). 하나라도 해석 못 하면 false.</summary>
+    public static bool TryParseSequence(string text, out IReadOnlyList<ushort[]> chords)
+    {
+        chords = Array.Empty<ushort[]>();
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length is 0 or > 4) return false;
+        var list = new List<ushort[]>(parts.Length);
+        foreach (var p in parts)
+        {
+            if (!TryParse(p, out var keys)) return false;
+            list.Add(keys);
+        }
+        chords = list;
+        return true;
+    }
+
     private static readonly Dictionary<string, ushort> Named = new(StringComparer.OrdinalIgnoreCase)
     {
         ["Ctrl"] = 0xA2, ["Control"] = 0xA2, ["Shift"] = 0xA0, ["Alt"] = 0xA4, ["Win"] = 0x5B, ["Windows"] = 0x5B,
@@ -338,6 +477,17 @@ internal static class KeyParser
         ["="] = 0xBB, ["Plus"] = 0xBB, ["-"] = 0xBD, ["Minus"] = 0xBD, [","] = 0xBC, ["."] = 0xBE, ["/"] = 0xBF,
         [";"] = 0xBA, ["`"] = 0xC0, ["["] = 0xDB, ["\\"] = 0xDC, ["]"] = 0xDD, ["'"] = 0xDE,
     };
+
+    /// <summary>"NumPad0"~"NumPad9" / "Num0"~"Num9" → VK_NUMPAD0(0x60)~.</summary>
+    private static bool TryNumPad(string p, out ushort vk)
+    {
+        vk = 0;
+        string digits = p.StartsWith("NumPad", StringComparison.OrdinalIgnoreCase) ? p[6..]
+            : p.StartsWith("Num", StringComparison.OrdinalIgnoreCase) ? p[3..] : "";
+        if (digits.Length != 1 || digits[0] is < '0' or > '9') return false;
+        vk = (ushort)(0x60 + (digits[0] - '0'));
+        return true;
+    }
 
     private static readonly HashSet<ushort> Modifiers = new() { 0xA2, 0xA0, 0xA4, 0x5B };
 
@@ -370,6 +520,7 @@ internal static class KeyParser
     {
         vk = 0;
         if (Named.TryGetValue(p, out vk)) return true;
+        if (TryNumPad(p, out vk)) return true;
         if (p.Length == 1)
         {
             char c = char.ToUpperInvariant(p[0]);

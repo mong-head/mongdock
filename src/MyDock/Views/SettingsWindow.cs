@@ -480,6 +480,8 @@ internal sealed partial class SettingsWindow : Window
                 Toggle(t.ShowLogo, on => Commit(() => T().ShowLogo = on))),
             Row("앱 이름", null, Toggle(t.ShowActiveAppName, on => Commit(() => T().ShowActiveAppName = on))),
             Row("앱 메뉴", "파일·편집·보기… (맥 메뉴 막대처럼)", Toggle(t.ShowAppMenus, on => Commit(() => T().ShowAppMenus = on))),
+            Row("앱 창 안 메뉴 줄 숨기기 (실험)", "실험: 메모장·그림판 같은 앱의 창 안 메뉴 줄을 숨기고 상단바에서만 보이게 (옛날식 표준 메뉴 앱만 — 윈도우 11 새 메모장·그림판은 해당 없음)",
+                Toggle(t.HideNativeMenuBars, on => Commit(() => T().HideNativeMenuBars = on))),
             Row("가상 데스크톱 버튼", null, Toggle(t.ShowDesktopButtons, on => Commit(() => T().ShowDesktopButtons = on))),
             Row("앱 트레이 아이콘", "작업 표시줄 대신 상단바에 다른 앱 트레이 아이콘을 보여 줍니다(작업 표시줄 숨기기를 켜면 자동으로 켜짐).",
                 Toggle(t.ShowTrayIcons, on => Commit(() => T().SetShowTrayIconsByUser(on), rebuild: true))),

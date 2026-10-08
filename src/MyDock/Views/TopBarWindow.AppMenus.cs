@@ -14,6 +14,8 @@ namespace MyDock.Views;
 /// - 메뉴가 열린 상태에서 다른 제목 위로 커서를 옮기면 클릭 없이 그 메뉴로 전환 (커서 폴링 — 열린 메뉴가 마우스를 캡처하므로).
 /// - 오른쪽 구역과 겹치기 전에 넘치는 제목은 "»" 하나로 묶어 하위 메뉴로.
 /// 상단바 창은 NOACTIVATE 라 메뉴를 여는 동안에도 포그라운드(단축키 대상)는 원래 앱 그대로다.
+/// - 하위 항목이 없는 제목(UI 자동화로 읽은 메뉴 막대 — 윈도우 11 메모장 등)은 누르면 앱 창 안의 실제 메뉴를 펼친다.
+/// - 앱 전용 "@app" 항목(예: VS Code 설정…)은 앱 이름 메뉴 맨 위에 붙는다 (<see cref="AddAppNameItems"/>).
 /// </summary>
 public partial class TopBarWindow
 {
@@ -27,6 +29,7 @@ public partial class TopBarWindow
     private Button? _openTitle;
     private DispatcherTimer? _hoverTimer;
     private bool _menuLayoutHooked;
+    private bool _menusChangedHooked;
 
     /// <summary>포그라운드 앱이 바뀌었으면 메뉴 제목 다시 구성.</summary>
     private void SyncAppMenus()
@@ -35,6 +38,7 @@ public partial class TopBarWindow
         IntPtr hwnd = app?.Hwnd ?? IntPtr.Zero;
         if (hwnd == _menuHwnd) return;
         _menuHwnd = hwnd;
+        HookMenusChanged();
 
         IReadOnlyList<AppMenu> menus = Array.Empty<AppMenu>();
         if (app != null && _services.Settings.Current.TopBar.ShowAppMenus)
@@ -44,6 +48,21 @@ public partial class TopBarWindow
         }
         _appMenus = menus.Where(m => !string.IsNullOrWhiteSpace(m.Title)).ToList();
         BuildTitleButtons();
+    }
+
+    /// <summary>백그라운드(UI 자동화) 조회가 끝나 지금 창의 메뉴가 바뀌면 제목 다시 구성 (열린 드롭다운이 없을 때만).</summary>
+    private void HookMenusChanged()
+    {
+        if (_menusChangedHooked) return;
+        _menusChangedHooked = true;
+        EventHandler<IntPtr> handler = (_, hwnd) => Dispatcher.BeginInvoke(() =>
+        {
+            if (hwnd != _menuHwnd || _openAppMenu?.IsOpen == true) return;
+            _menuHwnd = IntPtr.MaxValue;
+            SyncAppMenus();
+        }, DispatcherPriority.Background);
+        _services.AppMenus.MenusChanged += handler;
+        Closed += (_, _) => _services.AppMenus.MenusChanged -= handler;
     }
 
     private void BuildTitleButtons()
@@ -66,7 +85,11 @@ public partial class TopBarWindow
         {
             int index = i;
             var b = MakeTitleButton(CleanText(_appMenus[i].Title));
-            b.Click += (_, _) => ToggleAppMenu(b, () => BuildMenu(FreshMenu(index)));
+            b.Click += (_, _) =>
+            {
+                if (IsNativeOnly(index)) OpenNativeMenu(index);
+                else ToggleAppMenu(b, () => BuildMenu(FreshMenu(index)));
+            };
             _titleButtons.Add(b);
             AppMenuBar.Children.Add(b);
         }
@@ -81,6 +104,33 @@ public partial class TopBarWindow
 
         Remeasure(LeftSection);
         Dispatcher.BeginInvoke(LayoutTitles, DispatcherPriority.Loaded);
+    }
+
+    /// <summary>하위 항목을 미리 모르는 제목 (UI 자동화 메뉴 막대) → 앱 창의 실제 메뉴를 펼쳐야 함.</summary>
+    private bool IsNativeOnly(int index) => index < _appMenus.Count && _appMenus[index].Items.Count == 0;
+
+    private void OpenNativeMenu(int index)
+    {
+        CloseAppMenu();
+        _panel?.Close();
+        try { _services.AppMenus.OpenNativeMenu(_menuHwnd, _appMenus[index], index); }
+        catch (Exception ex) { Log.Error("앱 메뉴 펼치기 실패", ex); }
+    }
+
+    /// <summary>앱 이름 메뉴 맨 위에 앱 전용 항목(설정… 등)과 구분선을 붙임. OnAppNameClick 에서 호출.</summary>
+    private void AddAppNameItems(ContextMenu menu, AppWindowInfo? app)
+    {
+        if (app == null || !_services.Settings.Current.TopBar.ShowAppMenus) return;
+        IReadOnlyList<AppMenuItem> items;
+        try { items = _services.AppMenus.GetAppNameItems(app); }
+        catch (Exception ex)
+        {
+            Log.Error("앱 이름 메뉴 항목 읽기 실패", ex);
+            return;
+        }
+        if (items.Count == 0) return;
+        foreach (var item in items) menu.Items.Add(BuildItem(item, app.Hwnd));
+        menu.Items.Add(new Separator());
     }
 
     private Button MakeTitleButton(string text) => new()
@@ -173,13 +223,20 @@ public partial class TopBarWindow
         {
             var fresh = FreshMenu(i);
             var parent = new MenuItem { Header = CleanText(fresh.Title) };
+            if (IsNativeOnly(i))
+            {
+                int index = i;
+                parent.Click += (_, _) => Dispatcher.BeginInvoke(() => OpenNativeMenu(index), DispatcherPriority.Background);
+            }
             foreach (var item in fresh.Items) parent.Items.Add(BuildItem(item));
             cm.Items.Add(parent);
         }
         return cm;
     }
 
-    private object BuildItem(AppMenuItem item)
+    private object BuildItem(AppMenuItem item) => BuildItem(item, _menuHwnd);
+
+    private object BuildItem(AppMenuItem item, IntPtr target)
     {
         if (item.IsSeparator) return new Separator();
 
@@ -202,11 +259,10 @@ public partial class TopBarWindow
         };
         if (item.Children is { Count: > 0 } children)
         {
-            foreach (var c in children) mi.Items.Add(BuildItem(c));
+            foreach (var c in children) mi.Items.Add(BuildItem(c, target));
         }
         else
         {
-            IntPtr target = _menuHwnd;
             mi.Click += (_, _) =>
             {
                 CloseAppMenu();
@@ -292,7 +348,7 @@ public partial class TopBarWindow
             for (int i = 0; i < _titleButtons.Count; i++)
             {
                 var b = _titleButtons[i];
-                if (b == _openTitle || b.Visibility != Visibility.Visible) continue;
+                if (b == _openTitle || b.Visibility != Visibility.Visible || IsNativeOnly(i)) continue;
                 if (!OutsideClickWatcher.ScreenRect(b).Contains(c)) continue;
                 int index = i;
                 CloseAppMenu();

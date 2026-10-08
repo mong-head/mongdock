@@ -847,6 +847,7 @@ public partial class TopBarWindow : Window
         OutsideClickWatcher.Attach(menu, _services, BarArea);
         AppNameButton.Tag = "Active";
         menu.Closed += (_, _) => AppNameButton.Tag = null;
+        AddAppNameItems(menu, app); // 앱 전용 항목 (VS Code 설정… 등, TopBarWindow.AppMenus.cs)
 
         bool hasApp = app != null;
         // 경로를 못 읽은 창(관리자 권한 등)은 새 창·독 고정 불가 (빈 경로 Launch 방지)

@@ -162,6 +162,11 @@ public sealed class TopBarSettings
     public bool ShowDesktopButtons { get; set; } = true;
     /// <summary>앱 이름 오른쪽에 그 앱의 메뉴(파일·편집·보기…) 표시 (맥 메뉴바처럼).</summary>
     public bool ShowAppMenus { get; set; } = true;
+    /// <summary>
+    /// 실험(기본 꺼짐): 메모장(클래식)·그림판(클래식)·레지스트리 편집기·시스템 정보 같은 표준 Win32 메뉴 앱의
+    /// 창 안 메뉴 줄을 떼어 내고 상단바에서만 보이게. 끄거나 일시 정지·종료하면 되돌림 (NativeMenuHider).
+    /// </summary>
+    public bool HideNativeMenuBars { get; set; }
     /// <summary>왼쪽 로고 버튼 (클릭 시 MyDock 메뉴: 시작 메뉴, 설정, 종료 등).</summary>
     public bool ShowLogo { get; set; } = true;
     /// <summary>포그라운드 앱 이름 표시 (맥 메뉴바처럼 굵게).</summary>
