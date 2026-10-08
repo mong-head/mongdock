@@ -63,7 +63,7 @@ powershell -ExecutionPolicy Bypass -File build-release.ps1 -Version v0.2.0
 - **블루투스**: 오디오 기기(이어폰·스피커)는 눌러서 바로 연결/해제, 그 밖의 기기는 눌렀을 때 윈도우 블루투스 설정이 열린다.
 - **앱 트레이 아이콘**: 카카오톡·디스코드 같은 앱의 알림 영역 아이콘. 윈도우 11 의 "작업 표시줄에 항상 표시"(설정 > 개인 설정 > 작업 표시줄 > 기타 시스템 트레이 아이콘)를 켠 앱은 상단바에, 나머지는 ⌃ 안에 둔다. 상단바 아이콘을 끌어 ⌃ 에 놓으면 안으로, ⌃ 안의 아이콘을 끌어 상단바에 놓으면 밖으로, 바 안에서 끌면 순서가 바뀐다 (몽독에서 옮긴 자리가 윈도우 설정보다 우선, 재시작해도 유지). 설정 > 상단바 > "트레이 아이콘 정리" 에서 클릭으로도 바꿀 수 있고 "윈도우 설정대로 되돌리기" 로 초기화한다. 끄는 중 오른쪽 클릭이면 취소.
   - 원리: 앱들이 작업 표시줄에 보내는 트레이 아이콘 등록을 몽독이 먼저 받아 그대로 윈도우(explorer)에 전달하고, 같은 아이콘을 상단바에도 그린다 — 앱은 평소처럼 동작하고 작업 표시줄 트레이도 그대로다.
-  - 기본은 꺼짐. **"윈도우 작업 표시줄 숨기기" 를 켜면 자동으로 켜진다**(작업 표시줄이 없으면 트레이 아이콘에 닿을 곳이 상단바뿐이라). 설정 창이나 메뉴에서 직접 켜거나 끈 뒤에는 그 선택을 따른다.
+  - 새 설치는 작업 표시줄 숨기기와 함께 켜짐(기존 설정은 그대로). **"윈도우 작업 표시줄 숨기기" 를 켜면 자동으로 켜진다**(작업 표시줄이 없으면 트레이 아이콘에 닿을 곳이 상단바뿐이라). 설정 창이나 메뉴에서 직접 켜거나 끈 뒤에는 그 선택을 따른다.
   - 어떤 앱 아이콘이 이상하게 동작하면: 설정 > 상단바 > 표시할 항목 > "앱 트레이 아이콘" 을 끈다 (또는 `topBar.showTrayIcons` 를 `false`). 끄면 앱들은 곧바로 원래처럼 윈도우 작업 표시줄에만 등록한다. 일시 정지 중에도 꺼진다.
 - **여러 모니터**: 상단바는 모든 모니터에 표시(설정에서 주 모니터만으로 바꿀 수 있음), 독은 고른 모니터 하나에 표시.
 
@@ -134,7 +134,10 @@ powershell -ExecutionPolicy Bypass -File build-release.ps1 -Version v0.2.0
 - 트레이 아이콘 오른쪽 클릭: 설정… / 독 보이기 / 상단바 보이기 / 일시 정지 / 윈도우 작업 표시줄 숨기기 / 로그인 시 자동 실행 / 설정 파일 열기 / 종료
 - 상단바 로고 메뉴 → mongdock 에도 같은 항목이 있다
 - 트레이 아이콘이 안 보이면(윈도우 11 은 새 아이콘을 "^" 안에 숨김) `mongdock.exe` 를 한 번 더 실행해도 일시 정지가 풀린다
-- "윈도우 작업 표시줄 숨기기" 는 mongdock 이 켜져 있을 때만 숨기고, 일시 정지·종료하거나 오류로 꺼지면 원래대로 돌려놓는다
+- "윈도우 작업 표시줄 숨기기" 는 새로 설치하면 **기본으로 켜져 있다**. mongdock 이 켜져 있을 때만 숨기고, 일시 정지·종료하거나 오류로 꺼지면 원래대로 돌려놓는다
+  - 윈도우 작업 표시줄 자동 숨김을 안 쓰는 PC 에선 숨기는 동안만 자동 숨김을 잠깐 켜서(작업 표시줄 자리에 빈 띠가 남지 않게) 끌 때·일시 정지·종료 때 다시 끈다. 원래부터 자동 숨김을 쓰던 PC 는 건드리지 않고, 그 사이 윈도우 설정에서 직접 자동 숨김을 껐다면 그대로 둔다
+  - 원래 상태는 `%APPDATA%\mongdock\cache	askbar-state.json` 에 적어 둔다. 강제 종료돼 이 파일이 남으면 다음 실행 때(숨기기가 꺼져 있으면) 원래대로 돌리고, 제거할 때도 `mongdock.exe --restore-taskbar` 로 되돌린다
+  - 처음 켤 때 윈도우 작업 표시줄에 고정해 둔 앱 중 독에 없는 것을 작업 표시줄 순서대로 독 끝에 가져온다 (설정 > 독 > "작업 표시줄 고정 앱 가져오기" 로 언제든 다시)
 - 명령줄 `mongdock.exe --exit` 로 실행 중인 mongdock 을 정상 종료할 수 있다 (트레이 "종료" 와 같음)
 
 ### 지우기
@@ -156,7 +159,7 @@ zip 으로 썼다면:
 | 상단바 크기 | `topBar.height` (기본 26), `topBar.fontSize` (기본 13) |
 | 상단바 색·표시 항목 | `topBar.colorMode` (`Auto`(기본, 앱 색에 맞춤)/`Fixed`/`Transparent`/`Blur`), `topBar.background`, `topBar.showAppMenus` … |
 | 상단바 모니터 | `topBar.showOnAllMonitors` — `false` 면 주 모니터에만 |
-| 앱 트레이 아이콘 | `topBar.showTrayIcons` (기본 `false`, 작업 표시줄 숨기기를 켜면 자동으로 `true`), `topBar.trayIconsVisibleCount` (상단바에 바로 보일 최대 개수, 기본 10 — 넘으면 ⌃ 안으로), `topBar.trayIconPlacement` (몽독에서 옮긴 자리 — 키는 GUID 또는 `"exe이름:uID"`, 값 `{ "onBar": true, "order": 0 }`, 비우면 윈도우 설정대로) |
+| 앱 트레이 아이콘 | `topBar.showTrayIcons` (속성 기본 `false` — 새 설치는 `true`, 작업 표시줄 숨기기를 켜면 자동으로 `true`), `topBar.trayIconsVisibleCount` (상단바에 바로 보일 최대 개수, 기본 10 — 넘으면 ⌃ 안으로), `topBar.trayIconPlacement` (몽독에서 옮긴 자리 — 키는 GUID 또는 `"exe이름:uID"`, 값 `{ "onBar": true, "order": 0 }`, 비우면 윈도우 설정대로) |
 | 시계 달력 | `topBar.calendarApp` (날짜를 두 번 누르면 열 캘린더: `Google`/`OutlookWeb`/`Naver`/`NewOutlook`/`ClassicOutlook`/`WindowsCalendar`), `calendar.refreshMinutes` (구독 캘린더 새로고침 주기, 기본 15분) |
 | 검색 | `topBar.searchMode` (`Spotlight`/`Windows`), `topBar.spotlightHotkey` (`Auto`/`WinSpace`/`AltSpace`/`CtrlSpace`/`None`) |
 | 검색 항목 | `search.apps` · `settings` · `calculator` · `folders` · `documents` · `media` · `otherFiles` · `webSearch` · `windowsSearch` (기본 모두 `true`), `search.fileSearchFolders`, `search.maxPerCategory` (기본 5), `search.webSearchEngine` (`Google`/`Naver`/`Bing`) |
@@ -168,7 +171,7 @@ zip 으로 썼다면:
 | 업데이트 확인 | `checkForUpdates` (기본 `true`) — 시작 1분 뒤와 12시간마다 GitHub 릴리스 확인 |
 | 핀 목록 | `pins` |
 
-색 문자열이 `""` 이면 테마 기본값. 첫 실행 때 MyDockFinder 의 `ico.ini` 가 있으면 핀 목록을 가져온다.
+색 문자열이 `""` 이면 테마 기본값. 첫 실행 때 MyDockFinder 의 `ico.ini` 가 있으면 핀 목록을 가져오고(그 뒤 작업 표시줄 고정 앱 중 없는 것 추가), 없으면 Finder·Launchpad 다음에 윈도우 작업 표시줄 고정 앱을 작업 표시줄 순서대로 둔다(파일 탐색기 제외, 고정 앱이 없으면 Finder·Launchpad·브라우저·설정).
 
 로그: `%APPDATA%\mongdock\logs\mongdock.log`
 

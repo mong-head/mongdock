@@ -8,15 +8,33 @@ public static class DefaultPins
 {
     private const string SettingsAumid = "windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel";
 
+    /// <summary>
+    /// 새 설치의 첫 핀: Finder, Launchpad 다음에 윈도우 작업 표시줄 고정 앱을 작업 표시줄 순서대로 (<see cref="TaskbarPins"/>,
+    /// 파일 탐색기 제외·중복 제거). 작업 표시줄 고정 앱이 하나도 없으면 <see cref="Create"/> 와 같음.
+    /// </summary>
+    public static List<PinItem> CreateInitial(ISettingsService settings)
+    {
+        var taskbar = TaskbarPins.Read(settings);
+        if (taskbar.Count == 0) return Create();
+        var pins = Base();
+        int added = TaskbarPins.AddMissing(pins, taskbar);
+        Log.Info($"기본 고정 앱: Finder·Launchpad + 작업 표시줄 고정 앱 {added}개");
+        return pins;
+    }
+
+    private static List<PinItem> Base() => new()
+    {
+        new PinItem { Name = "Finder", Kind = PinKind.Exe, Target = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe") },
+        new PinItem { Name = "Launchpad", Kind = PinKind.Special, Target = "launchpad" },
+    };
+
     /// <summary>Finder(탐색기), Launchpad, 브라우저(크롬 우선, 없으면 엣지), 설정 — 설치 확인된 것만.</summary>
     public static List<PinItem> Create()
     {
         var pins = new List<PinItem>();
         try
         {
-            string explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
-            pins.Add(new PinItem { Name = "Finder", Kind = PinKind.Exe, Target = explorer });
-            pins.Add(new PinItem { Name = "Launchpad", Kind = PinKind.Special, Target = "launchpad" });
+            pins.AddRange(Base());
 
             string? browser = FirstExisting(
                 @"%ProgramFiles%\Google\Chrome\Application\chrome.exe",

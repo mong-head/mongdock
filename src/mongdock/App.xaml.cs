@@ -43,6 +43,23 @@ public partial class App : Application
             return;
         }
 
+        // 제거 프로그램용: 강제 종료로 남은 작업 표시줄 숨김·자동 숨김을 원래대로 (mongdock 이 실행 중이 아닐 때만)
+        if (e.Args.Any(a => string.Equals(a, "--restore-taskbar", StringComparison.OrdinalIgnoreCase)))
+        {
+            if (Mutex.TryOpenExisting(@"Local\mongdock.SingleInstance", out var running))
+            {
+                running.Dispose();
+                Log.Info("--restore-taskbar: mongdock 실행 중 → 건너뜀");
+            }
+            else
+            {
+                try { DesktopWindowService.RestoreTaskbarFromRecord(); }
+                catch (Exception ex) { Log.Error("--restore-taskbar 실패", ex); }
+            }
+            Shutdown();
+            return;
+        }
+
         _singleInstance = new Mutex(true, @"Local\mongdock.SingleInstance", out bool isFirst);
         if (isFirst)
             AppInfo.MigrateLegacyInstall();
@@ -230,13 +247,17 @@ public partial class App : Application
             {
                 current.Pins.AddRange(new MyDockFinderImporter(settings).Import(MyDockFinderIni));
                 Log.Info($"MyDockFinder 핀 {current.Pins.Count}개 가져옴");
+                // 그 뒤 작업 표시줄 고정 앱 중 없는 것만
+                TaskbarPins.AddMissingTo(current, settings);
             }
             else
             {
-                current.Pins.AddRange(DefaultPins.Create());
+                // Finder·Launchpad + 작업 표시줄 고정 앱 (없으면 기존 기본 핀)
+                current.Pins.AddRange(DefaultPins.CreateInitial(settings));
                 Log.Info($"기본 핀 {current.Pins.Count}개 설정");
             }
             current.ImportedFromMyDockFinder = true;
+            current.TaskbarPinsImported = true;
             settings.Save();
         }
         catch (Exception ex)

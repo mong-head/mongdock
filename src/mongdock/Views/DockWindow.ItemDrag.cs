@@ -473,7 +473,7 @@ public partial class DockWindow
 
         try
         {
-            var newPins = paths.Select(path => DockDropFiles.CreatePin(path, _services.Settings))
+            var newPins = paths.Select(path => PinFactory.CreatePin(path, _services.Settings))
                                .OfType<PinItem>().ToList();
             if (newPins.Count == 0) return;
             ModifyPins(list =>
