@@ -16,14 +16,18 @@ internal static class AudioSessions
 
     /// <summary>캡처 장치들의 Active 세션 프로세스 id (pid 0·자기 자신 제외). 실패하면 빈 집합.</summary>
     public static HashSet<uint> ActiveCaptureProcessIds()
+        => ActiveCaptureByDevice().Values.SelectMany(p => p).ToHashSet();
+
+    /// <summary>캡처 장치 id → 그 장치에서 지금 녹음 중인 프로세스 id (pid 0·자기 자신 제외). 실패하면 빈 사전.</summary>
+    public static Dictionary<string, HashSet<uint>> ActiveCaptureByDevice()
     {
-        var pids = new HashSet<uint>();
+        var byDevice = new Dictionary<string, HashSet<uint>>(StringComparer.OrdinalIgnoreCase);
         object? enumObj = null;
         try
         {
             enumObj = new MMDeviceEnumeratorClass();
             var en = (IMMDeviceEnumerator)enumObj;
-            if (en.EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE, out var devices) != 0 || devices == null) return pids;
+            if (en.EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE, out var devices) != 0 || devices == null) return byDevice;
             try
             {
                 devices.GetCount(out uint count);
@@ -33,9 +37,14 @@ internal static class AudioSessions
                     if (devices.Item(i, out var device) != 0 || device == null) continue;
                     try
                     {
+                        if (device.GetId(out string? id) != 0 || id == null) continue;
                         if (device.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out var mgrObj) != 0 || mgrObj is not IAudioSessionManager2 mgr) continue;
+                        var pids = new HashSet<uint>();
                         try { Collect(mgr, pids); }
                         finally { Marshal.ReleaseComObject(mgr); }
+                        pids.Remove(0);
+                        pids.Remove((uint)Environment.ProcessId);
+                        if (pids.Count > 0) byDevice[id] = pids;
                     }
                     finally { Marshal.ReleaseComObject(device); }
                 }
@@ -50,9 +59,7 @@ internal static class AudioSessions
         {
             if (enumObj != null) Marshal.ReleaseComObject(enumObj);
         }
-        pids.Remove(0);
-        pids.Remove((uint)Environment.ProcessId);
-        return pids;
+        return byDevice;
     }
 
     private static void Collect(IAudioSessionManager2 mgr, HashSet<uint> pids)

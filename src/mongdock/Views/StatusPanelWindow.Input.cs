@@ -85,20 +85,44 @@ internal sealed partial class StatusPanelWindow
             SetCircle(micCircle, muted ? MicOffGlyph : MicGlyph, !muted);
             micButton.ToolTip = muted ? "마이크 켜기" : "마이크 끄기";
 
-            string sig = string.Join("|", visible.Select(d => $"{d.Id}:{d.IsDefault}:{d.Name}:{d.Kind}"));
+            // 장치마다 지금 녹음 중인 앱 ("사용 중: Discord") — 슬라이더는 기본 장치만 바꾸므로, 앱이 다른 마이크를 쓰면 알 수 있게
+            var inUse = InputUsageByDevice();
+            string sig = string.Join("|", visible.Select(d => $"{d.Id}:{d.IsDefault}:{d.Name}:{d.Kind}:{(inUse.TryGetValue(d.Id, out var u) ? u : "")}"));
             if (sig == signature) return;
             signature = sig;
             devices.Children.Clear();
             foreach (var d in visible)
             {
                 var id = d.Id;
-                devices.Children.Add(DeviceRow(InputGlyph(d.Kind), d.IsDefault, d.Name,
-                    d.Kind == AudioDeviceKind.Loopback ? "재생 소리 녹음" : null,
+                string? sub = inUse.TryGetValue(d.Id, out var apps) ? "사용 중: " + apps
+                    : d.Kind == AudioDeviceKind.Loopback ? "재생 소리 녹음" : null;
+                devices.Children.Add(DeviceRow(InputGlyph(d.Kind), d.IsDefault, d.Name, sub,
                     d.IsDefault ? null : () => st.SetDefaultInput(id)));
             }
             devices.Visibility = visible.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         });
         return section;
+    }
+
+    /// <summary>입력 장치 id → 그 장치로 지금 녹음 중인 앱 이름들 ("Discord, 녹음기"). 실패하면 빈 사전.</summary>
+    private static Dictionary<string, string> InputUsageByDevice()
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var (id, pids) in Native.AudioSessions.ActiveCaptureByDevice())
+            {
+                var names = pids.Select(pid =>
+                {
+                    var (path, _) = Native.Kernel32.QueryProcess(pid);
+                    return string.IsNullOrEmpty(path) ? null
+                        : ViewModels.AppNames.Get(new Models.AppWindowInfo(IntPtr.Zero, "", path, null, false));
+                }).Where(n => !string.IsNullOrEmpty(n)).Distinct().ToList();
+                if (names.Count > 0) result[id] = string.Join(", ", names);
+            }
+        }
+        catch (Exception ex) { Log.Warn($"입력 장치 사용 앱 조회 실패: {ex.Message}"); }
+        return result;
     }
 
     private static string InputGlyph(AudioDeviceKind kind) => kind switch
