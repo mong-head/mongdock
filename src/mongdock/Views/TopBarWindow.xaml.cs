@@ -28,10 +28,10 @@ public partial class TopBarWindow : Window
     private static readonly Color AlmostClear = Color.FromArgb(1, 0, 0, 0);
 
     private readonly AppServices _services;
-    private readonly DispatcherTimer _pollTimer;   // 한/영 + 포그라운드 앱 이름 (300ms)
-    private readonly DispatcherTimer _clockTimer;  // 시계 (1초)
+    private readonly DispatcherTimer _pollTimer;   // 한/영 + 포그라운드 앱 이름 (300ms, 가벼운 모드 600ms)
+    private readonly DispatcherTimer _clockTimer;  // 시계 (초 표시면 1초, 아니면 다음 분 경계에 한 번)
     private readonly DispatcherTimer _imeRecheck;  // 한/영 클릭 후 재조회 (150ms, 1회)
-    private readonly DispatcherTimer _colorTimer;  // Auto 색 샘플링 (500ms)
+    private readonly DispatcherTimer _colorTimer;  // Auto 색 샘플링 (500ms, 가벼운 모드 1초)
     private readonly DispatcherTimer _colorSoon;   // 활성화/데스크톱 전환 직후 1회 재계산
     private readonly SolidColorBrush _barBrush = new(Color.FromArgb(1, 0, 0, 0)); // 페이드용 (Freeze 안 함)
 
@@ -77,7 +77,7 @@ public partial class TopBarWindow : Window
         _pollTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(300) };
         _pollTimer.Tick += (_, _) => { UpdateIme(); UpdateAppName(); };
         _clockTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
-        _clockTimer.Tick += (_, _) => UpdateClock();
+        _clockTimer.Tick += (_, _) => { UpdateClock(); ScheduleClock(); };
         _imeRecheck = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
         _imeRecheck.Tick += (_, _) => { _imeRecheck.Stop(); UpdateIme(); };
         _colorTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(500) };
@@ -87,6 +87,7 @@ public partial class TopBarWindow : Window
 
         ContextMenu = BuildContextMenu();
         HookReorder(); // 길게 눌러 끌어 오른쪽 아이콘 순서 바꾸기 (TopBarWindow.Reorder.cs)
+        HookRightFit(); // 좁은 화면에서 오른쪽 구역 우선순위 접기 (TopBarWindow.Fit.cs)
 
         SourceInitialized += OnSourceInitialized;
         DpiChanged += (_, _) => Dispatcher.BeginInvoke(() => OnDisplayChanged(this, EventArgs.Empty), DispatcherPriority.Loaded);
@@ -94,6 +95,42 @@ public partial class TopBarWindow : Window
         ContentRendered += (_, _) => { Remeasure(LeftSection); Remeasure(RightSection); };
         Closed += OnClosed;
         AppNames.NamesChanged += OnAppNamesChanged;
+        // 시계를 분 경계에만 깨우므로 시간이 바뀌거나 절전에서 깨어나면 바로 다시 맞춤
+        Microsoft.Win32.SystemEvents.TimeChanged += OnSystemTimeChanged;
+        Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
+    }
+
+    private void OnSystemTimeChanged(object? sender, EventArgs e) => Dispatcher.BeginInvoke(RefreshClockNow);
+
+    private void OnPowerModeChanged(object? sender, Microsoft.Win32.PowerModeChangedEventArgs e)
+    {
+        if (e.Mode == Microsoft.Win32.PowerModes.Resume) Dispatcher.BeginInvoke(RefreshClockNow);
+    }
+
+    private void RefreshClockNow()
+    {
+        if (_closed || !_clockTimer.IsEnabled) return;
+        UpdateClock();
+        ScheduleClock();
+    }
+
+    /// <summary>
+    /// 다음 시계 갱신 시점: 초를 보여 주는 형식이면 1초 뒤, 아니면 다음 분 경계 직후 (매초 깨우지 않음).
+    /// 형식 판단이 애매한 표준 한 글자 형식("T" 등)은 1초.
+    /// </summary>
+    private void ScheduleClock()
+    {
+        string fmt = _services.Settings.Current.TopBar.ClockFormat;
+        if (string.IsNullOrWhiteSpace(fmt)) fmt = DefaultClockFormat;
+        bool seconds = fmt.Length <= 1 || fmt.Contains('s') || fmt.Contains('f') || fmt.Contains('F');
+        TimeSpan next;
+        if (seconds) next = TimeSpan.FromSeconds(1);
+        else
+        {
+            var now = DateTime.Now;
+            next = TimeSpan.FromMilliseconds(60_000 - (now.Second * 1000 + now.Millisecond) + 30);
+        }
+        if (_clockTimer.Interval != next) _clockTimer.Interval = next;
     }
 
     /// <summary>시작 메뉴 이름 매핑이 늦게 끝나 앱 이름이 바뀜 → 지금 앱 이름 다시 표시.</summary>
@@ -133,6 +170,8 @@ public partial class TopBarWindow : Window
     {
         _closed = true;
         AppNames.NamesChanged -= OnAppNamesChanged;
+        Microsoft.Win32.SystemEvents.TimeChanged -= OnSystemTimeChanged;
+        Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         UnhookUpdates();
         _pollTimer.Stop();
         _clockTimer.Stop();
@@ -207,10 +246,12 @@ public partial class TopBarWindow : Window
         {
             _panel?.Close();
             if (IsVisible) Hide();
+            StopTimers(); // 숨어 있는 동안 시계·앱 이름·색 확인 멈춤
         }
         else if (_services.Settings.Current.TopBar.Enabled && !AppState.Paused && IsLoaded && !IsVisible)
         {
             Show();
+            StartTimers();
             UpdateColors();
         }
     }
@@ -222,6 +263,7 @@ public partial class TopBarWindow : Window
     private void ApplySettings()
     {
         if (!_initialized || _closed) return;
+        PerfMode.Sync(_services.Settings.Current);
         UiFonts.Apply(_services.Settings.Current);
         var s = _services.Settings.Current.TopBar;
         double height = Math.Clamp(double.IsNaN(s.Height) ? 26 : s.Height, 16, 80);
@@ -231,9 +273,8 @@ public partial class TopBarWindow : Window
         AppNameButton.Visibility = Vis(s.ShowActiveAppName);
         AppMenuBar.Visibility = Vis(s.ShowAppMenus);
         _menuHwnd = IntPtr.MaxValue; // 설정이 바뀌면 메뉴 다시 구성
-        DesktopButtons.Visibility = Vis(s.ShowDesktopButtons);
+        ApplyFoldVisibility(); // 네트워크 속도·데스크톱 묶음 (좁은 화면에서 접혔으면 숨김 — TopBarWindow.Fit.cs)
         DesktopButtons.Background = DesktopGroupPill ? BrushParser.Frozen(Color.FromArgb(0x0D, 0, 0, 0)) : Brushes.Transparent;
-        NetSpeed.Visibility = Vis(s.ShowNetworkSpeed);
         // 블루투스는 어댑터가 없으면 UpdateStatus 에서 다시 숨김
         BluetoothButton.Visibility = Vis(s.ShowStatusIcons && _services.Status.BluetoothOn != null);
         WifiButton.Visibility = Vis(s.ShowStatusIcons);
@@ -297,8 +338,21 @@ public partial class TopBarWindow : Window
         UpdateIme();
         UpdateAppName(force: true);
         UpdateStatus();
+        if (_fullscreen) StopTimers();
+        else StartTimers();
+    }
+
+    /// <summary>시계·한/영·앱 이름 확인 (+ Auto 색이면 색 샘플링) 시작. 주기는 가벼운 모드면 2배.</summary>
+    private void StartTimers()
+    {
+        if (_closed) return;
+        UpdateClock();
+        ScheduleClock();
         _clockTimer.Start();
+        _pollTimer.Interval = PerfMode.Interval(300);
         _pollTimer.Start();
+        _colorTimer.Interval = PerfMode.Interval(500);
+        if (ColorMode == TopBarColorMode.Auto) _colorTimer.Start();
     }
 
     private void SetStatusPolling(bool speed, bool radios)
@@ -336,6 +390,22 @@ public partial class TopBarWindow : Window
         Bar.BorderThickness = new Thickness(0);
         UiTheme.Apply(_services.Settings.Current);
         SetWallpaperWatch(s.Enabled && s.ColorMode == TopBarColorMode.Transparent);
+
+        if (s.ColorMode == TopBarColorMode.Blur && PerfMode.Current)
+        {
+            // 가벼운 모드: 블러 대신 같은 틴트의 반투명 단색 (DWM 아크릴 부담 없이)
+            if (_blurOn)
+            {
+                try { _services.DesktopWindows.DisableBlur(this); }
+                catch (Exception ex) { Log.Error("상단바 블러 해제 실패", ex); }
+                _blurOn = false;
+            }
+            var solid = BrushParser.ParseColor(s.Background, BrushParser.Hex("#E0F6F6F6"));
+            if (solid.A < 0xD8) solid.A = 0xD8;
+            SetBarColor(solid, animate: false);
+            SetTextColors(AutoText(solid), AutoText(solid));
+            return;
+        }
 
         if (s.ColorMode == TopBarColorMode.Blur)
         {
@@ -764,7 +834,7 @@ public partial class TopBarWindow : Window
 
         var p = anchor.TranslatePoint(new Point(0, 0), this);
         var rect = new Rect(Left + p.X, Top + p.Y, anchor.ActualWidth, anchor.ActualHeight);
-        var panel = new StatusPanelWindow(_services, kind, UiTheme.Palette(_services.Settings.Current));
+        var panel = new StatusPanelWindow(_services, kind, UiTheme.Palette(_services.Settings.Current), TrayFold);
         panel.Closed += (_, _) =>
         {
             if (_panel != panel) return;

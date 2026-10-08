@@ -73,9 +73,15 @@ public sealed class DockLayout
     /// <summary>블러 창의 DWM 둥근 모서리 반경 (DWMWCP_ROUND).</summary>
     public const double BlurCornerRadius = 8;
 
-    public static DockLayout From(DockSettings s, bool systemLight)
+    /// <param name="lightweight">가벼운 모드: 블러·물결 확대·호버 확대를 끔 (PerfMode).</param>
+    /// <param name="iconSizeOverride">화면에 다 안 들어갈 때 줄인 아이콘 크기 (DockWindow 자동 맞춤). null 이면 설정값.</param>
+    /// <param name="spacingOverride">아이콘을 최소까지 줄여도 넘칠 때 줄인 간격. null 이면 설정값.</param>
+    public static DockLayout From(DockSettings s, bool systemLight, bool lightweight = false, double? iconSizeOverride = null,
+        double? spacingOverride = null)
     {
         double icon = Clamp(s.IconSize, 16, 256, 52);
+        if (iconSizeOverride is double fit && fit >= 16 && fit < icon) icon = Math.Floor(fit);
+        bool blur = s.Blur && !lightweight;
         bool light = s.Theme switch
         {
             DockTheme.Light => true,
@@ -102,16 +108,16 @@ public sealed class DockLayout
             Edge = s.Edge,
             Mode = s.Mode,
             IsLight = light,
-            Blur = s.Blur,
-            Wave = s.WaveMagnification,
+            Blur = blur,
+            Wave = s.WaveMagnification && !lightweight,
             LaunchAnimation = s.LaunchAnimation,
             IconSize = icon,
-            Spacing = Clamp(s.IconSpacing, 0, 64, 5),
-            HoverScale = Clamp(s.HoverScale, 1, 3, 1.36),
+            Spacing = spacingOverride is double sp && sp >= 0 ? Math.Min(sp, Clamp(s.IconSpacing, 0, 64, 5)) : Clamp(s.IconSpacing, 0, 64, 5),
+            HoverScale = lightweight ? 1 : Clamp(s.HoverScale, 1, 3, 1.36),
             Padding = Math.Round(Math.Max(5, icon * 0.12)),
             EdgeMargin = Clamp(s.Margin, 0, 200, 10),
             // 아크릴은 region 으로 잘리지 않고 DWM 둥근 모서리(약 8px 고정)로만 둥글어짐 → 블러일 땐 8 에 맞춤
-            CornerRadius = s.Blur ? BlurCornerRadius : Clamp(s.CornerRadius, 0, 128, 16),
+            CornerRadius = blur ? BlurCornerRadius : Clamp(s.CornerRadius, 0, 128, 16),
             IndicatorSize = Math.Round(Math.Clamp(icon * 0.085, 4, 6)),
             NotificationSize = Math.Round(Math.Max(8, icon * 0.2)),
             Tint = tint,

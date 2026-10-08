@@ -14,6 +14,10 @@ namespace Mongdock.Views;
 /// 다른 아이콘들이 비켜선다. 놓으면 TopBar.RightItemsOrder 에 저장. 끄는 중 오른쪽 클릭 = 취소. 시계는 맨 오른쪽 고정.
 /// 짧게 누르면 기존 클릭, 0.4초 안에 움직이면(트레이 아이콘이면 트레이 끌기) 길게 누르기 취소.
 /// 트레이 영역(TrayArea + ⌃)은 한 덩어리로만 움직인다.
+///
+/// 터치: 이 구역은 윈도우 "누르고 있기"(손 떼면 오른쪽 클릭) 제스처를 끈다 — 켜 두면 손가락을 대는 순간의 누름이
+/// 제스처 판정이 끝날 때까지 승격되지 않아 0.4초 길게 누르기가 시작되지 않고, 떼면 메뉴까지 같이 뜬다.
+/// 대신 터치로 길게 누른 뒤 움직이지 않고 떼면 그 아이콘의 오른쪽 클릭(트레이 아이콘 = 앱 메뉴, 나머지 = 상단바 메뉴).
 /// </summary>
 public partial class TopBarWindow
 {
@@ -32,6 +36,9 @@ public partial class TopBarWindow
     private int _reorderOriginalIndex, _reorderTarget;
     private bool _reorderEnding;
     private bool _reorderSwallowRightUp, _reorderSwallowLeftUp;
+    private bool _pressTouch;          // 지금 길게 누르기가 터치로 시작됐는지
+    private object? _pressSource;      // 누른 바로 그 요소 (트레이 아이콘 찾기용)
+    private bool _reorderMoved;        // 순서 바꾸기 중 실제로 움직였는지
 
     private Dictionary<string, FrameworkElement> RightItems() => new()
     {
@@ -67,6 +74,7 @@ public partial class TopBarWindow
 
     private void HookReorder()
     {
+        Stylus.SetIsPressAndHoldEnabled(RightSection, false);
         RightSection.PreviewMouseLeftButtonDown += OnRightPressDown;
         RightSection.PreviewMouseMove += OnRightPressMove;
         RightSection.PreviewMouseLeftButtonUp += OnRightPressUp;
@@ -96,6 +104,8 @@ public partial class TopBarWindow
         var item = RightItemFrom(e.OriginalSource);
         if (item == null || ReferenceEquals(item, ClockButton)) return;
         _pressItem = item;
+        _pressTouch = TouchSupport.IsTouch(e);
+        _pressSource = e.OriginalSource;
         _pressAt = e.GetPosition(RightSection);
         if (_pressTimer == null)
         {
@@ -142,6 +152,7 @@ public partial class TopBarWindow
         if (!RightSection.CaptureMouse()) return; // 버튼은 캡처를 잃어 클릭이 나가지 않음
 
         _reorderItem = item;
+        _reorderMoved = false;
         _reorderEnding = false;
         _reorderSwallowLeftUp = _reorderSwallowRightUp = false;
         _reorderOriginalIndex = _reorderTarget = index;
@@ -185,6 +196,7 @@ public partial class TopBarWindow
         e.Handled = true;
         if (_reorderEnding) return;
         double dx = e.GetPosition(RightSection).X - _pressAt.X;
+        if (Math.Abs(dx) > PressSlop) _reorderMoved = true;
         // 구역 밖(시계 위 포함)으로는 못 나가게
         dx = Math.Clamp(dx, _reorderStart - _reorderLeft, _reorderEnd - (_reorderLeft + _reorderWidth));
         var (_, shift) = Anim.Transforms(_reorderItem);
@@ -233,7 +245,40 @@ public partial class TopBarWindow
             return;
         }
         e.Handled = true;
+        var item = _reorderItem;
+        bool touchMenu = _pressTouch && !_reorderMoved;
         EndReorder(commit: true);
+        // 터치로 길게 누르고 그대로 뗌 = 오른쪽 클릭 (시스템 누르고 있기 제스처를 끈 대신)
+        if (touchMenu) Dispatcher.BeginInvoke(() => TouchRightClick(item), DispatcherPriority.Input);
+    }
+
+    /// <summary>터치 길게 누르기 → 오른쪽 클릭: 트레이 아이콘이면 그 앱의 메뉴, 아니면 상단바 메뉴.</summary>
+    private void TouchRightClick(FrameworkElement item)
+    {
+        if (_closed) return;
+        DependencyObject? d = _pressSource as DependencyObject;
+        while (d != null && d is not TrayIconButton && !ReferenceEquals(d, RightSection))
+            d = d is Visual ? VisualTreeHelper.GetParent(d) : LogicalTreeHelper.GetParent(d);
+        if (d is TrayIconButton tray)
+        {
+            tray.SendRightClick();
+            return;
+        }
+        if (ContextMenu is { } menu)
+        {
+            // 손가락 아래가 아니라 아이콘 바로 아래에 (닫히면 마우스 오른쪽 클릭용 기본값으로 되돌림)
+            menu.PlacementTarget = item;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            RoutedEventHandler? restore = null;
+            restore = (_, _) =>
+            {
+                menu.Closed -= restore;
+                menu.ClearValue(System.Windows.Controls.ContextMenu.PlacementTargetProperty);
+                menu.ClearValue(System.Windows.Controls.ContextMenu.PlacementProperty);
+            };
+            menu.Closed += restore;
+            menu.IsOpen = true;
+        }
     }
 
     /// <summary>끄는 중 오른쪽 클릭 = 취소 (상단바는 포커스가 없어 Esc 가 오지 않음).</summary>

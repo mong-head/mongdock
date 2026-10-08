@@ -32,7 +32,8 @@ internal sealed class SpotlightWindow : Window
     private const double RowHeight = 44;
     private const double HeaderHeight = 26;
     /// <summary>파일 경로 부제의 최대 폭 (카드 폭 − 여백·아이콘·스크롤바·"폴더에서 보기" 버튼 자리).</summary>
-    private const double SubtitleMaxWidth = CardWidth - 16 - 22 - 44 - 10 - 110;
+    /// <summary>경로 부제목 최대 폭 — 카드가 좁은 화면에 맞춰 줄면 같이 줄어듦.</summary>
+    private double SubtitleMaxWidth => Math.Max(120, Width - ShadowMargin * 2 - 16 - 22 - 44 - 10 - 110);
     /// <summary>결과 목록 최대 높이 = 모니터 높이의 이 비율 (넘치면 스크롤).</summary>
     private const double MaxListRatio = 0.55;
     private const double AppIconSize = 32;
@@ -304,6 +305,14 @@ internal sealed class SpotlightWindow : Window
             ? bounds.Height / scale
             : _services.DesktopWindows.GetPrimaryScreenBounds().Height;
         if (monitorDip > 0) _scroll.MaxHeight = Math.Max(RowHeight * 4, monitorDip * MaxListRatio - 60);
+
+        // 카드 폭: 세로 모니터·높은 배율(1080 px @150% = 720 DIP, @200% = 540 DIP)에서 화면보다 넓지 않게 (양옆 12 DIP 여유).
+        // 그림자 여백은 화면 밖으로 나가도 됨 (투명)
+        double monitorWidthDip = monitor != IntPtr.Zero && scale > 0
+            ? bounds.Width / scale
+            : _services.DesktopWindows.GetPrimaryScreenBounds().Width;
+        if (monitorWidthDip > 0)
+            Width = Math.Min(CardWidth, Math.Max(280, monitorWidthDip - 24)) + ShadowMargin * 2;
 
         // 열기: 페이드 + 아주 약한 확대(0.97→1, 150ms, ease-out)
         Anim.Appear(_root, 150, fromScale: 0.97, origin: new Point(0.5, 0.3));

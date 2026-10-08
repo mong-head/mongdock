@@ -57,7 +57,7 @@ public partial class TopBarWindow
             return;
         }
 
-        var (onBar, overflow) = TrayIconButton.Split(_services);
+        var (onBar, overflow) = TrayIconButton.Split(_services, TrayFold); // 좁은 화면이면 뒤쪽부터 ⌃ 로 (TopBarWindow.Fit.cs)
         var style = (Style)FindResource("BarButton");
         var keys = new List<string>(onBar.Count + 1);
         foreach (var info in onBar)

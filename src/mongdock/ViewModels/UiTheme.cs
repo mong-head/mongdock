@@ -111,6 +111,8 @@ public static class UiTheme
     /// <summary>메뉴 템플릿이 쓰는 앱 리소스 색을 테마에 맞게 갱신 (바뀔 때만).</summary>
     public static void Apply(Settings settings)
     {
+        PerfMode.Sync(settings);
+        Views.TouchSupport.ApplyResources(); // 터치 장치면 메뉴 행 높이 +4
         bool light = IsLight(settings);
         if (_applied == light || Application.Current == null) return;
         _applied = light;

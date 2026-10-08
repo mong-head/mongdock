@@ -99,7 +99,8 @@
                 <ControlTemplate TargetType="{x:Type MenuItem}">
                     <Grid Background="Transparent">
                         <Border x:Name="Hl" CornerRadius="5" Background="{DynamicResource Menu.Accent}" Opacity="0" />
-                        <Grid MinHeight="26" Margin="0,0,6,0">
+                        <!-- 행 높이: 기본 26, 터치 장치면 30 (Views/TouchSupport.ApplyResources) -->
+                        <Grid MinHeight="{DynamicResource MenuRowMinHeight}" Margin="0,0,6,0">
                             <Grid.ColumnDefinitions>
                                 <!-- 체크 표시 자리만 (아이콘 거터 없음) -->
                                 <ColumnDefinition Width="22" />

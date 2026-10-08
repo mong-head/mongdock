@@ -73,6 +73,7 @@ public partial class DockWindow
     private void OnItemPressed(object? sender, MouseButtonEventArgs e)
     {
         if (sender is not DockItemView view || _itemArmed || _dragArmed || _fileDragOver) return;
+        NotePress(e); // 터치 길게 누르기 판정용 (DockWindow.Touch.cs)
         _pressView = view;
         _itemStart = ToScreenDip(e.GetPosition(this));
         _itemGrab = e.GetPosition(view);
@@ -101,7 +102,8 @@ public partial class DockWindow
         bool dragged = _itemDragging;
         int target = _itemTarget;
         bool outside = _itemOutside;
-        bool click = !dragged && view != null && new Rect(view.RenderSize).Contains(e.GetPosition(view));
+        // 터치로 오래 누른 건 "누르고 있기"(→ 윈도우가 오른쪽 클릭으로 메뉴를 띄움) — 실행하지 않음
+        bool click = !dragged && view != null && !WasTouchHold && new Rect(view.RenderSize).Contains(e.GetPosition(view));
 
         EndItemDrag(animateBack: false);
         if (view == null) return;
