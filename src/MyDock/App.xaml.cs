@@ -284,7 +284,7 @@ public partial class App : Application
             _services.Windows.Stop();
             _services.Status.Stop();
             _services.Media.Stop();
-            object[] all = [_services.Settings, _services.Windows, _services.DesktopWindows, _services.VirtualDesktops, _services.Ime, _services.Status, _services.Media, _services.Notifications, _services.Calendars];
+            object[] all = [_services.Settings, _services.Windows, _services.DesktopWindows, _services.VirtualDesktops, _services.Ime, _services.Status, _services.Media, _services.Notifications, _services.Calendars, _services.AppMenus];
             foreach (var disposable in all.OfType<IDisposable>())
             {
                 try { disposable.Dispose(); }

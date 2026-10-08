@@ -41,6 +41,9 @@ internal static class MenuApi
     [DllImport("user32.dll")]
     public static extern int GetMenuItemCount(IntPtr hMenu);
 
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetSubMenu(IntPtr hMenu, int nPos);
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "GetMenuItemInfoW", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool GetMenuItemInfo(IntPtr hMenu, uint item, [MarshalAs(UnmanagedType.Bool)] bool fByPosition, ref MENUITEMINFO lpmii);
@@ -48,6 +51,21 @@ internal static class MenuApi
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool IsMenu(IntPtr hMenu);
+
+    public const uint WM_INITMENUPOPUP = 0x0117;
+
+    /// <summary>
+    /// 창의 메뉴 막대를 바꿈/뗌 (hMenu = Zero). 다른 프로세스 창에도 동작함을 직접 확인(msinfo32, Windows 11 26200).
+    /// 뗀 HMENU 는 없어지지 않으므로 보관해 두었다가 다시 붙여야 한다. 내부적으로 대상 창 스레드에 WM_NCCALCSIZE 를
+    /// 보내므로(동기) 응답 없는 앱이면 막힐 수 있다 → UI 스레드에서 부르지 말 것.
+    /// </summary>
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetMenu(IntPtr hWnd, IntPtr hMenu);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool IsHungAppWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     public static extern short GetAsyncKeyState(int vKey);
