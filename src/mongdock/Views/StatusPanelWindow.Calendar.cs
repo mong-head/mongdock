@@ -261,7 +261,7 @@ internal sealed partial class StatusPanelWindow
         }
 
         root.Children.Add(Divider());
-        root.Children.Add(LinkRow("알림 센터 열기", () => _services.Shell.OpenNotificationCenter()));
+        // 윈도우 알림 센터 링크는 두지 않음: 몽독에서 지운 알림이 윈도우 쪽엔 남아(다른 앱 알림은 지울 권한 없음) 헷갈림
         root.Children.Add(LinkRow("날짜 및 시간 설정…", () =>
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:dateandtime") { UseShellExecute = true })?.Dispose()));
 

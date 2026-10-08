@@ -808,7 +808,7 @@ public partial class TopBarWindow : Window
     });
     /// <summary>제어 센터: Win+A 대신 MyDockFinder 같은 타일 패널.</summary>
     private void OnQuickSettings(object sender, RoutedEventArgs e) => TogglePanel(StatusPanelKind.ControlCenter, QuickSettingsButton);
-    /// <summary>시계 클릭 = 몽독 달력 카드 (알림 센터는 카드 안 "알림 센터 열기" 링크로).</summary>
+    /// <summary>시계 클릭 = 몽독 달력 카드 + 몽독 알림 목록.</summary>
     private void OnClockClick(object sender, RoutedEventArgs e) => TogglePanel(StatusPanelKind.Calendar, ClockButton);
 
     private void OnTaskView(object sender, RoutedEventArgs e) => Safe(() => _services.Shell.OpenTaskView());
