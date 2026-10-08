@@ -117,8 +117,8 @@ public sealed class DockSettings
     public MultiWindowClick MultiWindowClick { get; set; } = MultiWindowClick.Picker;
     /// <summary>다른 가상 데스크톱의 창도 독에 표시(실행 중 점, 창 선택에 "데스크톱 N").</summary>
     public bool ShowWindowsFromAllDesktops { get; set; } = true;
-    public DockEdge Edge { get; set; } = DockEdge.Right;
-    public DockMode Mode { get; set; } = DockMode.AutoHide;
+    public DockEdge Edge { get; set; } = DockEdge.Bottom;
+    public DockMode Mode { get; set; } = DockMode.Reserve;
     /// <summary>자동 숨김에서 마우스가 독을 벗어난 뒤 숨기까지 지연 (ms).</summary>
     public int AutoHideDelayMs { get; set; } = 500;
     public DockTheme Theme { get; set; } = DockTheme.System;
@@ -227,7 +227,7 @@ public sealed class NotificationSettings
     /// ShowNotificationBanners 가 켜져 있고 일시 정지가 아닐 때만 동작 (NativeToastSuppressor).
     /// 방해 금지(DND)·레지스트리(ShowBanner/NOC_GLOBAL_SETTING_TOASTS_ENABLED)는 쓰지 않음: 실시간 반영이 안 되거나 알림 자체가 꺼짐.
     /// </summary>
-    public bool HideWindowsToastPopups { get; set; }
+    public bool HideWindowsToastPopups { get; set; } = true;
 
     /// <summary>
     /// 사용자가 고른 윈도우 알림 소리(원본 wav 경로, "" = 무음). null = 몽독이 손대지 않음.

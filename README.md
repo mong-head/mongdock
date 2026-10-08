@@ -146,7 +146,7 @@ zip 으로 썼다면:
 
 | 항목 | 예 |
 |---|---|
-| 독 위치·동작·크기·테마 | `dock.edge`, `dock.mode`, `dock.iconSize`, `dock.hoverScale`, `dock.theme` |
+| 독 위치·동작·크기·테마 | `dock.edge` (기본 `Bottom`), `dock.mode` (기본 `Reserve` = 항상 보이고 공간 차지), `dock.iconSize`, `dock.hoverScale`, `dock.theme` |
 | 독 모니터 | `dock.monitor` — 장치 이름(예 `"\\\\.\\DISPLAY2"`), `""` 이면 주 모니터 |
 | 상단바 크기 | `topBar.height` (기본 26), `topBar.fontSize` (기본 13) |
 | 상단바 색·표시 항목 | `topBar.colorMode` (`Auto`(기본, 앱 색에 맞춤)/`Fixed`/`Transparent`/`Blur`), `topBar.background`, `topBar.showAppMenus` … |
@@ -155,7 +155,7 @@ zip 으로 썼다면:
 | 시계 달력 | `topBar.calendarApp` (날짜를 두 번 누르면 열 캘린더: `Google`/`OutlookWeb`/`Naver`/`NewOutlook`/`ClassicOutlook`/`WindowsCalendar`), `calendar.refreshMinutes` (구독 캘린더 새로고침 주기, 기본 15분) |
 | 검색 | `topBar.searchMode` (`Spotlight`/`Windows`), `topBar.spotlightHotkey` (`Auto`/`WinSpace`/`AltSpace`/`CtrlSpace`/`None`) |
 | 검색 항목 | `search.apps` · `settings` · `calculator` · `folders` · `documents` · `media` · `otherFiles` · `webSearch` · `windowsSearch` (기본 모두 `true`), `search.fileSearchFolders`, `search.maxPerCategory` (기본 5), `search.webSearchEngine` (`Google`/`Naver`/`Bing`) |
-| 알림 | `notifications.showNotificationBanners` (기본 `true`), `notifications.hideWindowsToastPopups` (기본 `false`) |
+| 알림 | `notifications.showNotificationBanners` (기본 `true`), `notifications.hideWindowsToastPopups` (기본 `true`) |
 | 글꼴 | `fontFamily` — 기본 `"Pretendard"`(내장), 설치된 글꼴 이름도 가능 |
 | 앱 메뉴 직접 정의 | `appMenus` — 키는 exe 이름(예 `"chrome.exe"`), 항목마다 `text` 와 `keys`(예 `"Ctrl+Shift+T"`) |
 | 핀 목록 | `pins` |
