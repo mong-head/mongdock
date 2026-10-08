@@ -204,4 +204,4 @@ zip 으로 썼다면:
 
 ## 라이선스
 
-- 내장 글꼴 [Pretendard](https://github.com/orioncactus/pretendard) — SIL Open Font License 1.1 (`src/MyDock/Fonts/OFL.txt`)
+- 내장 글꼴 [Pretendard](https://github.com/orioncactus/pretendard) — SIL Open Font License 1.1 (`src/mongdock/Fonts/OFL.txt`)

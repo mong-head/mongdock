@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <AssemblyName>mongdock</AssemblyName>
+    <RootNamespace>Mongdock</RootNamespace>
+    <Product>mongdock</Product>
+    <!-- 릴리스 빌드는 build-release.ps1 -Version 이 덮어씀 -->
+    <Version>0.3.0</Version>
+    <!-- 10.0.19041.0: 블루투스 상태(Windows.Devices.Radios) WinRT 투영용 -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!-- 트레이 아이콘(NotifyIcon)용. 프레임워크 포함(NuGet 아님). WPF 와 이름이 겹치지 않게 아래에서 암시적 using 제거 -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- WFAC010: WinForms 용 DPI 권고. 이 앱은 WPF 이고 DPI 는 app.manifest(PerMonitorV2)로 설정하므로 무시 -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+    <!-- PerMonitorV2 DPI 인식 -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WinForms 암시적 using 은 WPF 타입(Color, Point, Brush, Image, Application 등)과 충돌하므로 제거 -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 내장 글꼴 Pretendard (SIL OFL 1.1) — 라이선스 파일을 함께 배포 -->
+    <Resource Include="Fonts\*.otf" />
+    <None Include="Fonts\OFL.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 변경 내역 단일 원본 (설정 → 변경 내역, 새로운 기능 안내, build-release.ps1 릴리스 노트) -->
+    <None Remove="Changelog.json" />
+    <EmbeddedResource Include="Changelog.json" LogicalName="Mongdock.Changelog.json" />
+    <!-- 앱 전용 메뉴 규칙 (저장소 루트 menus/). 오프라인·첫 실행 기본값 — 실행 중엔 GitHub 의 같은 파일로 갱신 (Services/MenuRulesService) -->
+    <EmbeddedResource Include="..\..\menus\app-menus.json" LogicalName="mongdock.app-menus.json" Link="menus\app-menus.json" />
+  </ItemGroup>
+
+</Project>

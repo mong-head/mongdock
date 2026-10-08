@@ -1,7 +1,7 @@
 ﻿# mongdock 배포용 빌드: .NET 설치 없이 실행되는 단일 mongdock.exe 를 만들어 dist\ 에 zip 과 설치 프로그램(setup.exe)으로 묶는다.
 #   powershell -ExecutionPolicy Bypass -File build-release.ps1 -Version v0.2.0
 # 설치 프로그램은 Inno Setup 6 (ISCC.exe) 이 있을 때만 만든다. 없으면 경고 후 zip 만.
-# 릴리스 노트: src\MyDock\Changelog.json 에서 -Version 항목을 읽어 dist\release-notes-vX.Y.Z.md 를 만든다 (gh release create --notes-file 용).
+# 릴리스 노트: src\mongdock\Changelog.json 에서 -Version 항목을 읽어 dist\release-notes-vX.Y.Z.md 를 만든다 (gh release create --notes-file 용).
 #   노트만 만들기: powershell -ExecutionPolicy Bypass -File build-release.ps1 -Version v0.3.0 -NotesOnly
 param([string]$Version = "", [switch]$NotesOnly)
 
@@ -14,11 +14,11 @@ $out = Join-Path $dist "mongdock"
 function Write-ReleaseNotes([string]$tag) {
     # v0.3.0-test → 0.3.0 으로 찾음 (파일 이름·설치 파일 이름은 받은 태그 그대로)
     $core = $tag.TrimStart('v', 'V') -replace '[-+ ].*$', ''
-    $path = Join-Path $root "src\MyDock\Changelog.json"
+    $path = Join-Path $root "src\mongdock\Changelog.json"
     $json = [IO.File]::ReadAllText($path, [Text.Encoding]::UTF8) | ConvertFrom-Json
     $release = $json.versions | Where-Object { $_.version -eq $core } | Select-Object -First 1
     if (-not $release) {
-        Write-Warning "Changelog.json 에 버전 $core 항목이 없어 릴리스 노트를 만들지 않았습니다. src\MyDock\Changelog.json 에 추가하세요."
+        Write-Warning "Changelog.json 에 버전 $core 항목이 없어 릴리스 노트를 만들지 않았습니다. src\mongdock\Changelog.json 에 추가하세요."
         return
     }
     $lines = New-Object System.Collections.Generic.List[string]
@@ -61,7 +61,7 @@ $dotnet = if (Get-Command dotnet -ErrorAction SilentlyContinue) { "dotnet" } els
 
 if (Test-Path $out) { Remove-Item $out -Recurse -Force }
 
-& $dotnet publish (Join-Path $root "src\MyDock\MyDock.csproj") -c Release -r win-x64 --self-contained true `
+& $dotnet publish (Join-Path $root "src\mongdock\mongdock.csproj") -c Release -r win-x64 --self-contained true `
     -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=none `
     $(if ($Version) { "-p:Version=$($Version.TrimStart('v', 'V'))" }) -o $out --nologo
 if ($LASTEXITCODE -ne 0) { throw "publish 실패" }

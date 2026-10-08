@@ -1,0 +1,251 @@
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using Microsoft.Win32;
+using Mongdock.Native;
+
+namespace Mongdock.Services;
+
+/// <summary>
+/// 바탕화면 배경(월페이퍼)만의 색을 계산한다 — 화면 캡처가 아니므로 우리 창/다른 창이 섞이지 않음.
+/// IDesktopWallpaper 로 주 모니터의 배경 파일·맞춤 방식·배경색을 읽고, 그림을 맞춤 방식대로 모니터 좌표에 매핑해 영역 평균을 낸다.
+/// 경로가 없거나 파일을 못 찾으면(Spotlight·슬라이드쇼) %APPDATA%\Microsoft\Windows\Themes\TranscodedWallpaper, 그래도 없으면 배경색.
+/// </summary>
+internal sealed class WallpaperSampler
+{
+    // DESKTOP_WALLPAPER_POSITION
+    private const int DWPOS_CENTER = 0, DWPOS_TILE = 1, DWPOS_STRETCH = 2, DWPOS_FIT = 3, DWPOS_FILL = 4, DWPOS_SPAN = 5;
+    private const int MaxDecodeWidth = 1280;
+
+    private static readonly string TranscodedPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"Microsoft\Windows\Themes\TranscodedWallpaper");
+
+    private readonly object _gate = new();
+    private readonly Dictionary<string, Color?> _colorCache = new();
+    private string? _imageKey;
+    private BitmapSource? _image; // 축소 디코드된 Bgra32
+    private int _origW, _origH;
+
+    public sealed record Info(string? Path, int Position, Color Background, RECT Monitor);
+
+    // 빠른 경로 캐시: 영역 → (색, 계산 시각). Invalidate(배경 변경) 또는 30초 경과 시 무효.
+    private readonly Dictionary<string, (Color? Color, DateTime At)> _fast = new();
+    private static readonly TimeSpan FastTtl = TimeSpan.FromSeconds(30);
+
+    /// <summary>COM/파일 조회 없이 최근 결과가 있으면 반환 (UI 스레드에서 즉시 완료용).</summary>
+    public bool TryGetCached(RECT areaPx, out Color? color)
+    {
+        lock (_fast)
+        {
+            if (_fast.TryGetValue(areaPx.ToString(), out var e) && DateTime.UtcNow - e.At < FastTtl)
+            {
+                color = e.Color;
+                return true;
+            }
+        }
+        color = null;
+        return false;
+    }
+
+    public void Invalidate()
+    {
+        lock (_fast) _fast.Clear();
+        lock (_gate)
+        {
+            _colorCache.Clear();
+            _imageKey = null;
+            _image = null;
+        }
+    }
+
+    /// <summary>현재 주 모니터 배경 정보. 실패 시 null.</summary>
+    public static Info? QueryPrimary()
+    {
+        DesktopApi.TryGetMonitorRects(DesktopApi.PrimaryMonitor, out RECT primary, out _);
+        return Query(primary);
+    }
+
+    /// <summary>모니터 영역(물리 px)이 target 인 모니터의 배경 정보 (못 맞추면 첫 모니터). 실패 시 null.</summary>
+    public static Info? Query(RECT target)
+    {
+        object? obj = null;
+        try
+        {
+            obj = new DesktopWallpaperClass();
+            var wp = (IDesktopWallpaper)obj;
+
+            string? id = null;
+            RECT mrect = target;
+            uint count = wp.GetMonitorDevicePathCount();
+            for (uint i = 0; i < count; i++)
+            {
+                string mid = wp.GetMonitorDevicePathAt(i);
+                RECT r;
+                try { r = wp.GetMonitorRECT(mid); } catch { continue; }
+                if (r.Left == target.Left && r.Top == target.Top && r.Right == target.Right && r.Bottom == target.Bottom)
+                {
+                    id = mid;
+                    mrect = r;
+                    break;
+                }
+                id ??= mid; // 못 맞추면 첫 모니터
+            }
+
+            string? path = null;
+            try { path = id is null ? null : wp.GetWallpaper(id); } catch { /* 슬라이드쇼 등 */ }
+            int pos = DWPOS_FILL;
+            try { pos = wp.GetPosition(); } catch { }
+            uint cref = 0;
+            try { cref = wp.GetBackgroundColor(); } catch { }
+            var bg = Color.FromRgb((byte)(cref & 0xFF), (byte)((cref >> 8) & 0xFF), (byte)((cref >> 16) & 0xFF));
+            return new Info(string.IsNullOrWhiteSpace(path) ? null : path, pos, bg, mrect);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"IDesktopWallpaper 조회 실패: {ex.Message}");
+            return null;
+        }
+        finally
+        {
+            if (obj is not null && Marshal.IsComObject(obj)) Marshal.ReleaseComObject(obj);
+        }
+    }
+
+    /// <summary>변경 감지용 서명: 배경 경로 + 맞춤 + 배경색 + TranscodedWallpaper 시각 + 현재 가상 데스크톱.</summary>
+    public static string GetSignature()
+    {
+        var info = QueryPrimary();
+        string vd = "";
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\VirtualDesktops");
+            if (key?.GetValue("CurrentVirtualDesktop") is byte[] b) vd = Convert.ToHexString(b);
+        }
+        catch { }
+        long t = 0;
+        try { if (File.Exists(TranscodedPath)) t = File.GetLastWriteTimeUtc(TranscodedPath).Ticks; } catch { }
+        return $"{info?.Path}|{info?.Position}|{info?.Background}|{t}|{vd}";
+    }
+
+    /// <summary>물리 픽셀 영역의 배경 평균 색 — 영역 가운데가 있는 모니터(없으면 가장 가까운 모니터)의 배경 기준.</summary>
+    public Color? Sample(RECT areaPx)
+    {
+        var center = new POINT { X = areaPx.Left + areaPx.Width / 2, Y = areaPx.Top + areaPx.Height / 2 };
+        IntPtr mon = DesktopApi.MonitorFromPoint(center, DesktopApi.MONITOR_DEFAULTTONEAREST);
+        var info = DesktopApi.TryGetMonitorRects(mon, out RECT monitorRect, out _) ? Query(monitorRect) : QueryPrimary();
+        if (info is null) return null;
+
+        // 경로가 없거나(Spotlight·슬라이드쇼) 파일이 없으면 탐색기가 만든 TranscodedWallpaper 사용, 그것도 없으면 배경색
+        string? file = info.Path is not null && File.Exists(info.Path) ? info.Path
+                     : File.Exists(TranscodedPath) ? TranscodedPath
+                     : null;
+        long stamp = 0;
+        try { if (file is not null) stamp = File.GetLastWriteTimeUtc(file).Ticks; } catch { }
+        string key = $"{file}|{stamp}|{info.Position}|{info.Background}|{info.Monitor}|{areaPx}";
+
+        Color? c;
+        lock (_gate)
+        {
+            if (!_colorCache.TryGetValue(key, out c))
+            {
+                c = file is null ? info.Background : SampleImage(file, stamp, info, areaPx);
+                if (_colorCache.Count > 64) _colorCache.Clear();
+                _colorCache[key] = c;
+            }
+        }
+        lock (_fast)
+        {
+            if (_fast.Count > 64) _fast.Clear();
+            _fast[areaPx.ToString()] = (c, DateTime.UtcNow);
+        }
+        return c;
+    }
+
+    private Color? SampleImage(string file, long stamp, Info info, RECT areaPx)
+    {
+        if (!EnsureImage(file, stamp) || _image is null) return info.Background;
+
+        int mw = info.Monitor.Width, mh = info.Monitor.Height;
+        if (mw <= 0 || mh <= 0) return null;
+        double iw = _origW, ih = _origH;
+
+        // 그림이 그려지는 사각형 (모니터 기준 물리 픽셀)
+        double dx, dy, dw, dh;
+        switch (info.Position)
+        {
+            case DWPOS_CENTER: dw = iw; dh = ih; break;
+            case DWPOS_TILE: dw = iw; dh = ih; break;
+            case DWPOS_STRETCH: dw = mw; dh = mh; break;
+            case DWPOS_FIT: { double s = Math.Min(mw / iw, mh / ih); dw = iw * s; dh = ih * s; break; }
+            default: { double s = Math.Max(mw / iw, mh / ih); dw = iw * s; dh = ih * s; break; } // FILL, SPAN(근사)
+        }
+        if (info.Position == DWPOS_TILE) { dx = 0; dy = 0; }
+        else { dx = (mw - dw) / 2; dy = (mh - dh) / 2; }
+
+        int pw = _image.PixelWidth, ph = _image.PixelHeight, stride = pw * 4;
+        var pixels = new byte[stride * ph];
+        _image.CopyPixels(pixels, stride, 0);
+
+        int ax0 = areaPx.Left - info.Monitor.Left, ay0 = areaPx.Top - info.Monitor.Top;
+        int aw = Math.Max(1, areaPx.Width), ah = Math.Max(1, areaPx.Height);
+        int stepX = Math.Max(1, aw / 400), stepY = Math.Max(1, ah / 20);
+        double r = 0, g = 0, b = 0;
+        long n = 0;
+        for (int y = ay0; y < ay0 + ah; y += stepY)
+        for (int x = ax0; x < ax0 + aw; x += stepX)
+        {
+            double u = (x + 0.5 - dx) / dw, v = (y + 0.5 - dy) / dh;
+            if (info.Position == DWPOS_TILE) { u -= Math.Floor(u); v -= Math.Floor(v); }
+            if (u < 0 || u >= 1 || v < 0 || v >= 1)
+            {
+                r += info.Background.R; g += info.Background.G; b += info.Background.B;
+            }
+            else
+            {
+                int px = Math.Min(pw - 1, (int)(u * pw)), py = Math.Min(ph - 1, (int)(v * ph));
+                int i = py * stride + px * 4;
+                b += pixels[i]; g += pixels[i + 1]; r += pixels[i + 2];
+            }
+            n++;
+        }
+        if (n == 0) return null;
+        return Color.FromRgb((byte)(r / n), (byte)(g / n), (byte)(b / n));
+    }
+
+    private bool EnsureImage(string file, long stamp)
+    {
+        string key = file + "|" + stamp;
+        if (_imageKey == key && _image is not null) return true;
+        try
+        {
+            using var fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            var dec = BitmapDecoder.Create(fs, BitmapCreateOptions.DelayCreation | BitmapCreateOptions.IgnoreColorProfile, BitmapCacheOption.None);
+            var frame = dec.Frames[0];
+            _origW = frame.PixelWidth;
+            _origH = frame.PixelHeight;
+            if (_origW <= 0 || _origH <= 0) return false;
+
+            fs.Position = 0;
+            var bi = new BitmapImage();
+            bi.BeginInit();
+            bi.CacheOption = BitmapCacheOption.OnLoad;
+            bi.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
+            if (_origW > MaxDecodeWidth) bi.DecodePixelWidth = MaxDecodeWidth;
+            bi.StreamSource = fs;
+            bi.EndInit();
+            var conv = new FormatConvertedBitmap(bi, PixelFormats.Bgra32, null, 0);
+            conv.Freeze();
+            _image = conv;
+            _imageKey = key;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"배경 이미지 로드 실패: {file} ({ex.Message})");
+            _image = null;
+            _imageKey = null;
+            return false;
+        }
+    }
+}
