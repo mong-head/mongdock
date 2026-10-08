@@ -21,7 +21,6 @@ public sealed class NotifyIconSetting
     public bool IsPromoted { get; init; }
     /// <summary>IsPromoted 값이 있음 (사용자가 윈도우 설정에서 한 번이라도 켜거나 끔).</summary>
     public bool IsPromotedSet { get; init; }
-    public string Tooltip { get; init; } = "";
     /// <summary>UIOrderList 안의 위치 (없으면 int.MaxValue).</summary>
     public int Order { get; init; } = int.MaxValue;
 }
@@ -39,7 +38,7 @@ public sealed class NotifyIconSettingsReader
     {
         var r = new NotifyIconSettingsReader();
         r.Reload(raise: false);
-        r.StartWatch();
+
         return r;
     });
 
@@ -79,7 +78,6 @@ public sealed class NotifyIconSettingsReader
 
     /// <summary>윈도우 11 의 설정 키가 있는지 (없으면 승격 규칙 생략).</summary>
     public bool IsAvailable => _snap.Available;
-    public IReadOnlyList<NotifyIconSetting> Entries => _snap.Entries;
 
     /// <summary>승격 여부·순서가 바뀜 (UI 스레드).</summary>
     public event EventHandler? Changed;
@@ -167,7 +165,6 @@ public sealed class NotifyIconSettingsReader
                 IconGuid = guid,
                 IsPromoted = k.GetValue("IsPromoted") is int p && p != 0,
                 IsPromotedSet = k.GetValue("IsPromoted") is int,
-                Tooltip = k.GetValue("InitialTooltip") as string ?? "",
                 Order = order.TryGetValue(id, out int o) ? o : int.MaxValue,
             });
         }
@@ -216,35 +213,60 @@ public sealed class NotifyIconSettingsReader
 
     // ───────────────────────── 변경 감시 ─────────────────────────
 
-    private void StartWatch()
+    /// <summary>바뀐 뒤 이만큼 조용하면 다시 읽음 (explorer 가 IconSnapshot 등 여러 값을 연달아 씀 → 모아서 한 번).</summary>
+    private const int DebounceMs = 1000;
+    private readonly object _watchGate = new();
+    private ManualResetEvent? _watchStop; // _watchGate: 지금 감시 스레드의 중지 신호 (없으면 감시 안 함)
+
+    /// <summary>
+    /// 레지스트리 변경 감시 켜기/끄기 — 트레이 기능이 켜져 있을 때만 켠다(TrayIconService.SetEnabled).
+    /// 켤 때 한 번 다시 읽음(꺼져 있던 동안의 변경 반영).
+    /// </summary>
+    public void SetWatching(bool on)
     {
-        var t = new Thread(WatchLoop) { IsBackground = true, Name = "mongdock NotifyIconSettings" };
-        t.Start();
+        lock (_watchGate)
+        {
+            if (on == (_watchStop is not null)) return;
+            if (!on)
+            {
+                _watchStop!.Set(); // 일부러 Dispose 안 함 (스레드가 아직 기다리는 중일 수 있음 — 종료자가 정리)
+                _watchStop = null;
+                return;
+            }
+            var stop = new ManualResetEvent(false);
+            _watchStop = stop;
+            var t = new Thread(() => WatchLoop(stop)) { IsBackground = true, Name = "mongdock NotifyIconSettings" };
+            t.Start();
+        }
     }
 
-    private void WatchLoop()
+    private void WatchLoop(ManualResetEvent stop)
     {
         try
         {
+            Reload(raise: true);
             using var root = Registry.CurrentUser.OpenSubKey(KeyPath, writable: false);
             if (root is null) return; // 윈도우 10 등: 키 없음 → 감시 안 함
             using var evt = new AutoResetEvent(false);
+            var handles = new WaitHandle[] { stop, evt };
             while (true)
             {
-                int rc = T.RegNotifyChangeKeyValue(root.Handle, true,
-                    T.REG_NOTIFY_CHANGE_NAME | T.REG_NOTIFY_CHANGE_LAST_SET, evt.SafeWaitHandle, true);
-                if (rc != 0)
+                // 등록은 이 스레드에 묶임 (스레드가 끝나면 자동 해제)
+                if (!Register(root, evt))
                 {
                     // 알림 등록 실패 → 5초마다 다시 읽기로 대체
-                    Log.Warn($"NotifyIconSettings 변경 감시 등록 실패 (오류 {rc}) → 5초 주기 확인");
-                    while (true)
-                    {
-                        Thread.Sleep(5000);
-                        Reload(raise: true);
-                    }
+                    while (!stop.WaitOne(5000)) Reload(raise: true);
+                    return;
                 }
-                evt.WaitOne();
-                Thread.Sleep(400); // explorer 가 여러 값을 연달아 씀 → 모아서 한 번
+                if (WaitHandle.WaitAny(handles) == 0) return;
+                // 디바운스: 1초 동안 더 바뀌지 않을 때까지 기다렸다가 한 번 읽음
+                while (true)
+                {
+                    if (!Register(root, evt)) break;
+                    int w = WaitHandle.WaitAny(handles, DebounceMs);
+                    if (w == 0) return;
+                    if (w == WaitHandle.WaitTimeout) break;
+                }
                 Reload(raise: true);
             }
         }
@@ -252,5 +274,14 @@ public sealed class NotifyIconSettingsReader
         {
             Log.Warn($"NotifyIconSettings 변경 감시 중단: {ex.Message}");
         }
+    }
+
+    private static bool Register(RegistryKey root, AutoResetEvent evt)
+    {
+        int rc = T.RegNotifyChangeKeyValue(root.Handle, true,
+            T.REG_NOTIFY_CHANGE_NAME | T.REG_NOTIFY_CHANGE_LAST_SET, evt.SafeWaitHandle, true);
+        if (rc == 0) return true;
+        Log.Warn($"NotifyIconSettings 변경 감시 등록 실패 (오류 {rc}) → 5초 주기 확인");
+        return false;
     }
 }

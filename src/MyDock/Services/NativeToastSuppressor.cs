@@ -81,6 +81,8 @@ public sealed class NativeToastSuppressor : IDisposable
     private long _sessionTick;
     /// <summary>마지막으로 숨김을 확정할 때 쓴 배너 시각 — 배너 하나로 토스트 둘을 숨기지 않게.</summary>
     private long _usedBannerTick;
+    /// <summary>마지막으로 "배너 일부러 생략" 신호로 숨김을 유지할 때 쓴 시각 (같은 신호를 두 번 쓰지 않게).</summary>
+    private long _usedSkippedTick;
     private int _hiddenCount, _shownCount;
     private bool _disposed;
 
@@ -322,9 +324,29 @@ public sealed class NativeToastSuppressor : IDisposable
         }
         else if (_state == State.Hidden && _notifications is not null)
         {
-            // 숨긴 셸 창에 토스트가 더 쌓이거나 같은 토스트가 갱신됨(디스코드 등, 같은 태그라 배너 생략)
-            // → 계속 숨김. 새 배너가 나갔으면 그 배너는 이 창 몫으로 소비.
-            _usedBannerTick = Math.Max(_usedBannerTick, _notifications.LastBannerTick);
+            // 숨긴 셸 창에 토스트가 더 쌓이거나 같은 토스트가 갱신됨.
+            long banner = _notifications.LastBannerTick;
+            long skipped = _notifications.LastSkippedBannerTick;
+            if (banner > _usedBannerTick)
+            {
+                // 새 배너가 나감 → 그 배너는 이 창 몫으로 소비, 계속 숨김
+                _usedBannerTick = banner;
+            }
+            else if (skipped > _usedSkippedTick)
+            {
+                // 같은 태그 갱신(디스코드 등)·SuppressPopup — 배너를 일부러 생략한 행 → 계속 숨김
+                _usedSkippedTick = skipped;
+            }
+            else
+            {
+                // 배너가 안 나간 새 토스트 (파싱 실패 등) → 다시 확인 대기. 확인 시간 안에 배너가 없으면 셸 팝업 복원
+                _sessionTick = Environment.TickCount64;
+                _state = State.Pending;
+                if (_toastHwnd != IntPtr.Zero) MoveOffscreen(_toastHwnd);
+                _notifications.RequestReadNow();
+                if (Evaluate()) _confirmTimer.Stop();
+                else _confirmTimer.Start();
+            }
         }
     }
 
@@ -347,6 +369,7 @@ public sealed class NativeToastSuppressor : IDisposable
         if (banner != 0 && banner >= since && banner > _usedBannerTick)
         {
             _usedBannerTick = banner;
+            _usedSkippedTick = _notifications.LastSkippedBannerTick; // 지난 생략 신호는 이후 판단에 쓰지 않음
             _state = State.Hidden;
             _hiddenCount++;
             Log.Info($"윈도우 기본 알림 팝업 숨김 (몽독 배너 확인 {Environment.TickCount64 - _sessionTick}ms)");

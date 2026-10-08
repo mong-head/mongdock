@@ -119,9 +119,9 @@ internal static class IcsParser
                     case "RECURRENCE-ID": ev.RecurrenceId = ParseTime(value, prms, zones); break;
                 }
             }
-            catch (FormatException)
+            catch (Exception)
             {
-                // 값이 깨진 속성 하나만 무시
+                // 값이 깨진 속성 하나만 무시 (형식 오류·범위 밖 날짜·잘못된 시간대 오프셋 등 무엇이든)
             }
         }
         return cal;
@@ -242,7 +242,7 @@ internal static class IcsParser
         foreach (var part in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             try { list.Add(ParseTime(part, prms, zones)); }
-            catch (FormatException) { }
+            catch (Exception) { /* 깨진 값 하나만 건너뜀 */ }
         }
     }
 
@@ -268,7 +268,10 @@ internal static class IcsParser
         return new IcsTime(t, false, tzid.Length > 0 ? zones.Resolve(tzid) : null);
     }
 
-    /// <summary>ISO 8601 기간 "P1D" "PT1H30M" "P1W" "-PT15M".</summary>
+    /// <summary>일정 길이 상한 — 이보다 긴 DURATION 은 깨진 값으로 봄 (날짜 계산 넘침 방지).</summary>
+    private const double MaxDurationSeconds = 3660 * 86400.0; // 약 10년
+
+    /// <summary>ISO 8601 기간 "P1D" "PT1H30M" "P1W" "-PT15M". 깨졌거나 10년을 넘으면 null.</summary>
     internal static TimeSpan? ParseDuration(string value)
     {
         value = value.Trim().ToUpperInvariant();
@@ -291,6 +294,7 @@ internal static class IcsParser
             if (c == 'T') { inTime = true; continue; }
             if (char.IsAsciiDigit(c))
             {
+                if (num > 100_000_000) return null; // 자릿수가 너무 많음 (int 넘침 방지)
                 num = (num < 0 ? 0 : num * 10) + (c - '0');
                 continue;
             }
@@ -304,7 +308,7 @@ internal static class IcsParser
                 'S' when inTime => num,
                 _ => double.NaN,
             };
-            if (double.IsNaN(total)) return null;
+            if (double.IsNaN(total) || total > MaxDurationSeconds) return null;
             num = -1;
         }
         return TimeSpan.FromSeconds(sign * total);
@@ -343,13 +347,14 @@ internal static class IcsParser
         }
     }
 
-    /// <summary>"+0900" / "-0430" / "+090000".</summary>
+    /// <summary>"+0900" / "-0430" / "+090000". 시간대로 쓸 수 없는 값(±14시간 초과, 분 60 이상)은 false.</summary>
     private static bool TryOffset(string s, out TimeSpan offset)
     {
         offset = default;
         if (s.Length < 5 || s[0] is not ('+' or '-')) return false;
         if (!int.TryParse(s.AsSpan(1, 2), NumberStyles.None, CultureInfo.InvariantCulture, out int h)) return false;
         if (!int.TryParse(s.AsSpan(3, 2), NumberStyles.None, CultureInfo.InvariantCulture, out int m)) return false;
+        if (m >= 60 || h > 14 || h == 14 && m > 0) return false; // TimeZoneInfo 가 받는 범위 (±14:00)
         offset = new TimeSpan(h, m, 0);
         if (s[0] == '-') offset = -offset;
         return true;
@@ -374,7 +379,10 @@ internal sealed class IcsZones
         if (_cache.TryGetValue(tzid, out var z)) return z;
         z = Find(tzid);
         if (z == null && _definitions.TryGetValue(tzid, out var off) && off is TimeSpan o)
-            z = TimeZoneInfo.CreateCustomTimeZone("ics:" + tzid, o, tzid, tzid);
+        {
+            try { z = TimeZoneInfo.CreateCustomTimeZone("ics:" + tzid, o, tzid, tzid); }
+            catch (ArgumentException) { z = null; } // 쓸 수 없는 오프셋 → 로컬로 취급
+        }
         _cache[tzid] = z;
         return z;
     }
@@ -425,6 +433,10 @@ internal sealed class IcsZones
         if (zone == TimeZoneInfo.Utc) return DateTime.SpecifyKind(wall, DateTimeKind.Utc);
         if (zone.IsInvalidTime(wall)) wall = wall.AddHours(1);
         try { return TimeZoneInfo.ConvertTimeToUtc(wall, zone); }
-        catch (ArgumentException) { return DateTime.SpecifyKind(wall - zone.BaseUtcOffset, DateTimeKind.Utc); }
+        catch (ArgumentException)
+        {
+            // 범위 끝 날짜(0001-01-01 등)에서 넘치면 그대로 — 호출 쪽(펼치기)이 그 일정만 건너뜀
+            return DateTime.SpecifyKind(wall - zone.BaseUtcOffset, DateTimeKind.Utc);
+        }
     }
 }

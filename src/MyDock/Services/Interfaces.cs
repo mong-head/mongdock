@@ -346,12 +346,11 @@ public enum TrayMouseButton { Left, Right, Middle }
 /// </summary>
 public sealed class TrayIconInfo
 {
-    internal TrayIconInfo(string key, IntPtr ownerHwnd, uint uid, Guid guid, uint callbackMessage, uint version,
+    internal TrayIconInfo(string key, uint uid, Guid guid, uint callbackMessage, uint version,
         System.Windows.Media.Imaging.BitmapSource? icon, string tooltip, bool isHidden, uint processId, string processName,
         string processPath)
     {
         Key = key;
-        OwnerHwnd = ownerHwnd;
         Uid = uid;
         Guid = guid;
         CallbackMessage = callbackMessage;
@@ -366,15 +365,12 @@ public sealed class TrayIconInfo
 
     /// <summary>아이콘 식별자 (GUID 가 있으면 GUID, 아니면 소유 창 + uID).</summary>
     public string Key { get; }
-    /// <summary>아이콘을 등록한 창 (콜백 메시지를 받는 창).</summary>
-    public IntPtr OwnerHwnd { get; }
     public uint Uid { get; }
     /// <summary>NIF_GUID 로 등록된 경우의 GUID (없으면 Guid.Empty).</summary>
     public Guid Guid { get; }
     public uint CallbackMessage { get; }
     /// <summary>NIM_SETVERSION 값 (0, 3, 4).</summary>
     public uint Version { get; }
-    public bool IsVersion4 => Version >= 4;
     /// <summary>아이콘 그림 (원본 HICON 의 복사본, Freeze 됨). 아이콘이 없으면 null.</summary>
     public System.Windows.Media.Imaging.BitmapSource? Icon { get; }
     public string Tooltip { get; }
@@ -395,8 +391,6 @@ public sealed class TrayIconInfo
 /// </summary>
 public interface ITrayIconService
 {
-    /// <summary>가로채기 창이 동작 중인지.</summary>
-    bool IsActive { get; }
     /// <summary>등록 순서대로의 아이콘 (숨김 아이콘 포함 — UI 가 IsHidden 으로 거름).</summary>
     IReadOnlyList<TrayIconInfo> Icons { get; }
     /// <summary><see cref="Icons"/> 가 바뀜 (UI 스레드, 몰아서 한 번).</summary>
@@ -429,8 +423,27 @@ public sealed record CalendarOccurrence(string FeedId, string Title, string? Loc
 /// <summary>구독 캘린더 상태. LastSync = 마지막으로 성공(304 포함)한 시각, Error = 사용자에게 보일 마지막 오류(성공하면 null).</summary>
 public sealed record CalendarFeedStatus(DateTime? LastSync, string? Error, bool Busy, int EventCount);
 
-/// <summary>구독 추가 결과. Ok 면 Feed 가 추가됨 (가져오기가 네트워크 오류로 실패했어도 추가하고 Message 로 안내).</summary>
-public sealed record CalendarAddResult(bool Ok, string Message, CalendarFeed? Feed);
+/// <summary>구독 추가가 안 된 이유 (<see cref="CalendarAddResult.Error"/>).</summary>
+public enum CalendarAddError
+{
+    None,
+    /// <summary>캘린더 주소가 아님.</summary>
+    NotUrl,
+    /// <summary>http:// 주소 — https(또는 webcal)만 지원.</summary>
+    InsecureUrl,
+    /// <summary>이미 추가된 주소.</summary>
+    Duplicate,
+    /// <summary>가져왔지만 ICS 가 아니거나 주소가 틀림 (HTTP 4xx·너무 큼 등).</summary>
+    Invalid,
+    /// <summary>서비스가 끝나는 중.</summary>
+    Disposed,
+}
+
+/// <summary>
+/// 구독 추가 결과. Ok 면 Feed 가 추가됨 (가져오기가 네트워크 오류로 실패했어도 추가하고 Message 로 안내).
+/// Message 는 사용자에게 그대로 보여 줄 한국어 문구 (서비스가 만듦), Error 는 실패 사유.
+/// </summary>
+public sealed record CalendarAddResult(bool Ok, string Message, CalendarFeed? Feed, CalendarAddError Error = CalendarAddError.None);
 
 /// <summary>
 /// iCal(ICS) 구독 캘린더 (Services/CalendarFeedService). 구독 목록은 calendars.json(주소 DPAPI 암호화),
@@ -446,7 +459,10 @@ public interface ICalendarFeedService
     event EventHandler? Changed;
     /// <summary>켜진 캘린더의 [from, to) 로컬 범위 회차 (종일 먼저, 그다음 시작 시각 순). 반복은 이 범위만 펼침.</summary>
     IReadOnlyList<CalendarOccurrence> GetOccurrences(DateTime from, DateTime to);
-    /// <summary>http(s)/webcal 주소면 가져와서 추가 (이름 = X-WR-CALNAME, 없으면 호스트별 기본 이름). 주소가 아니거나 ICS 가 아니면 Ok=false.</summary>
+    /// <summary>
+    /// https/webcal 주소면 가져와서 추가 (이름 = X-WR-CALNAME, 없으면 호스트별 기본 이름).
+    /// 주소가 아니거나 http:// 이거나 ICS 가 아니면 Ok=false (Message 에 이유, Error 에 사유 코드).
+    /// </summary>
     Task<CalendarAddResult> AddAsync(string url);
     void Remove(string feedId);
     /// <summary>이름·색·켜기 변경 후 저장 + Changed. 켜면 바로 새로고침.</summary>

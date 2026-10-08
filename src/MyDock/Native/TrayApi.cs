@@ -13,7 +13,6 @@ internal static class TrayApi
     public const string NotifyWndClass = "TrayNotifyWnd";
 
     // ── 메시지 ──
-    public const uint WM_DESTROY = 0x0002;
     public const uint WM_CLOSE = 0x0010;
     public const uint WM_QUERYENDSESSION = 0x0011;
     public const uint WM_ENDSESSION = 0x0016;
@@ -29,7 +28,6 @@ internal static class TrayApi
     public const uint WM_LBUTTONDBLCLK = 0x0203;
     public const uint WM_RBUTTONDOWN = 0x0204;
     public const uint WM_RBUTTONUP = 0x0205;
-    public const uint WM_RBUTTONDBLCLK = 0x0206;
     public const uint WM_MBUTTONDOWN = 0x0207;
     public const uint WM_MBUTTONUP = 0x0208;
     public const uint WM_HOTKEY = 0x0312;
@@ -41,17 +39,18 @@ internal static class TrayApi
     // ── NOTIFYICON ──
     public const uint NIN_SELECT = WM_USER + 0;
     public const uint NIM_ADD = 0, NIM_MODIFY = 1, NIM_DELETE = 2, NIM_SETFOCUS = 3, NIM_SETVERSION = 4;
-    public const uint NIF_MESSAGE = 0x01, NIF_ICON = 0x02, NIF_TIP = 0x04, NIF_STATE = 0x08, NIF_INFO = 0x10, NIF_GUID = 0x20, NIF_SHOWTIP = 0x80;
+    public const uint NIF_MESSAGE = 0x01, NIF_ICON = 0x02, NIF_TIP = 0x04, NIF_STATE = 0x08, NIF_GUID = 0x20;
     public const uint NIS_HIDDEN = 0x01;
-    public const uint NOTIFYICON_VERSION_4 = 4;
+    /// <summary>WM_SYSCOMMAND wParam (하위 4비트 제외) — 닫기.</summary>
+    public const int SC_CLOSE = 0xF060;
 
     /// <summary>SHELLTRAYDATA 시그니처 (dwSignature).</summary>
     public const int ShellTraySignature = 0x34753423;
 
     // SHELLTRAYDATA = { int dwSignature; uint dwMessage; NOTIFYICONDATA32 nid; } — nid 오프셋 8.
-    // NOTIFYICONDATA32 (핸들 32비트, 유니코드) 필드 오프셋:
+    // NOTIFYICONDATA32 (핸들 32비트, 유니코드) 필드 오프셋 (쓰는 것만. 나머지: cbSize 0, szInfo 288 WCHAR[256],
+    // szInfoTitle 804 WCHAR[64], dwInfoFlags 932, hBalloonIcon 952, 전체 956):
     public const int NidOffset = 8;
-    public const int Nid_cbSize = 0;
     public const int Nid_hWnd = 4;
     public const int Nid_uID = 8;
     public const int Nid_uFlags = 12;
@@ -61,13 +60,8 @@ internal static class TrayApi
     public const int Nid_szTipChars = 128;
     public const int Nid_dwState = 280;
     public const int Nid_dwStateMask = 284;
-    public const int Nid_szInfo = 288;        // WCHAR[256]
     public const int Nid_uVersion = 800;      // union uTimeout/uVersion
-    public const int Nid_szInfoTitle = 804;   // WCHAR[64]
-    public const int Nid_dwInfoFlags = 932;
     public const int Nid_guidItem = 936;
-    public const int Nid_hBalloonIcon = 952;
-    public const int NidFullSize = 956;
 
     // WINNOTIFYICONIDENTIFIER (Shell_NotifyIconGetRect, dwData=3):
     // { int dwMagic; int dwMessage; int cbSize; int dwPadding; uint hWnd; uint uID; GUID guidItem; } = 40 바이트
@@ -87,7 +81,6 @@ internal static class TrayApi
     public const int WS_EX_NOACTIVATE = 0x08000000;
 
     public static readonly IntPtr HWND_TOPMOST = new(-1);
-    public static readonly IntPtr HWND_BROADCAST = new(0xFFFF);
     public const uint SWP_NOSIZE = 0x0001;
     public const uint SWP_NOMOVE = 0x0002;
     public const uint SWP_NOZORDER = 0x0004;
@@ -96,11 +89,9 @@ internal static class TrayApi
     public const uint SWP_NOOWNERZORDER = 0x0200;
 
     public const uint MSGFLT_ALLOW = 1;
-    public const uint SMTO_NORMAL = 0x0000;
     public const uint SMTO_ABORTIFHUNG = 0x0002;
 
     public const uint ISMEX_SEND = 0x00000001;
-    public const uint ISMEX_REPLIED = 0x00000008;
 
     public delegate IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
     public delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
@@ -204,10 +195,6 @@ internal static class TrayApi
     [DllImport("user32.dll")]
     public static extern uint InSendMessageEx(IntPtr lpReserved);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool ReplyMessage(IntPtr lResult);
-
     [DllImport("user32.dll", EntryPoint = "SetTimer", SetLastError = true)]
     public static extern UIntPtr SetTimer(IntPtr hWnd, UIntPtr nIDEvent, uint uElapse, IntPtr lpTimerFunc);
 
@@ -267,7 +254,6 @@ internal static class TrayApi
     // APPBARDATAV2 = { int cbSize; uint hWnd; uint uCallbackMessage; uint uEdge; RECT rc; long lParam } = 40바이트
     public const int AppBarMsgSize = 64;
     public const int AppBarDataSize = 40;
-    public const int AppBar_dwMessage = 40;
     public const int AppBar_hSharedMemory = 48;
     public const int AppBar_dwSourceProcessId = 56;
 
@@ -331,8 +317,6 @@ internal static class TrayApi
 
     public const uint REG_NOTIFY_CHANGE_NAME = 0x1;
     public const uint REG_NOTIFY_CHANGE_LAST_SET = 0x4;
-    /// <summary>윈도우 8+: 호출 스레드가 끝나도 알림 등록 유지 (스레드 풀에서 다시 등록할 때 필요).</summary>
-    public const uint REG_NOTIFY_THREAD_AGNOSTIC = 0x10000000;
 
     /// <summary>레지스트리 키 변경 알림 (비동기: hEvent 가 신호됨). 성공 시 0(ERROR_SUCCESS). 오류 코드를 직접 반환.</summary>
     [DllImport("advapi32.dll", ExactSpelling = true)]

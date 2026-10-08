@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -22,8 +23,12 @@ namespace MyDock.Services;
 /// - 동기 SendMessage 로 들어오므로 빨리 처리: 전달은 SendMessageTimeout(SMTO_ABORTIFHUNG). UI 스레드와 독립된 스레드라 UI 가 바빠도 앱이 안 멈춤.
 /// - 시작 시 이미 등록된 아이콘은 "TaskbarCreated" 를 다른 앱(몽독·explorer 제외)의 최상위 창에만 보내 다시 등록하게 해서 얻는다.
 /// - 창이 사라지면(끄기·종료·크래시) 앱들은 자동으로 explorer 로 보낸다. explorer 는 그동안 모든 메시지를 전달받았으므로 재등록 불필요
-///   (전달 실패가 있었을 때만 끌 때 TaskbarCreated 를 다시 보냄).
+///   (전달 실패가 있었을 때만 끌 때 TaskbarCreated 를 다시 보냄 — 크래시로 못 보냈으면 다음 시작 때, <see cref="ForwardFailedMarker"/>).
 /// - 창은 항상 숨김이고 크기·위치는 explorer 작업 표시줄과 같게 맞춘다(FindWindow+GetWindowRect 로 작업 표시줄 위치를 재는 앱 대비).
+///
+/// 스레드 수명: 창 핸들·스레드 ID·타이머 상태는 스레드마다 <see cref="Worker"/> 하나에 둔다(WndProc·finally 는 자기 Worker 만 봄).
+/// 끌 때 옛 스레드가 AppBar 중계(최대 <see cref="AppBarForwardTimeoutMs"/>) 중이라 제때 안 끝나면 <see cref="_lingering"/> 으로 두고,
+/// 그 스레드가 완전히 끝난 뒤에야 새 스레드를 시작한다(같은 창 클래스 등록/해제가 겹치지 않게).
 /// </summary>
 public sealed class TrayIconService : ITrayIconService, IDisposable
 {
@@ -35,41 +40,58 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
     /// (이미 잡힌 앱에 다시 보내면 DELETE→ADD 로 아이콘이 깜빡임 — 실측).
     /// </summary>
     private static readonly uint[] ReplayPasses = { 200, 800, 2000, 5000 };
-    private int _replayCount;
     private const uint ForwardTimeoutMs = 3000;
     private const uint AppBarForwardTimeoutMs = 5000;
+    /// <summary>끌 때 UI 스레드가 기다리는 최대 시간. 넘으면 기다리지 않고 백그라운드에서 끝을 기다림.</summary>
+    private static readonly TimeSpan StopJoinTimeout = TimeSpan.FromSeconds(3);
+
+    /// <summary>explorer 로의 전달이 실패한 적 있음 (끄기 전에 크래시하면 다음 시작 때 재등록 요청을 보내려고 남김).</summary>
+    private static string ForwardFailedMarker => Path.Combine(AppInfo.DataDirectory, "tray-forward-failed.flag");
 
     private readonly Dispatcher _dispatcher;
     private readonly object _gate = new();
     private readonly List<Entry> _entries = new();          // _gate
-    private readonly Dictionary<uint, (string Name, string Path)> _procNames = new(); // 트레이 스레드 전용
+    private readonly Dictionary<uint, (string Name, string Path)> _procNames = new(); // 트레이 스레드 전용 (한 번에 하나만 돎)
     private readonly T.WndProc _wndProc;                     // GC 방지
     private readonly uint _selfPid = (uint)Environment.ProcessId;
     private readonly uint _taskbarCreatedMsg;
 
     private readonly object _lifeGate = new();
-    private Thread? _thread;
-    private uint _threadId;
-    private volatile IntPtr _trayHwnd;
-    private IntPtr _notifyHwnd;
-    private IntPtr _explorerTray;    // 트레이 스레드 전용
-    private RECT _mirroredRect;
-    private bool _enabled;
-    private bool _disposed;
-    private volatile bool _forwardFailed;
+    private Worker? _worker;          // _lifeGate: 지금 켜진 스레드
+    private Worker? _lingering;       // _lifeGate: 끄라고 했지만 아직 안 끝난 스레드 (끝나면 null)
+    private bool _enabled;            // _lifeGate
+    private bool _disposed;           // _lifeGate
+    private int _forwardFailed;       // 0/1 (Interlocked)
     private long _seq;
     private int _errorLogs;
     private bool _publishQueued;     // _gate
     private IReadOnlyList<TrayIconInfo> _icons = Array.Empty<TrayIconInfo>();
+
+    /// <summary>트레이 스레드 하나의 상태. 그 스레드에서만 쓰고(Stopping·ThreadId 제외), WndProc 는 <see cref="t_worker"/> 로 찾는다.</summary>
+    private sealed class Worker
+    {
+        public required Thread Thread;
+        public readonly ManualResetEventSlim Ready = new(false);
+        public uint ThreadId;             // 메시지 큐가 생긴 뒤(창 만든 뒤)에만 0 이 아님 (Interlocked/Volatile)
+        public volatile bool Stopping;    // 끄라고 함: 아이콘 데이터는 더 받지 않고 전달만, 맨 위로 올리지 않음
+        public bool Failed;               // 창 만들기 실패 등으로 시작 못 함
+        public IntPtr Hwnd;
+        public IntPtr NotifyHwnd;
+        public IntPtr ExplorerTray;
+        public RECT MirroredRect;
+        public int ReplayCount;
+    }
+
+    [ThreadStatic] private static Worker? t_worker;
 
     public TrayIconService()
     {
         _dispatcher = Dispatcher.CurrentDispatcher;
         _wndProc = WndProc;
         _taskbarCreatedMsg = T.RegisterWindowMessage("TaskbarCreated");
+        RecoverAfterCrash();
     }
 
-    public bool IsActive => _trayHwnd != IntPtr.Zero;
     public IReadOnlyList<TrayIconInfo> Icons => _icons;
     public event EventHandler? Changed;
 
@@ -81,47 +103,118 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
         {
             if (_disposed || enabled == _enabled) return;
             _enabled = enabled;
+            // 윈도우 트레이 설정 감시도 트레이 기능이 켜져 있을 때만
+            try { NotifyIconSettingsReader.Shared.SetWatching(enabled); }
+            catch (Exception e) { Log.Warn($"트레이 설정 감시 {(enabled ? "시작" : "중지")} 실패: {e.Message}"); }
             if (enabled) StartThread();
             else StopThread();
         }
     }
 
+    /// <summary>_lifeGate 안에서. 이전 스레드가 아직 돌면 시작하지 않음 — 그 스레드가 끝날 때 대기 작업이 다시 부른다.</summary>
     private void StartThread()
     {
-        if (_thread is not null) return;
-        var ready = new ManualResetEventSlim(false);
-        var t = new Thread(() => Run(ready))
+        if (_worker is not null || _disposed) return;
+        if (_lingering is not null)
+        {
+            Log.Info("이전 트레이 스레드가 아직 중계 중 → 끝나면 시작");
+            return;
+        }
+        Worker? w = null;
+        var t = new Thread(() => Run(w!))
         {
             IsBackground = true,
             Name = "mongdock tray",
             Priority = ThreadPriority.AboveNormal,
         };
+        w = new Worker { Thread = t };
         t.SetApartmentState(ApartmentState.STA); // 아이콘 → BitmapSource 변환(WPF) 용
-        _thread = t;
+        _worker = w;
         t.Start();
-        if (!ready.Wait(TimeSpan.FromSeconds(3)))
+        if (!w.Ready.Wait(TimeSpan.FromSeconds(3)))
             Log.Warn("트레이 창 시작 대기 시간 초과");
+        if (w.Failed && _worker == w)
+        {
+            // 창 만들기 실패 → 다음 SetEnabled(true) 에서 다시 시도할 수 있게
+            _worker = null;
+            _enabled = false;
+        }
     }
 
+    /// <summary>_lifeGate 안에서.</summary>
     private void StopThread()
     {
-        var t = _thread;
-        if (t is null) return;
-        _thread = null;
-        if (_threadId != 0) T.PostThreadMessage(_threadId, T.WM_QUIT, IntPtr.Zero, IntPtr.Zero);
-        if (Thread.CurrentThread != t && !t.Join(TimeSpan.FromSeconds(3)))
-            Log.Warn("트레이 스레드 종료 대기 시간 초과");
-        _threadId = 0;
+        var w = _worker;
+        if (w is null) return;
+        _worker = null;
+        w.Stopping = true;
+        Thread.MemoryBarrier(); // Stopping 쓰기 → ThreadId 읽기 순서 (Run 은 ThreadId 쓰기 → Stopping 읽기)
+        uint tid = Volatile.Read(ref w.ThreadId);
+        if (tid != 0 && !T.PostThreadMessage(tid, T.WM_QUIT, IntPtr.Zero, IntPtr.Zero))
+            Log.Warn($"트레이 스레드 종료 요청 실패 (오류 {Marshal.GetLastWin32Error()})");
+
+        bool ended = Thread.CurrentThread == w.Thread || w.Thread.Join(StopJoinTimeout);
         lock (_gate) _entries.Clear();
         QueuePublish();
-        if (_forwardFailed)
+        if (ended)
         {
-            // explorer 로의 전달이 실패한 적이 있으면 explorer 트레이가 빠진 아이콘이 있을 수 있음 → 앱들에게 다시 등록 요청
-            // (이제 몽독 창이 없으므로 explorer 로 감)
-            _forwardFailed = false;
-            int n = SendTaskbarCreatedToApps(IntPtr.Zero);
-            Log.Info($"트레이 전달 실패가 있었음 → 앱 {n}개 창에 TaskbarCreated 다시 보냄");
+            AfterStopped();
+            return;
         }
+
+        // 옛 스레드가 explorer 응답을 기다리는 중 (AppBar 중계 최대 5초, 이어서 다른 보낸 메시지도 처리할 수 있음).
+        // 그 창이 남아 있는 동안 새 창을 만들면 같은 클래스의 등록·해제가 겹치므로, 끝날 때까지 기다렸다가 필요하면 다시 켬.
+        Log.Warn("트레이 스레드가 아직 중계 중 → 끝나기를 백그라운드에서 기다림");
+        _lingering = w;
+        _ = Task.Run(() =>
+        {
+            w.Thread.Join();
+            lock (_lifeGate)
+            {
+                if (_lingering == w) _lingering = null;
+                Log.Info("이전 트레이 스레드 끝남");
+                if (!_enabled || _disposed) AfterStopped();
+                else StartThread();
+            }
+        });
+    }
+
+    /// <summary>_lifeGate 안에서, 트레이 창이 완전히 없어진 뒤 (끈 상태).</summary>
+    private void AfterStopped()
+    {
+        if (Interlocked.Exchange(ref _forwardFailed, 0) == 0) return;
+        // explorer 로의 전달이 실패한 적이 있으면 explorer 트레이가 빠진 아이콘이 있을 수 있음 → 앱들에게 다시 등록 요청
+        // (이제 몽독 창이 없으므로 explorer 로 감)
+        int n = SendTaskbarCreatedToApps(IntPtr.Zero);
+        Log.Info($"트레이 전달 실패가 있었음 → 앱 {n}개 창에 TaskbarCreated 다시 보냄");
+        try { File.Delete(ForwardFailedMarker); } catch { }
+    }
+
+    /// <summary>
+    /// 지난 실행이 전달 실패 뒤 끄지 못하고(크래시 등) 끝났으면 explorer 트레이에 빠진 아이콘이 있을 수 있음 →
+    /// 시작할 때 한 번 앱들에게 재등록 요청 (아직 몽독 창이 없으므로 explorer 로 감. 곧 트레이 기능을 켜면 그쪽 재등록 요청도 explorer 로 전달됨).
+    /// </summary>
+    private void RecoverAfterCrash()
+    {
+        try
+        {
+            if (!File.Exists(ForwardFailedMarker)) return;
+            File.Delete(ForwardFailedMarker);
+            int n = SendTaskbarCreatedToApps(IntPtr.Zero);
+            Log.Info($"지난 실행에 트레이 전달 실패 기록 → 앱 {n}개 창에 TaskbarCreated 보냄 (explorer 재등록)");
+        }
+        catch (Exception e) { Log.Warn($"트레이 전달 실패 기록 처리 실패: {e.Message}"); }
+    }
+
+    private void MarkForwardFailed()
+    {
+        if (Interlocked.Exchange(ref _forwardFailed, 1) != 0) return;
+        try
+        {
+            Directory.CreateDirectory(AppInfo.DataDirectory);
+            File.WriteAllText(ForwardFailedMarker, DateTime.Now.ToString("O"));
+        }
+        catch { /* 기록 실패는 무시 — 정상 종료 시엔 메모리 플래그로 처리 */ }
     }
 
     public void Dispose()
@@ -129,6 +222,10 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
         lock (_lifeGate)
         {
             if (_disposed) return;
+            if (_enabled)
+            {
+                try { NotifyIconSettingsReader.Shared.SetWatching(false); } catch { }
+            }
             _enabled = false;
             StopThread();
             _disposed = true;
@@ -137,45 +234,51 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
 
     // ───────────────────────── 트레이 스레드 ─────────────────────────
 
-    private void Run(ManualResetEventSlim ready)
+    private void Run(Worker w)
     {
+        t_worker = w;
         IntPtr hInstance = T.GetModuleHandle(null);
         bool trayClass = false, notifyClass = false;
+        IntPtr hwnd = IntPtr.Zero;
         try
         {
-            _threadId = T.GetCurrentThreadId();
             trayClass = RegisterClass(T.TrayWndClass, hInstance);
             notifyClass = RegisterClass(T.NotifyWndClass, hInstance);
 
-            _explorerTray = T.FindExplorerTray();
+            w.ExplorerTray = T.FindExplorerTray();
             RECT r = default;
-            if (_explorerTray != IntPtr.Zero) T.GetWindowRect(_explorerTray, out r);
-            _mirroredRect = r;
+            if (w.ExplorerTray != IntPtr.Zero) T.GetWindowRect(w.ExplorerTray, out r);
+            w.MirroredRect = r;
 
             // 보이지 않는(WS_VISIBLE 없음) 최상위 도구 창. 활성화·입력 받지 않음.
-            IntPtr hwnd = T.CreateWindowEx(T.WS_EX_TOPMOST | T.WS_EX_TOOLWINDOW | T.WS_EX_NOACTIVATE, T.TrayWndClass, "",
+            hwnd = T.CreateWindowEx(T.WS_EX_TOPMOST | T.WS_EX_TOOLWINDOW | T.WS_EX_NOACTIVATE, T.TrayWndClass, "",
                 T.WS_POPUP | T.WS_CLIPCHILDREN | T.WS_CLIPSIBLINGS, r.Left, r.Top, r.Width, r.Height,
                 IntPtr.Zero, IntPtr.Zero, hInstance, IntPtr.Zero);
             if (hwnd == IntPtr.Zero)
             {
+                w.Failed = true;
                 Log.Warn($"트레이 창 만들기 실패 (오류 {Marshal.GetLastWin32Error()})");
                 return;
             }
-            _trayHwnd = hwnd; // 만들자마자 맨 위 topmost 라 곧바로 메시지를 받을 수 있음
-            _notifyHwnd = T.CreateWindowEx(0, T.NotifyWndClass, null, T.WS_CHILD | T.WS_CLIPCHILDREN | T.WS_CLIPSIBLINGS,
+            w.Hwnd = hwnd; // 만들자마자 맨 위 topmost 라 곧바로 메시지를 받을 수 있음
+            // 창을 만들어 메시지 큐가 생긴 뒤에 알림 (그 전에 PostThreadMessage 하면 WM_QUIT 이 사라짐)
+            Interlocked.Exchange(ref w.ThreadId, T.GetCurrentThreadId());
+            if (w.Stopping) return; // 시작 중에 끄라고 함 (StopThread 가 ThreadId 를 0 으로 봤을 수 있음)
+
+            w.NotifyHwnd = T.CreateWindowEx(0, T.NotifyWndClass, null, T.WS_CHILD | T.WS_CLIPCHILDREN | T.WS_CLIPSIBLINGS,
                 0, 0, 0, 0, hwnd, IntPtr.Zero, hInstance, IntPtr.Zero);
-            MirrorNotifyRect();
+            MirrorNotifyRect(w);
 
             // 낮은 무결성 프로세스(샌드박스 앱 등)의 Shell_NotifyIcon 도 받도록 (explorer 도 같은 필터를 연다)
             T.ChangeWindowMessageFilterEx(hwnd, T.WM_COPYDATA, T.MSGFLT_ALLOW, IntPtr.Zero);
 
-            RaiseTopmost();
+            RaiseTopmost(w);
             T.SetTimer(hwnd, (UIntPtr)TimerRaise, 100, IntPtr.Zero);
             T.SetTimer(hwnd, (UIntPtr)TimerHousekeep, 2000, IntPtr.Zero);
-            _replayCount = 0;
+            w.ReplayCount = 0;
             T.SetTimer(hwnd, (UIntPtr)TimerReplay, ReplayPasses[0], IntPtr.Zero);
-            Log.Info($"트레이 가로채기 시작 (explorer 트레이 0x{_explorerTray.ToInt64():X})");
-            ready.Set();
+            Log.Info($"트레이 가로채기 시작 (explorer 트레이 0x{w.ExplorerTray.ToInt64():X})");
+            w.Ready.Set();
 
             while (T.GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
             {
@@ -189,8 +292,8 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
         }
         finally
         {
-            IntPtr hwnd = _trayHwnd;
-            _trayHwnd = IntPtr.Zero;
+            // 자기 Worker 의 창만 정리 (공유 필드 없음 → 늦게 끝나도 새 스레드의 창을 건드리지 않음)
+            w.Hwnd = IntPtr.Zero;
             if (hwnd != IntPtr.Zero)
             {
                 T.KillTimer(hwnd, (UIntPtr)TimerRaise);
@@ -198,11 +301,29 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
                 T.KillTimer(hwnd, (UIntPtr)TimerReplay);
                 T.DestroyWindow(hwnd); // 자식 TrayNotifyWnd 도 함께
             }
-            _notifyHwnd = IntPtr.Zero;
+            w.NotifyHwnd = IntPtr.Zero;
             if (notifyClass) T.UnregisterClass(T.NotifyWndClass, hInstance);
             if (trayClass) T.UnregisterClass(T.TrayWndClass, hInstance);
             try { Dispatcher.FromThread(Thread.CurrentThread)?.InvokeShutdown(); } catch { }
-            ready.Set();
+            t_worker = null;
+            if (!w.Stopping)
+            {
+                // 끄라고 하지 않았는데 끝남 (창 만들기 실패·예외) → 다음 켜기에서 다시 시도할 수 있게 정리
+                w.Failed = true;
+                _ = Task.Run(() =>
+                {
+                    lock (_lifeGate)
+                    {
+                        if (_worker != w) return;
+                        _worker = null;
+                        _enabled = false;
+                        Log.Warn("트레이 스레드가 예기치 않게 끝남 → 다음 켜기 때 다시 시도");
+                    }
+                    lock (_gate) _entries.Clear();
+                    QueuePublish();
+                });
+            }
+            w.Ready.Set();
             if (hwnd != IntPtr.Zero) Log.Info("트레이 가로채기 끝");
         }
     }
@@ -223,30 +344,48 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
         return false;
     }
 
+    /// <summary>
+    /// 숨은 Shell_TrayWnd 의 메시지 처리. 자기 스레드의 Worker 창(<see cref="t_worker"/>)일 때만 처리하고 나머지는 DefWindowProc.
+    ///
+    /// explorer 로 <b>전달</b>:
+    /// - WM_COPYDATA: dwData 0 = AppBar(공유 메모리 바꿔 중계), 1 = Shell_NotifyIcon(읽은 뒤 전달), 3 = 아이콘 위치(아는 것만 직접 답), 그 밖 그대로.
+    /// - WM_COMMAND (예: 419 = 모두 최소화), WM_HOTKEY, SC_CLOSE 가 아닌 WM_SYSCOMMAND.
+    /// - WM_USER ~ 0xBFFF (explorer 전용 작업 표시줄 메시지).
+    ///
+    /// <b>삼킴</b> (explorer 로 보내지 않음):
+    /// - WM_CLOSE, WM_SYSCOMMAND(SC_CLOSE): explorer 의 작업 표시줄이 받으면 "Windows 종료" 대화상자를 띄움. 이 창도 닫지 않음.
+    /// - WM_QUERYENDSESSION(→ TRUE, 종료 막지 않음), WM_ENDSESSION: 우리 창 몫만 답함 (explorer 는 자기 창으로 따로 받음).
+    /// - TaskbarCreated 등 등록 메시지(0xC000~): 브로드캐스트라 explorer 가 직접 받음 → 전달하면 두 번.
+    /// - WM_TIMER·WM_WINDOWPOSCHANGING 등 이 창 자체의 메시지.
+    /// </summary>
     private IntPtr WndProc(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
         try
         {
-            if (hwnd == _trayHwnd && hwnd != IntPtr.Zero)
+            var w = t_worker;
+            if (w is not null && hwnd == w.Hwnd && hwnd != IntPtr.Zero)
             {
                 if (msg == _taskbarCreatedMsg && msg != 0)
                 {
                     // explorer 재시작(또는 다른 셸이 브로드캐스트) → 새 explorer 작업 표시줄 위로 다시 올림. 앱들은 알아서 다시 등록.
-                    _explorerTray = T.FindExplorerTray();
-                    RaiseTopmost();
-                    Log.Info("TaskbarCreated → 트레이 창 다시 맨 위로");
+                    w.ExplorerTray = T.FindExplorerTray();
+                    if (!w.Stopping)
+                    {
+                        RaiseTopmost(w);
+                        Log.Info("TaskbarCreated → 트레이 창 다시 맨 위로");
+                    }
                     return IntPtr.Zero;
                 }
                 switch (msg)
                 {
                     case T.WM_COPYDATA:
                     {
-                        IntPtr result = OnCopyData(msg, wParam, lParam);
-                        EnsureOnTop();
+                        IntPtr result = OnCopyData(w, msg, wParam, lParam);
+                        EnsureOnTop(w);
                         return result;
                     }
                     case T.WM_TIMER:
-                        OnTimer((int)wParam.ToInt64());
+                        OnTimer(w, (int)wParam.ToInt64());
                         return IntPtr.Zero;
                     case T.WM_WINDOWPOSCHANGING:
                         // 다른 프로그램이 FindWindow("Shell_TrayWnd") 로 이 창을 보이게 해도 숨김 유지
@@ -261,21 +400,29 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
                         }
                         break;
                     case T.WM_CLOSE:
-                    case T.WM_COMMAND:
+                        // 삼킴: explorer 로 보내면 종료 대화상자, DefWindowProc 면 이 창이 닫힘
+                        return IntPtr.Zero;
+                    case T.WM_QUERYENDSESSION:
+                        return (IntPtr)1; // 종료 허용 (우리 창 몫)
+                    case T.WM_ENDSESSION:
+                        return IntPtr.Zero;
                     case T.WM_SYSCOMMAND:
+                        if (((int)wParam.ToInt64() & 0xFFF0) == T.SC_CLOSE) return IntPtr.Zero; // 삼킴 (WM_CLOSE 와 같은 이유)
+                        goto case T.WM_COMMAND;
+                    case T.WM_COMMAND:
                     case T.WM_HOTKEY:
-                        // 작업 표시줄에 보내는 명령(예: WM_COMMAND 419 = 모두 최소화)은 explorer 로. WM_CLOSE 로 이 창이 닫히지 않게 직접 처리
+                        // 작업 표시줄에 보내는 명령(예: WM_COMMAND 419 = 모두 최소화)은 explorer 로
                     {
-                        IntPtr result = Forward(msg, wParam, lParam, ForwardTimeoutMs);
-                        EnsureOnTop();
+                        IntPtr result = Forward(w, msg, wParam, lParam, ForwardTimeoutMs);
+                        EnsureOnTop(w);
                         return result;
                     }
                 }
                 // explorer 전용 WM_USER 범위 메시지는 그대로 전달. 등록 메시지(0xC000~)는 브로드캐스트일 수 있어 전달하지 않음(explorer 가 두 번 받음)
                 if (msg >= T.WM_USER && msg < T.RegisteredMessageFirst)
                 {
-                    IntPtr result = Forward(msg, wParam, lParam, ForwardTimeoutMs);
-                    EnsureOnTop();
+                    IntPtr result = Forward(w, msg, wParam, lParam, ForwardTimeoutMs);
+                    EnsureOnTop(w);
                     return result;
                 }
             }
@@ -287,36 +434,39 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
         return T.DefWindowProc(hwnd, msg, wParam, lParam);
     }
 
-    private IntPtr OnCopyData(uint msg, IntPtr wParam, IntPtr lParam)
+    private IntPtr OnCopyData(Worker w, uint msg, IntPtr wParam, IntPtr lParam)
     {
-        if (lParam == IntPtr.Zero) return Forward(msg, wParam, lParam, ForwardTimeoutMs);
+        if (lParam == IntPtr.Zero) return Forward(w, msg, wParam, lParam, ForwardTimeoutMs);
         var cds = Marshal.PtrToStructure<T.COPYDATASTRUCT>(lParam);
         long kind = cds.dwData.ToInt64();
         switch (kind)
         {
             case 0:
                 // AppBar 메시지 (SHAppBarMessage) — 몽독 자신의 상단바·독 AppBar 포함.
-                return ForwardAppBar(wParam, cds);
+                return ForwardAppBar(w, wParam, cds);
             case 1:
             {
                 bool ours = false;
-                try { ours = HandleTrayData(cds.lpData, (int)Math.Min(cds.cbData, int.MaxValue)); }
-                catch (Exception e)
+                if (!w.Stopping) // 끄는 중엔 목록에 넣지 않음 (이미 비웠음) — 전달만
                 {
-                    if (Interlocked.Increment(ref _errorLogs) <= 20) Log.Error("트레이 데이터 처리 예외", e);
+                    try { ours = HandleTrayData(cds.lpData, (int)Math.Min(cds.cbData, int.MaxValue)); }
+                    catch (Exception e)
+                    {
+                        if (Interlocked.Increment(ref _errorLogs) <= 20) Log.Error("트레이 데이터 처리 예외", e);
+                    }
                 }
-                IntPtr r = Forward(msg, wParam, lParam, ForwardTimeoutMs);
+                IntPtr r = Forward(w, msg, wParam, lParam, ForwardTimeoutMs);
                 // 둘 중 하나라도 받아들였으면 성공 (예: 재등록 요청으로 온 NIM_ADD 는 explorer 에선 중복이라 실패)
                 return ours || r != IntPtr.Zero ? (IntPtr)1 : IntPtr.Zero;
             }
             case 3:
             {
                 // Shell_NotifyIconGetRect: 우리가 아는 아이콘 위치(마지막 클릭/호버한 상단바 위치)면 그걸, 아니면 explorer 에 물음
-                IntPtr? mine = GetIconRect(cds.lpData, (int)Math.Min(cds.cbData, int.MaxValue));
-                return mine ?? Forward(msg, wParam, lParam, ForwardTimeoutMs);
+                IntPtr? mine = w.Stopping ? null : GetIconRect(cds.lpData, (int)Math.Min(cds.cbData, int.MaxValue));
+                return mine ?? Forward(w, msg, wParam, lParam, ForwardTimeoutMs);
             }
             default:
-                return Forward(msg, wParam, lParam, ForwardTimeoutMs);
+                return Forward(w, msg, wParam, lParam, ForwardTimeoutMs);
         }
     }
 
@@ -327,12 +477,12 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
     /// → 내용을 explorer 용 공유 메모리(SHAllocShared(..., explorer pid))로 복사해 보내고, 응답 뒤 결과를 원래 메모리로 복사.
     /// 결과 메모리가 없는 메시지(ABM_NEW/REMOVE 등)는 그대로 전달.
     /// </summary>
-    private IntPtr ForwardAppBar(IntPtr wParam, T.COPYDATASTRUCT cds)
+    private IntPtr ForwardAppBar(Worker w, IntPtr wParam, T.COPYDATASTRUCT cds)
     {
-        IntPtr explorer = _explorerTray;
+        IntPtr explorer = w.ExplorerTray;
         if (explorer == IntPtr.Zero || !T.IsWindow(explorer))
         {
-            explorer = _explorerTray = T.FindExplorerTray();
+            explorer = w.ExplorerTray = T.FindExplorerTray();
             if (explorer == IntPtr.Zero) return IntPtr.Zero;
         }
         if (cds.lpData == IntPtr.Zero || cds.cbData != T.AppBarMsgSize)
@@ -415,12 +565,12 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
     }
 
     /// <summary>explorer 의 Shell_TrayWnd 로 그대로 전달. 게시된 메시지는 게시로, 보낸 메시지는 SendMessageTimeout 으로.</summary>
-    private IntPtr Forward(uint msg, IntPtr wParam, IntPtr lParam, uint timeoutMs)
+    private IntPtr Forward(Worker w, uint msg, IntPtr wParam, IntPtr lParam, uint timeoutMs)
     {
-        IntPtr target = _explorerTray;
+        IntPtr target = w.ExplorerTray;
         if (target == IntPtr.Zero || !T.IsWindow(target))
         {
-            target = _explorerTray = T.FindExplorerTray();
+            target = w.ExplorerTray = T.FindExplorerTray();
             if (target == IntPtr.Zero) return IntPtr.Zero;
         }
         uint sm = T.InSendMessageEx(IntPtr.Zero);
@@ -432,43 +582,44 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
         if (T.SendMessageTimeout(target, msg, wParam, lParam, T.SMTO_ABORTIFHUNG, timeoutMs, out IntPtr result) == IntPtr.Zero)
         {
             int err = Marshal.GetLastWin32Error();
-            if (msg == T.WM_COPYDATA) _forwardFailed = true;
+            if (msg == T.WM_COPYDATA) MarkForwardFailed();
             if (Interlocked.Increment(ref _errorLogs) <= 20) Log.Warn($"explorer 트레이로 전달 실패 (0x{msg:X}, 오류 {err})");
             return IntPtr.Zero;
         }
         return result;
     }
 
-    private void OnTimer(int id)
+    private void OnTimer(Worker w, int id)
     {
+        if (w.Stopping) return; // 끄는 중: 맨 위로 올리거나 재등록 요청하지 않음
         switch (id)
         {
             case TimerRaise:
                 // explorer 가 자기 작업 표시줄을 다시 올렸으면 (작업 표시줄 클릭 등) 다시 위로
-                if (T.FindWindow(T.TrayWndClass, null) != _trayHwnd) RaiseTopmost();
+                if (T.FindWindow(T.TrayWndClass, null) != w.Hwnd) RaiseTopmost(w);
                 break;
             case TimerHousekeep:
-                Housekeep();
+                Housekeep(w);
                 break;
             case TimerReplay:
-                T.KillTimer(_trayHwnd, (UIntPtr)TimerReplay);
+                T.KillTimer(w.Hwnd, (UIntPtr)TimerReplay);
                 // 보내기 직전에 몽독 창이 맨 위인지 확인 (시작 직후 작업 표시줄 숨기기 등으로 explorer 창이 다시 올라와
                 // 앱들의 NIM_ADD 가 explorer 로 새는 경우가 있음 — 실측: 재시작 후 14개 중 5개만 잡힘)
-                if (T.FindWindow(T.TrayWndClass, null) != _trayHwnd) RaiseTopmost();
-                _replayCount++;
-                if (_replayCount == 1)
+                if (T.FindWindow(T.TrayWndClass, null) != w.Hwnd) RaiseTopmost(w);
+                w.ReplayCount++;
+                if (w.ReplayCount == 1)
                 {
-                    int n = SendTaskbarCreatedToApps(_explorerTray);
+                    int n = SendTaskbarCreatedToApps(w.ExplorerTray);
                     Log.Info($"트레이 아이콘 재등록 요청 1회차 (TaskbarCreated → 창 {n}개)");
                 }
                 else
                 {
                     // 늦게 반응하는 앱·위의 경우: 트레이 아이콘을 가진 적 있는 앱(윈도우 설정 목록) 중 실행 중인데 아직 없는 것만
-                    string missing = SendTaskbarCreatedToMissingApps(_explorerTray);
-                    Log.Info($"트레이 아이콘 재등록 확인 {_replayCount}회차: " + (missing.Length > 0 ? "빠진 앱에 다시 요청 → " + missing : "빠진 앱 없음"));
+                    string missing = SendTaskbarCreatedToMissingApps(w.ExplorerTray);
+                    Log.Info($"트레이 아이콘 재등록 확인 {w.ReplayCount}회차: " + (missing.Length > 0 ? "빠진 앱에 다시 요청 → " + missing : "빠진 앱 없음"));
                 }
-                if (_replayCount < ReplayPasses.Length)
-                    T.SetTimer(_trayHwnd, (UIntPtr)TimerReplay, ReplayPasses[_replayCount], IntPtr.Zero);
+                if (w.ReplayCount < ReplayPasses.Length)
+                    T.SetTimer(w.Hwnd, (UIntPtr)TimerReplay, ReplayPasses[w.ReplayCount], IntPtr.Zero);
                 break;
         }
     }
@@ -479,28 +630,28 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
     /// (실측: 카카오톡·디스코드·Parsec·휴대폰과 연결이 매번 빠짐). 앱은 아직 이 SendMessage 응답을 기다리는 중이므로
     /// 돌려주기 전에 다시 올리면 다음 호출은 확실히 몽독으로 온다.
     /// </summary>
-    private void EnsureOnTop()
+    private static void EnsureOnTop(Worker w)
     {
-        if (_trayHwnd != IntPtr.Zero && T.FindWindow(T.TrayWndClass, null) != _trayHwnd) RaiseTopmost();
+        if (!w.Stopping && w.Hwnd != IntPtr.Zero && T.FindWindow(T.TrayWndClass, null) != w.Hwnd) RaiseTopmost(w);
     }
 
-    private void RaiseTopmost()
+    private static void RaiseTopmost(Worker w)
     {
-        IntPtr h = _trayHwnd;
+        IntPtr h = w.Hwnd;
         if (h == IntPtr.Zero) return;
         T.SetWindowPos(h, T.HWND_TOPMOST, 0, 0, 0, 0, T.SWP_NOMOVE | T.SWP_NOSIZE | T.SWP_NOACTIVATE);
     }
 
-    private void Housekeep()
+    private void Housekeep(Worker w)
     {
         // explorer 창 다시 찾기 + 같은 위치·크기로 (작업 표시줄 위치를 창 사각형으로 재는 앱 대비)
-        if (_explorerTray == IntPtr.Zero || !T.IsWindow(_explorerTray)) _explorerTray = T.FindExplorerTray();
-        if (_explorerTray != IntPtr.Zero && T.GetWindowRect(_explorerTray, out RECT r)
-            && (r.Left != _mirroredRect.Left || r.Top != _mirroredRect.Top || r.Right != _mirroredRect.Right || r.Bottom != _mirroredRect.Bottom))
+        if (w.ExplorerTray == IntPtr.Zero || !T.IsWindow(w.ExplorerTray)) w.ExplorerTray = T.FindExplorerTray();
+        if (w.ExplorerTray != IntPtr.Zero && T.GetWindowRect(w.ExplorerTray, out RECT r)
+            && (r.Left != w.MirroredRect.Left || r.Top != w.MirroredRect.Top || r.Right != w.MirroredRect.Right || r.Bottom != w.MirroredRect.Bottom))
         {
-            _mirroredRect = r;
-            T.SetWindowPos(_trayHwnd, IntPtr.Zero, r.Left, r.Top, r.Width, r.Height, T.SWP_NOZORDER | T.SWP_NOACTIVATE | T.SWP_NOOWNERZORDER);
-            MirrorNotifyRect();
+            w.MirroredRect = r;
+            T.SetWindowPos(w.Hwnd, IntPtr.Zero, r.Left, r.Top, r.Width, r.Height, T.SWP_NOZORDER | T.SWP_NOACTIVATE | T.SWP_NOOWNERZORDER);
+            MirrorNotifyRect(w);
         }
 
         // 소유 창이 사라진 아이콘 정리 (앱이 NIM_DELETE 없이 종료·크래시)
@@ -521,21 +672,18 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
         }
     }
 
-    private void MirrorNotifyRect()
+    private static void MirrorNotifyRect(Worker w)
     {
-        if (_notifyHwnd == IntPtr.Zero || _explorerTray == IntPtr.Zero) return;
-        IntPtr exNotify = T.FindWindowEx(_explorerTray, IntPtr.Zero, T.NotifyWndClass, null);
-        if (exNotify == IntPtr.Zero || !T.GetWindowRect(exNotify, out RECT n) || !T.GetWindowRect(_explorerTray, out RECT p)) return;
-        T.SetWindowPos(_notifyHwnd, IntPtr.Zero, n.Left - p.Left, n.Top - p.Top, n.Width, n.Height, T.SWP_NOZORDER | T.SWP_NOACTIVATE);
+        if (w.NotifyHwnd == IntPtr.Zero || w.ExplorerTray == IntPtr.Zero) return;
+        IntPtr exNotify = T.FindWindowEx(w.ExplorerTray, IntPtr.Zero, T.NotifyWndClass, null);
+        if (exNotify == IntPtr.Zero || !T.GetWindowRect(exNotify, out RECT n) || !T.GetWindowRect(w.ExplorerTray, out RECT p)) return;
+        T.SetWindowPos(w.NotifyHwnd, IntPtr.Zero, n.Left - p.Left, n.Top - p.Top, n.Width, n.Height, T.SWP_NOZORDER | T.SWP_NOACTIVATE);
     }
 
     /// <summary>
     /// 다른 앱(몽독·explorer 제외)의 최상위 창에 TaskbarCreated 를 비동기로 보냄 → 앱들이 트레이 아이콘을 다시 NIM_ADD.
     /// HWND_BROADCAST 를 쓰지 않는 이유: explorer 와 몽독 자신(AppBar 재등록·작업 표시줄 숨김 재적용 등)이 반응하지 않게.
     /// </summary>
-    /// <summary>재등록 요청에서 뺄 프로세스 (검증용 — 기본 null).</summary>
-    internal Func<uint, bool>? SkipReplayForPid { get; set; }
-
     private int SendTaskbarCreatedToApps(IntPtr explorerTray)
     {
         if (_taskbarCreatedMsg == 0) return 0;
@@ -547,7 +695,6 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
         {
             T.GetWindowThreadProcessId(h, out uint pid);
             if (pid == 0 || pid == _selfPid || pid == explorerPid) return true;
-            if (SkipReplayForPid?.Invoke(pid) == true) return true;
             if (T.SendNotifyMessage(h, _taskbarCreatedMsg, IntPtr.Zero, IntPtr.Zero)) count++;
             return true;
         }, IntPtr.Zero);
@@ -896,7 +1043,7 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
             foreach (var e in _entries.OrderBy(x => x.Seq))
             {
                 if (e.Own) continue; // 몽독 자신의 트레이 아이콘은 제외 (로고 메뉴에 같은 기능)
-                e.Snapshot ??= new TrayIconInfo(e.Key, e.Hwnd, e.Uid, e.Guid, e.CallbackMessage, e.Version, e.Icon,
+                e.Snapshot ??= new TrayIconInfo(e.Key, e.Uid, e.Guid, e.CallbackMessage, e.Version, e.Icon,
                     e.Tip, e.Hidden, e.Pid, e.ProcessName, e.ProcessPath);
                 list.Add(e.Snapshot);
             }
