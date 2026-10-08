@@ -23,6 +23,7 @@ public partial class App : Application
     private UpdateService? _updates;
     private IDisposable? _updateUi;
     private NativeToastSuppressor? _toastSuppressor;
+    private readonly WindowNudger _windowNudger = new();
     private const string ResumeEventName = @"Local\mongdock.Resume";
     private EventWaitHandle? _resumeEvent;
     private RegisteredWaitHandle? _resumeWait;
@@ -135,6 +136,7 @@ public partial class App : Application
         AppState.Changed += OnPausedChanged;
         SyncToastSuppressor();
         SyncTrayIcons();
+        SyncWindowNudger();
         Log.Info($"{AppInfo.Name} 시작");
         // 버전 업데이트 후 "새로운 기능" / 첫 설치 둘러보기 (독·상단바가 자리 잡은 뒤)
         CoachMarks.Init(_services, ResolveCoachAnchor,
@@ -158,12 +160,14 @@ public partial class App : Application
         SyncTopBars();
         SyncToastSuppressor();
         SyncTrayIcons();
+        SyncWindowNudger();
     }
 
     private void OnPausedChanged(object? sender, EventArgs e)
     {
         SyncToastSuppressor();
         SyncTrayIcons();
+        SyncWindowNudger();
         // 일시 정지 중엔 알림 DB 감시·폴링, 구독 캘린더 주기 새로고침도 멈춤 (재개하면 그 사이 알림은 배너 없이 목록에만)
         if (_services is null || _exiting) return;
         if (AppState.Paused) { _services.Notifications.Stop(); _services.Calendars.Stop(); }
@@ -176,6 +180,18 @@ public partial class App : Application
         if (_services is null || _toastSuppressor is null || _exiting) return;
         var n = _services.Settings.Current.Notifications;
         _toastSuppressor.SetEnabled(n.HideWindowsToastPopups && n.ShowNotificationBanners && !AppState.Paused);
+    }
+
+    /// <summary>
+    /// 상단바 밑으로 들어간 창 내리기: 상단바가 켜져 있고 공간 예약 중이고 설정이 켜져 있고 일시 정지가 아닐 때만.
+    /// (상단바가 실제로 AppBar 로 등록돼 있지 않으면 WindowNudger 가 알아서 아무것도 안 함)
+    /// </summary>
+    private void SyncWindowNudger()
+    {
+        if (_services is null || _exiting) return;
+        var t = _services.Settings.Current.TopBar;
+        try { _windowNudger.SetEnabled(t.Enabled && t.ReserveSpace && t.KeepWindowsBelowBar && !AppState.Paused); }
+        catch (Exception ex) { Log.Error("창 내리기 전환 실패", ex); }
     }
 
     /// <summary>
@@ -304,6 +320,7 @@ public partial class App : Application
         // 숨기던 윈도우 알림 팝업 훅 해제 (떠 있던 팝업은 제자리로)
         AppState.Changed -= OnPausedChanged;
         _toastSuppressor?.Dispose();
+        _windowNudger.Dispose();
         // 창을 닫아야 AppBar 가 해제된다.
         _exiting = true;
         if (_services is not null)

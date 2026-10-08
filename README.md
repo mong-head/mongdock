@@ -9,7 +9,7 @@
 ## 설치
 
 ### 설치 프로그램 (권장)
-1. [Releases](https://github.com/mong-head/mongdock/releases) 에서 `mongdock-<버전>-setup.exe` 를 받아 실행한다. 관리자 권한은 필요 없고, `%LOCALAPPDATA%\Programs\mongdock` 에 설치된다. .NET 설치도 필요 없다.
+1. [Releases](https://github.com/mong-head/mongdock/releases) 에서 `mongdock-<버전>-setup.exe` 를 받아 실행한다. 관리자 권한은 필요 없고, `%LOCALAPPDATA%\Programs\mongdock` 에 설치된다. 설치 파일은 약 10MB 로 작다 — 몽독이 쓰는 [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0)(x64)이 PC 에 없으면 설치 중에 처음 한 번만 마이크로소프트에서 받아(약 56MB) 설치한다. 이때만 관리자 권한 확인 창이 뜬다 (몽독 자체는 관리자 권한 없이 설치). 이미 있으면 받지 않는다.
 2. 설치 중 "로그인 시 자동 실행"(기본 켜짐), "바탕 화면 바로 가기"(기본 꺼짐)를 고를 수 있다. 마지막 화면의 "mongdock 실행" 으로 바로 켠다.
 
 ### 업데이트
@@ -19,6 +19,8 @@
 몽독이 GitHub 릴리스를 시작 1분 뒤·12시간마다 확인해 새 버전이 있으면 로고 메뉴·트레이 메뉴 맨 위와 설정 → 정보에 알려 주고, "지금 업데이트" 한 번이면 setup.exe 를 받아(크기·SHA-256 확인) 조용히 설치한 뒤 다시 켠다 (설치 프로그램 위치가 아닌 곳에 zip 으로 풀었다면 릴리스 페이지만 열어 줌, 설정 → 정보에서 자동 확인 끄기·이 버전 건너뛰기 가능).
 
 ### 설치 없이 쓰기 (zip)
+zip 은 .NET 런타임까지 들어 있는 단일 실행 파일이라 크지만(약 75MB) 아무것도 설치하지 않고 바로 쓸 수 있다.
+
 1. Releases 에서 `mongdock-<버전>-win-x64.zip` 을 받아 원하는 폴더(예: `%LOCALAPPDATA%\Programs\mongdock`)에 푼다.
 2. `mongdock.exe` 실행.
 3. 컴퓨터를 켤 때 자동으로 켜려면: 알림 영역의 mongdock 아이콘 오른쪽 클릭 → "로그인 시 자동 실행".
@@ -40,6 +42,7 @@ dotnet build -c Release
 powershell -ExecutionPolicy Bypass -File build-release.ps1 -Version v0.2.0
 ```
 
+zip 은 self-contained 단일 파일(`dist\mongdock-portable`), setup 은 framework-dependent 단일 파일(`dist\mongdock-setup`, ReadyToRun)로 따로 빌드한다.
 설치 프로그램은 [Inno Setup 6](https://jrsoftware.org/isinfo.php) 이 있어야 만들어진다 (없으면 zip 만 만든다). 스크립트는 `installer\mongdock.iss`.
 
 ## 화면

@@ -5,6 +5,8 @@ namespace Mongdock.Native;
 /// <summary>SetWinEventHook (접근성 이벤트) P/Invoke. 콜백은 훅을 건 스레드의 메시지 루프에서 호출된다 (WINEVENT_OUTOFCONTEXT).</summary>
 internal static class WinEventApi
 {
+    public const uint EVENT_SYSTEM_MOVESIZEEND = 0x000B;
+    public const uint EVENT_OBJECT_SHOW = 0x8002;
     public const uint EVENT_OBJECT_LOCATIONCHANGE = 0x800B;
     public const uint EVENT_OBJECT_UNCLOAKED = 0x8018;
 

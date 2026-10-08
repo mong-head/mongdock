@@ -209,6 +209,11 @@ public sealed class TopBarSettings
     /// <summary>네트워크 업/다운 속도 (2줄 작은 글씨).</summary>
     public bool ShowNetworkSpeed { get; set; } = false;
     public bool ReserveSpace { get; set; } = true;
+    /// <summary>
+    /// 작업 영역을 무시하고 모니터 맨 위에 뜨는 창(캡처 도구 등)이나 상단바 밑으로 끌어 놓은 창을 상단바 바로 아래로 내림 (맥처럼).
+    /// 상단바가 켜져 있고 ReserveSpace 일 때만 동작 (WindowNudger).
+    /// </summary>
+    public bool KeepWindowsBelowBar { get; set; } = true;
     /// <summary>모든 모니터에 상단바 표시 (맥처럼). false 면 주 모니터에만.</summary>
     public bool ShowOnAllMonitors { get; set; } = true;
     /// <summary>검색 버튼 동작.</summary>

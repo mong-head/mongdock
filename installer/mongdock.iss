@@ -10,7 +10,8 @@
   #define NumericVersion "0.0.0"
 #endif
 #ifndef SourceDir
-  #define SourceDir "..\dist\mongdock"
+  ; framework-dependent publish 출력 (build-release.ps1 의 dist\mongdock-setup)
+  #define SourceDir "..\dist\mongdock-setup"
 #endif
 #ifndef OutputDir
   #define OutputDir "..\dist"
@@ -62,11 +63,27 @@ Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 [CustomMessages]
 korean.AutoStartTask=로그인 시 자동 실행
 korean.OtherTasks=기타:
+korean.RuntimeDownloadTitle=.NET 데스크톱 런타임 준비
+korean.RuntimeDownloadDesc=mongdock 에 필요한 .NET 8 Desktop Runtime(x64)을 마이크로소프트에서 받아 설치합니다 (처음 한 번).
+korean.RuntimeInstalling=.NET 8 Desktop Runtime 설치 중... (관리자 권한 확인 창이 뜨면 "예")
+korean.RuntimeDownloadFailed=.NET 8 Desktop Runtime 을 받지 못했습니다: %1%n%n인터넷 연결을 확인하고 다시 시도하거나, 직접 설치한 뒤 다시 실행하세요:%nhttps://dotnet.microsoft.com/download/dotnet/8.0
+korean.RuntimeInstallFailed=.NET 8 Desktop Runtime 을 설치하지 못했습니다 (%1).%n%n관리자 권한 확인을 "예" 로 하거나, 직접 설치한 뒤 다시 실행하세요:%nhttps://dotnet.microsoft.com/download/dotnet/8.0
 korean.DeleteSettingsPrompt=mongdock 설정과 로그(AppData\Roaming\mongdock 폴더)도 지울까요?%n%n"아니요" 를 누르면 남겨 두어 나중에 다시 설치할 때 그대로 쓸 수 있습니다.
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 Name: "autostart"; Description: "{cm:AutoStartTask}"; GroupDescription: "{cm:OtherTasks}"
+
+[InstallDelete]
+; v0.3.x 이전 레이아웃 정리: 지금은 framework-dependent 단일 mongdock.exe 하나라 옆에 남은 dll·런타임 설정·디버그 파일은 필요 없다
+; (남아 있으면 크기만 차지하고 다른 버전 파일과 섞임). 설정 폴더(%APPDATA%\mongdock)는 건드리지 않는다.
+Type: files; Name: "{app}\*.dll"
+Type: files; Name: "{app}\mongdock.deps.json"
+Type: files; Name: "{app}\mongdock.runtimeconfig.json"
+Type: files; Name: "{app}\mongdock.pdb"
+Type: files; Name: "{app}\createdump.exe"
+; self-contained 단일 파일이 풀어 두던 네이티브 라이브러리 (%TEMP%\.net\mongdock\<해시>) — 몽독은 이미 꺼진 뒤라 안전
+Type: filesandordirs; Name: "{localappdata}\Temp\.net\mongdock"
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -218,8 +235,142 @@ begin
     Log('--restore-taskbar 실행 실패: ' + IntToStr(Code));
 end;
 
+{ ---------- .NET 8 Desktop Runtime (x64) ----------
+  설치본은 framework-dependent 라 런타임이 필요하다. 없으면 마이크로소프트 공식 주소(최신 8.0.x 로 리디렉트)에서 받아
+  /install /quiet /norestart 로 설치한다. 런타임 설치만 관리자 권한(UAC), 몽독 자체는 사용자 설치 그대로. }
+const
+  RuntimeUrl = 'https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe';
+  RuntimeFile = 'windowsdesktop-runtime-8.0-win-x64.exe';
+  ERROR_CANCELLED = 1223;
+
+var
+  RuntimePage: TDownloadWizardPage;
+
+{ Root\shared\<Name>\8.* 중 Marker 파일이 있는 폴더가 있는지 }
+function HasFramework8(const Root, Name, Marker: String): Boolean;
+var
+  Dir: String;
+  FindRec: TFindRec;
+begin
+  Result := False;
+  Dir := AddBackslash(Root) + 'shared\' + Name + '\';
+  if FindFirst(Dir + '8.*', FindRec) then
+  try
+    repeat
+      if ((FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0) and FileExists(Dir + FindRec.Name + '\' + Marker) then
+        Result := True;
+    until Result or not FindNext(FindRec);
+  finally
+    FindClose(FindRec);
+  end;
+end;
+
+function HasDesktopRuntime8In(const Root: String): Boolean;
+begin
+  Result := (Root <> '') and DirExists(AddBackslash(Root) + 'host\fxr') and
+    HasFramework8(Root, 'Microsoft.NETCore.App', 'System.Private.CoreLib.dll') and
+    HasFramework8(Root, 'Microsoft.WindowsDesktop.App', 'PresentationFramework.dll');
+end;
+
+{ apphost(mongdock.exe)가 런타임을 찾는 순서와 같게: DOTNET_ROOT(_X64) → 등록된 설치 위치(32비트 레지스트리 뷰) → Program Files\dotnet }
+function IsDesktopRuntime8Installed(): Boolean;
+var
+  Loc: String;
+begin
+  Result := HasDesktopRuntime8In(GetEnv('DOTNET_ROOT_X64')) or HasDesktopRuntime8In(GetEnv('DOTNET_ROOT'));
+  if not Result and RegQueryStringValue(HKLM32, 'SOFTWARE\dotnet\Setup\InstalledVersions\x64', 'InstallLocation', Loc) then
+    Result := HasDesktopRuntime8In(RemoveBackslashUnlessRoot(Loc));
+  if not Result then
+    Result := HasDesktopRuntime8In(ExpandConstant('{commonpf64}\dotnet'));
+end;
+
+{ 받은 설치 파일을 관리자 권한으로 조용히 실행. 성공 여부는 종료 코드 대신 설치 결과(파일)로 판단 }
+function InstallRuntime(const Path: String): String;
+var
+  Code: Integer;
+begin
+  Result := '';
+  Log('.NET Desktop Runtime 설치: ' + Path);
+  if not ShellExec('runas', Path, '/install /quiet /norestart', '', SW_SHOW, ewWaitUntilTerminated, Code) then
+  begin
+    if Code = ERROR_CANCELLED then
+      Result := FmtMessage(CustomMessage('RuntimeInstallFailed'), ['관리자 권한 확인 취소'])
+    else
+      Result := FmtMessage(CustomMessage('RuntimeInstallFailed'), [SysErrorMessage(Code)]);
+  end
+  else if not IsDesktopRuntime8Installed() then
+    Result := FmtMessage(CustomMessage('RuntimeInstallFailed'), ['설치 후에도 런타임을 찾지 못함, 코드 ' + IntToStr(Code)]);
+  DeleteFile(Path);
+  if Result = '' then
+    Log('.NET Desktop Runtime 설치 완료')
+  else
+    Log(Result);
+end;
+
+{ 런타임 보장. 빈 문자열이면 준비됨, 아니면 사용자에게 보여 줄 오류.
+  UsePage: 대화형 설치의 다운로드 페이지(진행률·취소) 사용. 조용한 설치(/SILENT, 앱의 자동 업데이트)는 화면 없이 받는다. }
+function EnsureDesktopRuntime(UsePage: Boolean): String;
+var
+  Path: String;
+begin
+  Result := '';
+  if IsDesktopRuntime8Installed() then
+  begin
+    Log('.NET 8 Desktop Runtime 있음 — 다운로드 안 함');
+    Exit;
+  end;
+  Log('.NET 8 Desktop Runtime 없음 → 다운로드: ' + RuntimeUrl);
+  Path := ExpandConstant('{tmp}\' + RuntimeFile);
+  if UsePage and (RuntimePage <> nil) then
+  begin
+    RuntimePage.Clear;
+    RuntimePage.Add(RuntimeUrl, RuntimeFile, '');
+    RuntimePage.Show;
+    try
+      try
+        RuntimePage.Download;
+      except
+        if RuntimePage.AbortedByUser then
+          Result := FmtMessage(CustomMessage('RuntimeDownloadFailed'), ['취소함'])
+        else
+          Result := FmtMessage(CustomMessage('RuntimeDownloadFailed'), [GetExceptionMessage]);
+        Log(Result);
+        Exit;
+      end;
+      RuntimePage.SetText(CustomMessage('RuntimeInstalling'), '');
+      RuntimePage.ProgressBar.Style := npbstMarquee;
+      Result := InstallRuntime(Path);
+    finally
+      RuntimePage.ProgressBar.Style := npbstNormal;
+      RuntimePage.Hide;
+    end;
+  end
+  else
+  begin
+    try
+      DownloadTemporaryFile(RuntimeUrl, RuntimeFile, '', nil);
+    except
+      Result := FmtMessage(CustomMessage('RuntimeDownloadFailed'), [GetExceptionMessage]);
+      Log(Result);
+      Exit;
+    end;
+    Result := InstallRuntime(Path);
+  end;
+end;
+
+procedure InitializeWizard();
+begin
+  RuntimePage := CreateDownloadPage(CustomMessage('RuntimeDownloadTitle'), CustomMessage('RuntimeDownloadDesc'), nil);
+  RuntimePage.ShowBaseNameInsteadOfUrl := True;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
+  { 런타임을 먼저 (실패하면 몽독을 끄지 않고 설치 중단 — 자동 업데이트면 앱이 "다시 시도" 를 보여 준다).
+    대화형 설치는 준비 화면 다음 단계에서 이미 끝났으므로 여기서는 확인만 된다. }
+  Result := EnsureDesktopRuntime(False);
+  if Result <> '' then
+    Exit;
   CloseMongdock();
   if IsMongdockRunning() then
     Result := 'mongdock 을 종료하지 못했습니다. 트레이 아이콘 오른쪽 클릭 → 종료 후 다시 시도하세요.'
@@ -253,10 +404,23 @@ begin
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  Err: String;
 begin
   if CurPageID = wpSelectTasks then
     TasksPageConfirmed := True;
   Result := True;
+  { 대화형 설치: "설치" 를 누르면 (필요할 때만) 다운로드 페이지로 런타임 준비. 실패하면 준비 화면에 머문다 (다시 시도/취소).
+    조용한 설치는 PrepareToInstall 에서 화면 없이 처리 }
+  if (CurPageID = wpReady) and not WizardSilent() then
+  begin
+    Err := EnsureDesktopRuntime(True);
+    if Err <> '' then
+    begin
+      SuppressibleMsgBox(Err, mbCriticalError, MB_OK, IDOK);
+      Result := False;
+    end;
+  end;
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
