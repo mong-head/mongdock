@@ -92,6 +92,18 @@ internal sealed class NotificationListView : Border
         };
     }
 
+    /// <summary>
+    /// 목록 최대 높이 (넘치면 안에서 얇은 스크롤바로 스크롤). 화면이 낮을 때 감싸는 카드가 줄여 쓴다 (StatusPanelWindow 달력).
+    /// </summary>
+    public double MaxListHeight
+    {
+        get => _scroll.MaxHeight;
+        set
+        {
+            if (Math.Abs(_scroll.MaxHeight - value) > 0.5) _scroll.MaxHeight = value;
+        }
+    }
+
     /// <summary><c>new NotificationListView(...)</c> 와 같음 (UIElement 로 받고 싶을 때).</summary>
     public static NotificationListView Build(AppServices services, UiPalette palette, double maxHeight = 420, bool showHeader = true)
         => new(services, palette, maxHeight, showHeader);

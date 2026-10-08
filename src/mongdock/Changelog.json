@@ -2,6 +2,38 @@
   "_comment": "mongdock 변경 내역 단일 원본. 앱(설정 → 변경 내역, 새로운 기능 코치마크)과 build-release.ps1(GitHub 릴리스 노트)이 함께 읽는다. 최신 버전을 맨 위에. kind = feature | improvement | fix. coach 가 있는 feature 는 업데이트 후 상단바·독 위 말풍선으로 소개(anchor = Center|Dock|Logo|AppName|Desktops|Tray|Search|Clock, condition = topBar|trayIcons|spotlight|banners|dock|appMenus, 없으면 항상). major = 그 버전의 주요 업데이트(버전당 1~4개, 오랜만에 업데이트한 사람·변경 내역 맨 위·릴리스 노트 \"이번 버전 핵심\"에 씀), headline = 그 버전 한 줄 요약. body 의 {hotkey} 는 실제 검색 단축키 문구로 바뀜.",
   "versions": [
     {
+      "version": "0.3.4",
+      "date": "2026-10-08",
+      "headline": "노트북: 배터리·화면 맞춤·소리 끄기",
+      "entries": [
+        {
+          "kind": "fix",
+          "major": false,
+          "text": "화면이 낮은 노트북에서 시계 달력·알림 패널 아래가 잘리던 문제를 고쳤어요. 공간이 모자라면 알림 목록이 줄어들고 스크롤돼요."
+        },
+        {
+          "kind": "improvement",
+          "major": true,
+          "text": "노트북이면 상단바에 맥처럼 배터리가 보여요. 남은 양·퍼센트, 충전 중 번개, 20% 이하 빨강, 절전 모드 노랑. 누르면 전원 상태·남은 시간과 배터리 설정 링크가 나와요(설정 → 상단바에서 끌 수 있어요)."
+        },
+        {
+          "kind": "improvement",
+          "major": false,
+          "text": "사운드 패널 맨 위 스위치로 소리를 바로 끄고 켤 수 있어요."
+        },
+        {
+          "kind": "improvement",
+          "major": false,
+          "text": "인터넷이 없어 업데이트 확인에 실패하면, 다시 연결될 때와 30분마다 다시 확인해요."
+        }
+      ],
+      "knownIssues": [
+        "카카오톡 알림은 자체 팝업이라 배너로 잡히지 않아요(독 아이콘의 빨간 점은 표시돼요).",
+        "알림 소리는 처음 한 번 바꾼 뒤 다시 로그인해야 적용돼요.",
+        "네이버 캘린더는 구독 주소(iCal)를 주지 않아 연결할 수 없어요."
+      ]
+    },
+    {
       "version": "0.3.3",
       "date": "2026-10-08",
       "headline": "메뉴 정리",
