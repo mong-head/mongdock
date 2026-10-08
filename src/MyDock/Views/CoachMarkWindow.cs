@@ -444,6 +444,12 @@ internal sealed class CoachRingWindow : Window
 
         var ring = anchor;
         ring.Inflate(Outset, Outset);
+        // 화면 가장자리(상단바 버튼 등)에 붙은 앵커는 링 테두리가 화면 밖으로 나가 잘려 보이므로 화면 안쪽으로 당김
+        var screen = monitor.Bounds;
+        const double edge = 1;
+        double l = Math.Max(ring.Left, screen.Left + edge), t = Math.Max(ring.Top, screen.Top + edge);
+        double r = Math.Min(ring.Right, screen.Right - edge), b = Math.Min(ring.Bottom, screen.Bottom - edge);
+        if (r - l >= 8 && b - t >= 8) ring = new Rect(l, t, r - l, b - t);
         double left = Math.Round(ring.Left - Pad), top = Math.Round(ring.Top - Pad);
         Width = Math.Ceiling(ring.Width + Pad * 2);
         Height = Math.Ceiling(ring.Height + Pad * 2);
