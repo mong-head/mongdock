@@ -317,6 +317,11 @@ public sealed class Settings
     public bool StartWithWindows { get; set; }
     /// <summary>MyDockFinder ico.ini 를 한 번 가져왔는지. true 면 다시 가져오지 않음.</summary>
     public bool ImportedFromMyDockFinder { get; set; }
+    /// <summary>
+    /// "새로운 기능"/첫 둘러보기를 마지막으로 본(또는 건너뛴) 몽독 버전 (예 "0.3.0"). null = 아직 없음
+    /// (새 설치면 첫 둘러보기, 기존 설정 파일이면 0.2.0 에서 올라온 것으로 봄 — Views/CoachMarks).
+    /// </summary>
+    public string? LastSeenVersion { get; set; }
     /// <summary>사용자 정의 앱 메뉴. 키 = exe 파일명(소문자, 예 "chrome.exe") 또는 AUMID. 있으면 기본 메뉴 대신 사용.</summary>
     public Dictionary<string, List<AppMenuDef>> AppMenus { get; set; } = new();
 }

@@ -567,6 +567,22 @@ public partial class DockWindow : Window
         DockState.VisiblePanel = _windowsHidden || _hide > 0.99 ? Rect.Empty : rect;
     }
 
+    /// <summary>
+    /// 코치마크(새로운 기능·둘러보기)가 가리킬 독 패널의 화면 사각형 (독 모니터 기준 DIP) + 그 모니터.
+    /// 독이 꺼져 있거나 숨어 있으면(자동 숨김으로 들어가 있음·전체 화면·일시 정지) null.
+    /// </summary>
+    public (Rect Rect, MonitorInfo Monitor)? GetAnchorRect(CoachAnchor anchor)
+    {
+        if (anchor != CoachAnchor.Dock || _closed || !DockActive || _fullscreen || !IsVisible || _windowsHidden || _hide > 0.01) return null;
+        if (PanelBorder.ActualWidth < 1 || PanelBorder.ActualHeight < 1) return null;
+        try
+        {
+            var p = PanelBorder.TranslatePoint(new Point(0, 0), Root);
+            return (new Rect(Left + p.X, Top + p.Y, PanelBorder.ActualWidth, PanelBorder.ActualHeight), _monitor);
+        }
+        catch (InvalidOperationException) { return null; }
+    }
+
     // ───────────────────────── 모드 / 자동 숨김 ─────────────────────────
 
     private void ApplyMode(bool initial)

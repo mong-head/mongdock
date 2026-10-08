@@ -68,7 +68,7 @@
                 </StackPanel>
 
                 <StackPanel x:Name="QuickButtons" Orientation="Horizontal">
-                    <Button Style="{StaticResource BarIconButton}" Click="OnSearch">
+                    <Button x:Name="SearchButton" Style="{StaticResource BarIconButton}" Click="OnSearch">
                         <Path Width="18" Height="18" LayoutTransform="{StaticResource BarIconScale}" Data="{x:Static v:BarIcons.Search}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
                     </Button>
                     <!-- 제어 센터 (빠른 설정) : 토글 두 개 -->

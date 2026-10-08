@@ -99,6 +99,7 @@ public sealed class TrayController : IDisposable
         menu.Items.Add(DockMenus.HideTaskbar(_services));
         menu.Items.Add(DockMenus.StartWithWindows(_services));
         menu.Items.Add(new Separator());
+        menu.Items.Add(DockMenus.Item("새로운 기능 보기", CoachMarks.ShowWhatsNew));
         menu.Items.Add(DockMenus.OpenSettings(_services));
         menu.Items.Add(DockMenus.Quit());
 

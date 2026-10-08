@@ -50,7 +50,7 @@ internal sealed class SpotlightHotkeyController : IDisposable
     }
 
     /// <summary>Auto: 키보드 입력 언어가 하나면 Win+Space, 여러 개면 Win+Space 가 언어 전환이므로 Alt+Space.</summary>
-    private static SpotlightHotkey Resolve(SpotlightHotkey mode)
+    internal static SpotlightHotkey Resolve(SpotlightHotkey mode)
     {
         if (mode != SpotlightHotkey.Auto) return mode;
         int layouts = GetKeyboardLayoutList(0, null);

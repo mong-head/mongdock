@@ -1015,6 +1015,14 @@ internal sealed partial class SettingsWindow : Window
             Row("설정 폴더", folder, ActionButton("폴더 열기", () => _services.Launcher.OpenFile(folder))),
             Row("설정 파일", "settings.json (직접 편집하면 저장 즉시 반영)",
                 ActionButton("파일 열기", () => _services.Launcher.OpenFile(_services.Settings.SettingsPath)))));
+
+        // 코치마크: 이 버전의 새 기능 / 첫 설치 둘러보기 다시 보기 (상단바·독 위에 말풍선)
+        body.Children.Add(SectionTitle("안내"));
+        body.Children.Add(Group(
+            Row("새로운 기능 보기", $"버전 {VersionText()} 에서 바뀐 점을 상단바·독 위에서 짚어 줘요.",
+                ActionButton("보기", CoachMarks.ShowWhatsNew)),
+            Row("둘러보기 다시 보기", "처음 설치했을 때의 기능 둘러보기를 다시 봐요.",
+                ActionButton("보기", CoachMarks.ShowTour))));
     }
 
     /// <summary>어셈블리 정보 버전 ("+커밋" 꼬리 제거). 없으면 어셈블리 버전.</summary>

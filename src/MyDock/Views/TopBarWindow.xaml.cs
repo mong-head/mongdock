@@ -960,6 +960,34 @@ public partial class TopBarWindow : Window
 
     private ContextMenu? _logoMenu;
 
+    // ───────────────────────── 코치마크 앵커 ─────────────────────────
+
+    /// <summary>
+    /// 코치마크(새로운 기능·둘러보기)가 가리킬 요소의 화면 사각형 (이 상단바 모니터 기준 DIP) + 그 모니터.
+    /// 상단바가 숨어 있거나(꺼짐·일시 정지·전체 화면) 요소가 안 보이면(설정에서 끔, 트레이 아이콘 없음) null.
+    /// </summary>
+    public (Rect Rect, MonitorInfo Monitor)? GetAnchorRect(CoachAnchor anchor)
+    {
+        if (_closed || !IsVisible || _fullscreen) return null;
+        FrameworkElement? el = anchor switch
+        {
+            CoachAnchor.Logo => LogoButton,
+            CoachAnchor.AppName => AppNameButton,
+            CoachAnchor.Desktops => DesktopButtons,
+            CoachAnchor.Tray => TrayArea,
+            CoachAnchor.Search => SearchButton,
+            CoachAnchor.Clock => ClockButton,
+            _ => null,
+        };
+        if (el is null || !el.IsVisible || el.ActualWidth < 1 || el.ActualHeight < 1) return null;
+        try
+        {
+            var p = el.TranslatePoint(new Point(0, 0), this);
+            return (new Rect(Left + p.X, Top + p.Y, el.ActualWidth, el.ActualHeight), Monitor);
+        }
+        catch (InvalidOperationException) { return null; }
+    }
+
     /// <summary>상단바 자체 영역 (그 안의 클릭은 WPF 가 처리).</summary>
     private IEnumerable<Rect> BarArea() => new[] { OutsideClickWatcher.ScreenRect(Bar) };
 

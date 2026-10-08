@@ -113,6 +113,17 @@ public partial class App : Application
         SyncToastSuppressor();
         SyncTrayIcons();
         Log.Info($"{AppInfo.Name} 시작");
+        // 버전 업데이트 후 "새로운 기능" / 첫 설치 둘러보기 (독·상단바가 자리 잡은 뒤)
+        CoachMarks.Init(_services, ResolveCoachAnchor);
+        CoachMarks.ScheduleStartup(settings.CreatedThisRun);
+    }
+
+    /// <summary>코치마크 앵커 위치: 독은 독 창, 나머지는 주 모니터 상단바 (안 보이면 null).</summary>
+    private (Rect Rect, MonitorInfo Monitor)? ResolveCoachAnchor(CoachAnchor anchor)
+    {
+        if (_exiting) return null;
+        if (anchor == CoachAnchor.Dock) return _dock?.GetAnchorRect(anchor);
+        return _topBars.TryGetValue("", out var bar) ? bar.GetAnchorRect(anchor) : null;
     }
 
     private void OnDisplayChanged(object? sender, EventArgs e) => SyncTopBars();
@@ -249,6 +260,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         if (_services is not null) Log.Info($"{AppInfo.Name} 종료");
+        CoachMarks.CloseAll();
         // 트레이 아이콘을 내리고, 숨겨 둔 작업 표시줄을 복원한다.
         _tray?.Dispose();
         // 전역 키보드 훅 해제

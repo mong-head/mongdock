@@ -78,6 +78,9 @@ public sealed class SettingsService : ISettingsService, IDisposable
 
     public string IconsDirectory { get; }
 
+    /// <summary>settings.json 이 이번 실행에서 새로 만들어졌는지 (첫 설치 판단용 — 첫 둘러보기).</summary>
+    public bool CreatedThisRun { get; private set; }
+
     // ───────────────────────── 로드 ─────────────────────────
 
     private Settings LoadInitial()
@@ -86,6 +89,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
         {
             var s = new Settings();
             Current = s;
+            CreatedThisRun = true;
             Save();
             Log.Info($"기본 설정 파일 생성: {SettingsPath}");
             return s;
