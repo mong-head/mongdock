@@ -113,7 +113,9 @@ internal sealed class DockItemView : Grid
 
         // 실행 중 점: 맥처럼 아이콘 아래(가장자리 쪽) 패딩 안의 작은 원
         double d = layout.IndicatorSize;
-        double offset = -Math.Max(d / 2 + 0.5, layout.Padding / 2 + d / 2 - 0.5);
+        // 점 바깥쪽과 독 테두리 사이를 3 DIP 띄움 (예전: 테두리와 ~1.5 DIP 로 붙어 보임). 아이콘 쪽으로 조금 겹쳐도
+        // 아이콘 가장자리는 투명 여백이라 괜찮음
+        double offset = -Math.Max(0, layout.Padding - 3);
         _runningDot = new Ellipse
         {
             Width = d,
