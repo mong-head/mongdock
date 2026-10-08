@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Threading;
 using MyDock.Models;
+using MyDock.Native;
 using MyDock.Services;
 using MyDock.ViewModels;
 
@@ -283,8 +284,27 @@ internal sealed class CoachSession
         };
     }
 
+    /// <summary>
+    /// 맨 위 유지: 다른 앱을 켜거나 다른 Topmost 창(상단바·독·다른 앱)이 올라와도 말풍선·링이 가려지지 않게
+    /// 주기적으로 Topmost 맨 앞으로 다시 올림 (포커스는 건드리지 않음).
+    /// </summary>
+    private readonly System.Windows.Threading.DispatcherTimer _keepOnTop = new() { Interval = TimeSpan.FromMilliseconds(400) };
+
+    private void BringToFront()
+    {
+        const uint flags = 0x0001 | 0x0002 | User32.SWP_NOACTIVATE; // NOSIZE | NOMOVE | NOACTIVATE
+        foreach (System.Windows.Window? w in new System.Windows.Window?[] { _ring, _card })
+        {
+            if (w is null) continue;
+            var h = new System.Windows.Interop.WindowInteropHelper(w).Handle;
+            if (h != IntPtr.Zero) User32.SetWindowPos(h, new IntPtr(-1) /* HWND_TOPMOST */, 0, 0, 0, 0, flags);
+        }
+    }
+
     public void Begin()
     {
+        _keepOnTop.Tick += (_, _) => { if (!_closed) BringToFront(); };
+        _keepOnTop.Start();
         UiFonts.Apply(_services.Settings.Current);
         AppState.Changed += OnPausedChanged;
         _services.DesktopWindows.DisplayChanged += OnDisplayChanged;
@@ -379,6 +399,7 @@ internal sealed class CoachSession
     {
         if (_closed) return;
         _closed = true;
+        _keepOnTop.Stop();
         _reposition.Stop();
         AppState.Changed -= OnPausedChanged;
         _services.DesktopWindows.DisplayChanged -= OnDisplayChanged;
