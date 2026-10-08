@@ -99,16 +99,19 @@ public sealed class NotifyIconSettingsReader
         if (icon.ProcessPath.Length == 0 || !s.ByPath.TryGetValue(icon.ProcessPath, out var list)) return null;
         // 대소문자만 다른 경로가 따로 저장되는 경우가 있음 (실측: 카카오톡 "KakaoTalk.exe" IsPromoted=1 과
         // "kakaotalk.exe" 값 없음이 같이 있고, 실행 경로는 "c:\program files (x86)\kakao\...\kakaotalk.exe" 로 둘 다와 다름).
-        // 순서: 대소문자까지 같은 경로 → 사용자가 IsPromoted 를 직접 정한 항목(켬 우선) → 아무거나.
-        NotifyIconSetting? chosen = null, loose = null;
+        // 순서: 사용자가 IsPromoted 를 직접 정한 항목(켬 우선) → 대소문자까지 같은 경로 → 아무거나.
+        // (윈도우 경로는 대소문자를 구분하지 않으므로 대소문자 일치보다 사용자가 정한 값이 더 믿을 만함 —
+        //  실측: 카카오톡을 소문자 경로로 다시 실행하면 값 없는 소문자 항목이 대소문자 일치로 잡혀 ⌃ 로 감)
+        NotifyIconSetting? chosen = null, exact = null, loose = null;
         foreach (var e in list)
         {
             if (e.Uid != icon.Uid || e.IconGuid != Guid.Empty) continue;
-            if (string.Equals(e.ExecutablePath, icon.ProcessPath, StringComparison.Ordinal)) return e;
             if (e.IsPromotedSet && (chosen is null || e.IsPromoted && !chosen.IsPromoted)) chosen = e;
+            if (exact is null && string.Equals(e.ExecutablePath, icon.ProcessPath, StringComparison.Ordinal)) exact = e;
             loose ??= e;
         }
         if (chosen is not null) return chosen;
+        if (exact is not null) return exact;
         if (loose is not null) return loose;
         if (icon.Guid == Guid.Empty && list.Count == 1) return list[0];
         return null;
