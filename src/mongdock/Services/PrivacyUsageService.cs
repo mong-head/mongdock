@@ -151,10 +151,13 @@ public sealed class PrivacyUsageService
             bool micOk = Register(mic, micEvt);
             var handles = new WaitHandle[] { stop, camEvt, micEvt };
 
-            Publish(linger.Merge(Scan(), Environment.TickCount64), gen);
+            // 레지스트리 기록은 변경 알림 때(또는 30초마다)만 다시 읽고, 녹음 장치 세션(마이크)은 2초마다 확인
+            var reg = Scan();
+            long regAt = Environment.TickCount64;
+            Publish(linger.Merge(WithAudio(reg), Environment.TickCount64), gen);
             while (true)
             {
-                int timeout = camOk && micOk ? SlowPollMs : PollMs;
+                int timeout = PollMs;
                 // 끝난 항목을 잠깐 남겨 둔 경우: 그 시간이 지나면 다시 읽어 지움
                 long due = linger.MsUntilExpiry(Environment.TickCount64);
                 if (due >= 0) timeout = (int)Math.Min(timeout, due + 20);
@@ -166,14 +169,21 @@ public sealed class PrivacyUsageService
                     if (w == 1) camOk = Register(cam, camEvt);
                     else micOk = Register(mic, micEvt);
                     if (stop.WaitOne(DebounceMs)) return;
+                    reg = Scan();
+                    regAt = Environment.TickCount64;
                 }
                 else
                 {
                     // 키가 없어 감시 못 했으면(처음 카메라를 쓰기 전) 생겼는지 다시 봄
                     if (cam == null && (cam = Registry.CurrentUser.OpenSubKey(ConsentStore + @"\webcam", false)) != null) camOk = Register(cam, camEvt);
                     if (mic == null && (mic = Registry.CurrentUser.OpenSubKey(ConsentStore + @"\microphone", false)) != null) micOk = Register(mic, micEvt);
+                    if (!camOk || !micOk || Environment.TickCount64 - regAt >= SlowPollMs)
+                    {
+                        reg = Scan();
+                        regAt = Environment.TickCount64;
+                    }
                 }
-                Publish(linger.Merge(Scan(), Environment.TickCount64), gen);
+                Publish(linger.Merge(WithAudio(reg), Environment.TickCount64), gen);
             }
         }
         catch (Exception ex)
@@ -225,6 +235,28 @@ public sealed class PrivacyUsageService
             try { Changed?.Invoke(this, EventArgs.Empty); }
             catch (Exception ex) { Log.Error("카메라·마이크 사용 알림 실패", ex); }
         });
+    }
+
+    /// <summary>
+    /// 레지스트리 기록 + 지금 녹음 장치에서 소리를 받고 있는 프로세스(마이크).
+    /// 새 버전 Discord 처럼 윈도우 개인 정보 기록에 안 남는 앱도 잡으려고 (같은 앱이면 레지스트리 쪽 하나만).
+    /// </summary>
+    private List<PrivacyUsage> WithAudio(List<PrivacyUsage> reg)
+    {
+        var result = new List<PrivacyUsage>(reg);
+        foreach (uint pid in Native.AudioSessions.ActiveCaptureProcessIds())
+        {
+            var (path, aumid) = Native.Kernel32.QueryProcess(pid);
+            if (string.IsNullOrEmpty(path)) continue;
+            bool packaged = !string.IsNullOrEmpty(aumid);
+            string key = packaged ? aumid!.Split('!')[0] : path;
+            bool known = result.Any(u => u.Capability == PrivacyCapability.Microphone
+                && (string.Equals(u.Key, key, StringComparison.OrdinalIgnoreCase)
+                    || !u.Packaged && !packaged && string.Equals(Path.GetFileName(u.Key), Path.GetFileName(path), StringComparison.OrdinalIgnoreCase)));
+            if (known) continue;
+            result.Add(new PrivacyUsage(PrivacyCapability.Microphone, ResolveName(key, packaged), key, packaged, DateTime.MinValue));
+        }
+        return result;
     }
 
     /// <summary>레지스트리 한 번 읽기 (읽기 전용). 테스트용으로 공개.</summary>
