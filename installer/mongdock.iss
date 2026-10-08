@@ -424,7 +424,12 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
+var
+  RC: Integer;
 begin
+  { 아이콘이 바뀌어도 시작 메뉴·작업 표시줄이 예전 그림(아이콘 캐시)을 계속 보여 주는 문제 → 사용자 아이콘 캐시 새로 고침 }
+  if CurStep = ssPostInstall then
+    Exec(ExpandConstant('{sys}\ie4uinit.exe'), '-show', '', SW_HIDE, ewWaitUntilTerminated, RC);
   { 자동 실행 체크가 꺼져 있을 때 Run 값을 지우는 건, 처음부터 없었거나 사용자가 작업 선택 화면에서 직접 끈 경우뿐.
     조용한 설치(/SILENT) 등으로 화면을 거치지 않은 업그레이드에서는 앱에서 켜 둔 자동 실행을 그대로 둔다. }
   if (CurStep = ssPostInstall) and not WizardIsTaskSelected('autostart') then
