@@ -19,6 +19,23 @@ namespace MyDock.Views;
 internal sealed class CoachMarkWindow : Window
 {
     private const double CardWidth = 300;
+
+    /// <summary>
+    /// 한글은 WPF 가 글자 단위로 줄을 바꿔 "해 / 요." 처럼 단어가 잘림 → 단어 안 글자 사이에 WORD JOINER(U+2060)를 넣어
+    /// 공백에서만 줄이 바뀌게 (CSS word-break: keep-all).
+    /// </summary>
+    internal static string KeepAll(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+        var sb = new System.Text.StringBuilder(text.Length * 2);
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+            sb.Append(c);
+            if (i + 1 < text.Length && !char.IsWhiteSpace(c) && !char.IsWhiteSpace(text[i + 1]) && c != '⁠') sb.Append('⁠');
+        }
+        return sb.ToString();
+    }
     /// <summary>그림자·꼬리가 들어갈 카드 바깥 여백.</summary>
     private const double Outer = 22;
     private const double TailLength = 9;
@@ -74,7 +91,8 @@ internal sealed class CoachMarkWindow : Window
             Background = p.CardBackground,
             BorderBrush = p.CardBorder,
             BorderThickness = new Thickness(0.75),
-            Padding = new Thickness(16, 13, 16, 12),
+            // 첫 줄 글자 위에는 줄 간격 여유가 있어 위를 3 DIP 덜 줘야 위·아래가 같아 보임 (실측: 13/12 → 19px/15px)
+            Padding = new Thickness(16, 10, 16, 12),
         };
         _tail = new Path
         {
@@ -283,7 +301,7 @@ internal sealed class CoachMarkWindow : Window
         }
         body.Children.Add(new TextBlock
         {
-            Text = page.Title,
+            Text = KeepAll(page.Title),
             FontSize = 15,
             FontWeight = FontWeights.Bold,
             TextWrapping = TextWrapping.Wrap,
@@ -292,7 +310,7 @@ internal sealed class CoachMarkWindow : Window
         {
             body.Children.Add(new TextBlock
             {
-                Text = page.Body,
+                Text = KeepAll(page.Body),
                 Foreground = _p.SubText,
                 TextWrapping = TextWrapping.Wrap,
                 LineHeight = 19,
