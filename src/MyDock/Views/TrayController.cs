@@ -102,6 +102,7 @@ public sealed class TrayController : IDisposable
         menu.Items.Add(DockMenus.Item("새로운 기능 보기", CoachMarks.ShowWhatsNew));
         menu.Items.Add(DockMenus.OpenSettings(_services));
         menu.Items.Add(DockMenus.Quit());
+        UpdateUi.AddMenuItems(menu, _services); // 새 버전 있으면 맨 위에 "업데이트 있음 — vX 설치…"
 
         // 커서 위치에 (메뉴가 화면을 넘으면 WPF 가 위로 뒤집어 줌)
         WpfPoint? cursor = null;

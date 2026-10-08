@@ -1011,6 +1011,9 @@ internal sealed partial class SettingsWindow : Window
         });
         body.Children.Add(head);
 
+        BuildUpdateSection(body); // SettingsWindow.Update.cs
+        body.Children.Add(SectionTitle("정보"));
+
         string folder = Path.GetDirectoryName(_services.Settings.SettingsPath) ?? AppInfo.DataDirectory;
         body.Children.Add(Group(
             Row("GitHub", GitHubUrl, ActionButton("열기", () => _services.Launcher.OpenFile(GitHubUrl))),

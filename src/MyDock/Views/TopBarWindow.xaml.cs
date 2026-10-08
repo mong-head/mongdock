@@ -110,6 +110,7 @@ public partial class TopBarWindow : Window
         _services.VirtualDesktops.Changed += OnDesktopChanged;
         AppState.Changed += OnSettingsChanged; // 일시 정지/해제
         _services.TrayIcons.Changed += OnTrayIconsChanged;
+        HookUpdates(); // TopBarWindow.Update.cs
         _subscribed = true;
 
         ApplySettings();
@@ -122,6 +123,7 @@ public partial class TopBarWindow : Window
     private void OnClosed(object? sender, EventArgs e)
     {
         _closed = true;
+        UnhookUpdates();
         _pollTimer.Stop();
         _clockTimer.Stop();
         _imeRecheck.Stop();
@@ -956,6 +958,7 @@ public partial class TopBarWindow : Window
         mydock.Items.Add(new Separator());
         mydock.Items.Add(DockMenus.Quit());
         menu.Items.Add(mydock);
+        UpdateUi.AddMenuItems(menu, _services); // 새 버전 있으면 맨 위에 (TopBarWindow.Update.cs)
         menu.IsOpen = true;
     }
 

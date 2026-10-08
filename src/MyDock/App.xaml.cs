@@ -20,6 +20,8 @@ public partial class App : Application
     private TrayController? _tray;
     private SpotlightHotkeyController? _spotlightHotkey;
     private IDisposable? _banners;
+    private UpdateService? _updates;
+    private IDisposable? _updateUi;
     private NativeToastSuppressor? _toastSuppressor;
     private const string ResumeEventName = @"Local\mongdock.Resume";
     private EventWaitHandle? _resumeEvent;
@@ -103,10 +105,14 @@ public partial class App : Application
         // 상단바 창들보다 먼저 구독 → 모니터가 분리되면 그 상단바가 이벤트를 처리하기 전에 닫힘
         _services.DesktopWindows.DisplayChanged += OnDisplayChanged;
         _services.Settings.SettingsChanged += OnSettingsChanged;
+        // 새 버전 확인 (상단바 로고 배지가 UpdateService.Instance 를 쓰므로 상단바보다 먼저)
+        _updates = new UpdateService(settings, () => AppState.Paused);
         SyncTopBars();
         _tray = new TrayController(_services);
         _spotlightHotkey = new SpotlightHotkeyController(_services);
         _banners = NotificationBannerWindow.Attach(_services);
+        _updateUi = UpdateUi.Attach(_services, _updates);
+        _updates.Start(); // 1분 뒤 첫 확인, 이후 12시간마다
         _services.Notifications.Start();
         _toastSuppressor = new NativeToastSuppressor(_services.Notifications as NotificationService);
         AppState.Changed += OnPausedChanged;
@@ -291,6 +297,8 @@ public partial class App : Application
         _topBars.Clear();
         _dock?.Close();
         _banners?.Dispose();
+        _updateUi?.Dispose();
+        _updates?.Dispose();
         if (_services is not null)
         {
             _services.Notifications.Stop();
