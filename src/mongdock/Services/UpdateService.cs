@@ -577,14 +577,10 @@ public sealed class UpdateService : IDisposable
         RaiseChanged();
     }
 
-    /// <summary>HKCU Run 에 "mongdock" 값이 있는지 (StartupService·설치 프로그램과 같은 값).</summary>
+    /// <summary>"윈도우 시작 시 실행" 이 켜져 있는지 (작업 스케줄러 작업 또는 HKCU Run 값 — StartupService·설치 프로그램과 같은 판단).</summary>
     private static bool AutoStartRegistered()
     {
-        try
-        {
-            using var run = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
-            return run?.GetValue(AppInfo.Name) is string;
-        }
+        try { return StartupService.IsRegistered(); }
         catch { return true; } // 모르면 설치 프로그램 판단(이전 선택 기억)에 맡김
     }
 

@@ -48,6 +48,23 @@ public partial class App : Application
             return;
         }
 
+        // 설치·제거 프로그램용: "윈도우 시작 시 실행" 켜기(작업 스케줄러, 안 되면 Run 키) / 끄기(작업·Run 키 삭제). 창 없이 끝낸다.
+        if (e.Args.Any(a => string.Equals(a, "--register-startup", StringComparison.OrdinalIgnoreCase)))
+        {
+            bool ok = false;
+            try { ok = StartupService.RegisterFromCommandLine(); }
+            catch (Exception ex) { Log.Error("--register-startup 실패", ex); }
+            Shutdown(ok ? 0 : 1);
+            return;
+        }
+        if (e.Args.Any(a => string.Equals(a, "--unregister-startup", StringComparison.OrdinalIgnoreCase)))
+        {
+            try { StartupService.UnregisterFromCommandLine(); }
+            catch (Exception ex) { Log.Error("--unregister-startup 실패", ex); }
+            Shutdown();
+            return;
+        }
+
         // 제거 프로그램용: 강제 종료로 남은 작업 표시줄 숨김·자동 숨김을 원래대로 (mongdock 이 실행 중이 아닐 때만)
         if (e.Args.Any(a => string.Equals(a, "--restore-taskbar", StringComparison.OrdinalIgnoreCase)))
         {
@@ -76,6 +93,10 @@ public partial class App : Application
             Shutdown();
             return;
         }
+        // 로그온 작업(--autostart)은 탐색기보다 먼저 뜰 수 있다 → 작업 표시줄이 생길 때까지 잠깐 기다린 뒤 시작
+        // (AppBar·셸 훅·작업 표시줄 숨김·트레이 가로채기가 explorer 를 전제로 함). 손으로 실행할 땐 기다리지 않음.
+        if (e.Args.Any(a => string.Equals(a, StartupService.AutoStartArgument, StringComparison.OrdinalIgnoreCase)))
+            WaitForExplorerTray();
         _resumeEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ResumeEventName);
         _resumeWait = ThreadPool.RegisterWaitForSingleObject(_resumeEvent,
             (_, _) => Dispatcher.BeginInvoke(ResumeFromSecondLaunch), null, Timeout.Infinite, executeOnlyOnce: false);
@@ -142,13 +163,37 @@ public partial class App : Application
         SyncToastSuppressor();
         SyncTrayIcons();
         SyncWindowNudger();
-        Log.Info($"{AppInfo.Name} 시작");
+        Log.Info($"{AppInfo.Name} 시작 (프로세스 시작 후 {SinceProcessStart()})");
+        // 윈도우 시작 시 실행: Run 키만 있는 기존 사용자 → 로그온 작업으로 이관 / 설치 위치가 바뀌었으면 작업 경로 갱신 (백그라운드, 조용히)
+        StartupService.MigrateInBackground();
         // 버전 업데이트 후 "새로운 기능" / 첫 설치 둘러보기 (독·상단바가 자리 잡은 뒤)
         CoachMarks.Init(_services, ResolveCoachAnchor,
             () => !_exiting && _topBars.TryGetValue("", out var bar) && bar.CoachPopupOpen());
         // --tour: 첫 설치 둘러보기를 지금 설정 그대로 다시 보기 (확인·시연용)
         bool tour = Environment.GetCommandLineArgs().Any(a => string.Equals(a, "--tour", StringComparison.OrdinalIgnoreCase));
         CoachMarks.ScheduleStartup(settings.CreatedThisRun, forceTour: tour);
+    }
+
+    /// <summary>탐색기의 작업 표시줄(Shell_TrayWnd)이 생길 때까지 최대 60초 기다림 (로그온 작업으로 시작했을 때만).</summary>
+    private static void WaitForExplorerTray()
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (Native.TrayApi.FindExplorerTray() == IntPtr.Zero && sw.Elapsed < TimeSpan.FromSeconds(60))
+            Thread.Sleep(100);
+        if (sw.ElapsedMilliseconds >= 100)
+            Log.Info(Native.TrayApi.FindExplorerTray() != IntPtr.Zero
+                ? $"로그온 작업: 작업 표시줄 기다림 {sw.ElapsedMilliseconds}ms"
+                : "로그온 작업: 60초 동안 작업 표시줄이 없어 그대로 시작");
+    }
+
+    private static string SinceProcessStart()
+    {
+        try
+        {
+            using var p = System.Diagnostics.Process.GetCurrentProcess();
+            return $"{(DateTime.Now - p.StartTime).TotalMilliseconds:0}ms";
+        }
+        catch { return "?"; }
     }
 
     /// <summary>코치마크 앵커 위치: 독은 독 창, 나머지는 주 모니터 상단바 (안 보이면 null).</summary>
