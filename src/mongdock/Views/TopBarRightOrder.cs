@@ -6,6 +6,7 @@ namespace Mongdock.Views;
 /// </summary>
 internal static class TopBarRightOrder
 {
+    public const string Privacy = "privacy";
     public const string Desktops = "desktops";
     public const string NetSpeed = "netSpeed";
     public const string Tray = "tray";
@@ -17,15 +18,19 @@ internal static class TopBarRightOrder
     public const string Ime = "ime";
     public const string Battery = "battery";
 
-    /// <summary>기본 순서 (0.3.4 까지의 고정 배치 — 배터리는 시계 바로 왼쪽).</summary>
+    /// <summary>
+    /// 기본 순서 (0.3.4 까지의 고정 배치 — 배터리는 시계 바로 왼쪽).
+    /// 카메라·마이크 점은 맨 왼쪽: 오른쪽 정렬 구역이라 점이 나타나고 사라져도 다른 아이콘이 밀리지 않음.
+    /// </summary>
     public static readonly IReadOnlyList<string> Default = new[]
     {
-        Desktops, NetSpeed, Tray, Bluetooth, Wifi, Volume, Search, ControlCenter, Ime, Battery,
+        Privacy, Desktops, NetSpeed, Tray, Bluetooth, Wifi, Volume, Search, ControlCenter, Ime, Battery,
     };
 
     /// <summary>설정 창 목록에 보일 이름.</summary>
     public static string Label(string key) => key switch
     {
+        Privacy => "카메라·마이크 사용 중 표시",
         Desktops => "가상 데스크톱",
         NetSpeed => "네트워크 속도",
         Tray => "앱 트레이 아이콘",

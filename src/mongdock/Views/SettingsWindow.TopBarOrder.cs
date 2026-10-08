@@ -45,6 +45,7 @@ internal sealed partial class SettingsWindow
         TopBarRightOrder.Search or TopBarRightOrder.ControlCenter => t.ShowQuickButtons,
         TopBarRightOrder.Ime => t.ShowImeToggle,
         TopBarRightOrder.Battery => t.ShowBattery,
+        TopBarRightOrder.Privacy => t.ShowPrivacyIndicator,
         _ => true,
     };
 }
