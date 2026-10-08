@@ -322,6 +322,12 @@ public sealed class Settings
     /// (새 설치면 첫 둘러보기, 기존 설정 파일이면 0.2.0 에서 올라온 것으로 봄 — Views/CoachMarks).
     /// </summary>
     public string? LastSeenVersion { get; set; }
+    /// <summary>GitHub 릴리스에서 새 버전 자동 확인 (시작 1분 뒤 + 12시간마다, Services/UpdateService).</summary>
+    public bool CheckForUpdates { get; set; } = true;
+    /// <summary>"이 버전 건너뛰기" 한 버전 (예 "0.3.1"). 자동 확인은 이 버전을 알리지 않음 — 더 새 버전이 나오면 다시 알림.</summary>
+    public string? SkippedUpdateVersion { get; set; }
+    /// <summary>"업데이트 있음" 배너를 이미 띄운 버전 (같은 버전은 한 번만 배너).</summary>
+    public string? NotifiedUpdateVersion { get; set; }
     /// <summary>사용자 정의 앱 메뉴. 키 = exe 파일명(소문자, 예 "chrome.exe") 또는 AUMID. 있으면 기본 메뉴 대신 사용.</summary>
     public Dictionary<string, List<AppMenuDef>> AppMenus { get; set; } = new();
 }

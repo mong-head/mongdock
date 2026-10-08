@@ -94,6 +94,7 @@
             <!-- 왼쪽: 로고 메뉴 · 가상 데스크톱 버튼 · 현재 앱 이름 (버튼은 앱 이름 길이와 무관하게 고정 위치) -->
             <StackPanel x:Name="LeftSection" HorizontalAlignment="Left" Orientation="Horizontal" Margin="10,0,0,0">
                 <Button x:Name="LogoButton" Style="{StaticResource BarButton}" Padding="8,0" Click="OnLogoClick">
+                    <Grid>
                     <!-- 윈도우 로고: 둥근 모서리 타일 4개, 단색 -->
                     <Path Width="14" Height="14" Stretch="Uniform"
                           Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}">
@@ -106,6 +107,10 @@
                             </GeometryGroup>
                         </Path.Data>
                     </Path>
+                    <!-- 새 버전 있음 배지 (TopBarWindow.Update.cs) -->
+                    <Ellipse x:Name="UpdateDot" Width="6.5" Height="6.5" Fill="#FFFF3B30" Visibility="Collapsed"
+                             HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2.5,-3.5,0" IsHitTestVisible="False" />
+                    </Grid>
                 </Button>
                 <!-- 앱 이름: 클릭 = 앱 메뉴 (맥 앱 메뉴) -->
                 <Button x:Name="AppNameButton" Style="{StaticResource BarButton}" Padding="7,0" Margin="3,3,0,3" Click="OnAppNameClick">

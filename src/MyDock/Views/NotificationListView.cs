@@ -482,14 +482,15 @@ internal static class NotificationUi
     /// 둥근 카드: [아이콘] 앱 이름 · 시간 / 제목(굵게) / 본문 2줄 말줄임 [+ 오른쪽 작은 이미지].
     /// compactExtra > 0 이면 앱 이름 옆에 "+n" (겹친 묶음의 맨 위 카드).
     /// </summary>
-    public static Border Card(AppServices services, UiPalette p, NotificationItem item, Brush background, int compactExtra = 0)
+    /// <param name="iconOverride">앱 아이콘 대신 쓸 이미지 (몽독 자체 알림 — 업데이트 배너 등).</param>
+    public static Border Card(AppServices services, UiPalette p, NotificationItem item, Brush background, int compactExtra = 0, ImageSource? iconOverride = null)
     {
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        var icon = Icon(services, item);
+        var icon = iconOverride is null ? Icon(services, item) : new Image { Source = iconOverride, Width = 36, Height = 36 };
         icon.Margin = new Thickness(0, 1, 10, 0);
         icon.VerticalAlignment = VerticalAlignment.Top;
         grid.Children.Add(icon);

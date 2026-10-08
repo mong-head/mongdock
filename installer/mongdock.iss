@@ -79,7 +79,9 @@ Name: "{userdesktop}\mongdock"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "mongdock"; ValueData: """{app}\{#AppExe}"""; Tasks: autostart
 
 [Run]
-Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,mongdock}"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
+; 대화형 설치: 마침 화면의 "mongdock 실행" 체크(기본 켬)로 결정.
+; 조용한 설치(/SILENT, /VERYSILENT — 앱의 "지금 업데이트" 가 /SILENT 로 실행): skipifsilent 가 없으므로 체크된 것으로 보고 항상 다시 실행.
+Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,mongdock}"; WorkingDir: "{app}"; Flags: nowait postinstall
 
 [Code]
 const

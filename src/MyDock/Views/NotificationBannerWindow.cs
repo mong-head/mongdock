@@ -40,12 +40,23 @@ internal sealed class NotificationBannerWindow : Window
         public required TranslateTransform Shift { get; init; }
         public TimeSpan Remaining { get; set; }
         public bool Leaving { get; set; }
+        /// <summary>몽독 자체 배너(업데이트 등)의 클릭 동작. null 이면 알림 보낸 앱 열기.</summary>
+        public Action? OnClick { get; init; }
     }
 
     // ───────────────────────── 연결 (App.xaml.cs) ─────────────────────────
 
     /// <summary>INotificationService.Arrived 를 구독해 배너를 띄움. Dispose 하면 구독 해제 + 배너 닫기.</summary>
     public static IDisposable Attach(AppServices services) => new Host(services);
+
+    private static Host? _host;
+
+    /// <summary>
+    /// 몽독 자체 배너 (예: "mongdock 업데이트 있음 · v0.3.1"). 윈도우 알림과 같은 카드·위치·규칙(배너 꺼짐·일시 정지·전체 화면이면 안 띄움).
+    /// 클릭 = onClick. 띄웠으면 true.
+    /// </summary>
+    public static bool ShowCustom(NotificationItem item, ImageSource? icon, Action onClick)
+        => _host?.Show(item, icon, onClick) ?? false;
 
     private sealed class Host : IDisposable
     {
@@ -57,17 +68,20 @@ internal sealed class NotificationBannerWindow : Window
             _services = services;
             _services.Notifications.Arrived += OnArrived;
             AppState.Changed += OnPausedChanged;
+            _host = this;
         }
 
-        private void OnArrived(object? sender, NotificationItem item)
+        private void OnArrived(object? sender, NotificationItem item) => Show(item, null, null);
+
+        public bool Show(NotificationItem item, ImageSource? icon, Action? onClick)
         {
             try
             {
                 var settings = _services.Settings.Current;
-                if (!settings.Notifications.ShowNotificationBanners || AppState.Paused) return;
+                if (!settings.Notifications.ShowNotificationBanners || AppState.Paused) return false;
                 var monitor = Monitors.FromHwnd(_services.Windows.ForegroundWindow);
                 // 전체 화면 앱(게임·동영상) 위에는 띄우지 않음 — 윈도우도 이때는 토스트를 숨김
-                if (_services.DesktopWindows.IsFullscreenOn(monitor.IsPrimary ? "" : monitor.DeviceName)) return;
+                if (_services.DesktopWindows.IsFullscreenOn(monitor.IsPrimary ? "" : monitor.DeviceName)) return false;
 
                 if (_window is null || _window._closed)
                 {
@@ -75,11 +89,13 @@ internal sealed class NotificationBannerWindow : Window
                     _window.Closed += (_, _) => _window = null;
                     _window.ShowOn(monitor);
                 }
-                _window.Add(item);
+                _window.Add(item, icon, onClick);
+                return true;
             }
             catch (Exception ex)
             {
                 Log.Error("알림 배너 표시 실패", ex);
+                return false;
             }
         }
 
@@ -92,6 +108,7 @@ internal sealed class NotificationBannerWindow : Window
         {
             _services.Notifications.Arrived -= OnArrived;
             AppState.Changed -= OnPausedChanged;
+            if (_host == this) _host = null;
             try { _window?.Close(); }
             catch (Exception ex) { Log.Warn($"알림 배너 닫기 실패: {ex.Message}"); }
             _window = null;
@@ -158,13 +175,13 @@ internal sealed class NotificationBannerWindow : Window
         _tick.Start();
     }
 
-    private void Add(NotificationItem item)
+    private void Add(NotificationItem item, ImageSource? icon = null, Action? onClick = null)
     {
         if (_closed) return;
         // 같은 알림이 이미 떠 있으면 무시
         if (_entries.Any(e => e.Item.Id == item.Id && !e.Leaving)) return;
 
-        var card = NotificationUi.Card(_services, _p, item, _p.CardBackground);
+        var card = NotificationUi.Card(_services, _p, item, _p.CardBackground, iconOverride: icon);
         card.CornerRadius = new CornerRadius(14);
         card.BorderThickness = new Thickness(0.75);
         card.Padding = new Thickness(12, 11, 12, 11);
@@ -185,7 +202,7 @@ internal sealed class NotificationBannerWindow : Window
         shadowed.Children.Add(card);
         host.Children.Add(shadowed);
 
-        var entry = new Entry { Item = item, Root = host, Shift = shift, Remaining = Life };
+        var entry = new Entry { Item = item, Root = host, Shift = shift, Remaining = Life, OnClick = onClick };
         var close = NotificationUi.CloseButton(_p, () => Dismiss(entry, fast: false));
         close.Margin = new Thickness(0, 0, 0, 0);
         host.Children.Add(close);
@@ -204,7 +221,15 @@ internal sealed class NotificationBannerWindow : Window
             pressed = false;
             e.Handled = true;
             Dismiss(entry, fast: true);
-            _services.Notifications.Open(item);
+            if (entry.OnClick is { } click)
+            {
+                try { click(); }
+                catch (Exception ex) { Log.Error("배너 클릭 처리 실패", ex); }
+            }
+            else
+            {
+                _services.Notifications.Open(item);
+            }
         };
 
         // 이미 떠 있는 배너의 현재 위치 (새 배너가 위에 끼면 한 번에 내려가지 않고 미끄러져 내려가게 — FLIP)
