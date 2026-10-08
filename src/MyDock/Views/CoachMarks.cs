@@ -13,23 +13,29 @@ internal sealed class CoachPage
     public required string Title { get; init; }
     public string Body { get; init; } = "";
     public CoachAnchor Anchor { get; init; } = CoachAnchor.Center;
-    /// <summary>버전(또는 묶음) 머리글 + 항목 제목들 — "그동안 추가된 기능" 같은 목록 카드.</summary>
+    /// <summary>버전(또는 묶음) 머리글 + 항목들 — "그 밖에 바뀐 것" 같은 목록 카드.</summary>
     public List<(string Header, List<string> Items)>? Groups { get; init; }
-    /// <summary>"릴리스 노트 전체 보기" 링크 표시.</summary>
-    public bool ReleaseLink { get; init; }
+    /// <summary>목록에 다 못 넣은 항목 수 ("외 N개").</summary>
+    public int More { get; init; }
+    /// <summary>"변경 내역 보기" 링크 표시 (설정 → 변경 내역).</summary>
+    public bool ChangelogLink { get; init; }
 }
 
 /// <summary>
 /// 버전 업데이트 후 "새로운 기능" 코치마크와 첫 설치 둘러보기의 흐름.
 /// - 시작 2.5초 뒤(독·상단바가 자리 잡은 뒤) LastSeenVersion 과 현재 버전을 비교해 한 번 보여 줌.
 ///   새 설치(settings.json 을 이번에 만듦) → 둘러보기, 기존 설정인데 LastSeenVersion 없음 → 0.2.0 에서 올라온 것으로 봄.
-/// - 최신 버전 단계는 앵커 말풍선으로 하나씩(최대 6), 그보다 이전에 놓친 버전·넘친 단계는 마지막 가운데 카드에 목록으로.
+/// - 최신 버전 단계(Changelog.json 의 coach)는 앵커 말풍선으로 하나씩(최대 6), 마지막 가운데 카드 "그 밖에 바뀐 것"에
+///   놓친 버전들의 나머지 변경(코치 없는 새 기능 > 고친 문제 > 개선 순, 넘치면 "외 N개" + 변경 내역 링크). 코치 단계가 없으면 이 카드 한 장만.
 /// - 둘러보기는 최대 8장, 넘치면 마지막 카드에 나머지 목록.
 /// - 끝까지 보거나 건너뛰면 LastSeenVersion = 현재. 일시 정지·전체 화면이면 미루고, 보는 중 일시 정지되면 저장 없이 닫음(다음 실행에 다시).
 /// </summary>
 internal static class CoachMarks
 {
     private const int MaxWhatsNewSteps = 6;
+    /// <summary>"그 밖에 바뀐 것" 카드: 최신 버전 줄 수 / 그 이전 버전마다 줄 수.</summary>
+    private const int MaxLatestLines = 5;
+    private const int MaxOlderLines = 3;
     private const int MaxTourSteps = 8;
 
     private static AppServices? _services;
@@ -72,11 +78,17 @@ internal static class CoachMarks
         if (_services is null) return;
         try
         {
-            var steps = WhatsNew.LatestUpTo(WhatsNew.Current);
-            var pages = BuildWhatsNew(steps, includeUnavailable: true);
+            // 현재 버전(없으면 그 이하 가장 최근 버전) 하나만: 그 바로 아래 버전 이후 ~ 현재
+            var upTo = Changelog.Releases.FirstOrDefault(r => r.Version <= WhatsNew.Current);
+            var pages = new List<CoachPage>();
+            if (upTo is not null)
+            {
+                var below = Changelog.Releases.FirstOrDefault(r => r.Version < upTo.Version)?.Version ?? new Version(0, 0, 0);
+                pages = BuildWhatsNew(below, upTo.Version);
+            }
             if (pages.Count == 0)
             {
-                pages.Add(new CoachPage { Title = "새로운 기능이 없어요", Body = $"버전 {WhatsNew.CurrentText} 에는 따로 소개할 기능이 없어요.", ReleaseLink = true });
+                pages.Add(new CoachPage { Title = "새로운 기능이 없어요", Body = $"버전 {WhatsNew.CurrentText} 에는 따로 소개할 기능이 없어요.", ChangelogLink = true });
             }
             Start(pages);
         }
@@ -123,7 +135,7 @@ internal static class CoachMarks
         var last = WhatsNew.Parse(s.LastSeenVersion) ?? WhatsNew.Parse(WhatsNew.LegacyVersion)!;
         if (current <= last) return;
 
-        var pages = BuildWhatsNew(WhatsNew.Between(last, current), includeUnavailable: false);
+        var pages = BuildWhatsNew(last, current);
         Log.Info($"업데이트 v{last.ToString(3)} → v{WhatsNew.CurrentText}: 새로운 기능 {pages.Count}장");
         if (pages.Count == 0)
         {
@@ -172,55 +184,64 @@ internal static class CoachMarks
     }
 
     /// <summary>
-    /// 새 기능 단계들 → 카드. 가장 새 버전의 (켜져 있고 앵커가 보이는) 단계는 말풍선으로 최대 6장,
-    /// 넘친 것과 이전 버전들은 마지막 가운데 카드에 버전별 제목 목록 (같은 Key 는 최신 버전 것만).
-    /// includeUnavailable: 말풍선으로 못 보여 준 최신 버전 단계(기능 꺼짐)도 목록에 넣을지.
+    /// (after, upTo] 버전들의 변경 내역 → 카드.
+    /// 가장 새 버전의 coach 단계 중 켜져 있고 앵커가 보이는 것은 말풍선으로 최대 6장,
+    /// 마지막 가운데 카드에 나머지(말풍선 못 띄운 새 기능·코치 없는 새 기능 > 고친 문제 > 개선, 이전 버전은 새 기능 먼저)를
+    /// 버전 머리글별로 — 최신 버전 5줄, 이전 버전마다 3줄까지, 넘치면 "외 N개". 같은 Key 의 기능은 최신 버전 것만.
     /// </summary>
-    private static List<CoachPage> BuildWhatsNew(List<CoachStep> steps, bool includeUnavailable)
+    private static List<CoachPage> BuildWhatsNew(Version after, Version upTo)
     {
         var s = _services!.Settings.Current;
         var pages = new List<CoachPage>();
-        var versioned = steps.Select(x => (Step: x, Ver: WhatsNew.Parse(x.Version))).Where(x => x.Ver is not null).ToList();
-        if (versioned.Count == 0) return pages;
-        var latest = versioned.Max(x => x.Ver)!;
+        var releases = Changelog.Between(after, upTo); // 최신 먼저
+        if (releases.Count == 0) return pages;
+        var latest = releases[0];
 
-        var latestSteps = versioned.Where(x => x.Ver == latest).Select(x => x.Step).ToList();
-        var shown = latestSteps.Where(x => x.IsAvailable(s) && AnchorVisible(x.Anchor)).ToList();
-        var coach = shown.Take(MaxWhatsNewSteps).ToList();
+        var latestSteps = WhatsNew.Releases.Where(x => WhatsNew.Parse(x.Version) == latest.Version).ToList();
+        var coach = latestSteps.Where(x => x.IsAvailable(s) && AnchorVisible(x.Anchor)).Take(MaxWhatsNewSteps).ToList();
         pages.AddRange(coach.Select(x => ToPage(x, s)));
 
-        var listed = new List<(Version Ver, CoachStep Step)>();
-        listed.AddRange(shown.Skip(MaxWhatsNewSteps).Select(x => (latest, x)));
-        if (includeUnavailable)
-            listed.AddRange(latestSteps.Except(shown).Select(x => (latest, x)));
-        listed.AddRange(versioned.Where(x => x.Ver < latest).Select(x => (x.Ver!, x.Step)));
-
-        // 같은 기능(Key)은 최신 버전 것만, 이미 말풍선으로 본 기능은 빼기
+        // 말풍선으로 본 기능(Key)은 목록에서 빼고, 이전 버전에 같은 Key 가 있어도 한 번만
         var seenKeys = new HashSet<string>(coach.Select(x => x.Key), StringComparer.OrdinalIgnoreCase);
         var groups = new List<(string Header, List<string> Items)>();
-        foreach (var g in listed.OrderByDescending(x => x.Ver).GroupBy(x => x.Ver))
+        int more = 0;
+        foreach (var release in releases)
         {
-            var items = new List<string>();
-            foreach (var (_, step) in g)
-            {
-                if (!seenKeys.Add(step.Key)) continue;
-                items.Add(step.Title);
-            }
-            if (items.Count > 0) groups.Add(($"v{g.Key.ToString(3)}", items));
+            bool isLatest = release == latest;
+            var candidates = release.Entries
+                .Where(e => e.Coach is null || seenKeys.Add(e.Coach.Key))
+                .Select((e, i) => (Entry: e, Order: i))
+                .OrderBy(x => Rank(x.Entry.Kind))
+                .ThenBy(x => x.Order)
+                .Select(x => x.Entry.Text)
+                .ToList();
+            int max = isLatest ? MaxLatestLines : MaxOlderLines;
+            var items = candidates.Take(max).ToList();
+            more += candidates.Count - items.Count;
+            if (items.Count > 0) groups.Add(($"v{release.VersionText}", items));
         }
-        if (groups.Count > 0)
+        if (groups.Count > 0 || more > 0)
         {
-            bool older = versioned.Any(x => x.Ver < latest);
+            bool older = releases.Count > 1;
             pages.Add(new CoachPage
             {
-                Title = older ? "그동안 추가된 기능" : (pages.Count > 0 ? "이 밖에도 생겼어요" : "새로운 기능"),
-                Body = older ? "업데이트하지 않은 사이에 이런 기능들이 생겼어요." : "",
+                Title = coach.Count > 0 ? "그 밖에 바뀐 것" : (older ? "그동안 바뀐 것" : $"v{latest.VersionText} 에서 바뀐 것"),
+                Body = older ? "업데이트하지 않은 사이에 바뀐 점이에요." : "",
                 Groups = groups,
-                ReleaseLink = true,
+                More = more,
+                ChangelogLink = true,
             });
         }
         return pages;
     }
+
+    /// <summary>목록 우선순위: 새 기능 > 고친 문제 > 개선.</summary>
+    private static int Rank(ChangeKind kind) => kind switch
+    {
+        ChangeKind.Feature => 0,
+        ChangeKind.Fix => 1,
+        _ => 2,
+    };
 
     /// <summary>첫 둘러보기: 켜져 있고 보이는 단계만, 최대 8장 (마지막 "설정" 카드 포함). 넘치면 마지막 카드에 목록.</summary>
     private static List<CoachPage> BuildTour()
@@ -314,8 +335,10 @@ internal sealed class CoachSession
         _card.SkipClicked += () => Close(markSeen: true);
         _card.LinkClicked += () =>
         {
-            try { _services.Launcher.OpenFile(WhatsNew.ReleasesUrl); }
-            catch (Exception ex) { Log.Error("릴리스 노트 열기 실패", ex); }
+            // 설정 → 변경 내역. 마지막 카드에서 누르면 안내는 본 것으로 끝냄 (설정 창이 카드에 가리지 않게)
+            try { SettingsWindow.OpenChangelogPage(_services); }
+            catch (Exception ex) { Log.Error("변경 내역 열기 실패", ex); }
+            if (_index >= _pages.Count - 1) Close(markSeen: true);
         };
         _index = 0;
         ShowCurrent(animate: true);
