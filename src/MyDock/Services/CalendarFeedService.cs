@@ -51,6 +51,9 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
     private readonly List<FeedState> _feeds = new();
     private readonly DispatcherTimer _timer;
     private readonly Dictionary<(DateTime, DateTime), IReadOnlyList<CalendarOccurrence>> _occurrenceCache = new();
+    /// <summary>캐시 파일 쓰기·삭제 직렬화 (백그라운드 쓰기 ↔ UI 스레드의 Remove).</summary>
+    private readonly object _cacheIoGate = new();
+    private readonly HashSet<string> _removedIds = new(StringComparer.Ordinal); // _cacheIoGate
     private DispatcherTimer? _kick;
     private bool _running;
     private bool _cacheLoaded;
@@ -92,7 +95,11 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
                         st.LastModified ??= c.LastModified;
                         st.LastSync ??= c.LastSync;
                         if (st.LastAttempt == default && c.LastSync is DateTime ls) st.LastAttempt = ls;
-                        if (st.Parsed == null && c.Parsed != null) st.Parsed = c.Parsed;
+                        if (st.Parsed == null && c.Parsed != null)
+                        {
+                            st.Parsed = c.Parsed;
+                            SchedulePrecompute(st);
+                        }
                     }
                 }
                 else if (t.Exception is { } ex) Log.Warn($"캘린더 캐시 읽기 실패: {ex.InnerException?.GetType().Name}");
@@ -137,8 +144,13 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
         if (!_running || !_cacheLoaded || _disposed) return;
         var interval = TimeSpan.FromMinutes(RefreshMinutes());
         var now = DateTime.Now;
+        var window = DisplayWindow(now);
         foreach (var st in _feeds.ToList())
+        {
             if (st.Feed.Enabled && !st.Busy && now - st.LastAttempt >= interval) _ = RefreshAsync(st);
+            // 달이 바뀌어 미리 펼친 범위가 지났으면 새 범위로 (받은 데이터는 그대로)
+            else if (st.Pre is { } pre && ReferenceEquals(pre.Source, st.Parsed) && (pre.From, pre.To) != window) SchedulePrecompute(st);
+        }
     }
 
     private int RefreshMinutes() => Math.Clamp(_settings.Current.Calendar?.RefreshMinutes ?? 15, 5, 1440);
@@ -192,8 +204,8 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
         var st = Find(feedId);
         if (st == null) return;
         _feeds.Remove(st);
-        Log.Info($"캘린더 구독 삭제: {st.Feed.Name} ({HostOf(st.Feed.Url)})");
-        DeleteCache(feedId);
+        Log.Info($"캘린더 구독 삭제: {MaskName(st.Feed.Name)} ({HostOf(st.Feed.Url)})");
+        ForgetCache(feedId);
         SaveStore();
         RaiseChanged();
     }
@@ -219,21 +231,27 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
     public async Task<CalendarAddResult> AddAsync(string text)
     {
         if (!TryNormalizeUrl(text, out var uri))
-            return new CalendarAddResult(false, "클립보드에 캘린더 주소(https:// 또는 webcal://)가 없어요.", null);
+            return new CalendarAddResult(false, "클립보드에 캘린더 주소(https:// 또는 webcal://)가 없어요.", null, CalendarAddError.NotUrl);
+        if (!IsSecure(uri))
+        {
+            Log.Info($"캘린더 추가 거부: http 주소 ({uri.Host})");
+            return new CalendarAddResult(false,
+                "https 주소만 지원해요. 캘린더 앱에서 https:// 또는 webcal:// 로 시작하는 주소를 복사해 주세요.", null, CalendarAddError.InsecureUrl);
+        }
         string url = uri.AbsoluteUri;
         if (_feeds.Any(f => string.Equals(f.Feed.Url, url, StringComparison.Ordinal)))
-            return new CalendarAddResult(false, "이미 추가된 캘린더예요.", null);
+            return new CalendarAddResult(false, "이미 추가된 캘린더예요.", null, CalendarAddError.Duplicate);
 
         var result = await Task.Run(() => FetchAsync(url, null, null));
-        if (_disposed) return new CalendarAddResult(false, "", null);
+        if (_disposed) return new CalendarAddResult(false, "", null, CalendarAddError.Disposed);
         if (result.Kind == FetchKind.Invalid)
         {
             Log.Warn($"캘린더 추가 실패 ({uri.Host}): {result.LogDetail}");
-            return new CalendarAddResult(false, result.UserMessage ?? "캘린더를 가져오지 못했어요.", null);
+            return new CalendarAddResult(false, result.UserMessage ?? "캘린더를 가져오지 못했어요.", null, CalendarAddError.Invalid);
         }
         // 그 사이 같은 주소가 추가됐으면 (버튼 연타)
         if (_feeds.Any(f => string.Equals(f.Feed.Url, url, StringComparison.Ordinal)))
-            return new CalendarAddResult(false, "이미 추가된 캘린더예요.", null);
+            return new CalendarAddResult(false, "이미 추가된 캘린더예요.", null, CalendarAddError.Duplicate);
 
         var feed = new CalendarFeed
         {
@@ -252,10 +270,10 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
         else
         {
             st.Error = result.UserMessage;
-            Log.Warn($"캘린더 '{feed.Name}' 추가 — 지금은 가져오기 실패 ({uri.Host}): {result.LogDetail}");
+            Log.Warn($"캘린더 '{MaskName(feed.Name)}' 추가 — 지금은 가져오기 실패 ({uri.Host}): {result.LogDetail}");
             message = $"'{feed.Name}' 를 추가했지만 지금은 가져오지 못했어요. 나중에 다시 시도합니다.";
         }
-        Log.Info($"캘린더 구독 추가: {feed.Name} ({uri.Host})");
+        Log.Info($"캘린더 구독 추가: {MaskName(feed.Name)} ({uri.Host})");
         SaveStore();
         RaiseChanged();
         return new CalendarAddResult(true, message, feed.Clone());
@@ -277,6 +295,7 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
 
     /// <summary>
     /// 텍스트(클립보드)가 캘린더 주소인지: 첫 줄, 앞뒤 공백·따옴표·꺾쇠 제거, webcal(s):// → https://, http/https 만.
+    /// http:// 도 "주소" 로는 인정(설정 창이 "주소 없음" 대신 거부 이유를 보여 주게) — 추가·가져오기는 https 만 (<see cref="IsSecure"/>).
     /// </summary>
     public static bool TryNormalizeUrl(string? text, out Uri uri)
     {
@@ -306,8 +325,26 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
         return "캘린더";
     }
 
+    /// <summary>https 만 허용 (비공개 캘린더 링크·일정 내용이 평문으로 오가지 않게). webcal 은 TryNormalizeUrl 이 https 로 바꿈.</summary>
+    public static bool IsSecure(Uri uri) => uri.Scheme == Uri.UriSchemeHttps;
+
     /// <summary>로그용: 주소 대신 호스트만 (주소가 없거나 깨졌으면 "?").</summary>
     private static string HostOf(string url) => Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.Host : "?";
+
+    private static readonly System.Text.RegularExpressions.Regex EmailLike = new(
+        @"([A-Za-z0-9._%+\-]+)@([A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)+)",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// 로그용 캘린더 이름: 이메일 형태(구글 기본 캘린더 이름 등)는 "a***@gmail.com" 처럼 가리고, 30자에서 자름.
+    /// </summary>
+    internal static string MaskName(string? name)
+    {
+        string s = (name ?? "").Replace('\r', ' ').Replace('\n', ' ').Trim();
+        s = EmailLike.Replace(s, m => m.Groups[1].Value[0] + "***@" + m.Groups[2].Value);
+        if (s.Length > 30) s = s[..30] + "…";
+        return s.Length > 0 ? s : "(이름 없음)";
+    }
 
     // ───────────────────────── 일정 ─────────────────────────
 
@@ -323,7 +360,19 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
             if (!st.Feed.Enabled || st.Parsed is not { } cal) continue;
             try
             {
-                foreach (var o in IcsExpander.Expand(cal.Events, from, to))
+                IEnumerable<IcsOccurrence> occurrences;
+                if (st.Pre is { } pre && ReferenceEquals(pre.Source, cal) && pre.From <= from && to <= pre.To)
+                {
+                    // 백그라운드에서 미리 펼친 표시 범위 안 → 거르기만
+                    occurrences = pre.Items.Where(o => Overlaps(o, from, to));
+                }
+                else
+                {
+                    var budget = ExpandBudget.ForUi();
+                    occurrences = IcsExpander.Expand(cal.Events, from, to, budget);
+                    ReportLimits(st, cal, budget);
+                }
+                foreach (var o in occurrences)
                 {
                     string title = o.Event.Summary.Length > 0 ? o.Event.Summary.Replace('\n', ' ') : "(제목 없음)";
                     list.Add(new CalendarOccurrence(st.Feed.Id, title, o.Event.Location?.Replace('\n', ' '), o.Start, o.End, o.AllDay, st.Feed.Color));
@@ -331,7 +380,7 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
             }
             catch (Exception ex)
             {
-                Log.Warn($"캘린더 '{st.Feed.Name}' 일정 펼치기 실패: {ex.GetType().Name}");
+                Log.Warn($"캘린더 '{MaskName(st.Feed.Name)}' 일정 펼치기 실패: {ex.GetType().Name}");
             }
         }
         list.Sort((a, b) =>
@@ -346,6 +395,60 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
         return list;
     }
 
+    /// <summary>IcsExpander 의 범위 판정과 같음 (길이 0 이면 시작이 범위 안).</summary>
+    private static bool Overlaps(IcsOccurrence o, DateTime from, DateTime to)
+        => o.End > o.Start ? o.Start < to && o.End > from : o.Start >= from && o.Start < to;
+
+    /// <summary>미리 펼칠 표시 범위: 이번 달 앞뒤 2개월 ([두 달 전 1일, 석 달 뒤 1일)).</summary>
+    private static (DateTime From, DateTime To) DisplayWindow(DateTime now)
+    {
+        var month = new DateTime(now.Year, now.Month, 1);
+        return (month.AddMonths(-2), month.AddMonths(3));
+    }
+
+    /// <summary>
+    /// 받은(또는 캐시에서 읽은) 일정을 백그라운드에서 표시 범위만큼 미리 펼침 → 끝나면 UI 스레드에서 붙이고 Changed.
+    /// 큰 피드도 UI 스레드는 거르기만 하게. 그 사이 다시 받았거나 삭제됐으면 버림.
+    /// </summary>
+    private void SchedulePrecompute(FeedState st)
+    {
+        if (st.Parsed is not { } cal || _disposed) return;
+        var (from, to) = DisplayWindow(DateTime.Now);
+        Task.Run(() =>
+        {
+            var budget = ExpandBudget.ForBackground();
+            var items = IcsExpander.Expand(cal.Events, from, to, budget);
+            return (Pre: new Precomputed(cal, from, to, items), Budget: budget);
+        }).ContinueWith(t =>
+        {
+            if (!t.IsCompletedSuccessfully)
+            {
+                Log.Warn($"캘린더 일정 미리 펼치기 실패: {t.Exception?.InnerException?.GetType().Name}");
+                return;
+            }
+            var (pre, budget) = t.Result;
+            _dispatcher.BeginInvoke(() =>
+            {
+                if (_disposed || Find(st.Feed.Id) != st || !ReferenceEquals(st.Parsed, cal)) return;
+                st.Pre = pre;
+                ReportLimits(st, cal, budget);
+                RaiseChanged();
+            });
+        }, TaskScheduler.Default);
+    }
+
+    /// <summary>펼치기 상한·건너뛴 일정을 일정 데이터(받은 ICS)마다 한 번만 로그 (UI 스레드).</summary>
+    private static void ReportLimits(FeedState st, IcsCalendar cal, ExpandBudget budget)
+    {
+        if (!budget.Exhausted && budget.FailedEvents == 0) return;
+        if (ReferenceEquals(st.LimitLoggedFor, cal)) return;
+        st.LimitLoggedFor = cal;
+        var parts = new List<string>();
+        if (budget.Exhausted) parts.Add($"상한({budget.Reason})에 걸려 나머지 회차 생략");
+        if (budget.FailedEvents > 0) parts.Add($"날짜 계산이 넘친 일정 {budget.FailedEvents}개 건너뜀");
+        Log.Warn($"캘린더 '{MaskName(st.Feed.Name)}' 일정 {cal.Events.Count}개 펼치기: {string.Join(", ", parts)}");
+    }
+
     // ───────────────────────── 가져오기 ─────────────────────────
 
     private async Task RefreshAsync(FeedState st)
@@ -354,6 +457,15 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
         if (st.Feed.Url.Length == 0)
         {
             st.Error = "주소를 읽을 수 없어요 — 삭제 후 다시 추가해 주세요.";
+            RaiseChanged();
+            return;
+        }
+        if (!Uri.TryCreate(st.Feed.Url, UriKind.Absolute, out var feedUri) || !IsSecure(feedUri))
+        {
+            // 예전 버전에서 추가한 http:// 구독 — 가져오지 않음 (캐시된 일정은 그대로 보임)
+            if (st.Error == null) Log.Warn($"캘린더 '{MaskName(st.Feed.Name)}' http 주소 → 가져오지 않음 ({HostOf(st.Feed.Url)})");
+            st.Error = "https 주소만 지원해요 — 삭제 후 https 주소로 다시 추가해 주세요.";
+            st.LastAttempt = DateTime.Now;
             RaiseChanged();
             return;
         }
@@ -376,7 +488,7 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
         if (_disposed) return;
         if (Find(st.Feed.Id) != st)
         {
-            DeleteCache(st.Feed.Id); // 가져오는 사이 삭제됨
+            ForgetCache(st.Feed.Id); // 가져오는 사이 삭제됨
             return;
         }
         switch (result.Kind)
@@ -391,7 +503,7 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
                 break;
             default:
                 st.Error = result.UserMessage;
-                Log.Warn($"캘린더 '{st.Feed.Name}' 가져오기 실패 ({HostOf(st.Feed.Url)}): {result.LogDetail}");
+                Log.Warn($"캘린더 '{MaskName(st.Feed.Name)}' 가져오기 실패 ({HostOf(st.Feed.Url)}): {result.LogDetail}");
                 break;
         }
         RaiseChanged();
@@ -400,10 +512,12 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
     private void ApplyFetched(FeedState st, FetchResult r)
     {
         st.Parsed = r.Parsed;
+        st.Pre = null;
         st.ETag = r.ETag;
         st.LastModified = r.LastModified;
         st.LastSync = DateTime.Now;
         st.Error = null;
+        SchedulePrecompute(st);
         // 캐시는 백그라운드에서 (암호화 + 쓰기)
         string id = st.Feed.Id;
         string text = r.Text!;
@@ -412,13 +526,18 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
         {
             try
             {
-                Directory.CreateDirectory(_cacheDir);
                 byte[] data = ProtectedData.Protect(Encoding.UTF8.GetBytes(text), Entropy, DataProtectionScope.CurrentUser);
-                string path = CachePath(id);
-                string tmp = path + "." + Environment.ProcessId + ".tmp";
-                File.WriteAllBytes(tmp, data);
-                File.Move(tmp, path, overwrite: true);
-                AtomicFile.WriteAllText(MetaPath(id), JsonSerializer.Serialize(meta, JsonOptions));
+                // 쓰기와 삭제(Remove)를 한 잠금으로 — 삭제된 구독의 캐시를 늦게 써서 고아 파일이 남지 않게
+                lock (_cacheIoGate)
+                {
+                    if (_removedIds.Contains(id)) return;
+                    Directory.CreateDirectory(_cacheDir);
+                    string path = CachePath(id);
+                    string tmp = path + "." + Environment.ProcessId + ".tmp";
+                    File.WriteAllBytes(tmp, data);
+                    File.Move(tmp, path, overwrite: true);
+                    AtomicFile.WriteAllText(MetaPath(id), JsonSerializer.Serialize(meta, JsonOptions));
+                }
             }
             catch (Exception ex)
             {
@@ -430,10 +549,18 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
     private void WriteMeta(FeedState st)
     {
         var meta = new CacheMeta { ETag = st.ETag, LastModified = st.LastModified, LastSync = st.LastSync };
-        string path = MetaPath(st.Feed.Id);
+        string id = st.Feed.Id;
+        string path = MetaPath(id);
         Task.Run(() =>
         {
-            try { AtomicFile.WriteAllText(path, JsonSerializer.Serialize(meta, JsonOptions)); }
+            try
+            {
+                lock (_cacheIoGate)
+                {
+                    if (_removedIds.Contains(id)) return;
+                    AtomicFile.WriteAllText(path, JsonSerializer.Serialize(meta, JsonOptions));
+                }
+            }
             catch (Exception ex) { Log.Warn($"캘린더 캐시 정보 저장 실패: {ex.GetType().Name}"); }
         });
     }
@@ -577,7 +704,7 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
             {
                 if (string.IsNullOrWhiteSpace(f.Id) || _feeds.Any(x => x.Feed.Id == f.Id)) continue;
                 string? url = Unprotect(f.Url ?? "");
-                if (url == null) Log.Warn($"캘린더 '{f.Name}' 주소를 복호화하지 못함 (다른 사용자·PC 에서 옮긴 파일?)");
+                if (url == null) Log.Warn($"캘린더 '{MaskName(f.Name)}' 주소를 복호화하지 못함 (다른 사용자·PC 에서 옮긴 파일?)");
                 else if (!(f.Url ?? "").StartsWith(ProtectedPrefix, StringComparison.Ordinal) && url.Length > 0) resave = true; // 평문 → 암호화
                 if (url != null && TryNormalizeUrl(url, out var u)) url = u.AbsoluteUri;
                 var feed = new CalendarFeed
@@ -680,6 +807,16 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
         }
     }
 
+    /// <summary>구독 삭제: 이후의 캐시 쓰기를 막고(제거된 Id 기록) 파일 삭제. 쓰기와 같은 잠금 안에서.</summary>
+    private void ForgetCache(string id)
+    {
+        lock (_cacheIoGate)
+        {
+            _removedIds.Add(id);
+            DeleteCache(id);
+        }
+    }
+
     private void DeleteCache(string id)
     {
         foreach (var path in new[] { CachePath(id), MetaPath(id) })
@@ -723,5 +860,11 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
         public DateTime LastAttempt;
         public string? Error;
         public bool Busy;
+        /// <summary>표시 범위를 미리 펼친 결과 (Source 가 지금 Parsed 와 같을 때만 씀).</summary>
+        public Precomputed? Pre;
+        /// <summary>펼치기 상한 로그를 이미 남긴 일정 데이터 (같은 데이터면 다시 안 남김).</summary>
+        public IcsCalendar? LimitLoggedFor;
     }
+
+    private sealed record Precomputed(IcsCalendar Source, DateTime From, DateTime To, List<IcsOccurrence> Items);
 }

@@ -134,7 +134,7 @@ public static class WindowsIndexSearch
                 string? name = rs.Fields.Item(1).Value as string;
                 if (!string.IsNullOrEmpty(path))
                 {
-                    FileCategory c = cat ?? Classify(rs.Fields.Item(2).Value as string, rs.Fields.Item(3).Value as string[]);
+                    FileCategory c = cat ?? Classify(rs.Fields.Item(2).Value as string, Kinds((object?)rs.Fields.Item(3).Value));
                     list.Add(new IndexedFile(path, string.IsNullOrEmpty(name) ? Path.GetFileName(path) : name, c));
                 }
                 rs.MoveNext();
@@ -148,7 +148,20 @@ public static class WindowsIndexSearch
         return list;
     }
 
-    /// <summary>CategoryClause 와 같은 규칙을 코드로 (System.Kind 는 문자열 배열로 옴).</summary>
+    /// <summary>
+    /// System.Kind 값 → 문자열 배열. ADO 는 여러 값 속성을 VARIANT SAFEARRAY 로 주므로 COM 마샬링 결과는 보통
+    /// object[](요소가 string) — string[] 로 오는 경우·단일 문자열·DBNull 도 처리.
+    /// </summary>
+    internal static string[]? Kinds(object? value) => value switch
+    {
+        string[] a => a,
+        string s => new[] { s },
+        object[] o => o.OfType<string>().ToArray(),
+        Array arr => arr.Cast<object?>().OfType<string>().ToArray(),
+        _ => null, // DBNull·null
+    };
+
+    /// <summary>CategoryClause 와 같은 규칙을 코드로.</summary>
     private static FileCategory Classify(string? itemType, string[]? kinds)
     {
         if (string.Equals(itemType, "Directory", StringComparison.OrdinalIgnoreCase)) return FileCategory.Folder;

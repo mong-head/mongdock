@@ -39,8 +39,27 @@ internal sealed class TrayIconDrag
         _fromBar = fromBar;
         _ghost = new TrayDragGhostWindow(services, source.Info.Icon, source.IconSize);
         IsActive = true;
-        if (_fromBar) source.Opacity = 0.0; // 원래 자리는 비워 둠 (복사본이 커서를 따라다님)
-        foreach (var bar in TopBarWindow.TrayHosts) bar.BeginTrayDrag(source, _fromBar);
+        bool ok = false;
+        try
+        {
+            if (_fromBar) source.Opacity = 0.0; // 원래 자리는 비워 둠 (복사본이 커서를 따라다님)
+            foreach (var bar in TopBarWindow.TrayHosts) bar.BeginTrayDrag(source, _fromBar);
+            ok = true;
+        }
+        finally
+        {
+            if (!ok)
+            {
+                // 생성 중 예외 → 끌기 상태가 남지 않게 되돌림 (IsActive 가 true 로 남으면 트레이 갱신이 멈춤)
+                IsActive = false;
+                source.Opacity = 1.0;
+                try { _ghost.Close(); } catch { }
+                foreach (var bar in TopBarWindow.TrayHosts)
+                {
+                    try { bar.EndTrayDrag(); } catch { }
+                }
+            }
+        }
     }
 
     public void Move(Point screenPx)

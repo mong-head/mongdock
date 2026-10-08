@@ -87,7 +87,12 @@ public sealed class NotificationService : INotificationService, IDisposable
     /// <summary>마지막으로 새로 들어온 토스트 중 사용자 조작이 필요한 시나리오(reminder/alarm/incomingCall/urgent)가 있던 시각 (없으면 0).
     /// 배너 여부와 상관없이 기록 — 이런 토스트는 윈도우 팝업을 숨기지 않는다.</summary>
     internal long LastInteractiveToastTick { get; private set; }
-    /// <summary>새 토스트 행을 반영함 (배너가 나갔든 아니든). LastBannerTick/LastInteractiveToastTick 갱신 직후.</summary>
+    /// <summary>
+    /// 마지막으로 새 토스트 행의 배너를 <b>일부러</b> 생략한 시각 (같은 태그 갱신 — 디스코드 등, 또는 SuppressPopup. 없으면 0).
+    /// 파싱 실패 등 "배너를 못 낸" 경우는 포함하지 않음 → 토스트 숨기기가 이미 숨긴 셸 팝업을 계속 숨겨도 되는지 판단.
+    /// </summary>
+    internal long LastSkippedBannerTick { get; private set; }
+    /// <summary>새 토스트 행을 반영함 (배너가 나갔든 아니든). LastBannerTick/LastInteractiveToastTick/LastSkippedBannerTick 갱신 직후.</summary>
     internal event EventHandler? ToastActivity;
 
     /// <summary>디바운스 없이 곧바로 DB 변경 확인 (가벼운 stamp 조회, 바뀌었을 때만 전체 읽기). 아무 스레드.</summary>
@@ -381,13 +386,18 @@ public sealed class NotificationService : INotificationService, IDisposable
             bool baseline = !_baselineDone;
             DateTime now = DateTime.UtcNow;
             // 오래된 것부터 → Arrived 순서가 도착 순서
-            bool newRows = false, interactive = false;
+            bool newRows = false, interactive = false, skipped = false;
             foreach (var row in rows.OrderBy(r => r.Order))
             {
                 if (!_seen.Add(row.Id) || baseline) continue;
                 newRows = true;
                 if (row.Content?.IsInteractiveScenario == true) interactive = true;
-                if (row.Content is null || row.SuppressPopup) continue;
+                if (row.SuppressPopup)
+                {
+                    skipped = true; // 셸도 팝업을 띄우지 않는 알림
+                    continue;
+                }
+                if (row.Content is null) continue;
                 if (row.ArrivalUtc < _startedUtc.AddMinutes(-1)) continue;
                 if (!string.IsNullOrEmpty(row.Tag) || !string.IsNullOrEmpty(row.Group))
                 {
@@ -395,6 +405,7 @@ public sealed class NotificationService : INotificationService, IDisposable
                     if (_lastBannerByTag.TryGetValue(key, out var last) && now - last < SameTagQuiet)
                     {
                         _lastBannerByTag[key] = now;
+                        skipped = true; // 같은 태그 갱신 (디스코드 등) — 배너를 일부러 생략
                         continue;
                     }
                     _lastBannerByTag[key] = now;
@@ -422,6 +433,7 @@ public sealed class NotificationService : INotificationService, IDisposable
 
             long tick = Environment.TickCount64;
             if (interactive) LastInteractiveToastTick = tick;
+            if (skipped) LastSkippedBannerTick = tick;
             if (arrived.Count > 0)
             {
                 Log.Info($"새 알림 {arrived.Count}개: {string.Join(", ", arrived.Select(a => a.Aumid).Distinct())}");

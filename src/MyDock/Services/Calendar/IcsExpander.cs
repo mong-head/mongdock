@@ -12,11 +12,14 @@ internal readonly record struct IcsOccurrence(IcsEvent Event, DateTime Start, Da
 /// - 회차 계산은 그 일정의 시간대 벽시계 기준(서머타임이 있어도 "매주 10시" 유지) → 로컬로 변환.
 /// - EXDATE 제외, RDATE 추가, RECURRENCE-ID 가 있는 같은 UID 일정은 그 회차를 대체(취소면 그 회차 삭제), STATUS:CANCELLED 제외.
 /// - COUNT 가 없으면 범위 근처까지 주기를 건너뛰고, 계산은 범위 끝에서 멈춤 (긴 반복도 가볍게). 안전 상한 있음.
+/// - 한 번 펼칠 때 전체 회차·시간 상한(<see cref="ExpandBudget"/>) — 넘으면 나머지 생략 (budget.Exhausted).
+/// - 일정 하나의 날짜 계산이 넘치면(거대 DURATION·이상한 UNTIL 등) 그 일정만 건너뜀 (budget.FailedEvents).
 /// </summary>
 internal static class IcsExpander
 {
-    public static List<IcsOccurrence> Expand(IReadOnlyList<IcsEvent> events, DateTime from, DateTime to)
+    public static List<IcsOccurrence> Expand(IReadOnlyList<IcsEvent> events, DateTime from, DateTime to, ExpandBudget? budget = null)
     {
+        budget ??= ExpandBudget.ForUi();
         var result = new List<IcsOccurrence>();
 
         // 같은 UID + RECURRENCE-ID 가 여러 번이면 SEQUENCE 가 큰 것만. 수정된 회차는 원래 회차(순간)로 찾음
@@ -26,8 +29,14 @@ internal static class IcsExpander
         {
             if (ev.RecurrenceId is IcsTime rid && ev.Uid.Length > 0)
             {
+                DateTime key;
+                try { key = Key(rid); }
+                catch (Exception ex) when (ex is ArgumentException or OverflowException)
+                {
+                    budget.FailedEvents++; // 범위 밖 RECURRENCE-ID → 이 수정 회차만 건너뜀
+                    continue;
+                }
                 if (!overrides.TryGetValue(ev.Uid, out var map)) overrides[ev.Uid] = map = new Dictionary<DateTime, IcsEvent>();
-                var key = Key(rid);
                 if (!map.TryGetValue(key, out var old) || old.Sequence <= ev.Sequence) map[key] = ev;
             }
             else masters.Add(ev);
@@ -36,15 +45,33 @@ internal static class IcsExpander
         foreach (var ev in masters)
         {
             if (ev.Cancelled) continue;
+            if (budget.ShouldStop(result.Count)) return result;
             overrides.TryGetValue(ev.Uid, out var map);
-            ExpandOne(ev, from, to, map, result);
+            Guarded(result, budget, () => ExpandOne(ev, from, to, map, result, budget));
         }
         // 수정된 회차는 그 자체로 한 번 (원래 날짜와 다른 날로 옮겨졌어도 새 날짜에)
         foreach (var map in overrides.Values)
             foreach (var ev in map.Values)
-                if (!ev.Cancelled) AddSingle(ev, ev.Start!.Value, from, to, result);
+            {
+                if (ev.Cancelled) continue;
+                if (budget.ShouldStop(result.Count)) return result;
+                Guarded(result, budget, () => AddSingle(ev, ev.Start!.Value, from, to, result));
+            }
 
         return result;
+    }
+
+    /// <summary>일정 하나 펼치기 — 날짜 계산이 넘치면 그 일정이 넣은 회차를 되돌리고 건너뜀.</summary>
+    private static void Guarded(List<IcsOccurrence> result, ExpandBudget budget, Action expand)
+    {
+        int before = result.Count;
+        try { expand(); }
+        catch (Exception ex) when (ex is ArgumentException or OverflowException or InvalidOperationException)
+        {
+            // ArgumentOutOfRangeException 포함 (DateTime 범위 밖)
+            if (result.Count > before) result.RemoveRange(before, result.Count - before);
+            budget.FailedEvents++;
+        }
     }
 
     /// <summary>EXDATE/RECURRENCE-ID 비교 키: 종일이면 날짜, 아니면 UTC 순간.</summary>
@@ -53,7 +80,8 @@ internal static class IcsExpander
     private static bool Matches(HashSet<DateTime> keys, HashSet<DateTime> dates, IcsTime occ)
         => keys.Contains(Key(occ)) || dates.Contains(occ.Value.Date);
 
-    private static void ExpandOne(IcsEvent ev, DateTime from, DateTime to, Dictionary<DateTime, IcsEvent>? overrides, List<IcsOccurrence> result)
+    private static void ExpandOne(IcsEvent ev, DateTime from, DateTime to, Dictionary<DateTime, IcsEvent>? overrides, List<IcsOccurrence> result,
+        ExpandBudget budget)
     {
         var start = ev.Start!.Value;
         var length = Length(ev);
@@ -80,8 +108,9 @@ internal static class IcsExpander
             var wallFrom = from - slack;
             var wallTo = to + TimeSpan.FromDays(2);
             DateTime? until = rule.Until is IcsTime u ? UntilWall(u, start) : null;
-            foreach (var wall in rule.Occurrences(start.Value, wallFrom, wallTo, until))
+            foreach (var wall in rule.Occurrences(start.Value, wallFrom, wallTo, until, budget))
             {
+                if (budget.ShouldStop(result.Count)) return;
                 var occ = start with { Value = wall };
                 if (Matches(skip, skipDates, occ)) continue;
                 Add(ev, occ, length, from, to, result);
@@ -90,6 +119,7 @@ internal static class IcsExpander
         foreach (var r in ev.RDates)
         {
             // RDATE 가 DTSTART 와 같은 형식이 아니면(시간대 다름) 그 값 그대로
+            if (budget.ShouldStop(result.Count)) return;
             if (Matches(skip, skipDates, r)) continue;
             Add(ev, r, length, from, to, result);
         }
@@ -150,6 +180,60 @@ internal static class IcsExpander
     }
 }
 
+/// <summary>
+/// 한 번 펼칠 때의 상한: 결과 회차 수 + 경과 시간. 넘으면 <see cref="Exhausted"/> 가 true 가 되고 나머지는 생략.
+/// 피드 하나에 하나씩 (상한은 피드당).
+/// </summary>
+internal sealed class ExpandBudget
+{
+    public const int DefaultMaxOccurrences = 5000;
+
+    private readonly System.Diagnostics.Stopwatch _sw = System.Diagnostics.Stopwatch.StartNew();
+    private readonly TimeSpan _maxTime;
+    private readonly int _maxOccurrences;
+
+    public ExpandBudget(int maxOccurrences, TimeSpan maxTime)
+    {
+        _maxOccurrences = maxOccurrences;
+        _maxTime = maxTime;
+    }
+
+    /// <summary>UI 스레드에서 바로 펼칠 때: 5000 회차, 50ms.</summary>
+    public static ExpandBudget ForUi() => new(DefaultMaxOccurrences, TimeSpan.FromMilliseconds(50));
+
+    /// <summary>백그라운드에서 미리 펼칠 때: 5000 회차, 2초.</summary>
+    public static ExpandBudget ForBackground() => new(DefaultMaxOccurrences, TimeSpan.FromSeconds(2));
+
+    /// <summary>상한에 걸려 일부를 생략함.</summary>
+    public bool Exhausted { get; private set; }
+    /// <summary>"회차 수" 또는 "시간" (Exhausted 일 때).</summary>
+    public string? Reason { get; private set; }
+    /// <summary>날짜 계산이 넘쳐 건너뛴 일정 수.</summary>
+    public int FailedEvents { get; set; }
+    public TimeSpan Elapsed => _sw.Elapsed;
+
+    public bool TimeUp()
+    {
+        if (Exhausted) return true;
+        if (_sw.Elapsed <= _maxTime) return false;
+        Exhausted = true;
+        Reason = $"시간 {_maxTime.TotalMilliseconds:0}ms";
+        return true;
+    }
+
+    public bool ShouldStop(int resultCount)
+    {
+        if (Exhausted) return true;
+        if (resultCount >= _maxOccurrences)
+        {
+            Exhausted = true;
+            Reason = $"회차 {_maxOccurrences}개";
+            return true;
+        }
+        return TimeUp();
+    }
+}
+
 /// <summary>RRULE 한 줄 (지원하는 부분만).</summary>
 internal sealed class RRule
 {
@@ -197,7 +281,7 @@ internal sealed class RRule
                     break;
                 case "UNTIL":
                     try { r.Until = IcsParser.ParseTime(val, new Dictionary<string, string>(), new IcsZones()); }
-                    catch (FormatException) { }
+                    catch (Exception) { /* 깨진 UNTIL 은 무시 */ }
                     break;
                 case "BYDAY":
                     r.ByDay = new();
@@ -245,7 +329,7 @@ internal sealed class RRule
     /// 회차 시작(벽시계)들을 시간 순으로. DTSTART 는 항상 첫 회차(COUNT 에 포함, RFC 5545).
     /// [wallFrom, wallTo] 밖은 돌려주지 않지만 COUNT 가 있으면 처음부터 셈. until 은 벽시계 기준 포함.
     /// </summary>
-    public IEnumerable<DateTime> Occurrences(DateTime dtstart, DateTime wallFrom, DateTime wallTo, DateTime? until)
+    public IEnumerable<DateTime> Occurrences(DateTime dtstart, DateTime wallFrom, DateTime wallTo, DateTime? until, ExpandBudget? budget = null)
     {
         int emitted = 0;
         if (until is DateTime u0 && dtstart > u0) yield break;
@@ -272,6 +356,7 @@ internal sealed class RRule
         var monthAnchor = new DateTime(dtstart.Year, dtstart.Month, 1);
         for (long p = first; p < first + MaxPeriodsGuard; p++)
         {
+            if (budget?.TimeUp() == true) yield break; // COUNT 로 범위 앞을 세는 동안에도 시간 상한
             long step = p * Interval;
             DateTime periodStart;
             try
