@@ -495,7 +495,15 @@ internal sealed partial class StatusPanelWindow : Window
     {
         var st = _services.Status;
         var root = new StackPanel();
-        root.Children.Add(HeaderRow("사운드", null));
+        // 머리글 스위치 = 소리 켜기/끄기(음소거). 와이파이·블루투스 패널과 같은 모양 — 노트북에서 자주 쓰는 "소리 끄기"를 한 번에
+        var soundSwitch = Switch(on =>
+        {
+            st.SetMuted(!on);
+            if (on && st.Volume <= 0) st.SetVolume(0.3); // 볼륨 0 인 채로 켜면 들리지 않으니 조금 올림
+            return Task.FromResult(true);
+        }, null);
+        soundSwitch.ToolTip = "소리 켜기/끄기";
+        root.Children.Add(HeaderRow("사운드", soundSwitch));
         var slider = new PillSlider(_p) { Margin = new Thickness(0, 6, 0, 2) };
         slider.UserChanged += (_, v) => SetVolume(v);
         root.Children.Add(slider);
@@ -517,6 +525,7 @@ internal sealed partial class StatusPanelWindow : Window
         _refreshers.Add(() =>
         {
             if (!slider.IsDragging) slider.Value = st.Muted ? 0 : st.Volume;
+            soundSwitch.IsChecked = !st.Muted;
             var list = st.OutputDevices ?? Array.Empty<AudioDevice>();
             string sig = string.Join("|", list.Select(d => $"{d.Id}:{d.IsDefault}:{d.Name}"));
             if (sig == signature) return;
