@@ -916,7 +916,7 @@ public partial class TopBarWindow : Window
         catch { return false; }
     }
 
-    /// <summary>로고 클릭 → 맥 Apple 메뉴 같은 시스템 메뉴 (mongdock 설정은 하위 메뉴로).</summary>
+    /// <summary>로고 클릭 → 맥 Apple 메뉴 같은 시스템 메뉴 + 맨 아래 mongdock 하위 메뉴(설정…·켜고 끄기·종료).</summary>
     private void OnLogoClick(object sender, RoutedEventArgs e)
     {
         _panel?.Close();
@@ -952,22 +952,17 @@ public partial class TopBarWindow : Window
             "지금 로그아웃할까요?", "열려 있는 앱이 모두 닫혀요.", "로그아웃", shell.SignOut)));
         menu.Items.Add(new Separator());
 
-        menu.Items.Add(DockMenus.SettingsWindow(_services, $"{AppInfo.Name} 설정…"));
-        var mydock = new MenuItem { Header = AppInfo.Name };
-        mydock.Items.Add(DockMenus.DockPosition(_services));
-        mydock.Items.Add(DockMenus.DockBehavior(_services));
-        mydock.Items.Add(DockMenus.DockThemeMenu(_services));
-        mydock.Items.Add(DockMenus.TopBarColor(_services));
-        mydock.Items.Add(new Separator());
-        mydock.Items.Add(DockMenus.HideDock(_services));
-        mydock.Items.Add(DockMenus.Pause());
-        mydock.Items.Add(DockMenus.HideTaskbar(_services));
-        mydock.Items.Add(new Separator());
-        mydock.Items.Add(DockMenus.StartWithWindows(_services));
-        mydock.Items.Add(DockMenus.OpenSettings(_services));
-        mydock.Items.Add(new Separator());
-        mydock.Items.Add(DockMenus.Quit());
-        menu.Items.Add(mydock);
+        // 몽독 항목은 하위 메뉴 하나로 (예전엔 "mongdock 설정…" + "mongdock ›" 이 나란히 있어 중복돼 보였음).
+        // 위치·동작·테마·색 같은 세부 설정은 설정 창에 있으니 여기엔 자주 쓰는 켜고 끄기만.
+        var mongdock = new MenuItem { Header = AppInfo.Name };
+        mongdock.Items.Add(DockMenus.SettingsWindow(_services, "설정…"));
+        mongdock.Items.Add(new Separator());
+        mongdock.Items.Add(DockMenus.HideDock(_services));
+        mongdock.Items.Add(DockMenus.HideTaskbar(_services));
+        mongdock.Items.Add(DockMenus.Pause());
+        mongdock.Items.Add(new Separator());
+        mongdock.Items.Add(DockMenus.Quit());
+        menu.Items.Add(mongdock);
         UpdateUi.AddMenuItems(menu, _services); // 새 버전 있으면 맨 위에 (TopBarWindow.Update.cs)
         menu.IsOpen = true;
     }
