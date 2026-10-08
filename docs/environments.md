@@ -75,8 +75,7 @@ UI 쪽 상시 타이머 정리:
 | 인증 프록시 (NTLM/Kerberos) | 프록시 자격 증명 미설정 → 407 로 실패 (실패는 조용히 로그 + 재시도) | **백엔드 수정 필요**: 시작 시 `HttpClient.DefaultProxy.Credentials = CredentialCache.DefaultCredentials;` 한 줄 (모든 클라이언트에 적용) |
 | 윈도우 검색 서비스 꺼짐 | Spotlight 파일 검색 건너뜀 | 기존 처리 OK |
 | 작업 표시줄 설정 정책으로 막힘 | `ABM_SETSTATE` 결과를 쓰지 않음 → 실패해도 예외 없음, 작업 표시줄이 그대로 보일 뿐 | OK (안내 없음) |
-| 작업 스케줄러가 정책으로 막힘 | "로그인 시 자동 실행" 은 작업 스케줄러 로그온 작업(`mongdock-<사용자>`, 현재 사용자·최소 권한·대화형 토큰 — 관리자 불필요)이 기본. 등록이 실패하면(서비스 꺼짐·정책·접근 거부) 로그를 남기고 HKCU Run 키로 대체 (`StartupService`). 토글은 둘 중 하나라도 있으면 켜짐 | OK — Run 키 대체는 로그인 후 수십 초 늦게 뜰 수 있음 |
-| 그룹 정책으로 Run 키 무시 | 로그온 작업을 쓰면 해당 없음. 작업도 막혀 Run 키로 대체된 PC 에서 정책(`DisableCurrentUserRun` 등)으로 무시되면 토글은 켜져 보이지만 자동 실행 안 됨 | 개선 제안: `IStartupService.IsBlockedByPolicy` 로 설정 창에 안내 |
+| 그룹 정책으로 Run 키 무시 | 등록·조회 모두 try/catch + 로그. 정책(`DisableCurrentUserRun` 등)으로 무시되면 토글은 켜져 보이지만 자동 실행 안 됨 | 개선 제안: `IStartupService.IsBlockedByPolicy` 로 설정 창에 안내 |
 | AppLocker 로 %LOCALAPPDATA%·Temp 실행 막힘 | 업데이트 설치 실행 실패 → "설치 프로그램을 실행하지 못했어요." | 개선 제안: Win32 오류 1260(정책 차단)이면 "회사 정책으로 막혀 있어요 — 릴리스 페이지에서 받아 IT 담당자에게" 로 구분 |
 | 알림 DB 접근 거부 | 직접 읽기 실패 → 사본 모드 → 실패는 한 번만 로그, 알림 기능만 조용히 빠짐 | OK (4초마다 사본 시도는 계속 — 백오프 제안) |
 | 개인 정보 설정으로 위치·카메라 레지스트리 제한 | 이 버전은 위치·카메라 레지스트리를 읽지 않음 (카메라·마이크 표시는 별도 작업) | 해당 작업에서 try/catch 확인 필요 |
