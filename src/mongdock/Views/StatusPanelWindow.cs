@@ -98,6 +98,7 @@ internal sealed partial class StatusPanelWindow : Window
             Focusable = false,
             Content = _cardInner,
         };
+        if (TryFindResource("OverlayScrollViewer") is Style overlay) _cardScroll.Style = overlay;
         if (TryFindResource("ThinScrollBar") is Style thin) _cardScroll.Resources.Add(typeof(ScrollBar), thin);
         _card.Child = _cardScroll;
         // 열려 있는 동안 내용 높이가 바뀌면(알림 도착·일정 목록) 다시 맞춤 — 줄일 내용이 있는 달력만

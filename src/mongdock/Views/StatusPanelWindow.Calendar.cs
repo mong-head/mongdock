@@ -224,6 +224,7 @@ internal sealed partial class StatusPanelWindow
             Focusable = false,
             Content = eventsStack,
         };
+        if (TryFindResource("OverlayScrollViewer") is Style overlay) eventsScroll.Style = overlay;
         if (TryFindResource("ThinScrollBar") is Style thin) eventsScroll.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), thin);
         var connectLink = new TextBlock
         {
