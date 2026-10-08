@@ -506,7 +506,7 @@ internal sealed class SpotlightWindow : Window
                 };
                 if (section.Category == SpotlightCategory.Recent)
                 {
-                    // "최근 사용" 머리글 오른쪽에 작은 "지우기" (모두 빼기)
+                    // "최근 사용" 머리글 오른쪽에 작은 "모두 지우기" (모두 빼기)
                     var host = new Grid { Height = HeaderHeight };
                     host.Children.Add(title);
                     host.Children.Add(ClearRecentsLink(padTop));
@@ -927,12 +927,12 @@ internal sealed class SpotlightWindow : Window
         }), ease: Anim.EaseOut);
     }
 
-    /// <summary>"최근 사용" 머리글 오른쪽 작은 "지우기" 링크: 최근 기록을 모두 지우고 목록을 흐리며 접음.</summary>
+    /// <summary>"최근 사용" 머리글 오른쪽 작은 "모두 지우기" 링크: 최근 기록을 모두 지우고 목록을 흐리며 접음.</summary>
     private FrameworkElement ClearRecentsLink(double padTop)
     {
         var text = new TextBlock
         {
-            Text = "지우기",
+            Text = "모두 지우기",
             FontSize = 11.5,
             Foreground = _p.SubText,
         };

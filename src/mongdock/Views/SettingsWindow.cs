@@ -823,7 +823,7 @@ internal sealed partial class SettingsWindow : Window
             Row("검색창을 열면 최근 실행한 앱 보여 주기", "검색창에서 실행한 앱을 최근 30일 동안 최대 8개 보여 줘요",
                 Toggle(s.ShowRecents, on => Commit(() => S().ShowRecents = on))),
             Row("최근 기록 지우기", _recentsClearResult,
-                ActionButton("지우기", () =>
+                ActionButton("모두 지우기", () =>
                 {
                     try
                     {
