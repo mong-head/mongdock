@@ -261,6 +261,9 @@ public sealed class NotificationSettings
     /// </summary>
     public bool HideWindowsToastPopups { get; set; } = true;
 
+    /// <summary>노트북 배터리가 20%·10%·5% 로 내려가면(방전 중, 단계마다 한 번) 몽독 배너로 알림 (LowBatteryTracker).</summary>
+    public bool LowBatteryAlerts { get; set; } = true;
+
     /// <summary>
     /// 사용자가 고른 윈도우 알림 소리(원본 wav 경로, "" = 무음). null = 몽독이 손대지 않음.
     /// 실제로는 이 파일 내용을 %APPDATA%\mongdock\sounds\notification.wav 로 복사하고 레지스트리가 그 파일을 가리킴 (NotificationSoundService).
