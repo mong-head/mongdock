@@ -17,7 +17,12 @@ public sealed class ShellActions : IShellActions
 
     public void OpenQuickSettings() => KeyChord.Send("Win+A", User32.VK_LWIN, User32.VK_A);
 
-    public void OpenNotificationCenter() => KeyChord.Send("Win+N", User32.VK_LWIN, User32.VK_N);
+    /// <summary>Win11 은 Win+N(알림 센터). 윈도우 10 은 Win+N 이 없고 알림이 관리 센터(Win+A) 안에 있다.</summary>
+    public void OpenNotificationCenter()
+    {
+        if (Environment.OSVersion.Version.Build < 22000) KeyChord.Send("Win+A", User32.VK_LWIN, User32.VK_A);
+        else KeyChord.Send("Win+N", User32.VK_LWIN, User32.VK_N);
+    }
 
     public void OpenTaskView() => KeyChord.Send("Win+Tab", User32.VK_LWIN, User32.VK_TAB);
 

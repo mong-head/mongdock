@@ -360,6 +360,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
                 Log.Warn("SetWindowCompositionAttribute(acrylic) 실패");
             DesktopApi.SetDwmInt(hwnd, DesktopApi.DWMWA_WINDOW_CORNER_PREFERENCE, DesktopApi.DWMWCP_ROUND);
             DesktopApi.SetDwmInt(hwnd, DesktopApi.DWMWA_BORDER_COLOR, unchecked((int)DesktopApi.DWMWA_COLOR_NONE));
+            if (LegacyCorners) EnableLegacyCorners(hwnd);
         }
         catch (Exception e)
         {
@@ -376,10 +377,71 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
             DesktopApi.SetAccent(hwnd, DesktopApi.ACCENT_DISABLED, 0);
             DesktopApi.SetDwmInt(hwnd, DesktopApi.DWMWA_WINDOW_CORNER_PREFERENCE, DesktopApi.DWMWCP_DEFAULT);
             DesktopApi.SetDwmInt(hwnd, DesktopApi.DWMWA_BORDER_COLOR, unchecked((int)DesktopApi.DWMWA_COLOR_DEFAULT));
+            if (LegacyCorners) DisableLegacyCorners(hwnd);
         }
         catch (Exception e)
         {
             Log.Error("DisableBlur 실패", e);
+        }
+    }
+
+    // ── 윈도우 10: DWMWA_WINDOW_CORNER_PREFERENCE(33)·BORDER_COLOR(34) 는 Win11(22000+) 전용이라 호출이 E_INVALIDARG 로
+    //    무시되고 모서리가 네모로 남는다 → 블러 창에 둥근 창 영역(SetWindowRgn, 반경 8 DIP)을 대신 건다.
+    //    Win11 26200 에서는 region 이 아크릴을 자르지 못했지만(위 주석), 윈도우 10 에서는 확인 못 함 — 못 자르더라도
+    //    WPF 내용은 잘리므로 지금보다 나빠지지 않는다. 모니터 너비 전체를 덮는 창(상단바)은 모서리를 깎지 않는다.
+    //    근거: https://learn.microsoft.com/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute (33/34 는 Windows 11 Build 22000 이상)
+
+    private static readonly bool LegacyCorners = Environment.OSVersion.Version.Build < 22000;
+    private const double LegacyCornerRadiusDip = 8;
+    private const int WM_SIZE = 0x0005;
+    private const int WM_NCDESTROY = 0x0082;
+    private readonly Dictionary<IntPtr, HwndSourceHook> _cornerHooks = new();
+
+    private void EnableLegacyCorners(IntPtr hwnd)
+    {
+        if (!_cornerHooks.ContainsKey(hwnd) && HwndSource.FromHwnd(hwnd) is { } src)
+        {
+            HwndSourceHook hook = (IntPtr h, int msg, IntPtr w, IntPtr l, ref bool handled) =>
+            {
+                if (msg == WM_SIZE) ApplyLegacyRegion(h);
+                else if (msg == WM_NCDESTROY) _cornerHooks.Remove(h);
+                return IntPtr.Zero;
+            };
+            src.AddHook(hook);
+            _cornerHooks[hwnd] = hook;
+        }
+        ApplyLegacyRegion(hwnd);
+    }
+
+    private void DisableLegacyCorners(IntPtr hwnd)
+    {
+        if (_cornerHooks.Remove(hwnd, out var hook))
+        {
+            HwndSource.FromHwnd(hwnd)?.RemoveHook(hook);
+            DesktopApi.SetWindowRgn(hwnd, IntPtr.Zero, true);
+        }
+    }
+
+    private static void ApplyLegacyRegion(IntPtr hwnd)
+    {
+        try
+        {
+            if (!User32.GetWindowRect(hwnd, out RECT r) || r.Width <= 0 || r.Height <= 0) return;
+            IntPtr monitor = DesktopApi.MonitorFromWindow(hwnd, 2 /* MONITOR_DEFAULTTONEAREST */);
+            if (DesktopApi.TryGetMonitorRects(monitor, out RECT bounds, out _) && r.Width >= bounds.Width - 2)
+            {
+                DesktopApi.SetWindowRgn(hwnd, IntPtr.Zero, true); // 상단바처럼 화면 너비 전체 → 네모 그대로
+                return;
+            }
+            uint dpi = DesktopApi.GetDpiForWindow(hwnd);
+            int d = (int)Math.Round(LegacyCornerRadiusDip * 2 * (dpi == 0 ? 96 : dpi) / 96.0);
+            IntPtr rgn = DesktopApi.CreateRoundRectRgn(0, 0, r.Width + 1, r.Height + 1, d, d);
+            if (rgn == IntPtr.Zero) return;
+            if (DesktopApi.SetWindowRgn(hwnd, rgn, true) == 0) Gdi32.DeleteObject(rgn);
+        }
+        catch (Exception e)
+        {
+            Log.Warn("윈도우 10 둥근 모서리(region) 적용 실패", e);
         }
     }
 
