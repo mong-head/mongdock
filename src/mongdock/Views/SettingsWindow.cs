@@ -435,7 +435,21 @@ internal sealed partial class SettingsWindow : Window
             Row("앱 켤 때", "창이 뜰 때까지 아이콘이 튀거나 실행 점이 깜빡입니다. 알림은 튀지 않습니다.", Segmented(d.LaunchAnimation,
                 new[] { (LaunchAnimation.Bounce, "통통 튀기"), (LaunchAnimation.Blink, "점 깜빡이기") },
                 v => Commit(() => D().LaunchAnimation = v)))));
+
+        body.Children.Add(Group(
+            Row("작업 표시줄 고정 앱 가져오기",
+                _taskbarImportResult ?? "윈도우 작업 표시줄에 고정한 앱 중 독에 없는 것을 작업 표시줄 순서대로 끝에 추가합니다.",
+                ActionButton("가져오기", () => Commit(() =>
+                {
+                    var s = _services.Settings.Current;
+                    int n = TaskbarPins.AddMissingTo(s, _services.Settings);
+                    s.TaskbarPinsImported = true;
+                    _taskbarImportResult = n > 0 ? $"{n}개 추가했어요." : "새로 추가할 앱이 없어요.";
+                }, rebuild: true)))));
     }
+
+    /// <summary>"작업 표시줄 고정 앱 가져오기" 마지막 결과 (설명 줄에 표시).</summary>
+    private string? _taskbarImportResult;
 
     /// <summary>"주 모니터" + 연결된 모니터 (장치 이름 \\.\DISPLAYn). 목록은 펼칠 때마다 새로 읽음.</summary>
     private UIElement MonitorDropdown(string current)

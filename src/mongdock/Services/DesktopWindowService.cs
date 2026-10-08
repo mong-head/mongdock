@@ -118,7 +118,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         _broadcastWindow.AddHook(BroadcastWndProc);
 
         _fullscreenTimer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background,
-            (_, _) => { CheckMonitorMetrics(); EvaluateFullscreen(); }, _dispatcher);
+            (_, _) => { CheckMonitorMetrics(); EvaluateFullscreen(); KeepTaskbarHidden(); }, _dispatcher);
         _fullscreenTimer.Start();
 
         // 가상 데스크톱 전환(데스크톱별 배경)·슬라이드쇼 감지: 백그라운드에서 2초마다 서명 비교
@@ -753,7 +753,13 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
                 _dispatcher.InvokeAsync(() =>
                 {
                     ReRegisterAll();
-                    if (_taskbarHidden) ApplyTaskbarVisibility(hidden: true); // 새 작업 표시줄도 다시 숨김
+                    if (_taskbarHidden)
+                    {
+                        // 새 작업 표시줄도 다시 숨김 (자동 숨김은 explorer 가 저장해 두지만 혹시 꺼졌으면 다시 켬)
+                        bool turnedOn = TaskbarAutoHide.Ensure();
+                        ApplyTaskbarVisibility(hidden: true);
+                        if (turnedOn) _ = HideAgainLaterAsync();
+                    }
                     QueueDisplayChanged();
                 }, DispatcherPriority.Background);
                 return IntPtr.Zero;
@@ -1191,15 +1197,88 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
 
     /// <summary>
     /// 윈도우 작업 표시줄(Shell_TrayWnd + 모든 Shell_SecondaryTrayWnd) 숨김/복원 (ShowWindowAsync — 탐색기가 응답 없어도 안 멈춤).
-    /// 작업 영역은 AppBar 가 관리하므로 건드리지 않고, 작업 표시줄 자동 숨김 레지스트리도 바꾸지 않는다.
+    /// 숨기는 동안은 작업 표시줄 자동 숨김을 켜 둔다(<see cref="TaskbarAutoHide"/>) — 자동 숨김이 꺼진 PC 에서 창만 숨기면
+    /// 작업 표시줄의 작업 영역 예약이 남아 아래에 빈 띠가 생기므로. 복원할 때 원래 꺼져 있었으면 다시 끈다.
     /// 숨긴 상태로 끝나면 ProcessExit/UnhandledException/Dispose 에서 복원. 탐색기 재시작(TaskbarCreated) 후 다시 숨김.
+    /// hidden=false 를 처음 호출할 때 이전 실행이 남긴 복구 기록(강제 종료)이 있으면 작업 표시줄을 보이고 자동 숨김을 되돌린다.
     /// </summary>
     public void SetWindowsTaskbarHidden(bool hidden)
     {
-        if (_taskbarHidden == hidden) return;
+        if (_taskbarHidden == hidden)
+        {
+            if (!hidden && TaskbarAutoHide.HasRecord)
+            {
+                Log.Info("이전 실행이 남긴 작업 표시줄 상태 기록 → 원래대로");
+                ApplyTaskbarVisibility(hidden: false);
+                TaskbarAutoHide.Restore("이전 실행 복구");
+            }
+            return;
+        }
         _taskbarHidden = hidden;
-        ApplyTaskbarVisibility(hidden);
+        if (hidden)
+        {
+            bool turnedOn = TaskbarAutoHide.Ensure();
+            ApplyTaskbarVisibility(hidden: true);
+            // 자동 숨김을 켜면 explorer 가 작업 표시줄 창을 다시 보이게 함(실측) → 잠시 뒤 다시 숨김
+            if (turnedOn) _ = HideAgainLaterAsync();
+        }
+        else
+        {
+            ApplyTaskbarVisibility(hidden: false);
+            TaskbarAutoHide.Restore("작업 표시줄 보이기");
+        }
         Log.Info(hidden ? "윈도우 작업 표시줄 숨김" : "윈도우 작업 표시줄 복원");
+    }
+
+    private int _taskbarCheckTick;
+    private int _taskbarRehideLogs;
+
+    /// <summary>
+    /// 숨기는 동안 2초마다: explorer 가 작업 표시줄을 다시 보이게 했으면(실측: 자동 숨김 상태에서 가끔 2px 띠로 다시 보임 →
+    /// 마우스를 대면 튀어나옴) 다시 숨김. FindWindowEx·IsWindowVisible 만이라 가벼움.
+    /// </summary>
+    private void KeepTaskbarHidden()
+    {
+        if (!_taskbarHidden || ++_taskbarCheckTick % 2 != 0) return;
+        try
+        {
+            foreach (IntPtr h in FindTaskbars())
+            {
+                if (!User32.IsWindowVisible(h)) continue;
+                User32.ShowWindowAsync(h, User32.SW_HIDE);
+                if (++_taskbarRehideLogs <= 20) Log.Info($"작업 표시줄이 다시 보여 숨김 (0x{h.ToInt64():X})");
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Warn("작업 표시줄 숨김 유지 실패", e);
+        }
+    }
+
+    /// <summary>자동 숨김 전환 뒤 explorer 가 작업 표시줄을 다시 띄우는 것(비동기)을 덮음. UI 스레드에서 시작.</summary>
+    private static async Task HideAgainLaterAsync()
+    {
+        foreach (int delay in new[] { 300, 700, 1500 })
+        {
+            await Task.Delay(delay);
+            if (!_taskbarHidden) return;
+            ApplyTaskbarVisibility(hidden: true);
+        }
+    }
+
+    /// <summary>
+    /// 명령줄 <c>mongdock.exe --restore-taskbar</c> (제거 프로그램이 강제 종료 뒤 호출): 복구 기록이 있으면 작업 표시줄을 보이고
+    /// 자동 숨김을 원래대로. 몽독이 실행 중이 아닐 때만 의미가 있다(호출자가 확인).
+    /// </summary>
+    public static void RestoreTaskbarFromRecord()
+    {
+        if (!TaskbarAutoHide.HasRecord)
+        {
+            Log.Info("--restore-taskbar: 작업 표시줄 상태 기록 없음");
+            return;
+        }
+        ApplyTaskbarVisibility(hidden: false);
+        TaskbarAutoHide.Restore("--restore-taskbar");
     }
 
     private static void ApplyTaskbarVisibility(bool hidden)
@@ -1237,6 +1316,8 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         if (!_taskbarHidden) return;
         _taskbarHidden = false;
         ApplyTaskbarVisibility(hidden: false);
+        try { TaskbarAutoHide.Restore(reason); }
+        catch (Exception e) { Log.Error("작업 표시줄 자동 숨김 되돌리기 실패", e); }
         Log.Info($"윈도우 작업 표시줄 복원 ({reason})");
     }
 

@@ -51,10 +51,13 @@ public sealed class TrayController : IDisposable
 
         bool hide = _services.Settings.Current.HideWindowsTaskbar && !paused;
         if (_taskbarHidden == hide) return;
-        // 처음(null)이고 숨길 필요가 없으면 건드리지 않음 (사용자 작업 표시줄 설정 존중)
+        // 처음(null)이고 숨길 필요가 없으면 건드리지 않음 (사용자 작업 표시줄 설정 존중).
+        // 단 이전 실행이 숨긴 채 강제 종료돼 복구 기록이 남아 있으면 백엔드가 작업 표시줄·자동 숨김을 원래대로.
         if (_taskbarHidden == null && !hide)
         {
             _taskbarHidden = false;
+            try { _services.DesktopWindows.SetWindowsTaskbarHidden(false); }
+            catch (Exception ex) { Log.Error("작업 표시줄 복구 실패", ex); }
             return;
         }
         try

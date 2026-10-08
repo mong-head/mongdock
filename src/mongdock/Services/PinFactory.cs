@@ -4,12 +4,11 @@ using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Text;
 using Mongdock.Models;
-using Mongdock.Services;
 
-namespace Mongdock.Views;
+namespace Mongdock.Services;
 
 /// <summary>
-/// 탐색기/바탕화면에서 독으로 끌어 놓은 파일·폴더를 핀으로 바꾼다.
+/// 파일·폴더·바로 가기를 핀으로 바꾼다 (독에 끌어 놓기, 작업 표시줄 고정 앱 가져오기 — <see cref="TaskbarPins"/>).
 /// - .exe : 그 exe (이름 = 파일 설명, 없으면 파일 이름)
 /// - .lnk : IShellLink 로 대상·인자를 읽어 대상이 exe 면 exe 핀(창 매칭이 됨), 아니면 바로 가기 파일 자체를 실행하는 핀.
 ///          바로 가기에 .ico 아이콘이 지정돼 있으면 그 아이콘을 가져옴
@@ -19,7 +18,7 @@ namespace Mongdock.Views;
 /// - C:\Program Files\WindowsApps\ 안의 exe (직접 또는 바로 가기 대상) : 버전 포함 경로는 업데이트 때 깨지므로
 ///   패키지 패밀리로 AUMID 를 찾아 Aumid 핀으로. 못 찾으면 거절(null, 로그).
 /// </summary>
-internal static class DockDropFiles
+public static class PinFactory
 {
     public static PinItem? CreatePin(string path, ISettingsService settings)
     {
@@ -114,7 +113,7 @@ internal static class DockDropFiles
         return pin;
     }
 
-    /// <summary>IShellLinkW + IPersistFile 로 바로 가기 읽기 (UI 스레드 = STA).</summary>
+    /// <summary>IShellLinkW + IPersistFile 로 바로 가기 읽기 (ShellLink 는 STA·MTA 모두 가능, 보통 UI 스레드).</summary>
     private static bool TryReadShortcut(string lnk, out string target, out string args, out string iconPath)
     {
         target = args = iconPath = "";

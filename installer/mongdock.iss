@@ -199,6 +199,24 @@ begin
   RestoreTaskbar();
 end;
 
+{ 제거 시: mongdock 이 작업 표시줄을 숨기느라 켜 둔 작업 표시줄 자동 숨김이 (강제 종료로) 남아 있으면 원래대로.
+  기록 파일은 정상 종료 때 지워지므로, 있으면 설치 폴더의 exe 로 되돌린다 (ABM_SETSTATE). }
+procedure RestoreTaskbarAutoHide();
+var
+  StateFile, Exe: String;
+  Code: Integer;
+begin
+  StateFile := ExpandConstant('{userappdata}\mongdock\cache\taskbar-state.json');
+  if not FileExists(StateFile) then
+    Exit;
+  Exe := ExpandConstant('{app}\{#AppExe}');
+  if not FileExists(Exe) then
+    Exit;
+  Log('작업 표시줄 상태 기록 있음 → ' + Exe + ' --restore-taskbar');
+  if not Exec(Exe, '--restore-taskbar', '', SW_HIDE, ewWaitUntilTerminated, Code) then
+    Log('--restore-taskbar 실행 실패: ' + IntToStr(Code));
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
   CloseMongdock();
@@ -383,6 +401,7 @@ begin
   if CurUninstallStep = usUninstall then
   begin
     CloseMongdock();
+    RestoreTaskbarAutoHide();
     { 앱 메뉴에서 켠 자동 실행도 같은 값이므로 설치 때 선택 여부와 상관없이 지운다 }
     RegDeleteValue(HKEY_CURRENT_USER, RunKey, 'mongdock');
     { 설정 폴더(originalSound 가 든 settings.json)를 지울지 묻기 전에 }

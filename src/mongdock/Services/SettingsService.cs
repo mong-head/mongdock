@@ -88,6 +88,10 @@ public sealed class SettingsService : ISettingsService, IDisposable
         if (!File.Exists(SettingsPath))
         {
             var s = new Settings { FirstRunTourPending = true };
+            // 새 설치 기본값: 윈도우 작업 표시줄 숨기기 켬 (+ 앱 트레이 아이콘도 같이 켜짐). 기존 사용자 파일은 건드리지 않음.
+            // (SetHideWindowsTaskbar 와 같은 효과지만 작업 표시줄 고정 앱 가져오기는 App 의 첫 핀 설정이 맡음)
+            s.HideWindowsTaskbar = true;
+            s.TopBar.ShowTrayIcons = true;
             Current = s;
             CreatedThisRun = true;
             Save();
@@ -287,6 +291,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
     public void Save()
     {
         bool saved = false;
+        ImportTaskbarPinsIfRequested();
         lock (_gate)
         {
             string text = JsonSerializer.Serialize(Current, JsonOptions);
@@ -322,6 +327,24 @@ public sealed class SettingsService : ISettingsService, IDisposable
 
         // 독 ↔ 상단바처럼 UI 안에서 바꾼 설정도 다른 창에 반영되게 알림.
         if (saved) RunOnUi(() => SettingsChanged?.Invoke(this, EventArgs.Empty));
+    }
+
+    /// <summary>"작업 표시줄 숨기기" 를 처음 켰으면(Settings.SetHideWindowsTaskbar) 작업 표시줄 고정 앱 중 독에 없는 것을 끝에 추가.</summary>
+    private void ImportTaskbarPinsIfRequested()
+    {
+        var s = Current;
+        if (!s.TaskbarPinImportRequested) return;
+        s.TaskbarPinImportRequested = false;
+        if (s.TaskbarPinsImported) return;
+        try
+        {
+            TaskbarPins.AddMissingTo(s, this);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("작업 표시줄 고정 앱 가져오기 실패", ex);
+        }
+        s.TaskbarPinsImported = true;
     }
 
     // ───────────────────────── 감시 ─────────────────────────

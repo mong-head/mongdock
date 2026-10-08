@@ -313,7 +313,10 @@ public sealed class Settings
     public List<PinItem> Pins { get; set; } = new();
     /// <summary>상단바·메뉴·패널·독 말풍선 글꼴. "Pretendard" = 앱에 내장된 Pretendard(맥 느낌). 설치된 글꼴 이름을 쓰면 그 글꼴. 쉼표로 대체 글꼴 나열 가능.</summary>
     public string FontFamily { get; set; } = "Pretendard";
-    /// <summary>mongdock 이 켜져 있는 동안 윈도우 작업 표시줄 숨김. 일시 정지·종료·크래시 시 원래대로 복원.</summary>
+    /// <summary>
+    /// mongdock 이 켜져 있는 동안 윈도우 작업 표시줄 숨김 (숨기는 동안 작업 표시줄 자동 숨김을 켜서 빈 띠가 안 남게).
+    /// 일시 정지·종료·크래시 시 원래대로 복원. 속성 기본값은 false(키 없는 기존 파일 호환) — 새 설치는 SettingsService 가 켬.
+    /// </summary>
     public bool HideWindowsTaskbar { get; set; }
 
     /// <summary>
@@ -322,9 +325,19 @@ public sealed class Settings
     /// </summary>
     public void SetHideWindowsTaskbar(bool on)
     {
+        // 처음 켤 때 작업 표시줄 고정 앱을 독에 가져오도록 요청 (SettingsService.Save 가 처리)
+        if (on && !HideWindowsTaskbar && !TaskbarPinsImported) TaskbarPinImportRequested = true;
         HideWindowsTaskbar = on;
         if (on && !TopBar.TrayIconsUserSet) TopBar.ShowTrayIcons = true;
     }
+    /// <summary>
+    /// 윈도우 작업 표시줄 고정 앱을 독에 한 번 가져왔는지 (새 설치 시, 또는 "작업 표시줄 숨기기" 를 처음 켤 때).
+    /// true 면 자동으로 다시 가져오지 않음 (설정 → 독 → "작업 표시줄 고정 앱 가져오기" 로는 언제든).
+    /// </summary>
+    public bool TaskbarPinsImported { get; set; }
+    /// <summary>SetHideWindowsTaskbar 가 처음 켤 때 세움 → 다음 저장 때 작업 표시줄 고정 앱 가져오기 (저장 안 함).</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool TaskbarPinImportRequested { get; set; }
     public bool StartWithWindows { get; set; }
     /// <summary>MyDockFinder ico.ini 를 한 번 가져왔는지. true 면 다시 가져오지 않음.</summary>
     public bool ImportedFromMyDockFinder { get; set; }

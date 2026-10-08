@@ -43,8 +43,14 @@ internal static class Shell32
     public const uint ABM_REMOVE = 0x1;
     public const uint ABM_QUERYPOS = 0x2;
     public const uint ABM_SETPOS = 0x3;
+    public const uint ABM_GETSTATE = 0x4;
     public const uint ABM_ACTIVATE = 0x6;
     public const uint ABM_WINDOWPOSCHANGED = 0x9;
+    public const uint ABM_SETSTATE = 0xA;
+
+    // ABM_GETSTATE 반환값 / ABM_SETSTATE lParam (작업 표시줄 자동 숨김은 전역 — 보조 모니터 작업 표시줄도 따름)
+    public const uint ABS_AUTOHIDE = 0x1;
+    public const uint ABS_ALWAYSONTOP = 0x2;
 
     public const uint ABE_LEFT = 0;
     public const uint ABE_TOP = 1;
