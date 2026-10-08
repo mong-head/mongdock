@@ -25,6 +25,10 @@
             <!-- 오른쪽: 아래 항목들의 순서는 설정(TopBar.RightItemsOrder)대로 코드에서 다시 배치 (UpdateRightOrder, TopBarWindow.Reorder.cs).
                  아이콘을 길게 눌러(0.4초) 끌면 순서 바꾸기. 시계는 항상 맨 오른쪽 -->
             <StackPanel x:Name="RightSection" HorizontalAlignment="Right" Orientation="Horizontal" Margin="0,0,10,0">
+                <!-- 카메라·마이크 사용 중 점 (맥처럼): 카메라 = 초록, 마이크만 = 주황. 안 쓰면 숨김 (TopBarWindow.Privacy.cs) -->
+                <Button x:Name="PrivacyButton" Style="{StaticResource BarIconButton}" Padding="6,0" Click="OnPrivacyClick" Visibility="Collapsed">
+                    <Ellipse x:Name="PrivacyDot" Width="7" Height="7" VerticalAlignment="Center" Fill="#FF30D158" />
+                </Button>
                 <!-- 가상 데스크톱 그룹 [‹] [1 / 4] [›] — 숫자 클릭 = 작업 보기. 시계 폭이 고정이라 위치가 항상 같음 -->
                 <Border x:Name="DesktopButtons" VerticalAlignment="Center" CornerRadius="7" Height="22" Margin="0,0,10,0">
                     <StackPanel Orientation="Horizontal" Margin="2,0">

@@ -155,6 +155,7 @@ public partial class TopBarWindow : Window
         }
         UnregisterIfNeeded();
         SetWallpaperWatch(false);
+        SetPrivacyWatch(false);
     }
 
     private bool _wallpaperWatch;
@@ -246,6 +247,7 @@ public partial class TopBarWindow : Window
 
         bool active = s.Enabled && !AppState.Paused; // 일시 정지 중이면 꺼진 것처럼
         SetStatusPolling(active && s.ShowNetworkSpeed, active && s.ShowStatusIcons);
+        SetPrivacyWatch(active && s.ShowPrivacyIndicator); // TopBarWindow.Privacy.cs
         SyncTrayIcons();
 
         if (!active)

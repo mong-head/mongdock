@@ -187,6 +187,11 @@ public sealed class TopBarSettings
     /// <summary>배터리 아이콘 왼쪽에 퍼센트 글자.</summary>
     public bool ShowBatteryPercent { get; set; } = true;
     /// <summary>
+    /// 카메라·마이크 사용 중 표시 (맥처럼 작은 점: 카메라 = 초록, 마이크만 = 주황). 쓰는 앱이 없으면 자리도 차지하지 않음.
+    /// 점을 누르면 어떤 앱이 쓰는지 목록 (PrivacyUsageService).
+    /// </summary>
+    public bool ShowPrivacyIndicator { get; set; } = true;
+    /// <summary>
     /// 다른 앱의 트레이(알림 영역) 아이콘 — 카카오톡·디스코드 등 (작업 표시줄을 숨겨도 접근 가능하게).
     /// 켜져 있으면 몽독이 트레이 메시지를 먼저 받아 explorer 로 그대로 전달한다 (TrayIconService).
     /// 기본 꺼짐. 사용자가 직접 정한 적 없으면(TrayIconsUserSet=false) "작업 표시줄 숨기기" 를 켤 때 자동으로 켜짐 (Settings.SetHideWindowsTaskbar).
@@ -211,7 +216,7 @@ public sealed class TopBarSettings
     /// </summary>
     public Dictionary<string, TrayIconPlacement> TrayIconPlacement { get; set; } = new();
     /// <summary>
-    /// 상단바 오른쪽 아이콘 순서 (왼쪽→오른쪽, 시계는 항상 맨 오른쪽이라 없음). 키: desktops, netSpeed, tray, bluetooth, wifi,
+    /// 상단바 오른쪽 아이콘 순서 (왼쪽→오른쪽, 시계는 항상 맨 오른쪽이라 없음). 키: privacy, desktops, netSpeed, tray, bluetooth, wifi,
     /// volume, search, controlCenter, ime, battery. 비어 있거나 빠진·모르는 키는 기본 위치로 (Views/TopBarRightOrder).
     /// </summary>
     public List<string> RightItemsOrder { get; set; } = new();

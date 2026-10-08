@@ -35,6 +35,7 @@ public partial class TopBarWindow
 
     private Dictionary<string, FrameworkElement> RightItems() => new()
     {
+        [R.Privacy] = PrivacyButton,
         [R.Desktops] = DesktopButtons,
         [R.NetSpeed] = NetSpeed,
         [R.Tray] = TrayArea,

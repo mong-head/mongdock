@@ -535,6 +535,8 @@ internal sealed partial class SettingsWindow : Window
             Row("상태 아이콘", "Wi-Fi·블루투스·볼륨", Toggle(t.ShowStatusIcons, on => Commit(() => T().ShowStatusIcons = on))),
             Row("배터리", "노트북에서만 보여요.", Toggle(t.ShowBattery, on => Commit(() => T().ShowBattery = on))),
             Row("배터리 % 표시", null, Toggle(t.ShowBatteryPercent, on => Commit(() => T().ShowBatteryPercent = on))),
+            Row("카메라·마이크 사용 중 표시", "앱이 카메라를 쓰면 초록 점, 마이크만 쓰면 주황 점을 보여 줘요(맥처럼). 누르면 어떤 앱인지 보여요.",
+                Toggle(t.ShowPrivacyIndicator, on => Commit(() => T().ShowPrivacyIndicator = on))),
             Row("빠른 버튼", "검색·제어 센터", Toggle(t.ShowQuickButtons, on => Commit(() => T().ShowQuickButtons = on))),
             Row("한/영", null, Toggle(t.ShowImeToggle, on => Commit(() => T().ShowImeToggle = on))),
             Row("네트워크 속도", null, Toggle(t.ShowNetworkSpeed, on => Commit(() => T().ShowNetworkSpeed = on)))));
