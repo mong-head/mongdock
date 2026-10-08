@@ -551,7 +551,10 @@ internal sealed partial class SettingsWindow : Window
                 Toggle(_services.Settings.Current.Notifications.HideWindowsToastPopups,
                     on => Commit(() => _services.Settings.Current.Notifications.HideWindowsToastPopups = on))),
             Row("알림 소리", "윈도우 알림 소리를 바꿉니다. 모든 앱 알림에 같이 적용되고, 몽독을 꺼도 유지됩니다. 처음 한 번은 다시 로그인한 뒤부터 적용돼요. ‘원래대로’로 되돌릴 수 있어요.",
-                NotificationSoundDropdown())));
+                NotificationSoundDropdown()),
+            Row("배터리 부족 알림", "배터리로 쓰는 중에 20%·10%·5% 가 되면 한 번씩 몽독 배너로 알려 줍니다. (알림 배너가 켜져 있어야 보여요)",
+                Toggle(_services.Settings.Current.Notifications.LowBatteryAlerts,
+                    on => Commit(() => _services.Settings.Current.Notifications.LowBatteryAlerts = on)))));
     }
 
     // ───────────────────────── 페이지: 캘린더 ─────────────────────────

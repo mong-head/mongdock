@@ -5,7 +5,7 @@ using Mongdock.Services;
 
 namespace Mongdock.Views;
 
-/// <summary>배터리 카드 (맥 메뉴 막대 배터리처럼): 퍼센트, 전원 원천, 남은 시간, 절전 모드, 설정 링크.</summary>
+/// <summary>배터리 카드 (맥 메뉴 막대 배터리처럼): 퍼센트, 전원 원천, 남은 시간, 절전 모드, 전원 모드, 설정 링크.</summary>
 internal sealed partial class StatusPanelWindow
 {
     private UIElement BuildBattery()
@@ -36,6 +36,7 @@ internal sealed partial class StatusPanelWindow
         saverRow.Children.Add(saverState);
         root.Children.Add(saverRow);
         root.Children.Add(Divider());
+        root.Children.Add(BuildPowerModeSection()); // 전원 모드 세그먼트 + 구분선 (StatusPanelWindow.Laptop.cs, 사용 불가면 접힘)
 
         root.Children.Add(LinkRow("배터리 설정…", () => st.OpenBatterySettings()));
         root.Children.Add(LinkRow("전원 설정…", () => st.OpenPowerSettings()));

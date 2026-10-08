@@ -1045,6 +1045,9 @@ internal sealed partial class StatusPanelWindow : Window
         grid.Children.Add(right);
         root.Children.Add(grid);
 
+        // 디스플레이(밝기·야간 모드) 타일 — StatusPanelWindow.Laptop.cs
+        root.Children.Add(BuildDisplayTile());
+
         // 사운드 타일
         var soundStack = new StackPanel();
         var soundTitle = Heading("사운드");
@@ -1074,6 +1077,9 @@ internal sealed partial class StatusPanelWindow : Window
         var mediaTile = Tile(mediaRow, new Thickness(12, 9, 8, 9));
         mediaTile.Margin = new Thickness(0, 10, 0, 0);
         root.Children.Add(mediaTile);
+
+        // 전원 모드 타일 (사용 불가면 접힘) — StatusPanelWindow.Laptop.cs
+        root.Children.Add(BuildPowerModeTile());
 
         _refreshers.Add(() =>
         {

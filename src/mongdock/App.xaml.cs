@@ -22,6 +22,7 @@ public partial class App : Application
     private IDisposable? _banners;
     private UpdateService? _updates;
     private IDisposable? _updateUi;
+    private IDisposable? _lowBattery;
     private NativeToastSuppressor? _toastSuppressor;
     private readonly WindowNudger _windowNudger = new();
     private const string ResumeEventName = @"Local\mongdock.Resume";
@@ -130,6 +131,7 @@ public partial class App : Application
         _spotlightHotkey = new SpotlightHotkeyController(_services);
         _banners = NotificationBannerWindow.Attach(_services);
         _updateUi = UpdateUi.Attach(_services, _updates);
+        _lowBattery = LowBatteryBanner.Attach(_services); // 배터리 20·10·5% 알림 (배너 호스트 다음)
         _updates.Start(); // 1분 뒤 첫 확인, 이후 12시간마다
         _services.Notifications.Start();
         _toastSuppressor = new NativeToastSuppressor(_services.Notifications as NotificationService);
@@ -337,6 +339,7 @@ public partial class App : Application
         _dock?.Close();
         _banners?.Dispose();
         _updateUi?.Dispose();
+        _lowBattery?.Dispose();
         _updates?.Dispose();
         if (_services is not null)
         {
