@@ -510,6 +510,8 @@ internal sealed partial class SettingsWindow : Window
                 Toggle(t.ShowOnAllMonitors, on => Commit(() => T().ShowOnAllMonitors = on))),
             Row("최대화 창이 상단바를 가리지 않게", "상단바 높이만큼 화면 공간을 비워 둡니다. 끄면 최대화한 창이 상단바 아래까지 덮습니다.",
                 Toggle(t.ReserveSpace, on => Commit(() => T().ReserveSpace = on))),
+            Row("창이 상단바에 가려지지 않게 아래로 내리기", "캡처 도구처럼 화면 맨 위에 뜨거나 상단바 밑으로 끌어 놓은 창을 상단바 바로 아래로 옮깁니다. 위 항목이 켜져 있을 때만 동작합니다.",
+                Toggle(t.KeepWindowsBelowBar, on => Commit(() => T().KeepWindowsBelowBar = on))),
             Row("높이", null, ValueSlider(t.Height, 20, 40, 1, v => $"{v:0}", v => T().Height = v)),
             Row("글자 크기", null, ValueSlider(t.FontSize, 11, 16, 0.5, v => $"{v:0.#}", v => T().FontSize = v)),
             Row("색", null, ColorModeDropdown(t.ColorMode))));
