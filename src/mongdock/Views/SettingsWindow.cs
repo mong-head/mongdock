@@ -816,6 +816,26 @@ internal sealed partial class SettingsWindow : Window
             Row("응용 프로그램", null, Toggle(s.Apps, on => Commit(() => S().Apps = on))),
             Row("시스템 설정", "블루투스·디스플레이·소리 같은 윈도우 설정 페이지", Toggle(s.Settings, on => Commit(() => S().Settings = on)))));
 
+        // 최근 사용: 빈 검색창에 최근 실행한 앱 (끄면 입력칸만). 기록 지우기는 바로 반영 (설정 저장 없음)
+        body.Children.Add(Group(
+            Row("검색창을 열면 최근 실행한 앱 보여 주기", "검색창에서 실행한 앱을 최근 30일 동안 최대 8개 보여 줘요",
+                Toggle(s.ShowRecents, on => Commit(() => S().ShowRecents = on))),
+            Row("최근 기록 지우기", _recentsClearResult,
+                ActionButton("지우기", () =>
+                {
+                    try
+                    {
+                        SpotlightRecents.Clear();
+                        _recentsClearResult = "지웠어요";
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error("Spotlight 최근 기록 지우기 실패", ex);
+                        _recentsClearResult = "지우지 못했어요";
+                    }
+                    Rebuild();
+                }))));
+
         bool indexing = WindowsIndexSearch.IsIndexServiceRunning();
         var fileRows = new List<UIElement>();
         if (!indexing)
@@ -856,6 +876,9 @@ internal sealed partial class SettingsWindow : Window
         folderRows.Add(Row("색인 옵션", "윈도우 검색이 색인할 위치를 바꿉니다 (제어판).", ActionButton("열기", OpenIndexingOptions)));
         body.Children.Add(Group(folderRows.ToArray()));
     }
+
+    /// <summary>"최근 기록 지우기" 결과 문구 (설명 줄에 표시).</summary>
+    private string? _recentsClearResult;
 
     private void AddSearchFolder()
     {
