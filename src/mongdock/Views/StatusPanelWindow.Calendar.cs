@@ -28,6 +28,9 @@ internal sealed partial class StatusPanelWindow
     /// <summary>일정 목록 영역 높이 범위 — 날짜를 바꿔도 카드가 크게 튀지 않게.</summary>
     private const double EventsMinHeight = 46;
     private const double EventsMaxHeight = 132;
+    /// <summary>달력 아래 알림 목록 최대 높이 (화면이 낮으면 <see cref="NotificationsMinHeight"/> 까지 줄임).</summary>
+    private const double NotificationsMaxHeight = 320;
+    private const double NotificationsMinHeight = 120;
     private static readonly string[] DayNames = { "일", "월", "화", "수", "목", "금", "토" };
 
     private UIElement BuildCalendar()
@@ -42,6 +45,10 @@ internal sealed partial class StatusPanelWindow
         int eventsVersion = 0, drawnEventsVersion = -1; // 구독 일정이 바뀌면 다시 그림
         bool withDots = cals.Feeds.Count > 0; // 칸 높이는 열 때 한 번 정함 (열린 동안 구독이 생기면 점 없이 목록만)
         double cellHeight = withDots ? CalCellHeightWithDots : CalCellHeight;
+        // 화면이 낮을 때 줄인 일정 목록 최대 높이 (PanelFit) 와 줄이기 전 원래 높이
+        double eventsCap = EventsMaxHeight;
+        double eventsNatural = EventsMinHeight;
+        NotificationListView? notifications = null;
 
         // ── 오늘: "10월 7일 수요일" + 작은 연도(·공휴일 이름)
         var bigDate = new TextBlock { FontSize = 22, FontWeight = FontWeights.SemiBold };
@@ -256,7 +263,7 @@ internal sealed partial class StatusPanelWindow
         if (_services.Notifications.IsAvailable)
         {
             root.Children.Add(Divider());
-            var notifications = new NotificationListView(_services, _p, maxHeight: 320);
+            notifications = new NotificationListView(_services, _p, maxHeight: NotificationsMaxHeight);
             root.Children.Add(notifications);
         }
 
@@ -378,7 +385,8 @@ internal sealed partial class StatusPanelWindow
 
             double width = eventsHost.ActualWidth > 0 ? eventsHost.ActualWidth : 276;
             eventsStack.Measure(new Size(width, double.PositiveInfinity));
-            double target = Math.Clamp(eventsStack.DesiredSize.Height, EventsMinHeight, EventsMaxHeight);
+            eventsNatural = Math.Clamp(eventsStack.DesiredSize.Height, EventsMinHeight, EventsMaxHeight);
+            double target = Math.Min(eventsNatural, eventsCap);
             double current = eventsHost.ActualHeight;
             if (!eventsHost.IsLoaded || current <= 0 || Math.Abs(current - target) < 0.5)
             {
@@ -386,7 +394,34 @@ internal sealed partial class StatusPanelWindow
                 eventsHost.Height = target;
             }
             else Anim.Height(eventsHost, current, target, 160, Anim.EaseOut, null, clearAtEnd: false);
+            QueueFit(); // 원래 높이가 바뀌었으니 남는 공간 다시 나눔
         }
+
+        // 화면이 낮을 때(노트북): 남는 높이에 맞춰 ① 알림 목록 ② 일정 목록 순으로 줄임. 달력 격자·선택한 날 정보는 그대로.
+        // 그래도 넘치면 카드 전체 스크롤 (StatusPanelWindow.Fit 의 카드 최대 높이).
+        _fitContent = available =>
+        {
+            if (notifications != null) notifications.MaxListHeight = NotificationsMaxHeight; // 원래 높이로 잼
+            // 바뀐 자식만 측정 무효가 되고 조상은 그대로라 root.Measure 가 예전 값을 돌려주므로, 조상 사슬을 직접 무효화한 뒤 잰다
+            InvalidateMeasureUpTo(notifications, root);
+            InvalidateMeasureUpTo(eventsHost, root);
+            root.Measure(new Size(ContentWidth(), double.PositiveInfinity));
+            double total = root.DesiredSize.Height;
+            double notifHeight = notifications?.DesiredSize.Height ?? 0;
+            bool eventsList = eventsHost.Child == eventsScroll;
+            double eventsBody = eventsHost.DesiredSize.Height - eventsHost.Margin.Top - eventsHost.Margin.Bottom;
+            double fixedPart = total - notifHeight - eventsBody;
+            double eventsWanted = eventsList ? eventsNatural : eventsBody;
+            var (notifMax, eventsMax, _) = PanelFit.ShrinkCalendar(available - fixedPart, notifHeight, eventsWanted,
+                NotificationsMaxHeight, NotificationsMinHeight,
+                eventsList ? EventsMaxHeight : eventsWanted, eventsList ? EventsMinHeight : eventsWanted);
+            if (notifications != null) notifications.MaxListHeight = notifMax;
+            if (!eventsList || Math.Abs(eventsMax - eventsCap) < 0.5) return;
+            eventsCap = eventsMax;
+            eventsScroll.MaxHeight = eventsCap;
+            eventsHost.BeginAnimation(HeightProperty, null);
+            eventsHost.Height = Math.Min(eventsNatural, eventsCap);
+        };
 
         // 달 이동 + 격자 슬라이드/페이드 (120ms, 다음 달 = 오른쪽에서, 이전 달 = 왼쪽에서). 시스템 애니메이션 꺼짐이면 바로.
         void ShowMonth(DateTime month, DateTime? select = null)

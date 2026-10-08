@@ -57,6 +57,12 @@ internal sealed partial class StatusPanelWindow : Window
         Foreground = _p.Text;
         TextOptions.SetTextFormattingMode(this, TextFormattingMode.Ideal);
 
+        var padding = kind switch
+        {
+            StatusPanelKind.ControlCenter => new Thickness(12),
+            StatusPanelKind.Tray => new Thickness(TrayCardPadding),
+            _ => new Thickness(17, 15, 17, 10),
+        };
         _card = new Border
         {
             Width = kind switch { StatusPanelKind.Volume => 352, StatusPanelKind.ControlCenter => 352, StatusPanelKind.Calendar => 316, StatusPanelKind.Tray => TrayCardWidth(), _ => 300 },
@@ -64,21 +70,39 @@ internal sealed partial class StatusPanelWindow : Window
             BorderThickness = new Thickness(0.75),
             Background = _p.CardBackground,
             BorderBrush = _p.CardBorder,
-            Padding = kind switch
-            {
-                StatusPanelKind.ControlCenter => new Thickness(12),
-                StatusPanelKind.Tray => new Thickness(TrayCardPadding),
-                _ => new Thickness(17, 15, 17, 10),
-            },
-            Child = kind switch
-            {
-                StatusPanelKind.Volume => BuildVolume(),
-                StatusPanelKind.Wifi => BuildWifi(),
-                StatusPanelKind.Bluetooth => BuildBluetooth(),
-                StatusPanelKind.Calendar => BuildCalendar(),
-                StatusPanelKind.Tray => BuildTray(),
-                _ => BuildControlCenter(),
-            },
+        };
+        var content = kind switch
+        {
+            StatusPanelKind.Volume => BuildVolume(),
+            StatusPanelKind.Wifi => BuildWifi(),
+            StatusPanelKind.Bluetooth => BuildBluetooth(),
+            StatusPanelKind.Calendar => BuildCalendar(),
+            StatusPanelKind.Tray => BuildTray(),
+            _ => BuildControlCenter(),
+        };
+        // 화면이 낮으면(노트북) 카드 최대 높이를 작업 영역에 맞추고 내용 전체를 세로 스크롤 (넘칠 때만 얇은 스크롤바).
+        // 패딩은 스크롤 안쪽에 둬서 행 버튼의 음수 여백(호버 배경)이 잘리지 않게. 스크롤바는 카드 오른쪽 가장자리 쪽에.
+        var scrollMargin = new Thickness(0, Math.Min(6, padding.Top), Math.Min(2, padding.Right), Math.Min(6, padding.Bottom));
+        _cardInner = new Border
+        {
+            Padding = new Thickness(padding.Left, padding.Top - scrollMargin.Top, padding.Right - scrollMargin.Right, padding.Bottom - scrollMargin.Bottom),
+            Child = content,
+        };
+        _cardScroll = new ScrollViewer
+        {
+            Margin = scrollMargin,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            PanningMode = PanningMode.VerticalOnly,
+            Focusable = false,
+            Content = _cardInner,
+        };
+        if (TryFindResource("ThinScrollBar") is Style thin) _cardScroll.Resources.Add(typeof(ScrollBar), thin);
+        _card.Child = _cardScroll;
+        // 열려 있는 동안 내용 높이가 바뀌면(알림 도착·일정 목록) 다시 맞춤 — 줄일 내용이 있는 달력만
+        _cardInner.SizeChanged += (_, e) =>
+        {
+            if (e.HeightChanged) QueueFit();
         };
         // 그림자는 뒤의 별도 Border 에만 (글자 흐려짐 방지)
         var root = new Grid { Margin = new Thickness(ShadowMargin, 2, ShadowMargin, 22) };
@@ -104,6 +128,7 @@ internal sealed partial class StatusPanelWindow : Window
         Loaded += (_, _) =>
         {
             RefreshAll();
+            QueueFit(); // 내용이 처음 채워진 뒤 다시 맞춤
             _watch.Start();
             // 달력은 열린 채 자정이 지나면 오늘 표시를 옮기려고 같은 타이머로 날짜만 확인 (변할 때만 다시 그림)
             if (kind is StatusPanelKind.Volume or StatusPanelKind.ControlCenter or StatusPanelKind.Calendar) _mediaTimer.Start();
@@ -115,9 +140,109 @@ internal sealed partial class StatusPanelWindow : Window
             _mediaTimer.Stop();
             _services.Status.Changed -= OnChanged;
             _services.Media.Changed -= OnChanged;
+            _services.DesktopWindows.DisplayChanged -= OnDisplayChanged;
         };
         _services.Status.Changed += OnChanged;
         _services.Media.Changed += OnChanged;
+        // 해상도·배율·작업 영역이 바뀌면 최대 높이 다시 계산
+        _services.DesktopWindows.DisplayChanged += OnDisplayChanged;
+        DpiChanged += (_, _) => Dispatcher.BeginInvoke(RefreshScreenLimit, DispatcherPriority.Loaded);
+    }
+
+    // ───────────────────────── 화면 높이 맞춤 ─────────────────────────
+
+    private readonly Border _cardInner;
+    private readonly ScrollViewer _cardScroll;
+    /// <summary>패널이 뜬 모니터의 장치 이름 (DisplayChanged 때 작업 영역 다시 조회).</summary>
+    private string? _monitorName;
+    private Rect _workArea = Rect.Empty;
+    /// <summary>
+    /// 카드 안 내용을 남은 높이에 맞춰 줄이는 함수 (달력만: 알림 목록 → 일정 목록 순).
+    /// 인자 = 카드 안 내용에 쓸 수 있는 높이 (테두리·패딩 제외).
+    /// </summary>
+    private Action<double>? _fitContent;
+    private bool _fitQueued;
+    private long _fitBurstStart;
+    private int _fitBurst;
+
+    /// <summary>카드 최대 높이 (DIP). 화면에 맞추기 전에는 무한.</summary>
+    internal double MaxCardHeight => _card.MaxHeight;
+
+    /// <summary>
+    /// 작업 영역(이 패널 모니터 기준 DIP)에 맞춰 카드 최대 높이를 정하고 내용을 줄임.
+    /// <see cref="ShowBelow"/> 에서 부르며, 창을 띄우지 않고도 부를 수 있다 (Top 이 정해진 뒤).
+    /// </summary>
+    internal void ApplyScreenLimit(Rect workArea)
+    {
+        _workArea = workArea;
+        Fit();
+    }
+
+    private void OnDisplayChanged(object? sender, EventArgs e)
+        => Dispatcher.BeginInvoke(RefreshScreenLimit, DispatcherPriority.Loaded);
+
+    private void RefreshScreenLimit()
+    {
+        if (_closed) return;
+        try
+        {
+            if (Monitors.Find(_monitorName) is { } m) _workArea = m.WorkArea;
+            Fit();
+        }
+        catch (Exception ex) { Log.Warn($"상태 패널 높이 다시 맞추기 실패: {ex.Message}"); }
+    }
+
+    private void QueueFit()
+    {
+        if (_fitContent is null || _fitQueued || _closed) return;
+        // 안전장치: 크기가 서로 맞물려 계속 바뀌면(스크롤바 생김↔줄바꿈 등) 1초에 30번까지만 — 원격에서 CPU 를 태우지 않게
+        long now = Environment.TickCount64;
+        if (now - _fitBurstStart > 1000)
+        {
+            _fitBurstStart = now;
+            _fitBurst = 0;
+        }
+        if (++_fitBurst > 30) return;
+        _fitQueued = true;
+        Dispatcher.BeginInvoke(() =>
+        {
+            _fitQueued = false;
+            if (_closed) return;
+            try { Fit(); }
+            catch (Exception ex) { Log.Warn($"상태 패널 높이 맞추기 실패: {ex.Message}"); }
+        }, DispatcherPriority.Render);
+    }
+
+    private void Fit()
+    {
+        if (_workArea.IsEmpty) return;
+        // 카드 위 = 창 위 + 그림자 여백 위쪽(2). ShowBelow 가 Top = 상단바 아래 + 6 - 2 로 둔다.
+        double cardTop = Top + _root.Margin.Top;
+        double max = PanelFit.MaxCardHeight(_workArea, cardTop);
+        if (Math.Abs(_card.MaxHeight - max) > 0.5) _card.MaxHeight = max;
+        if (_fitContent is null) return;
+        double chrome = _card.BorderThickness.Top + _card.BorderThickness.Bottom
+            + _cardScroll.Margin.Top + _cardScroll.Margin.Bottom
+            + _cardInner.Padding.Top + _cardInner.Padding.Bottom;
+        _fitContent(max - chrome);
+    }
+
+    /// <summary><paramref name="from"/> 부터 <paramref name="to"/> 까지 시각 트리 조상의 측정을 무효화 (직접 Measure 해서 새 크기를 얻으려고).</summary>
+    private static void InvalidateMeasureUpTo(UIElement? from, UIElement to)
+    {
+        for (DependencyObject? d = from; d != null; d = VisualTreeHelper.GetParent(d))
+        {
+            if (d is UIElement u) u.InvalidateMeasure();
+            if (d == to) break;
+        }
+    }
+
+    /// <summary>카드 안 내용 폭 (아직 배치 전이면 카드 폭에서 테두리·패딩을 뺀 값).</summary>
+    private double ContentWidth()
+    {
+        if (_cardInner.ActualWidth > 0) return Math.Max(0, _cardInner.ActualWidth - _cardInner.Padding.Left - _cardInner.Padding.Right);
+        return Math.Max(0, _card.Width - _card.BorderThickness.Left - _card.BorderThickness.Right
+            - _cardScroll.Margin.Left - _cardScroll.Margin.Right - _cardInner.Padding.Left - _cardInner.Padding.Right);
     }
 
     private const double ShadowMargin = 18;
@@ -177,12 +302,16 @@ internal sealed partial class StatusPanelWindow : Window
         double top = Math.Round(barBottom + 6 - 2);
         Left = left;
         Top = top;
+        // 노트북처럼 낮은 화면: 카드가 작업 영역 아래로 넘치지 않게 최대 높이를 먼저 정함 (보이기 전에 — 잘린 채 한 번 그려지지 않게)
+        _monitorName = monitor.DeviceName;
+        ApplyScreenLimit(monitor.WorkArea);
         Show(); // 새 창: WPF 가 Left/Top 이 속한 모니터에 그 DPI 로 만든다
         // 배율이 다른 모니터끼리 DIP 영역이 겹쳐 다른 모니터에 만들어졌으면 옮긴 뒤 다시 배치 (단일 모니터는 아무것도 안 함)
         if (_services.DesktopWindows.EnsureOnMonitor(this, monitor))
         {
             Left = left;
             Top = top;
+            Fit();
         }
     }
 
