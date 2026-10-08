@@ -141,6 +141,8 @@ public sealed class UpdateService : IDisposable
         if (_disposed) return;
         _timer.Interval = FirstDelay;
         _timer.Start();
+        System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged -= OnNetworkChanged;
+        System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged += OnNetworkChanged;
         Task.Run(CleanInstalledSetups);
     }
 
@@ -196,11 +198,32 @@ public sealed class UpdateService : IDisposable
             ? url
             : ReleasesPageUrl;
 
-    private void OnTimer(object? sender, EventArgs e)
+    private async void OnTimer(object? sender, EventArgs e)
     {
         _timer.Interval = Interval;
         if (!_settings.Current.CheckForUpdates || _isPaused()) return;
-        _ = CheckAsync(manual: false);
+        try
+        {
+            await CheckAsync(manual: false);
+            // 인터넷이 없어 실패했으면 12시간을 기다리지 않고 30분 뒤 다시 (네트워크가 돌아오면 OnNetworkChanged 가 더 빨리)
+            if (LastError is not null && !_disposed) _timer.Interval = RetryAfterError;
+        }
+        catch (Exception ex) { Log.Warn($"업데이트 자동 확인 실패: {ex.Message}"); }
+    }
+
+    private static readonly TimeSpan RetryAfterError = TimeSpan.FromMinutes(30);
+
+    /// <summary>인터넷이 다시 연결되면, 마지막 자동 확인이 실패했던 경우에만 잠시 뒤 다시 확인.</summary>
+    private void OnNetworkChanged(object? sender, System.Net.NetworkInformation.NetworkAvailabilityEventArgs e)
+    {
+        if (!e.IsAvailable || _disposed) return;
+        _timer.Dispatcher.BeginInvoke(() =>
+        {
+            if (_disposed || LastError is null || !_timer.IsEnabled) return;
+            _timer.Stop();
+            _timer.Interval = TimeSpan.FromSeconds(20); // 연결 직후는 DNS 등이 덜 준비돼 있을 수 있음
+            _timer.Start();
+        });
     }
 
     private void OnSettingsChanged(object? sender, EventArgs e)
@@ -741,6 +764,7 @@ public sealed class UpdateService : IDisposable
         if (_disposed) return;
         _disposed = true;
         _timer.Stop();
+        System.Net.NetworkInformation.NetworkChange.NetworkAvailabilityChanged -= OnNetworkChanged;
         _settings.SettingsChanged -= OnSettingsChanged;
         CancelDownload();
         _api.Dispose();
