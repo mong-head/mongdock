@@ -59,8 +59,8 @@ public partial class TopBarWindow
         var vis = show ? Visibility.Visible : Visibility.Collapsed;
         if (PrivacyButton.Visibility == vis) return;
         PrivacyButton.Visibility = vis;
+        // 점이 사라져도 열린 카드는 그대로 ("쓰는 앱이 없어요" 로 바뀜) — 링크를 누르려는 순간 닫혀 클릭이 허공에 떨어지지 않게
         if (show) Anim.Appear(PrivacyDot, 220, fromScale: 0.4, origin: new Point(0.5, 0.5));
-        else if (_panel is { Kind: StatusPanelKind.Privacy, IsClosing: false }) _panel.Close();
         Remeasure(RightSection);
     }
 
