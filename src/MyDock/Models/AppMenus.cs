@@ -13,6 +13,11 @@ public sealed class AppMenuItemDef
     public string Text { get; set; } = "";
     /// <summary>예: "Ctrl+Shift+T", "F5", "Alt+Left", 연속 입력 "Ctrl+K Ctrl+S"(공백으로 구분, 최대 4개). 메뉴 오른쪽에 회색으로도 표시.</summary>
     public string? Keys { get; set; }
+    /// <summary>
+    /// 단축키 대신 창에 보낼 고정 동작 (선택): "close" / "minimize" / "maximize" / "restore" 만 허용
+    /// (<see cref="MyDock.Services.MenuRules.AllowedActions"/>). 그 밖의 값은 무시(비활성).
+    /// </summary>
+    public string? Action { get; set; }
     /// <summary>하위 메뉴 (선택).</summary>
     public List<AppMenuItemDef>? Items { get; set; }
 }

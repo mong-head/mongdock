@@ -32,4 +32,9 @@
     <None Include="Fonts\OFL.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- 앱 전용 메뉴 규칙 (저장소 루트 menus/). 오프라인·첫 실행 기본값 — 실행 중엔 GitHub 의 같은 파일로 갱신 (Services/MenuRulesService) -->
+    <EmbeddedResource Include="..\..\menus\app-menus.json" LogicalName="mongdock.app-menus.json" Link="menus\app-menus.json" />
+  </ItemGroup>
+
 </Project>
