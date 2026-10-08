@@ -1,4 +1,4 @@
-{
+﻿{
   "_comment": "mongdock 변경 내역 단일 원본. 앱(설정 → 변경 내역, 새로운 기능 코치마크)과 build-release.ps1(GitHub 릴리스 노트)이 함께 읽는다. 최신 버전을 맨 위에. kind = feature | improvement | fix. coach 가 있는 feature 는 업데이트 후 상단바·독 위 말풍선으로 소개(anchor = Center|Dock|Logo|AppName|Desktops|Tray|Search|Clock, condition = topBar|trayIcons|spotlight|banners|dock|appMenus, 없으면 항상). major = 그 버전의 주요 업데이트(버전당 1~4개, 오랜만에 업데이트한 사람·변경 내역 맨 위·릴리스 노트 \"이번 버전 핵심\"에 씀), headline = 그 버전 한 줄 요약. body 의 {hotkey} 는 실제 검색 단축키 문구로 바뀜.",
   "versions": [
     {
@@ -14,7 +14,7 @@
         {
           "kind": "improvement",
           "major": true,
-          "text": "노트북이면 상단바에 맥처럼 배터리가 보여요. 남은 양·퍼센트, 충전 중 번개, 20% 이하 빨강, 절전 모드 노랑. 누르면 전원 상태·남은 시간과 배터리 설정 링크가 나와요(설정 → 상단바에서 끌 수 있어요)."
+          "text": "노트북이면 상단바 시계 옆에 맥처럼 배터리가 보여요. 남은 양·퍼센트, 충전 중 번개, 20% 이하 빨강, 절전 모드 노랑. 누르면 전원 상태·남은 시간과 배터리 설정 링크가 나와요(설정 → 상단바에서 끌 수 있어요)."
         },
         {
           "kind": "improvement",
