@@ -88,6 +88,8 @@ public partial class TopBarWindow
             s.ShowNetworkSpeed ? _netSpeedW : 0, s.ShowDesktopButtons ? _desktopsW : 0);
         if (next != _fold)
         {
+            // 열린 ⌃ 카드는 처음 받은 접힘 수로 그렸으므로 닫음 (아이콘이 바·카드에 겹치거나 빠지지 않게)
+            if (next.Tray != _fold.Tray && _panel?.Kind == StatusPanelKind.Tray) _panel.Close();
             _fold = next;
             Services.Log.Info($"상단바 폭 {barW:0} DIP — 오른쪽 접기: 트레이 {next.Tray}개, 속도 {(next.NetSpeed ? "숨김" : "보임")}, 데스크톱 {(next.Desktops ? "숨김" : "보임")}");
             ApplyFoldVisibility();

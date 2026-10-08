@@ -249,7 +249,8 @@ public sealed class NativeToastSuppressor : IDisposable
     }
 
     /// <summary>토스트가 떠 있음: 클로킹 안 됨 + WS_VISIBLE (윈도우 10 은 대기 중에 숨김일 수 있음).</summary>
-    private static bool IsShowing(IntPtr hwnd) => Dwm.GetCloaked(hwnd) == 0 && User32.IsWindowVisible(hwnd);
+    // 윈도우 11 은 클로킹만 봄 (UNCLOAKED 가 WS_VISIBLE 보다 먼저 올 수 있음). 윈도우 10 은 숨김(!WS_VISIBLE) 대기 창도 있음.
+    private static bool IsShowing(IntPtr hwnd) => Dwm.GetCloaked(hwnd) == 0 && (!IsWin10 || User32.IsWindowVisible(hwnd));
 
     private bool IsHostPid(uint pid)
     {

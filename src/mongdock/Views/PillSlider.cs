@@ -26,6 +26,9 @@ internal sealed class PillSlider : Grid
     /// <summary>사용자가 바꾼 값 (0~1).</summary>
     public event EventHandler<double>? UserChanged;
 
+    /// <summary>false 면 휠을 무시하고 부모(카드 스크롤)로 넘김 — 밝기처럼 스크롤하다 지나가며 바뀌면 곤란한 값.</summary>
+    public bool WheelAdjusts { get; set; } = true;
+
     public bool IsDragging => IsMouseCaptured;
 
     public PillSlider(UiPalette p, bool showValue = true)
@@ -132,6 +135,7 @@ internal sealed class PillSlider : Grid
     protected override void OnMouseWheel(MouseWheelEventArgs e)
     {
         base.OnMouseWheel(e);
+        if (!WheelAdjusts) return;
         Value = _value + Math.Sign(e.Delta) * 0.04;
         UserChanged?.Invoke(this, _value);
         e.Handled = true;

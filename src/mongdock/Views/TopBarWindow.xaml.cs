@@ -100,7 +100,11 @@ public partial class TopBarWindow : Window
         Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
     }
 
-    private void OnSystemTimeChanged(object? sender, EventArgs e) => Dispatcher.BeginInvoke(RefreshClockNow);
+    private void OnSystemTimeChanged(object? sender, EventArgs e)
+    {
+        TimeZoneInfo.ClearCachedData(); // 시간대가 바뀌었을 수도 (DateTime.Now 는 캐시된 시간대를 씀)
+        Dispatcher.BeginInvoke(RefreshClockNow);
+    }
 
     private void OnPowerModeChanged(object? sender, Microsoft.Win32.PowerModeChangedEventArgs e)
     {

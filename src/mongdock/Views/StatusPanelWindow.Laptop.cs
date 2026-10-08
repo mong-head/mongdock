@@ -114,7 +114,7 @@ internal sealed partial class StatusPanelWindow
             Margin = new Thickness(0, 0, 8, 0),
         };
         row.Children.Add(sun);
-        var slider = new PillSlider(_p);
+        var slider = new PillSlider(_p) { WheelAdjusts = false };
         row.Children.Add(slider);
         into.Children.Add(row);
 

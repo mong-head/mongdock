@@ -28,13 +28,17 @@ public sealed class PrivacyUsageService
     private const string ConsentStore = @"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore";
     private const string FakeVariable = "MONGDOCK_FAKE_PRIVACY";
     private const int PollMs = 2000;
+    /// <summary>변경 알림이 둘 다 등록됐을 때의 보조 확인 주기.</summary>
+    private const int SlowPollMs = 30000;
+    /// <summary>실행 중 프로세스 이름 캐시 (회의 중 2초마다 전체 프로세스 목록을 만들지 않게).</summary>
+    private const int RunningCacheMs = 10000;
     private const int DebounceMs = 150;
 
     private static readonly (PrivacyCapability Cap, string Key)[] Capabilities =
     {
         (PrivacyCapability.Camera, "webcam"),
         (PrivacyCapability.Microphone, "microphone"),
-        (PrivacyCapability.Location, "location"),
+        // 위치는 맥처럼 표시하지 않으므로 읽지 않음
     };
 
     public static PrivacyUsageService Shared { get; } = new();
@@ -44,6 +48,10 @@ public sealed class PrivacyUsageService
     private IReadOnlyList<PrivacyUsage> _active = Array.Empty<PrivacyUsage>();
     private string _signature = "";
     private int _refs;
+    /// <summary>Acquire 마다 +1 — Release 뒤 곧바로 Acquire 해도 옛 스레드의 늦은 결과가 섞이지 않게.</summary>
+    private int _generation;
+    private HashSet<string>? _running;
+    private long _runningAt;
     private Thread? _thread;
     private ManualResetEvent? _stop;
     private System.Windows.Threading.Dispatcher? _dispatcher;
@@ -71,7 +79,8 @@ public sealed class PrivacyUsageService
             _dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
             _stop = new ManualResetEvent(false);
             var stop = _stop;
-            _thread = new Thread(() => Run(stop)) { IsBackground = true, Name = "mongdock privacy watch" };
+            int gen = ++_generation;
+            _thread = new Thread(() => Run(stop, gen)) { IsBackground = true, Name = "mongdock privacy watch" };
             _thread.Start();
         }
     }
@@ -83,7 +92,9 @@ public sealed class PrivacyUsageService
         lock (_gate)
         {
             if (_refs == 0 || --_refs > 0) return;
-            _stop?.Set(); // 스레드가 스스로 이벤트·키를 정리
+            try { _stop?.Set(); } // 스레드가 스스로 이벤트·키를 정리 (예외로 이미 끝났으면 해제된 핸들)
+            catch (ObjectDisposedException) { }
+            _generation++;
             _stop = null;
             _thread = null;
             changed = _active.Count > 0;
@@ -107,12 +118,12 @@ public sealed class PrivacyUsageService
 
     // ───────────────────────── 감시 스레드 ─────────────────────────
 
-    private void Run(ManualResetEvent stop)
+    private void Run(ManualResetEvent stop, int gen)
     {
         var fake = Environment.GetEnvironmentVariable(FakeVariable);
         if (!string.IsNullOrWhiteSpace(fake))
         {
-            Publish(ParseFake(fake));
+            Publish(ParseFake(fake), gen);
             stop.WaitOne();
             stop.Dispose();
             return;
@@ -126,34 +137,36 @@ public sealed class PrivacyUsageService
             mic = Registry.CurrentUser.OpenSubKey(ConsentStore + @"\microphone", writable: false);
             camEvt = new AutoResetEvent(false);
             micEvt = new AutoResetEvent(false);
-            Register(cam, camEvt); // 등록 실패해도 2초 폴링으로 계속
-            Register(mic, micEvt);
+            // 둘 다 등록되면 30초 보조 확인, 하나라도 실패하면 2초 폴링
+            bool camOk = Register(cam, camEvt);
+            bool micOk = Register(mic, micEvt);
             var handles = new WaitHandle[] { stop, camEvt, micEvt };
 
-            Publish(Scan());
+            Publish(Scan(), gen);
             while (true)
             {
-                int w = WaitHandle.WaitAny(handles, PollMs);
+                int w = WaitHandle.WaitAny(handles, camOk && micOk ? SlowPollMs : PollMs);
                 if (w == 0) return;
                 if (w != WaitHandle.WaitTimeout)
                 {
                     // 알림은 한 번 쓰면 끝 → 다시 등록. 바로 이어서 오는 쓰기(Start·Stop 등)를 묶어서 한 번만 읽음
-                    if (w == 1) Register(cam, camEvt);
-                    else Register(mic, micEvt);
+                    if (w == 1) camOk = Register(cam, camEvt);
+                    else micOk = Register(mic, micEvt);
                     if (stop.WaitOne(DebounceMs)) return;
                 }
                 else
                 {
                     // 키가 없어 감시 못 했으면(처음 카메라를 쓰기 전) 생겼는지 다시 봄
-                    if (cam == null && (cam = Registry.CurrentUser.OpenSubKey(ConsentStore + @"\webcam", false)) != null) Register(cam, camEvt);
-                    if (mic == null && (mic = Registry.CurrentUser.OpenSubKey(ConsentStore + @"\microphone", false)) != null) Register(mic, micEvt);
+                    if (cam == null && (cam = Registry.CurrentUser.OpenSubKey(ConsentStore + @"\webcam", false)) != null) camOk = Register(cam, camEvt);
+                    if (mic == null && (mic = Registry.CurrentUser.OpenSubKey(ConsentStore + @"\microphone", false)) != null) micOk = Register(mic, micEvt);
                 }
-                Publish(Scan());
+                Publish(Scan(), gen);
             }
         }
         catch (Exception ex)
         {
             Log.Warn($"카메라·마이크 사용 감시 중단: {ex.Message}");
+            Publish(new List<PrivacyUsage>(), gen); // 마지막 상태(초록 점)로 굳지 않게
         }
         finally
         {
@@ -175,7 +188,7 @@ public sealed class PrivacyUsageService
         return false;
     }
 
-    private void Publish(List<PrivacyUsage> list)
+    private void Publish(List<PrivacyUsage> list, int gen)
     {
         list.Sort((a, b) =>
         {
@@ -186,7 +199,7 @@ public sealed class PrivacyUsageService
         System.Windows.Threading.Dispatcher? dispatcher;
         lock (_gate)
         {
-            if (_refs == 0 || sig == _signature) return;
+            if (_refs == 0 || gen != _generation || sig == _signature) return;
             int before = _active.Count;
             _signature = sig;
             _active = list;
@@ -216,7 +229,7 @@ public sealed class PrivacyUsageService
                 if (!packaged)
                 {
                     // 앱이 비정상 종료해 Stop 이 안 쓰인 기록 방지: 그 exe 이름의 프로세스가 없으면 무시
-                    running ??= RunningProcessNames();
+                    running ??= CachedRunningProcessNames();
                     if (running.Count > 0 && !running.Contains(Path.GetFileNameWithoutExtension(key))) continue;
                 }
                 result.Add(new PrivacyUsage(cap, ResolveName(key, packaged), key, packaged, since));
@@ -276,6 +289,17 @@ public sealed class PrivacyUsageService
     {
         try { return k.GetSubKeyNames(); }
         catch { return Array.Empty<string>(); }
+    }
+
+    private HashSet<string> CachedRunningProcessNames()
+    {
+        long now = Environment.TickCount64;
+        if (_running == null || now - _runningAt > RunningCacheMs)
+        {
+            _running = RunningProcessNames();
+            _runningAt = now;
+        }
+        return _running;
     }
 
     private static HashSet<string> RunningProcessNames()
