@@ -66,6 +66,7 @@ public static class WhatsNew
     {
         "topbar" => TopBarOn,
         "trayicons" => s => TopBarOn(s) && s.TopBar.ShowTrayIcons,
+        "appmenus" => s => TopBarOn(s) && s.TopBar.ShowActiveAppName && s.TopBar.ShowAppMenus,
         "spotlight" => s => TopBarOn(s) && s.TopBar.ShowQuickButtons && s.TopBar.SearchMode == SearchMode.Spotlight,
         "banners" => s => s.Notifications.ShowNotificationBanners,
         "dock" => s => s.Dock.Enabled,

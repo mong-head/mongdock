@@ -14,11 +14,15 @@ public enum ChangeKind
 /// <summary>코치마크로 소개할 새 기능 (Changelog.json 의 coach).</summary>
 public sealed record ChangeCoach(string Key, CoachAnchor Anchor, string Title, string Body, string? Condition);
 
-/// <summary>변경 내역 한 줄. Coach 가 있으면 업데이트 후 말풍선으로도 소개.</summary>
-public sealed record ChangeEntry(ChangeKind Kind, string Text, ChangeCoach? Coach);
+/// <summary>변경 내역 한 줄. Coach 가 있으면 업데이트 후 말풍선으로도 소개. Major = 그 버전의 주요 업데이트(버전당 1~4개).</summary>
+public sealed record ChangeEntry(ChangeKind Kind, string Text, ChangeCoach? Coach, bool Major = false);
 
-/// <summary>한 버전의 변경 내역.</summary>
-public sealed record ChangeRelease(Version Version, string VersionText, string Date, IReadOnlyList<ChangeEntry> Entries, IReadOnlyList<string> KnownIssues);
+/// <summary>한 버전의 변경 내역. Headline = 그 버전 한 줄 요약 (없으면 "").</summary>
+public sealed record ChangeRelease(Version Version, string VersionText, string Date, IReadOnlyList<ChangeEntry> Entries, IReadOnlyList<string> KnownIssues, string Headline = "")
+{
+    /// <summary>주요 업데이트 항목 (major: true).</summary>
+    public IEnumerable<ChangeEntry> Majors => Entries.Where(e => e.Major);
+}
 
 /// <summary>
 /// 앱에 포함된 Changelog.json(EmbeddedResource "MyDock.Changelog.json") 을 읽은 변경 내역.
@@ -80,7 +84,8 @@ public static class Changelog
                         "improvement" => ChangeKind.Improvement,
                         _ => ChangeKind.Feature,
                     };
-                    entries.Add(new ChangeEntry(kind, line, kind == ChangeKind.Feature ? ReadCoach(e) : null));
+                    bool major = e.TryGetProperty("major", out var m) && m.ValueKind == JsonValueKind.True;
+                    entries.Add(new ChangeEntry(kind, line, kind == ChangeKind.Feature ? ReadCoach(e) : null, major));
                 }
             }
             var issues = new List<string>();
@@ -89,7 +94,7 @@ public static class Changelog
                 foreach (var i in ki.EnumerateArray())
                     if (i.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(i.GetString())) issues.Add(i.GetString()!);
             }
-            list.Add(new ChangeRelease(ver, ver.ToString(3), Str(v, "date") ?? "", entries, issues));
+            list.Add(new ChangeRelease(ver, ver.ToString(3), Str(v, "date") ?? "", entries, issues, Str(v, "headline")?.Trim() ?? ""));
         }
         return list.OrderByDescending(r => r.Version).ToList();
     }

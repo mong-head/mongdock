@@ -847,6 +847,7 @@ public partial class TopBarWindow : Window
             HorizontalOffset = -10,
         };
         OutsideClickWatcher.Attach(menu, _services, BarArea);
+        _appNameMenu = menu; // 코치마크가 닫힘을 알 수 있게 (TopBarWindow.Coach.cs)
         AppNameButton.Tag = "Active";
         menu.Closed += (_, _) => AppNameButton.Tag = null;
         AddAppNameItems(menu, app); // 앱 전용 항목 (VS Code 설정… 등, TopBarWindow.AppMenus.cs)

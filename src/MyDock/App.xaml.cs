@@ -120,7 +120,8 @@ public partial class App : Application
         SyncTrayIcons();
         Log.Info($"{AppInfo.Name} 시작");
         // 버전 업데이트 후 "새로운 기능" / 첫 설치 둘러보기 (독·상단바가 자리 잡은 뒤)
-        CoachMarks.Init(_services, ResolveCoachAnchor);
+        CoachMarks.Init(_services, ResolveCoachAnchor,
+            () => !_exiting && _topBars.TryGetValue("", out var bar) && bar.CoachPopupOpen());
         // --tour: 첫 설치 둘러보기를 지금 설정 그대로 다시 보기 (확인·시연용)
         bool tour = Environment.GetCommandLineArgs().Any(a => string.Equals(a, "--tour", StringComparison.OrdinalIgnoreCase));
         CoachMarks.ScheduleStartup(settings.CreatedThisRun, forceTour: tour);

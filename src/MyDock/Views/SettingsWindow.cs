@@ -53,12 +53,28 @@ internal sealed partial class SettingsWindow : Window
     /// <summary>설정 창을 "변경 내역" 페이지로 열기 (정보 페이지 링크, 코치마크 "변경 내역 보기").</summary>
     public static void OpenChangelogPage(AppServices services) => Open(services, Page.Changelog);
 
+    /// <summary>레이아웃이 끝난 뒤 그 요소가 위쪽에 오게 스크롤 (변경 내역 "주요 업데이트"에서 버전 누름) (요소는 그때 다시 찾음 — 그 사이 다시 그려져도 됨).</summary>
+    private void ScrollToWhenReady(Func<FrameworkElement?> target)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_closed || _scroll?.Content is not UIElement content || target() is not { IsLoaded: true } el) return;
+            try
+            {
+                double y = el.TranslatePoint(new Point(0, 0), content).Y;
+                _scroll.ScrollToVerticalOffset(Math.Max(0, y - 8));
+            }
+            catch (InvalidOperationException) { }
+        }, DispatcherPriority.Background);
+    }
+
     private static void Open(AppServices services, Page? page)
     {
         try
         {
             if (_instance is { } w)
             {
+                if (!w.IsVisible) w.Show(); // 둘러보기 재생 중 숨겨 둔 창
                 if (w.WindowState == WindowState.Minimized) w.WindowState = WindowState.Normal;
                 if (page is Page pg && w._page != pg)
                 {
@@ -1015,7 +1031,7 @@ internal sealed partial class SettingsWindow : Window
             HorizontalAlignment = HorizontalAlignment.Center,
             Margin = new Thickness(0, 2, 0, 0),
         });
-        head.Children.Add(ChangelogLinkButton()); // SettingsWindow.Changelog.cs
+        head.Children.Add(AboutCoachLinks()); // SettingsWindow.Changelog.cs: 이 버전 둘러보기 ▶ · 변경 내역 보기 ›
         body.Children.Add(head);
 
         BuildUpdateSection(body); // SettingsWindow.Update.cs
@@ -1028,13 +1044,11 @@ internal sealed partial class SettingsWindow : Window
             Row("설정 파일", "settings.json (직접 편집하면 저장 즉시 반영)",
                 ActionButton("파일 열기", () => _services.Launcher.OpenFile(_services.Settings.SettingsPath)))));
 
-        // 코치마크: 이 버전의 새 기능 / 첫 설치 둘러보기 다시 보기 (상단바·독 위에 말풍선)
+        // 코치마크: 처음 설치했을 때의 기능 둘러보기 (버전별 둘러보기는 위 링크와 변경 내역 페이지)
         body.Children.Add(SectionTitle("안내"));
         body.Children.Add(Group(
-            Row("새로운 기능 보기", $"버전 {VersionText()} 에서 바뀐 점을 상단바·독 위에서 짚어 줘요.",
-                ActionButton("보기", CoachMarks.ShowWhatsNew)),
-            Row("둘러보기 다시 보기", "처음 설치했을 때의 기능 둘러보기를 다시 봐요.",
-                ActionButton("보기", CoachMarks.ShowTour))));
+            Row("처음 사용 둘러보기", "처음 설치했을 때의 기능 둘러보기를 상단바·독 위에서 다시 봐요.",
+                ActionButton("둘러보기 ▶", () => PlayCoach(CoachMarks.BuildTourPages)))));
     }
 
     /// <summary>어셈블리 정보 버전 ("+커밋" 꼬리 제거). 없으면 어셈블리 버전.</summary>

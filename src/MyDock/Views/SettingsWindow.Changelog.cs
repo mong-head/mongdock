@@ -7,8 +7,11 @@ using Ellipse = System.Windows.Shapes.Ellipse;
 namespace MyDock.Views;
 
 /// <summary>
-/// 설정 창 "변경 내역" 페이지: Changelog.json(앱에 포함)을 최신 버전부터 버전·날짜 머리글 + "새 기능 / 개선 / 고친 문제 / 알려진 한계" 목록으로.
-/// 지금 실행 중인 버전에는 "지금 버전" 표시. 정보 페이지에는 이 페이지로 가는 링크 한 줄.
+/// 설정 창 "변경 내역" 페이지: 맨 위 "주요 업데이트"(버전별 headline + major 항목, 누르면 아래 그 버전으로 스크롤, "주요 기능 둘러보기 ▶"),
+/// 그 아래 Changelog.json(앱에 포함)을 최신 버전부터 버전·날짜 머리글 + "새 기능 / 개선 / 고친 문제 / 알려진 한계" 목록으로.
+/// 지금 실행 중인 버전에는 "지금 버전" 표시, coach 단계가 있는 버전은 머리글에 "둘러보기 ▶".
+/// 정보 페이지에는 "이 버전 둘러보기 ▶ · 변경 내역 보기 ›" 한 줄.
+/// 둘러보기를 누르면 설정 창을 숨기고 상단바·독 위 말풍선을 재생, 끝나면 설정 창을 다시 보여 줌.
 /// </summary>
 internal sealed partial class SettingsWindow
 {
@@ -24,13 +27,185 @@ internal sealed partial class SettingsWindow
                 Margin = new Thickness(4, 0, 0, 12),
             });
         }
+        _releaseCards.Clear();
+        if (releases.Any(r => r.Majors.Any()))
+            body.Children.Add(MajorUpdatesCard(releases));
         foreach (var release in releases)
-            body.Children.Add(ReleaseCard(release, release.Version == WhatsNew.Current));
+        {
+            var card = ReleaseCard(release, release.Version == WhatsNew.Current);
+            _releaseCards[release.VersionText] = card;
+            body.Children.Add(card);
+        }
 
         body.Children.Add(LinkButton("GitHub 릴리스 전체 보기 ↗", () => _services.Launcher.OpenFile(WhatsNew.ReleasesUrl), HorizontalAlignment.Left));
     }
 
-    /// <summary>버전 하나: 머리글(버전 · 지금 버전 · 날짜) + 종류별 목록.</summary>
+    /// <summary>변경 내역 페이지의 버전 카드 (주요 업데이트에서 누르면 여기로 스크롤). 다시 그릴 때마다 새로.</summary>
+    private readonly Dictionary<string, FrameworkElement> _releaseCards = new();
+
+    /// <summary>
+    /// 맨 위 "주요 업데이트": 버전마다 "v0.3.0 · headline" + major 항목 짧게 (최신 버전은 강조색).
+    /// 버전 묶음을 누르면 아래 그 버전 카드로 스크롤. 오른쪽 위 "주요 기능 둘러보기 ▶".
+    /// </summary>
+    private Border MajorUpdatesCard(IReadOnlyList<ChangeRelease> releases)
+    {
+        var stack = new StackPanel { Margin = new Thickness(16, 12, 16, 12) };
+        var head = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 0, 0, 4) };
+        var title = new TextBlock
+        {
+            Text = "주요 업데이트",
+            FontSize = 16,
+            FontWeight = FontWeights.Bold,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        DockPanel.SetDock(title, Dock.Left);
+        head.Children.Add(title);
+        if (releases.Any(r => r.Majors.Any(e => e.Coach is not null)))
+        {
+            var tour = TourLink("주요 기능 둘러보기 ▶", CoachMarks.BuildMajorTour);
+            DockPanel.SetDock(tour, Dock.Right);
+            head.Children.Add(tour);
+        }
+        stack.Children.Add(head);
+
+        var latest = releases[0];
+        foreach (var release in releases)
+        {
+            var majors = release.Majors.Select(e => e.Text).ToList();
+            if (majors.Count == 0 && string.IsNullOrEmpty(release.Headline)) continue;
+            bool isLatest = release == latest;
+            var block = new StackPanel();
+            var line = new TextBlock { TextWrapping = TextWrapping.Wrap };
+            line.Inlines.Add(new System.Windows.Documents.Run($"v{release.VersionText}")
+            {
+                FontWeight = FontWeights.Bold,
+                Foreground = isLatest ? _p.Accent : _p.Text,
+            });
+            if (!string.IsNullOrEmpty(release.Headline))
+            {
+                line.Inlines.Add(new System.Windows.Documents.Run("  " + CoachMarkWindow.KeepAll(release.Headline))
+                {
+                    FontWeight = isLatest ? FontWeights.SemiBold : FontWeights.Normal,
+                    Foreground = _p.Text,
+                });
+            }
+            block.Children.Add(line);
+            foreach (string item in majors)
+            {
+                var row = new Grid { Margin = new Thickness(0, 2, 0, 0) };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
+                row.ColumnDefinitions.Add(new ColumnDefinition());
+                row.Children.Add(new Ellipse
+                {
+                    Width = 4,
+                    Height = 4,
+                    Fill = isLatest ? _p.Accent : _p.SubText,
+                    VerticalAlignment = VerticalAlignment.Top,
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Margin = new Thickness(2, 7, 0, 0),
+                });
+                var text = new TextBlock
+                {
+                    Text = CoachMarkWindow.KeepAll(ShortText(item)),
+                    FontSize = 12.5,
+                    Foreground = _p.SubText,
+                    TextWrapping = TextWrapping.Wrap,
+                    LineHeight = 18,
+                };
+                Grid.SetColumn(text, 1);
+                row.Children.Add(text);
+                block.Children.Add(row);
+            }
+            // 묶음 전체가 버튼: 누르면 아래 그 버전 카드로
+            var button = new Button
+            {
+                Style = (Style)FindResource("CardLinkButton"),
+                Foreground = _p.Text,
+                Padding = new Thickness(8, 6, 8, 6),
+                Margin = new Thickness(-8, 4, -8, 0),
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Content = block,
+                ToolTip = $"v{release.VersionText} 변경 내역으로",
+            };
+            string key = release.VersionText;
+            button.Click += (_, _) => ScrollToWhenReady(() => _releaseCards.GetValueOrDefault(key));
+            stack.Children.Add(button);
+        }
+
+        return new Border
+        {
+            Background = _p.GroupBackground,
+            BorderBrush = _p.Accent,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Margin = new Thickness(0, 0, 0, 16),
+            Child = stack,
+        };
+    }
+
+    /// <summary>주요 업데이트 목록용 짧은 문구: 첫 문장만 (". " 앞까지).</summary>
+    private static string ShortText(string text)
+    {
+        int cut = text.IndexOf(". ", StringComparison.Ordinal);
+        return cut > 0 ? text[..(cut + 1)] : text;
+    }
+
+    /// <summary>"둘러보기 ▶" 같은 작은 링크 버튼 (카드 머리글 오른쪽).</summary>
+    private Button TourLink(string text, Func<List<CoachPage>> build)
+    {
+        var link = new Button
+        {
+            Style = (Style)FindResource("CardLinkButton"),
+            Foreground = _p.Accent,
+            Padding = new Thickness(6, 2, 6, 2),
+            Margin = new Thickness(8, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Content = new TextBlock { Text = text, FontSize = 12.5, Foreground = _p.Accent },
+        };
+        link.Click += (_, _) => PlayCoach(build);
+        return link;
+    }
+
+    /// <summary>
+    /// 둘러보기 재생: 설정 창을 숨겨(상단바·독을 가리지 않게) 말풍선을 보여 주고, 끝나면(완료·건너뛰기·다른 안내) 설정 창을 다시.
+    /// 보여 줄 카드가 없으면 창은 그대로.
+    /// </summary>
+    private void PlayCoach(Func<List<CoachPage>> build)
+    {
+        List<CoachPage> pages;
+        try { pages = build(); }
+        catch (Exception ex)
+        {
+            Log.Error("둘러보기 만들기 실패", ex);
+            return;
+        }
+        if (pages.Count == 0) return;
+        FlushSlider();
+        Hide();
+        bool started = CoachMarks.Play(() => pages, () => Dispatcher.BeginInvoke(() =>
+        {
+            if (_closed || Dispatcher.HasShutdownStarted) return;
+            Show();
+            Activate();
+        }));
+        if (!started) Show();
+    }
+
+    /// <summary>정보 페이지 머리글 아래: "이 버전 둘러보기 ▶"(현재 버전에 coach 단계가 있을 때) · "변경 내역 보기 ›".</summary>
+    private UIElement AboutCoachLinks()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+        var current = Changelog.Releases.FirstOrDefault(r => r.Version <= WhatsNew.Current);
+        if (current is not null && CoachMarks.HasTour(current))
+        {
+            var tour = LinkButton($"v{current.VersionText} 둘러보기 ▶", () => PlayCoach(() => CoachMarks.BuildReleaseTour(current)), HorizontalAlignment.Center);
+            row.Children.Add(tour);
+        }
+        row.Children.Add(ChangelogLinkButton());
+        return row;
+    }
+
+    /// <summary>버전 하나: 머리글(버전 · 지금 버전 · 둘러보기 ▶ · 날짜) + 종류별 목록.</summary>
     private Border ReleaseCard(ChangeRelease release, bool current)
     {
         var stack = new StackPanel { Margin = new Thickness(16, 12, 16, 14) };
@@ -70,6 +245,12 @@ internal sealed partial class SettingsWindow
             };
             DockPanel.SetDock(date, Dock.Right);
             head.Children.Add(date);
+        }
+        if (CoachMarks.HasTour(release))
+        {
+            var tour = TourLink("둘러보기 ▶", () => CoachMarks.BuildReleaseTour(release));
+            DockPanel.SetDock(tour, Dock.Right);
+            head.Children.Add(tour);
         }
         stack.Children.Add(head);
 

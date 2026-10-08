@@ -317,6 +317,18 @@ internal sealed class CoachMarkWindow : Window
                 Margin = new Thickness(0, 5, 0, 0),
             });
         }
+        if (!string.IsNullOrEmpty(page.Hint))
+        {
+            // 앵커를 직접 눌러 보라는 안내 (강조색 작은 글씨 한 줄)
+            body.Children.Add(new TextBlock
+            {
+                Text = KeepAll(page.Hint),
+                FontSize = 12.5,
+                Foreground = _p.Accent,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 6, 0, 0),
+            });
+        }
         if (page.Groups is { Count: > 0 } groups)
             body.Children.Add(BuildGroups(groups, page.More));
         if (page.ChangelogLink)
@@ -328,7 +340,7 @@ internal sealed class CoachMarkWindow : Window
                 Padding = new Thickness(6, 4, 6, 4),
                 Margin = new Thickness(-6, 6, 0, 0),
                 HorizontalAlignment = HorizontalAlignment.Left,
-                Content = new TextBlock { Text = "변경 내역 보기 ›", FontSize = 12.5, Foreground = _p.Accent },
+                Content = new TextBlock { Text = KeepAll(page.LinkText), FontSize = 12.5, Foreground = _p.Accent, TextWrapping = TextWrapping.Wrap },
             };
             link.Click += (_, _) => LinkClicked?.Invoke();
             body.Children.Add(link);
@@ -426,6 +438,18 @@ internal sealed class CoachMarkWindow : Window
             Margin = new Thickness(0, 10, 0, 0),
             Child = scroll,
         };
+    }
+
+    /// <summary>
+    /// 사용자가 앵커를 직접 눌러 패널·메뉴가 열리는 동안 잠깐 숨김 (애니메이션 없이 바로 — 열린 것과 겹치지 않게).
+    /// 다시 <see cref="ShowPage"/> 하면 나타난다.
+    /// </summary>
+    public void HideForAway()
+    {
+        if (_closing || !IsVisible) return;
+        _root.BeginAnimation(OpacityProperty, null);
+        _root.IsHitTestVisible = true;
+        Hide();
     }
 
     /// <summary>짧게 흐려진 뒤 닫힘 (애니메이션 꺼짐이면 바로).</summary>

@@ -27,8 +27,16 @@ function Write-ReleaseNotes([string]$tag) {
     $lines.Add("- 설치 없이 쓰려면 ``mongdock-$tag-win-x64.zip`` 을 풀어 ``mongdock.exe`` 실행.")
     $lines.Add("- 코드 서명이 없어 `"Windows의 PC 보호`" 창이 뜨면 `"추가 정보`" → `"실행`".")
     $lines.Add("- 바뀐 점은 앱의 설정 → 변경 내역에서도 볼 수 있습니다.")
+    # 이번 버전 핵심: headline + major 항목 (major 는 아래 "새 기능" 에서 빼서 겹치지 않게)
+    $majors = @($release.entries | Where-Object { $_.major -eq $true })
+    if ($release.headline -or $majors.Count -gt 0) {
+        $lines.Add("")
+        $lines.Add("## 이번 버전 핵심")
+        if ($release.headline) { $lines.Add("**$($release.headline)**"); $lines.Add("") }
+        foreach ($e in $majors) { $lines.Add("- $($e.text)") }
+    }
     foreach ($section in @(@("feature", "새 기능"), @("improvement", "개선"), @("fix", "고친 문제"))) {
-        $items = @($release.entries | Where-Object { $_.kind -eq $section[0] })
+        $items = @($release.entries | Where-Object { $_.kind -eq $section[0] -and $_.major -ne $true })
         if ($items.Count -eq 0) { continue }
         $lines.Add("")
         $lines.Add("## $($section[1])")

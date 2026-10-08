@@ -84,6 +84,9 @@ internal sealed class SpotlightWindow : Window
         public double Top;
     }
 
+    /// <summary>검색창이 열려 있는지 (코치마크가 앵커 클릭 뒤 닫힘을 감지).</summary>
+    public static bool IsOpen => _current is not null;
+
     /// <summary>상단바 검색 버튼: 열려 있으면 닫고, 아니면 연다.</summary>
     public static void Toggle(AppServices services)
     {

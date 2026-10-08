@@ -19,6 +19,10 @@ internal sealed class CoachPage
     public int More { get; init; }
     /// <summary>"변경 내역 보기" 링크 표시 (설정 → 변경 내역).</summary>
     public bool ChangelogLink { get; init; }
+    /// <summary>링크 문구 (예 "그 밖에 개선·수정 5개 — 변경 내역 보기 ›").</summary>
+    public string LinkText { get; init; } = "변경 내역 보기 ›";
+    /// <summary>본문 아래 강조색 한 줄 (예 "시계를 눌러 보세요") — 앵커를 직접 눌러 보라는 안내.</summary>
+    public string? Hint { get; init; }
 }
 
 /// <summary>
@@ -27,7 +31,11 @@ internal sealed class CoachPage
 ///   새 설치(settings.json 을 이번에 만듦) → 둘러보기, 기존 설정인데 LastSeenVersion 없음 → 0.2.0 에서 올라온 것으로 봄.
 /// - 최신 버전 단계(Changelog.json 의 coach)는 앵커 말풍선으로 하나씩(최대 6), 마지막 가운데 카드 "그 밖에 바뀐 것"에
 ///   놓친 버전들의 나머지 변경(코치 없는 새 기능 > 고친 문제 > 개선 순, 넘치면 "외 N개" + 변경 내역 링크). 코치 단계가 없으면 이 카드 한 장만.
-/// - 둘러보기는 최대 8장, 넘치면 마지막 카드에 나머지 목록.
+/// - 2개 버전 이상 건너뛰고 업데이트했으면(오랜만에) 놓친 버전들의 주요 업데이트(major)만: coach 있는 것은 말풍선(최대 6),
+///   나머지는 마지막 카드 "그동안 바뀐 주요 기능"에 버전 headline 아래 한 줄씩, 사소한 것은 "그 밖에 개선·수정 N개" 링크 한 줄.
+/// - 둘러보기는 최대 8장, 마지막 카드에 넘친 단계 + 둘러보기에서 다루지 않은 주요 기능 목록.
+/// - 설정 창(변경 내역·정보)에서 버전별 둘러보기·주요 기능 둘러보기를 다시 재생 (<see cref="Play"/>, 꺼진 기능은 "지금 꺼져 있어요" 카드).
+/// - 말풍선이 가리키는 요소를 사용자가 직접 누르면 평소처럼 열리고, 말풍선은 숨었다가 열린 것이 닫히면 다시 나타남 (CoachSession).
 /// - 끝까지 보거나 건너뛰면 LastSeenVersion = 현재. 일시 정지·전체 화면이면 미루고, 보는 중 일시 정지되면 저장 없이 닫음(다음 실행에 다시).
 /// </summary>
 internal static class CoachMarks
@@ -37,17 +45,44 @@ internal static class CoachMarks
     private const int MaxLatestLines = 5;
     private const int MaxOlderLines = 3;
     private const int MaxTourSteps = 8;
+    /// <summary>설정 창에서 재생하는 버전별·주요 기능 둘러보기 최대 장수.</summary>
+    private const int MaxReplaySteps = 8;
 
     private static AppServices? _services;
     private static Func<CoachAnchor, (Rect Rect, MonitorInfo Monitor)?>? _resolve;
+    private static Func<bool>? _popupOpen;
     private static DispatcherTimer? _startupTimer;
     private static CoachSession? _session;
 
-    /// <summary>App 이 독·상단바를 만든 뒤 한 번. resolve = 앵커 → 화면 사각형(모니터 기준 DIP) + 모니터 (안 보이면 null).</summary>
-    public static void Init(AppServices services, Func<CoachAnchor, (Rect Rect, MonitorInfo Monitor)?> resolve)
+    /// <summary>
+    /// App 이 독·상단바를 만든 뒤 한 번. resolve = 앵커 → 화면 사각형(모니터 기준 DIP) + 모니터 (안 보이면 null).
+    /// popupOpen = 상단바 패널·메뉴가 열려 있는지 (앵커를 눌러 연 것이 닫히면 말풍선을 다시 보여 주려고).
+    /// </summary>
+    public static void Init(AppServices services, Func<CoachAnchor, (Rect Rect, MonitorInfo Monitor)?> resolve, Func<bool>? popupOpen = null)
     {
         _services = services;
         _resolve = resolve;
+        _popupOpen = popupOpen;
+    }
+
+    /// <summary>
+    /// 설정 창에서 둘러보기 재생. 만든 카드가 없으면 false. onEnded = 끝나거나 건너뛰거나 다른 안내로 바뀌면 (설정 창 다시 표시).
+    /// </summary>
+    public static bool Play(Func<List<CoachPage>> build, Action? onEnded)
+    {
+        if (_services is null) return false;
+        try
+        {
+            var session = Start(build());
+            if (session is null) return false;
+            if (onEnded is not null) session.Ended += onEnded;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("둘러보기 재생 실패", ex);
+            return false;
+        }
     }
 
     /// <summary>시작 후 2.5초 뒤 확인. 일시 정지·전체 화면이면 5초마다 다시 확인.</summary>
@@ -165,7 +200,65 @@ internal static class CoachMarks
         Title = step.Title,
         Body = step.Body.Replace("{hotkey}", HotkeyPhrase(s)),
         Anchor = step.Anchor,
+        Hint = step.Title.Contains("눌러 보세요") || step.Body.Contains("눌러 보세요") ? null : PressHint(step.Anchor),
     };
+
+    /// <summary>앵커를 직접 눌러 보라는 짧은 안내 (상단바 요소만 — 독은 누르면 앱이 열려서 안내하지 않음).</summary>
+    private static string? PressHint(CoachAnchor anchor) => anchor switch
+    {
+        CoachAnchor.Logo => "로고를 눌러 보세요",
+        CoachAnchor.AppName => "앱 이름을 눌러 보세요",
+        CoachAnchor.Desktops => "가운데 숫자를 눌러 보세요",
+        CoachAnchor.Search => "검색 버튼을 눌러 보세요",
+        CoachAnchor.Clock => "시계를 눌러 보세요",
+        CoachAnchor.Tray => "⌃ 를 눌러 보세요",
+        _ => null,
+    };
+
+    /// <summary>꺼져 있거나 지금 안 보이는 기능 → 화면 가운데 한 줄 카드 (설정 창 둘러보기 재생용).</summary>
+    private static CoachPage OffPage(CoachStep step) => new()
+    {
+        Title = step.Title,
+        Body = "이 기능은 지금 꺼져 있어요. 설정에서 켤 수 있어요.",
+    };
+
+    private static CoachPage ReplayPage(CoachStep step, Settings s) =>
+        step.IsAvailable(s) && AnchorVisible(step.Anchor) ? ToPage(step, s) : OffPage(step);
+
+    /// <summary>이 버전에 둘러볼 coach 단계가 있는지 (변경 내역·정보 페이지의 "둘러보기 ▶" 표시).</summary>
+    public static bool HasTour(ChangeRelease release) => WhatsNew.Releases.Any(x => x.Version == release.VersionText);
+
+    /// <summary>설정 창 "둘러보기 ▶": 그 버전의 coach 단계 (꺼진 기능은 한 줄 카드로), 최대 8장.</summary>
+    public static List<CoachPage> BuildReleaseTour(ChangeRelease release)
+    {
+        if (_services is null) return new List<CoachPage>();
+        var s = _services.Settings.Current;
+        return WhatsNew.Releases.Where(x => x.Version == release.VersionText)
+            .Take(MaxReplaySteps).Select(x => ReplayPage(x, s)).ToList();
+    }
+
+    /// <summary>"주요 기능 둘러보기 ▶": 모든 버전의 major + coach 단계, 최신 순, 같은 Key 는 최신 것만, 최대 8장.</summary>
+    public static List<CoachPage> BuildMajorTour()
+    {
+        if (_services is null) return new List<CoachPage>();
+        var s = _services.Settings.Current;
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var pages = new List<CoachPage>();
+        foreach (var release in Changelog.Releases)
+        {
+            foreach (var e in release.Majors)
+            {
+                if (pages.Count >= MaxReplaySteps) return pages;
+                if (e.Coach is null || !keys.Add(e.Coach.Key)) continue;
+                var step = WhatsNew.Releases.FirstOrDefault(x => x.Version == release.VersionText && string.Equals(x.Key, e.Coach.Key, StringComparison.OrdinalIgnoreCase));
+                if (step is not null) pages.Add(ReplayPage(step, s));
+            }
+        }
+        return pages;
+    }
+
+    /// <summary>정보 페이지 "처음 사용 둘러보기".</summary>
+    public static List<CoachPage> BuildTourPages() => _services is null ? new List<CoachPage>() : BuildTour();
 
     /// <summary>"Win+Space(또는 검색 버튼)로" — 실제 Spotlight 단축키 설정에 맞춤.</summary>
     private static string HotkeyPhrase(Settings s)
@@ -195,6 +288,7 @@ internal static class CoachMarks
         var pages = new List<CoachPage>();
         var releases = Changelog.Between(after, upTo); // 최신 먼저
         if (releases.Count == 0) return pages;
+        if (releases.Count >= 2) return BuildCatchUp(releases, s);
         var latest = releases[0];
 
         var latestSteps = WhatsNew.Releases.Where(x => WhatsNew.Parse(x.Version) == latest.Version).ToList();
@@ -235,6 +329,54 @@ internal static class CoachMarks
         return pages;
     }
 
+    /// <summary>
+    /// 오랜만에 업데이트(2개 버전 이상): 놓친 버전들의 주요 업데이트(major)만.
+    /// 같은 Key 는 최신 버전 것만, coach 가 있고 켜져 있고 앵커가 보이면 말풍선(최신 버전 먼저, 최대 6),
+    /// 나머지 주요 기능은 마지막 카드에 "v0.3.0 · headline" 머리글 아래 한 줄씩, 사소한 것(major 아닌 모든 항목)은 개수만 링크로.
+    /// </summary>
+    private static List<CoachPage> BuildCatchUp(List<ChangeRelease> releases, Settings s)
+    {
+        var pages = new List<CoachPage>();
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var majors = new List<(ChangeRelease Release, ChangeEntry Entry)>();
+        foreach (var release in releases) // 최신 먼저 → 같은 Key 는 최신 것만 남음
+            foreach (var e in release.Majors)
+                if (e.Coach is null || keys.Add(e.Coach.Key)) majors.Add((release, e));
+
+        var shown = new HashSet<ChangeEntry>();
+        foreach (var (release, e) in majors)
+        {
+            if (pages.Count >= MaxWhatsNewSteps) break;
+            if (e.Coach is null) continue;
+            var step = WhatsNew.Releases.FirstOrDefault(x => x.Version == release.VersionText && string.Equals(x.Key, e.Coach.Key, StringComparison.OrdinalIgnoreCase));
+            if (step is null || !step.IsAvailable(s) || !AnchorVisible(step.Anchor)) continue;
+            pages.Add(ToPage(step, s));
+            shown.Add(e);
+        }
+
+        var groups = new List<(string Header, List<string> Items)>();
+        foreach (var release in releases)
+        {
+            var items = majors.Where(x => x.Release == release && !shown.Contains(x.Entry)).Select(x => x.Entry.Text).ToList();
+            if (items.Count == 0) continue;
+            string header = string.IsNullOrEmpty(release.Headline) ? $"v{release.VersionText}" : $"v{release.VersionText} · {release.Headline}";
+            groups.Add((header, items));
+        }
+        int minor = releases.Sum(r => r.Entries.Count(e => !e.Major));
+        if (groups.Count > 0 || minor > 0)
+        {
+            pages.Add(new CoachPage
+            {
+                Title = groups.Count > 0 ? "그동안 바뀐 주요 기능" : "그 밖에 바뀐 것",
+                Body = $"v{releases[^1].VersionText} 부터 v{releases[0].VersionText} 까지 {releases.Count}개 버전이 나왔어요.",
+                Groups = groups,
+                ChangelogLink = true,
+                LinkText = minor > 0 ? $"그 밖에 개선·수정 {minor}개 — 변경 내역 보기 ›" : "변경 내역 보기 ›",
+            });
+        }
+        return pages;
+    }
+
     /// <summary>목록 우선순위: 새 기능 > 고친 문제 > 개선.</summary>
     private static int Rank(ChangeKind kind) => kind switch
     {
@@ -253,6 +395,17 @@ internal static class CoachMarks
         var middle = all.Take(all.Count - 1).Where(x => x.IsAvailable(s) && AnchorVisible(x.Anchor)).ToList();
         var pages = middle.Take(MaxTourSteps - 1).Select(x => ToPage(x, s)).ToList();
         var rest = middle.Skip(MaxTourSteps - 1).Select(x => x.Title).ToList();
+        // 둘러보기에서 다룬(카드 또는 위 목록) 기능 Key 를 뺀 주요 기능 (현재 버전까지, 같은 Key 는 최신 것만)
+        var covered = new HashSet<string>(middle.Select(x => x.Key).Append(last.Key), StringComparer.OrdinalIgnoreCase);
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var release in Changelog.Releases.Where(r => r.Version <= WhatsNew.Current))
+        {
+            foreach (var e in release.Majors)
+            {
+                if (e.Coach is { } c && (!keys.Add(c.Key) || covered.Contains(c.Key))) continue;
+                rest.Add(e.Text);
+            }
+        }
         var final = ToPage(last, s);
         pages.Add(rest.Count == 0 ? final : new CoachPage
         {
@@ -266,15 +419,16 @@ internal static class CoachMarks
 
     // ───────────────────────── 세션 ─────────────────────────
 
-    private static void Start(List<CoachPage> pages)
+    private static CoachSession? Start(List<CoachPage> pages)
     {
         _session?.Close(markSeen: false);
         _session = null;
-        if (pages.Count == 0 || _services is null || _resolve is null) return;
-        var session = new CoachSession(_services, _resolve, pages);
+        if (pages.Count == 0 || _services is null || _resolve is null) return null;
+        var session = new CoachSession(_services, _resolve, _popupOpen, pages);
         session.Ended += () => { if (_session == session) _session = null; };
         _session = session;
         session.Begin();
+        return session;
     }
 }
 
@@ -284,7 +438,16 @@ internal sealed class CoachSession
     private readonly AppServices _services;
     private readonly Func<CoachAnchor, (Rect Rect, MonitorInfo Monitor)?> _resolve;
     private readonly List<CoachPage> _pages;
+    private readonly Func<bool>? _popupOpen;
     private readonly DispatcherTimer _reposition;
+    /// <summary>지금 카드가 가리키는 앵커 (그 위 클릭 = 사용자가 직접 눌러 봄). 카드가 숨었거나 가운데 카드면 null.</summary>
+    private Rect? _anchorRect;
+    /// <summary>앵커를 눌러 카드를 숨긴 동안: 연 것이 닫혔는지 확인.</summary>
+    private readonly DispatcherTimer _awayPoll = new() { Interval = TimeSpan.FromMilliseconds(200) };
+    private bool _away;
+    private long _awayStarted;
+    private bool _awaySeenOpen;
+    private OutsideClickWatcher? _awayClicks;
     private CoachMarkWindow? _card;
     private CoachRingWindow? _ring;
     private int _index;
@@ -292,16 +455,18 @@ internal sealed class CoachSession
 
     public event Action? Ended;
 
-    public CoachSession(AppServices services, Func<CoachAnchor, (Rect Rect, MonitorInfo Monitor)?> resolve, List<CoachPage> pages)
+    public CoachSession(AppServices services, Func<CoachAnchor, (Rect Rect, MonitorInfo Monitor)?> resolve, Func<bool>? popupOpen, List<CoachPage> pages)
     {
         _services = services;
         _resolve = resolve;
+        _popupOpen = popupOpen;
         _pages = pages;
+        _awayPoll.Tick += (_, _) => PollAway();
         _reposition = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
         _reposition.Tick += (_, _) =>
         {
             _reposition.Stop();
-            if (!_closed) ShowCurrent(animate: false);
+            if (!_closed && !_away) ShowCurrent(animate: false);
         };
     }
 
@@ -324,12 +489,13 @@ internal sealed class CoachSession
 
     public void Begin()
     {
-        _keepOnTop.Tick += (_, _) => { if (!_closed) BringToFront(); };
+        _keepOnTop.Tick += (_, _) => { if (!_closed && !_away) BringToFront(); };
         _keepOnTop.Start();
         UiFonts.Apply(_services.Settings.Current);
         AppState.Changed += OnPausedChanged;
         _services.DesktopWindows.DisplayChanged += OnDisplayChanged;
         _services.DesktopWindows.FullscreenAppChanged += OnFullscreenChanged;
+        _services.DesktopWindows.GlobalMouseDown += OnGlobalMouseDown;
         _card = new CoachMarkWindow(_services, UiTheme.Palette(_services.Settings.Current));
         _card.NextClicked += Next;
         _card.SkipClicked += () => Close(markSeen: true);
@@ -405,7 +571,89 @@ internal sealed class CoachSession
             _ring.Show();
         }
         var monitor = anchor?.Monitor ?? _services.DesktopWindows.ResolveMonitor("");
+        _anchorRect = anchor?.Rect;
         _card.ShowPage(current, _index, _pages.Count, anchor?.Rect, monitor, animate);
+    }
+
+    // ───────────────────────── 앵커를 직접 눌러 봄 ─────────────────────────
+
+    /// <summary>
+    /// 말풍선이 가리키는 요소를 사용자가 누름 (강조 링은 클릭 통과라 실제 버튼이 평소처럼 동작) →
+    /// 카드·링을 숨겨 열린 패널·검색창·메뉴와 겹치지 않게 하고, 그것이 닫히면 같은 카드를 다시 보여 줘 "다음 →"으로 이어감.
+    /// </summary>
+    private void OnGlobalMouseDown(object? sender, Point? position)
+    {
+        if (_closed || _away || _anchorRect is not Rect r || position is not Point p) return;
+        r.Inflate(2, 2);
+        if (!r.Contains(p)) return;
+        _away = true;
+        _awayStarted = Environment.TickCount64;
+        _awaySeenOpen = false;
+        _anchorRect = null;
+        _ring?.Close();
+        _ring = null;
+        _card?.HideForAway();
+        _awayPoll.Start();
+    }
+
+    private bool PopupOpen()
+    {
+        try { return SpotlightWindow.IsOpen || _popupOpen?.Invoke() == true; }
+        catch { return false; }
+    }
+
+    /// <summary>
+    /// 열린 것(패널·메뉴·검색창)이 보이면 닫힐 때까지 기다림. 1.5초 안에 아무것도 안 열리면(작업 보기·윈도우 검색·데스크톱 넘김 등
+    /// 닫힘을 알 수 없는 것) 클릭 시점에서 10초 뒤 또는 아무 데나 클릭하면 다시. 3분이 지나면 무조건 다시 (숨은 채 남지 않게).
+    /// </summary>
+    private void PollAway()
+    {
+        if (!_away || _closed)
+        {
+            _awayPoll.Stop();
+            return;
+        }
+        long elapsed = Environment.TickCount64 - _awayStarted;
+        if (elapsed > 180_000)
+        {
+            Return();
+            return;
+        }
+        if (_awayClicks is not null)
+        {
+            if (elapsed >= 10_000) Return();
+            return;
+        }
+        if (PopupOpen())
+        {
+            _awaySeenOpen = true;
+            return;
+        }
+        if (_awaySeenOpen)
+        {
+            Return();
+            return;
+        }
+        if (elapsed > 1500)
+        {
+            _awayClicks = new OutsideClickWatcher(_services, Array.Empty<Rect>, Return) { CloseOnActivation = false };
+            _awayClicks.Start();
+        }
+    }
+
+    private void Return()
+    {
+        if (!_away) return;
+        StopAway();
+        if (!_closed) ShowCurrent(animate: true);
+    }
+
+    private void StopAway()
+    {
+        _away = false;
+        _awayPoll.Stop();
+        _awayClicks?.Stop();
+        _awayClicks = null;
     }
 
     private (Rect Rect, MonitorInfo Monitor)? SafeResolve(CoachAnchor a)
@@ -424,6 +672,9 @@ internal sealed class CoachSession
         _closed = true;
         _keepOnTop.Stop();
         _reposition.Stop();
+        StopAway();
+        _anchorRect = null;
+        _services.DesktopWindows.GlobalMouseDown -= OnGlobalMouseDown;
         AppState.Changed -= OnPausedChanged;
         _services.DesktopWindows.DisplayChanged -= OnDisplayChanged;
         _services.DesktopWindows.FullscreenAppChanged -= OnFullscreenChanged;
