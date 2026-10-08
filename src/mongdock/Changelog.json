@@ -2,6 +2,38 @@
   "_comment": "mongdock 변경 내역 단일 원본. 앱(설정 → 변경 내역, 새로운 기능 코치마크)과 build-release.ps1(GitHub 릴리스 노트)이 함께 읽는다. 최신 버전을 맨 위에. kind = feature | improvement | fix. coach 가 있는 feature 는 업데이트 후 상단바·독 위 말풍선으로 소개(anchor = Center|Dock|Logo|AppName|Desktops|Tray|Search|Clock, condition = topBar|trayIcons|spotlight|banners|dock|appMenus, 없으면 항상). major = 그 버전의 주요 업데이트(버전당 1~4개, 오랜만에 업데이트한 사람·변경 내역 맨 위·릴리스 노트 \"이번 버전 핵심\"에 씀), headline = 그 버전 한 줄 요약. body 의 {hotkey} 는 실제 검색 단축키 문구로 바뀜.",
   "versions": [
     {
+      "version": "0.3.2",
+      "date": "2026-10-08",
+      "headline": "구름 아이콘·작은 설치 파일",
+      "entries": [
+        {
+          "kind": "improvement",
+          "major": true,
+          "text": "몽독 전용 구름 아이콘이 생겼어요. 설정 창·작업 관리자·시작 메뉴·설치 프로그램·알림 영역에 윈도우 기본 그림 대신 몽독 구름이 보여요."
+        },
+        {
+          "kind": "improvement",
+          "major": true,
+          "text": "설치 파일이 약 10MB 로 작아졌어요. .NET 8 데스크톱 런타임이 없는 PC 는 처음 설치할 때 한 번만 마이크로소프트에서 받아 설치해요(관리자 권한 확인). zip 은 지금처럼 설치 없이 바로 쓸 수 있어요."
+        },
+        {
+          "kind": "fix",
+          "major": false,
+          "text": "캡처 도구처럼 화면 맨 위에 뜨거나 상단바 밑으로 끌어 놓은 창이 상단바에 가려지지 않게 바로 아래로 내려 줘요(설정 → 상단바에서 끌 수 있어요)."
+        },
+        {
+          "kind": "improvement",
+          "major": false,
+          "text": "검색창의 '최근 사용'을 정리할 수 있어요: 마우스를 올려 ×(또는 Delete 키)로 하나씩, 머리글 옆 '지우기'로 모두 뺄 수 있고, 30일 지난 기록은 자동으로 사라져요. 설정 → 검색에서 최근 사용 표시를 끌 수 있어요."
+        }
+      ],
+      "knownIssues": [
+        "카카오톡 알림은 자체 팝업이라 배너로 잡히지 않아요(독 아이콘의 빨간 점은 표시돼요).",
+        "알림 소리는 처음 한 번 바꾼 뒤 다시 로그인해야 적용돼요.",
+        "네이버 캘린더는 구독 주소(iCal)를 주지 않아 연결할 수 없어요."
+      ]
+    },
+    {
       "version": "0.3.1",
       "date": "2026-10-08",
       "headline": "작업 표시줄 앱 가져오기·검색 수정",
