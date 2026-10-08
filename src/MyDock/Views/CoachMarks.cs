@@ -44,7 +44,7 @@ internal static class CoachMarks
     }
 
     /// <summary>시작 후 2.5초 뒤 확인. 일시 정지·전체 화면이면 5초마다 다시 확인.</summary>
-    public static void ScheduleStartup(bool firstInstall)
+    public static void ScheduleStartup(bool firstInstall, bool forceTour = false)
     {
         if (_services is null) return;
         _startupTimer?.Stop();
@@ -58,7 +58,7 @@ internal static class CoachMarks
             }
             timer.Stop();
             _startupTimer = null;
-            try { RunStartup(firstInstall); }
+            try { if (forceTour) ShowTour(); else RunStartup(firstInstall); }
             catch (Exception ex) { Log.Error("새로운 기능 안내 실패", ex); }
         };
         _startupTimer = timer;
