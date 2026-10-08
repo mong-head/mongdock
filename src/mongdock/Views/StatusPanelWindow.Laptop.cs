@@ -32,16 +32,16 @@ internal sealed partial class StatusPanelWindow
         var rows = new StackPanel();
         stack.Children.Add(rows);
 
-        // 야간 모드: 켜짐 여부는 레지스트리에서 읽어 보여 주고, 누르면 윈도우 야간 모드 설정을 엶.
-        // (레지스트리에 써서 바꾸는 방법은 이 윈도우 빌드에서 반영이 확인되지 않아 쓰지 않음 — NightLightService.TrySet)
-        // 상태를 읽지 못하면 "야간 모드 설정…" 링크만.
+        // 야간 모드: 동그라미를 누르면 켜고 끔 (NightLightService.TrySet — 윈도우 설정 앱과 같은 값을 씀).
+        // 상태를 읽지 못하거나 쓰기에 실패하면 윈도우 야간 모드 설정을 엶.
         var night = ToggleLine(MoonGlyph, "야간 모드", () =>
         {
+            if (NightLightService.IsOn is bool on && NightLightService.TrySet(!on)) return Task.CompletedTask;
             NightLightService.OpenSettings();
             Close();
             return Task.CompletedTask;
         });
-        night.Button.ToolTip = "야간 모드 설정 열기";
+        night.Button.ToolTip = "야간 모드 켜기/끄기";
         var nightRow = (FrameworkElement)night.Button.Parent;
         nightRow.Margin = new Thickness(0, 10, 0, 0);
         stack.Children.Add(nightRow);
@@ -76,7 +76,7 @@ internal sealed partial class StatusPanelWindow
             nightRow.Visibility = nightOn is null ? Visibility.Collapsed : Visibility.Visible;
             nightLink.Visibility = nightOn is null ? Visibility.Visible : Visibility.Collapsed;
             SetCircle(night.Circle, MoonGlyph, nightOn == true);
-            night.State.Text = nightOn == true ? "켬 · 눌러서 설정" : "끔 · 눌러서 설정";
+            night.State.Text = nightOn == true ? "켬" : "끔";
 
             // 밝기 행이 없으면 제목 아래 간격 없이 야간 모드만
             rows.Visibility = list.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -146,7 +146,7 @@ internal sealed partial class StatusPanelWindow
 
     // ───────────────────────── 전원 모드 ─────────────────────────
 
-    /// <summary>제어 센터 "전원 모드" 타일 (사용 불가면 접힘).</summary>
+    /// <summary>제어 센터 "전원 모드" 타일 — 배터리가 있는 기기(노트북·태블릿)에서만, 사용 불가면 접힘.</summary>
     private UIElement BuildPowerModeTile()
     {
         var stack = new StackPanel();
@@ -157,7 +157,13 @@ internal sealed partial class StatusPanelWindow
         stack.Children.Add(PowerModeSegments());
         var tile = Tile(stack);
         tile.Margin = new Thickness(0, 10, 0, 0);
-        _refreshers.Add(() => tile.Visibility = PowerModeService.Available ? Visibility.Visible : Visibility.Collapsed);
+        _refreshers.Add(() =>
+        {
+            BatteryInfo? battery = null;
+            try { battery = _services.Status.Battery; }
+            catch { }
+            tile.Visibility = battery != null && PowerModeService.Available ? Visibility.Visible : Visibility.Collapsed;
+        });
         return tile;
     }
 
