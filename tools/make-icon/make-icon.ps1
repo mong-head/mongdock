@@ -10,6 +10,10 @@
     docs\icon.png                      256 px (README)
     (PNG per size are written to tools\make-icon\out\ for inspection; not committed)
 
+  -MsixAssets <dir>: instead of the above, write only the MSIX logo PNGs (tools\msixuild-msix.ps1 calls this):
+    Square44x44Logo (scale-100/200, targetsize-16..256 + altform-unplated), Square150x150Logo, Wide310x150Logo,
+    StoreLogo (scale-100/200). Small target sizes use the hand-drawn 16..48 art.
+
   Design "mong cloud" (concept 1 in tools\make-icon\concepts): a soft white cloud with dot eyes and blush
   sitting on a translucent dock bar, sky-blue -> lavender squircle.
   - 64..256: detailed master on the macOS Big Sur grid (1024: plate 824, corner ~185, soft shadow), downscaled.
@@ -17,7 +21,8 @@
     are placed on whole pixels so the face stays crisp.
 #>
 param(
-    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path,
+    [string]$MsixAssets = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -311,7 +316,40 @@ function Write-Preview([string]$path, $images) {
     $bmp.Dispose()
 }
 
+# Square master scaled to $size, centred on a transparent $w x $h canvas.
+function New-Canvas($master, [int]$w, [int]$h, [int]$size) {
+    $img = Resize-Bitmap $master $size
+    $out = New-Object System.Drawing.Bitmap($w, $h, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $g = [System.Drawing.Graphics]::FromImage($out); Set-Quality $g
+    $g.Clear([System.Drawing.Color]::Transparent)
+    $g.DrawImage($img, [int](($w - $size) / 2), [int](($h - $size) / 2), $size, $size); $g.Dispose(); $img.Dispose()
+    return $out
+}
+
+function Write-MsixAssets([string]$dir) {
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    $master = New-DetailedMaster
+    $save = { param($bmp, [string]$name) $bmp.Save((Join-Path $dir $name), [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose() }
+    foreach ($t in 16, 20, 24, 32, 40, 48, 64, 256) {
+        foreach ($suffix in "targetsize-$t", "targetsize-${t}_altform-unplated") {
+            $img = if ($SmallSpec.ContainsKey($t)) { New-Small $t } else { Resize-Bitmap $master $t }
+            & $save $img "Square44x44Logo.$suffix.png"
+        }
+    }
+    foreach ($sc in @(@{ N = 100; F = 1 }, @{ N = 200; F = 2 })) {
+        $f = $sc.F
+        & $save (Resize-Bitmap $master (44 * $f)) "Square44x44Logo.scale-$($sc.N).png"
+        & $save (Resize-Bitmap $master (50 * $f)) "StoreLogo.scale-$($sc.N).png"
+        & $save (New-Canvas $master (150 * $f) (150 * $f) (112 * $f)) "Square150x150Logo.scale-$($sc.N).png"
+        & $save (New-Canvas $master (310 * $f) (150 * $f) (112 * $f)) "Wide310x150Logo.scale-$($sc.N).png"
+    }
+    $master.Dispose()
+    Write-Host "wrote MSIX logos to $dir"
+}
+
 # ---------- main ----------
+if ($MsixAssets) { Write-MsixAssets $MsixAssets; return }
+
 $outDir = Join-Path $PSScriptRoot 'out'
 New-Item -ItemType Directory -Force $outDir | Out-Null
 $assetDir = Join-Path $RepoRoot 'src\mongdock\Assets'
