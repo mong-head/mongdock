@@ -31,7 +31,7 @@
                             <Path Width="10" Height="16" LayoutTransform="{StaticResource BarIconScale}" Data="{x:Static v:BarIcons.ChevronLeft}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
                         </Button>
                         <Button x:Name="DesktopIndexButton" Style="{StaticResource BarButton}" Padding="5,0" Margin="0,1" MinWidth="0" Click="OnTaskView">
-                            <TextBlock x:Name="DesktopIndex" FontSize="12.5" Margin="0,0,0,1" MinWidth="28" TextAlignment="Center" />
+                            <TextBlock x:Name="DesktopIndex" FontSize="12.5" MinWidth="28" TextAlignment="Center" />
                         </Button>
                         <Button x:Name="NextDesktopButton" Style="{StaticResource BarButton}" Padding="6,0" Margin="0,1" MinWidth="0" Click="OnNextDesktop">
                             <Path Width="10" Height="16" LayoutTransform="{StaticResource BarIconScale}" Data="{x:Static v:BarIcons.ChevronRight}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
@@ -109,7 +109,7 @@
                 </Button>
                 <!-- 앱 이름: 클릭 = 앱 메뉴 (맥 앱 메뉴) -->
                 <Button x:Name="AppNameButton" Style="{StaticResource BarButton}" Padding="7,0" Margin="3,3,0,3" Click="OnAppNameClick">
-                    <TextBlock x:Name="AppName" FontWeight="Bold" FontSize="13.5" Margin="0,0,0,1"
+                    <TextBlock x:Name="AppName" FontWeight="Bold" FontSize="13.5"
                                TextTrimming="CharacterEllipsis" MaxWidth="420" />
                 </Button>
                 <!-- 앱 메뉴 제목들 (파일 편집 보기 …) — 넘치면 » 하나로 묶음 -->
