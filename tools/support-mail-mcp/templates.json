@@ -30,6 +30,16 @@
       "use_when": "Changelog.json 의 knownIssues 에 있는 알려진 한계일 때 (그 문장을 limitation 에 그대로)",
       "ko": "안녕하세요, 몽독을 써 주셔서 고맙습니다.\n\n말씀하신 부분은 현재 알려진 한계예요: {limitation}\n윈도우나 다른 앱 쪽 사정으로 지금은 바꾸기 어려운 부분이라 양해 부탁드려요. 방법이 생기면 업데이트로 알려 드릴게요.",
       "en": "Hi, thanks for using mongdock.\n\nThis is a known limitation right now: {limitation}\nIt depends on Windows or another app, so we can't change it for now. If that changes, we'll let you know in an update."
+    },
+    "sorry_we_will_check": {
+      "use_when": "고객이 화가 났거나 불만이 클 때 — 먼저 이것만 보내고, 원인 정리와 최종 답장 초안은 PM 에 넘김 (해결책·변명은 넣지 않음)",
+      "ko": "안녕하세요, 불편을 드려서 정말 죄송해요.\n\n말씀해 주신 내용({issue})은 담당자가 직접 확인하고 있어요. 하루 안에 다시 연락드릴게요.",
+      "en": "Hi, we're really sorry for the trouble.\n\nSomeone on the team is looking into what you described ({issue}) personally. We'll get back to you within a day."
+    },
+    "refund_how_to": {
+      "use_when": "환불을 요청했을 때 — 스토어 구매는 Microsoft 가 환불을 처리하므로 방법만 안내 (우리가 환불을 약속하지 않음)",
+      "ko": "안녕하세요, 몽독이 기대에 못 미쳐서 죄송해요.\n\nMicrosoft Store 에서 산 앱은 Microsoft 가 환불을 처리해요. 아래에서 요청할 수 있어요.\n- {link}\n- Microsoft 계정 → 주문 기록 → 몽독 → '환불 요청'\n\n괜찮으시다면 어떤 점이 아쉬웠는지 알려 주시면 다음 버전에 꼭 참고할게요.",
+      "en": "Hi, we're sorry mongdock didn't work out for you.\n\nApps bought from the Microsoft Store are refunded by Microsoft. You can request it here:\n- {link}\n- Microsoft account → Order history → mongdock → 'Request a refund'\n\nIf you're willing, we'd love to hear what didn't work for you."
     }
   },
   "footer": {
