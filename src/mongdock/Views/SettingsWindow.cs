@@ -531,6 +531,8 @@ internal sealed partial class SettingsWindow : Window
             Row("상단바 트레이 아이콘 최대 개수", "바에 둘 아이콘이 이보다 많으면 순서 뒤쪽부터 ⌃ 안으로 들어가요.",
                 ValueSlider(t.TrayIconsVisibleCount, 1, 20, 1, v => $"{v:0}개", v => T().TrayIconsVisibleCount = (int)Math.Round(v))),
             Row("상태 아이콘", "Wi-Fi·블루투스·볼륨", Toggle(t.ShowStatusIcons, on => Commit(() => T().ShowStatusIcons = on))),
+            Row("배터리", "노트북에서만 보여요.", Toggle(t.ShowBattery, on => Commit(() => T().ShowBattery = on))),
+            Row("배터리 % 표시", null, Toggle(t.ShowBatteryPercent, on => Commit(() => T().ShowBatteryPercent = on))),
             Row("빠른 버튼", "검색·빠른 설정·알림 센터", Toggle(t.ShowQuickButtons, on => Commit(() => T().ShowQuickButtons = on))),
             Row("한/영", null, Toggle(t.ShowImeToggle, on => Commit(() => T().ShowImeToggle = on))),
             Row("네트워크 속도", null, Toggle(t.ShowNetworkSpeed, on => Commit(() => T().ShowNetworkSpeed = on)))));

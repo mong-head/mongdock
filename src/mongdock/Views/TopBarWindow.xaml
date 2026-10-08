@@ -61,6 +61,20 @@
                             <Path x:Name="WifiFront" Data="{x:Static v:BarIcons.WifiFull}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
                         </Grid>
                     </Button>
+                    <!-- 배터리 (노트북만): [57%] + 맥 배터리 아이콘. 배터리 없는 PC 는 숨김 (UpdateBattery) -->
+                    <Button x:Name="BatteryButton" Style="{StaticResource BarIconButton}" Click="OnBatteryClick" Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal">
+                            <!-- 버튼 스타일의 아이콘 글꼴 대신 상단바 글꼴·글자 크기(설정) -->
+                            <TextBlock x:Name="BatteryPercent" VerticalAlignment="Center" TextAlignment="Right" Margin="0,0,4,0"
+                                       FontFamily="{DynamicResource UiFont}" FontWeight="Medium"
+                                       FontSize="{Binding FontSize, RelativeSource={RelativeSource AncestorType=Window}}" />
+                            <Grid Width="27" Height="16" VerticalAlignment="Center" LayoutTransform="{StaticResource BarIconScale}">
+                                <Path Data="{x:Static v:BarIcons.BatteryShell}" Opacity="0.45" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                                <Path x:Name="BatteryLevel" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                                <Path x:Name="BatteryBolt" Data="{x:Static v:BarIcons.BatteryBolt}" Visibility="Collapsed" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+                            </Grid>
+                        </StackPanel>
+                    </Button>
                     <Button x:Name="VolumeButton" Style="{StaticResource BarIconButton}"
                             Click="OnVolumeClick" MouseWheel="OnVolumeWheel">
                         <Path x:Name="VolumeIcon" Width="23" Height="18" LayoutTransform="{StaticResource BarIconScale}" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />

@@ -12,7 +12,7 @@ using Mongdock.ViewModels;
 
 namespace Mongdock.Views;
 
-internal enum StatusPanelKind { Volume, Wifi, Bluetooth, ControlCenter, Calendar, Tray }
+internal enum StatusPanelKind { Volume, Wifi, Bluetooth, ControlCenter, Calendar, Tray, Battery }
 
 /// <summary>
 /// 상단바 상태 아이콘(Wi-Fi·사운드·블루투스·제어센터)·시계(달력)를 눌렀을 때 아래로 뜨는 MyDockFinder/맥 스타일 카드.
@@ -77,6 +77,7 @@ internal sealed partial class StatusPanelWindow : Window
                 StatusPanelKind.Bluetooth => BuildBluetooth(),
                 StatusPanelKind.Calendar => BuildCalendar(),
                 StatusPanelKind.Tray => BuildTray(),
+                StatusPanelKind.Battery => BuildBattery(),
                 _ => BuildControlCenter(),
             },
         };

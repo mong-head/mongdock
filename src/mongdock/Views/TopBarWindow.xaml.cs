@@ -286,6 +286,7 @@ public partial class TopBarWindow : Window
 
         _lastClockText = null;
         FixClockWidth();
+        FixBatteryPercentWidth();
         UpdateClock();
         UpdateIme();
         UpdateAppName(force: true);
@@ -500,7 +501,11 @@ public partial class TopBarWindow : Window
         _rightText = right;
         // 메뉴·말풍선 등 창 기본 글자색도 오른쪽 기준으로
         Foreground = BrushParser.Frozen(right);
-        if (rightChanged) UpdateIme();
+        if (rightChanged)
+        {
+            UpdateIme();
+            UpdateBattery(); // 빨강/노랑 채움은 글자색(밝은/어두운 바)에 맞춘 색
+        }
     }
 
     // ───────────────────────── 표시 갱신 ─────────────────────────
@@ -708,6 +713,7 @@ public partial class TopBarWindow : Window
                 break;
         }
 
+        UpdateBattery();
         VolumeIcon.Data = BarIcons.Speaker(st.Volume, st.Muted);
         Remeasure(RightSection);
     }
@@ -767,6 +773,7 @@ public partial class TopBarWindow : Window
     private void OnBluetoothClick(object sender, RoutedEventArgs e) => TogglePanel(StatusPanelKind.Bluetooth, BluetoothButton);
     private void OnWifiClick(object sender, RoutedEventArgs e) => TogglePanel(StatusPanelKind.Wifi, WifiButton);
     private void OnVolumeClick(object sender, RoutedEventArgs e) => TogglePanel(StatusPanelKind.Volume, VolumeButton);
+    private void OnBatteryClick(object sender, RoutedEventArgs e) => TogglePanel(StatusPanelKind.Battery, BatteryButton);
 
     /// <summary>볼륨 아이콘 위 휠(원격 트랙패드 스크롤 포함)로 조절.</summary>
     private void OnVolumeWheel(object sender, MouseWheelEventArgs e)

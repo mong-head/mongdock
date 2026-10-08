@@ -190,4 +190,41 @@ internal static class BarIcons
             new RectangleGeometry(new Rect(3.2, 8.6, 11.6, 6), 1.8, 1.8),
         },
     });
+
+    // ───────────────────────── 배터리 (맥 battery.N / battery.100.bolt) ─────────────────────────
+    // 상자 27 x 16. 몸체 외곽(흐리게) + 오른쪽 꼭지 + 남은 양만큼 채움 + 충전 중이면 번개(채움에서 번개 둘레를 비워 대비).
+
+    private const double BatInnerX = 2.6, BatInnerY = 4.35, BatInnerW = 19.3, BatInnerH = 7.3, BatInnerR = 1.6;
+
+    /// <summary>외곽선 + 꼭지 (Opacity 를 낮춰 칠한다).</summary>
+    public static readonly Geometry BatteryShell = Freeze(Union(
+        new RectangleGeometry(new Rect(1, 2.75, 22.5, 10.5), 3.1, 3.1).GetWidenedPathGeometry(new Pen(Brushes.Black, 1.1)),
+        new RectangleGeometry(new Rect(24.3, 5.9, 1.9, 4.2), 0.95, 0.95)));
+
+    private static readonly Geometry BoltShape = Geometry.Parse(
+        "M13.5,3.4 L9.0,8.9 L11.9,8.9 L11.0,12.6 L15.5,7.1 L12.6,7.1 Z");
+
+    /// <summary>충전 번개 (몸체 가운데).</summary>
+    public static readonly Geometry BatteryBolt = Freeze(Rounded(BoltShape.Clone(), 0.5));
+
+    /// <summary>채움에서 비울 번개 둘레 (번개보다 한 펜만큼 넓게).</summary>
+    private static readonly Geometry BoltHalo = Freeze(Rounded(BoltShape.Clone(), 2.6));
+
+    private static readonly Dictionary<int, Geometry> LevelCache = new();
+
+    /// <summary>남은 양(0~100)만큼의 채움. 충전 중이면 번개 둘레를 비운다.</summary>
+    public static Geometry BatteryLevel(int percent, bool charging)
+    {
+        percent = Math.Clamp(percent, 0, 100);
+        int key = percent * 2 + (charging ? 1 : 0);
+        if (LevelCache.TryGetValue(key, out var cached)) return cached;
+        double w = percent <= 0 ? 0 : Math.Max(1.8, BatInnerW * percent / 100.0);
+        Geometry g = w <= 0
+            ? Geometry.Empty
+            : new RectangleGeometry(new Rect(BatInnerX, BatInnerY, w, BatInnerH), Math.Min(BatInnerR, w / 2), Math.Min(BatInnerR, w / 2));
+        if (charging && w > 0) g = Geometry.Combine(g, BoltHalo, GeometryCombineMode.Exclude, null);
+        if (!g.IsFrozen) g.Freeze();
+        LevelCache[key] = g;
+        return g;
+    }
 }

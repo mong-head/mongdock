@@ -9,7 +9,7 @@ using Windows.Devices.Radios;
 namespace Mongdock.Services;
 
 /// <summary>
-/// 상단바 상태: 볼륨(Core Audio COM), 와이파이(wlanapi + NetworkInterface), 블루투스(WinRT Radio), 네트워크 속도.
+/// 상단바 상태: 볼륨(Core Audio COM), 와이파이(wlanapi + NetworkInterface), 블루투스(WinRT Radio), 네트워크 속도, 배터리(StatusService.Battery.cs).
 /// Start()/Stop()/Set* 는 UI 스레드에서 호출. Changed 는 값이 실제로 바뀔 때만 UI 스레드에서 발생.
 /// 오디오 COM 호출은 모두 UI 스레드에서 하고, COM 콜백 스레드에서는 값만 받아 UI 스레드로 넘긴다.
 /// 와이파이/속도는 스레드풀 타이머(1초: 속도, 5초: 와이파이 + NetworkChange 이벤트 즉시).
@@ -53,6 +53,7 @@ public sealed partial class StatusService : IStatusService, IDisposable
         _wifiTimer = new Timer(_ => SafeRun(PollWifi, "와이파이"), null, Timeout.Infinite, Timeout.Infinite);
 
         StartAudio();
+        StartBattery();
         ApplyPolling();
         Log.Info("StatusService 시작");
     }
@@ -129,6 +130,7 @@ public sealed partial class StatusService : IStatusService, IDisposable
         _speedTimer?.Dispose();
         _wifiTimer?.Dispose();
         _speedTimer = _wifiTimer = null;
+        StopBattery();
         StopAudio();
     }
 

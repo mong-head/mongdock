@@ -199,6 +199,16 @@ public enum BluetoothDeviceKind { Other, Headphones, Speaker, Mouse, Keyboard, G
 /// NotSupported = 오디오 기기가 아니거나 필터를 못 찾음. Failed = 요청 실패/시간 초과.</summary>
 public enum BluetoothConnectResult { Requested, NotSupported, Failed }
 
+/// <summary>배터리 충전 상태. NotCharging = 전원은 연결됐지만 충전하지 않음(충전 한도·배터리 보호 등).</summary>
+public enum BatteryCharge { Discharging, Charging, Full, NotCharging }
+
+/// <summary>
+/// 배터리 상태 (노트북). 배터리 없는 PC 는 IStatusService.Battery 가 null.
+/// TimeToEmpty/TimeToFull 은 윈도우가 추정할 때만 (모르면 null).
+/// </summary>
+public sealed record BatteryInfo(int Percent, bool PowerConnected, BatteryCharge Charge, bool Saver,
+    TimeSpan? TimeToEmpty, TimeSpan? TimeToFull);
+
 /// <summary>현재 재생 중인 미디어 (GlobalSystemMediaTransportControlsSessionManager). 변경 시 Changed (UI 스레드).</summary>
 public interface IMediaService
 {
@@ -258,6 +268,10 @@ public interface IStatusService
     /// 실제 연결 반영은 DeviceWatcher → Changed 로 옴.
     /// </summary>
     Task<BluetoothConnectResult> SetBluetoothDeviceConnectedAsync(string id, bool connect);
+    /// <summary>배터리 상태. 배터리 없는 PC 면 null. 30초 폴링 + 전원 변경 이벤트로 갱신.</summary>
+    BatteryInfo? Battery { get; }
+    void OpenBatterySettings(); // ms-settings:batterysaver
+    void OpenPowerSettings();   // ms-settings:powersleep
     /// <summary>표시 안 하는 항목의 폴링을 끔 (상단바 설정 반영).</summary>
     void SetPolling(bool networkSpeed, bool wifiAndBluetooth);
     void Start();
