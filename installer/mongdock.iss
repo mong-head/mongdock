@@ -93,7 +93,9 @@ Name: "{userprograms}\mongdock"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}
 Name: "{userdesktop}\mongdock"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Registry]
-; 앱의 StartupService 와 같은 키·값 이름·형식 (따옴표로 감싼 exe 경로)
+; 앱의 StartupService 와 같은 키·값 이름·형식 (따옴표로 감싼 exe 경로).
+; 설치 끝(ssPostInstall)에 mongdock.exe --register-startup 이 작업 스케줄러 로그온 작업으로 옮기고 이 값을 지운다
+; (Run 키는 로그온 후 수십 초 늦게 실행됨). 작업 등록이 막힌 PC(회사 정책 등)에서는 이 값이 그대로 남아 대체로 쓰인다.
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "mongdock"; ValueData: """{app}\{#AppExe}"""; Tasks: autostart
 
 [UninstallDelete]
@@ -118,6 +120,8 @@ const
   SoundCurrentKey = 'AppEvents\Schemes\Apps\.Default\Notification.Default\.Current';
   SoundDefaultKey = 'AppEvents\Schemes\Apps\.Default\Notification.Default\.Default';
   CP_UTF8 = 65001;
+  { 앱의 StartupService.TaskName 과 같은 규칙: 'mongdock-' + 사용자 이름 (작업 이름은 PC 전체에서 하나라 계정마다 따로) }
+  StartupTaskPrefix = 'mongdock-';
 
 function OpenEvent(dwDesiredAccess: DWORD; bInheritHandle: BOOL; lpName: String): THandle;
   external 'OpenEventW@kernel32.dll stdcall';
@@ -378,8 +382,31 @@ begin
     Result := '';
 end;
 
+{ 현재 사용자의 "윈도우 시작 시 실행" 로그온 작업 이름 }
+function StartupTaskName(): String;
+begin
+  Result := StartupTaskPrefix + GetUserNameString();
+end;
+
+{ 로그온 작업이 있는지 (비관리자도 자기 작업은 조회 가능) }
+function StartupTaskExists(): Boolean;
 var
-  { 설치 시작 때 자동 실행(Run 값)이 이미 등록돼 있었는지 (앱 메뉴·설정 창에서 켠 것 포함) }
+  RC: Integer;
+begin
+  Result := Exec(ExpandConstant('{sys}\schtasks.exe'), '/Query /TN "' + StartupTaskName() + '"', '', SW_HIDE, ewWaitUntilTerminated, RC) and (RC = 0);
+end;
+
+{ 로그온 작업 삭제 (없으면 아무 일 없음). 비관리자도 자기가 만든 작업은 지울 수 있다 }
+procedure DeleteStartupTask();
+var
+  RC: Integer;
+begin
+  if Exec(ExpandConstant('{sys}\schtasks.exe'), '/Delete /TN "' + StartupTaskName() + '" /F', '', SW_HIDE, ewWaitUntilTerminated, RC) then
+    Log('시작 작업 삭제 (schtasks 종료 코드 ' + IntToStr(RC) + ')');
+end;
+
+var
+  { 설치 시작 때 자동 실행(Run 값 또는 로그온 작업)이 이미 등록돼 있었는지 (앱 메뉴·설정 창에서 켠 것 포함) }
   HadAutoStart: Boolean;
   { 작업 선택 화면을 실제로 보고 다음으로 넘어갔는지 (= 체크 상태가 사용자의 명시적 선택) }
   TasksPageConfirmed: Boolean;
@@ -387,7 +414,7 @@ var
 
 function InitializeSetup(): Boolean;
 begin
-  HadAutoStart := RegValueExists(HKEY_CURRENT_USER, RunKey, 'mongdock');
+  HadAutoStart := RegValueExists(HKEY_CURRENT_USER, RunKey, 'mongdock') or StartupTaskExists();
   TasksPageConfirmed := False;
   AutoStartPreselected := False;
   Result := True;
@@ -430,11 +457,24 @@ begin
   { 아이콘이 바뀌어도 시작 메뉴·작업 표시줄이 예전 그림(아이콘 캐시)을 계속 보여 주는 문제 → 사용자 아이콘 캐시 새로 고침 }
   if CurStep = ssPostInstall then
     Exec(ExpandConstant('{sys}\ie4uinit.exe'), '-show', '', SW_HIDE, ewWaitUntilTerminated, RC);
-  { 자동 실행 체크가 꺼져 있을 때 Run 값을 지우는 건, 처음부터 없었거나 사용자가 작업 선택 화면에서 직접 끈 경우뿐.
+  { 자동 실행 체크: [Registry] 가 써 둔 Run 값을 작업 스케줄러 로그온 작업으로 옮긴다 (실행 경로도 지금 설치 위치로 갱신).
+    작업 등록이 안 되면 앱이 Run 값을 그대로 둔다 (대체). 마침 화면의 "mongdock 실행"([Run])보다 먼저 끝난다. }
+  if (CurStep = ssPostInstall) and WizardIsTaskSelected('autostart') then
+  begin
+    if Exec(ExpandConstant('{app}\{#AppExe}'), '--register-startup', ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, RC) then
+      Log('시작 작업 등록 (종료 코드 ' + IntToStr(RC) + ', 0 = 작업 스케줄러 / 1 = Run 키로 대체)')
+    else
+      Log('시작 작업 등록 실행 실패 — Run 값 유지');
+  end;
+  { 자동 실행 체크가 꺼져 있을 때 Run 값·로그온 작업을 지우는 건, 처음부터 없었거나 사용자가 작업 선택 화면에서 직접 끈 경우뿐.
     조용한 설치(/SILENT) 등으로 화면을 거치지 않은 업그레이드에서는 앱에서 켜 둔 자동 실행을 그대로 둔다. }
   if (CurStep = ssPostInstall) and not WizardIsTaskSelected('autostart') then
     if (not HadAutoStart) or TasksPageConfirmed then
+    begin
       RegDeleteValue(HKEY_CURRENT_USER, RunKey, 'mongdock');
+      if HadAutoStart then
+        DeleteStartupTask();
+    end;
 end;
 
 { UTF-8 바이트(settings.json, BOM 없음) → 문자열 }
@@ -572,8 +612,9 @@ begin
   begin
     CloseMongdock();
     RestoreTaskbarAutoHide();
-    { 앱 메뉴에서 켠 자동 실행도 같은 값이므로 설치 때 선택 여부와 상관없이 지운다 }
+    { 앱 메뉴에서 켠 자동 실행도 같은 값·작업이므로 설치 때 선택 여부와 상관없이 지운다 }
     RegDeleteValue(HKEY_CURRENT_USER, RunKey, 'mongdock');
+    DeleteStartupTask();
     { 설정 폴더(originalSound 가 든 settings.json)를 지울지 묻기 전에 }
     RestoreNotificationSound();
   end;
