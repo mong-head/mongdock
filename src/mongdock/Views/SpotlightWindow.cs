@@ -70,6 +70,12 @@ internal sealed class SpotlightWindow : Window
     /// <summary>사용자가 키보드·마우스로 선택을 옮겼는지 (늦게 온 파일 결과가 선택을 바꾸지 않게). 검색어가 바뀌면 초기화.</summary>
     private bool _userMoved;
     private Point _lastMouse = new(double.NaN, double.NaN);
+    /// <summary>"최근 사용" 행을 지우는 애니메이션 중 (그동안 선택·실행·다른 지우기를 막음).</summary>
+    private bool _forgetting;
+    /// <summary>다시 그린 뒤 선택할 위치 (최근 항목을 지운 뒤 다음 항목으로). -1 이면 기본(첫 행).</summary>
+    private int _pendingSelect = -1;
+    /// <summary>"최근 사용" 머리글 (마지막 항목을 지우면 함께 접음).</summary>
+    private FrameworkElement? _recentHeader;
 
     private sealed class Result
     {
@@ -79,6 +85,8 @@ internal sealed class SpotlightWindow : Window
         public TextBlock? Sub;
         public TextBlock? Glyph;
         public Border? RevealButton;
+        /// <summary>"최근 사용" 에서 빼기 (호버 ×).</summary>
+        public Border? ForgetButton;
         /// <summary>카테고리 머리글 바로 아래 행 (스크롤로 보이게 할 때 머리글까지).</summary>
         public bool FirstInSection;
         public double Top;
@@ -457,6 +465,11 @@ internal sealed class SpotlightWindow : Window
         BuildRows(sections);
 
         int index = _results.Count > 0 ? 0 : -1;
+        if (_pendingSelect >= 0 && !isUpdate)
+        {
+            if (_results.Count > 0) index = Math.Min(_pendingSelect, _results.Count - 1);
+            _pendingSelect = -1;
+        }
         if (keepKey is not null)
         {
             int found = _results.FindIndex(r => r.Item.Key == keepKey);
@@ -472,6 +485,7 @@ internal sealed class SpotlightWindow : Window
         _results.Clear();
         _list.Children.Clear();
         _nextRowTop = 0;
+        _recentHeader = null;
         _selected = -1; // 목록이 새로 그려지면 하이라이트는 미끄러지지 않고 바로 놓음
 
         foreach (var section in sections)
@@ -480,15 +494,29 @@ internal sealed class SpotlightWindow : Window
             bool header = section.Header is not null;
             if (header)
             {
-                _list.Children.Add(new TextBlock
+                double padTop = _nextRowTop > 0 ? 8 : 4;
+                var title = new TextBlock
                 {
                     Text = section.Header,
                     FontSize = 11.5,
                     FontWeight = FontWeights.SemiBold,
                     Foreground = _p.SubText,
                     Height = HeaderHeight,
-                    Padding = new Thickness(10, _nextRowTop > 0 ? 8 : 4, 0, 0),
-                });
+                    Padding = new Thickness(10, padTop, 0, 0),
+                };
+                if (section.Category == SpotlightCategory.Recent)
+                {
+                    // "최근 사용" 머리글 오른쪽에 작은 "지우기" (모두 빼기)
+                    var host = new Grid { Height = HeaderHeight };
+                    host.Children.Add(title);
+                    host.Children.Add(ClearRecentsLink(padTop));
+                    _recentHeader = host;
+                    _list.Children.Add(host);
+                }
+                else
+                {
+                    _list.Children.Add(title);
+                }
                 _nextRowTop += HeaderHeight;
             }
             else if (_results.Count > 0)
@@ -579,6 +607,35 @@ internal sealed class SpotlightWindow : Window
             DockPanel.SetDock(r.RevealButton, Dock.Right);
             panel.Children.Add(r.RevealButton);
         }
+        if (item.Forget is not null)
+        {
+            // 호버하면 오른쪽에 작은 × ("폴더에서 보기" 와 같은 톤) — 최근 사용에서 빼기
+            r.ForgetButton = new Border
+            {
+                CornerRadius = new CornerRadius(6),
+                Background = _p.Tile,
+                Width = 24,
+                Height = 22,
+                Margin = new Thickness(10, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Visibility = Visibility.Collapsed,
+                Cursor = Cursors.Hand,
+                ToolTip = "최근 사용에서 빼기 (Delete)",
+                Child = new TextBlock
+                {
+                    Text = "\uE711", // Cancel
+                    FontFamily = IconFont,
+                    FontSize = 9.5,
+                    Foreground = _p.Text,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+            };
+            r.ForgetButton.MouseLeftButtonDown += (_, e) => e.Handled = true;
+            r.ForgetButton.MouseLeftButtonUp += (_, e) => { e.Handled = true; Forget(index); };
+            DockPanel.SetDock(r.ForgetButton, Dock.Right);
+            panel.Children.Add(r.ForgetButton);
+        }
         panel.Children.Add(texts);
 
         r.Row = new Border
@@ -598,7 +655,7 @@ internal sealed class SpotlightWindow : Window
             Point pos = e.GetPosition(this);
             if (pos == _lastMouse) return;
             _lastMouse = pos;
-            if (_selected != index)
+            if (_selected != index && !_forgetting)
             {
                 _userMoved = true;
                 Select(index);
@@ -608,6 +665,11 @@ internal sealed class SpotlightWindow : Window
         {
             r.Row.MouseEnter += (_, _) => reveal.Visibility = Visibility.Visible;
             r.Row.MouseLeave += (_, _) => reveal.Visibility = Visibility.Collapsed;
+        }
+        if (r.ForgetButton is { } forget)
+        {
+            r.Row.MouseEnter += (_, _) => { if (!_forgetting) forget.Visibility = Visibility.Visible; };
+            r.Row.MouseLeave += (_, _) => forget.Visibility = Visibility.Collapsed;
         }
         r.Row.MouseLeftButtonUp += (_, e) => { e.Handled = true; Execute(index); };
         _results.Add(r);
@@ -690,6 +752,13 @@ internal sealed class SpotlightWindow : Window
         {
             _highlight.Visibility = Visibility.Collapsed;
         }
+        ApplyRowColors(index);
+        if (ensureVisible && index >= 0 && index < _results.Count) EnsureVisible(index);
+    }
+
+    /// <summary>선택 행(index)만 강조 글자색, 나머지는 보통.</summary>
+    private void ApplyRowColors(int index)
+    {
         for (int i = 0; i < _results.Count; i++)
         {
             var r = _results[i];
@@ -702,7 +771,6 @@ internal sealed class SpotlightWindow : Window
             }
             if (r.Glyph is not null) r.Glyph.Foreground = on ? _p.AccentText : _p.SubText;
         }
-        if (ensureVisible && index >= 0 && index < _results.Count) EnsureVisible(index);
     }
 
     /// <summary>선택 행이 스크롤 영역 안에 보이게 (카테고리 첫 행이면 머리글까지). 레이아웃 전이면 한 박자 뒤에.</summary>
@@ -758,6 +826,14 @@ internal sealed class SpotlightWindow : Window
                     Select(_selected <= 0 ? _results.Count - 1 : _selected - 1);
                 }
                 break;
+            case Key.Delete:
+                // 검색어가 비어 있고 "최근 사용" 행이 선택돼 있으면 그 항목 빼기 (아니면 입력칸의 보통 Delete)
+                if (_box.Text.Length == 0 && _selected >= 0 && _selected < _results.Count && _results[_selected].Item.Forget is not null)
+                {
+                    e.Handled = true;
+                    Forget(_selected);
+                }
+                break;
             case Key.Enter:
                 e.Handled = true;
                 // Ctrl+Enter / Alt+Enter = 폴더에서 보기
@@ -775,7 +851,7 @@ internal sealed class SpotlightWindow : Window
 
     private void Execute(int index, bool reveal = false)
     {
-        if (_closing || index < 0 || index >= _results.Count) return;
+        if (_closing || _forgetting || index < 0 || index >= _results.Count) return;
         var r = _results[index];
         var item = r.Item;
         if (reveal && item.Reveal is null) return; // 폴더에서 볼 수 없는 항목
@@ -795,6 +871,111 @@ internal sealed class SpotlightWindow : Window
         {
             Log.Error("Spotlight 실행 실패", ex);
         }
+    }
+
+    /// <summary>
+    /// "최근 사용" 한 항목 빼기: 행이 흐려지며(110ms) 높이가 접힘(140ms) → 아래 행이 하이라이트 자리로 올라옴 → 목록을 다시 그려
+    /// 같은 위치(다음 항목)를 선택. 마지막 행이면 하이라이트가 위 행으로. 마지막 남은 항목이면 머리글도 함께 접음.
+    /// </summary>
+    private void Forget(int index)
+    {
+        if (_closing || _forgetting || index < 0 || index >= _results.Count) return;
+        var r = _results[index];
+        if (r.Item.Forget is null) return;
+        try
+        {
+            r.Item.Forget();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Spotlight 최근 항목 빼기 실패", ex);
+            return;
+        }
+        _forgetting = true;
+        _userMoved = true;
+        if (r.ForgetButton is not null) r.ForgetButton.Visibility = Visibility.Collapsed;
+
+        int recentCount = _results.Count(x => x.Item.Category == SpotlightCategory.Recent);
+        bool last = index == _results.Count - 1;
+        if (recentCount <= 1)
+        {
+            // 마지막 남은 항목: 하이라이트도 같이 흐리고 머리글도 접음
+            Anim.Fade(_highlight, 0, 110);
+            if (_recentHeader is { } head) Anim.Disappear(head, 110, () => Anim.Collapse(head, 140), ease: Anim.EaseOut);
+        }
+        else if (last)
+        {
+            // 맨 아래 행: 하이라이트가 위 행으로 미끄러짐
+            Select(index - 1);
+        }
+        else
+        {
+            // 아래 행이 올라와 하이라이트 자리에 들어옴 → 글자색만 미리 바꿈
+            ApplyRowColors(index + 1);
+        }
+
+        int next = last ? index - 1 : index;
+        Anim.Disappear(r.Row, 110, () => Anim.Collapse(r.Row, 140, () =>
+        {
+            _forgetting = false;
+            if (_closing) return;
+            _highlight.BeginAnimation(OpacityProperty, null);
+            _highlight.Opacity = 1;
+            _pendingSelect = Math.Max(0, next);
+            OnQueryChanged();
+            _pendingSelect = -1;
+        }), ease: Anim.EaseOut);
+    }
+
+    /// <summary>"최근 사용" 머리글 오른쪽 작은 "지우기" 링크: 최근 기록을 모두 지우고 목록을 흐리며 접음.</summary>
+    private FrameworkElement ClearRecentsLink(double padTop)
+    {
+        var text = new TextBlock
+        {
+            Text = "지우기",
+            FontSize = 11.5,
+            Foreground = _p.SubText,
+        };
+        var link = new Border
+        {
+            Background = Brushes.Transparent, // 글자 주변 빈칸도 눌리게
+            Padding = new Thickness(6, 0, 6, 0),
+            Margin = new Thickness(0, padTop, 4, 0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Cursor = Cursors.Hand,
+            ToolTip = "최근 사용 기록 모두 지우기",
+            Child = text,
+        };
+        link.MouseEnter += (_, _) => { text.Foreground = _p.Text; text.TextDecorations = TextDecorations.Underline; };
+        link.MouseLeave += (_, _) => { text.Foreground = _p.SubText; text.TextDecorations = null; };
+        link.MouseLeftButtonDown += (_, e) => e.Handled = true;
+        link.MouseLeftButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            if (_closing || _forgetting) return;
+            try
+            {
+                SpotlightRecents.Clear();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Spotlight 최근 기록 지우기 실패", ex);
+                return;
+            }
+            _forgetting = true;
+            Anim.Fade(_divider, 0, 120);
+            Anim.Disappear(_scroll, 120, () =>
+            {
+                _forgetting = false;
+                _scroll.BeginAnimation(OpacityProperty, null);
+                _scroll.Opacity = 1;
+                _divider.BeginAnimation(OpacityProperty, null);
+                _divider.Opacity = 1;
+                if (!_closing) OnQueryChanged();
+            }, ease: Anim.EaseOut);
+        };
+        return link;
     }
 
     /// <summary>계산기: 결과를 클립보드로 복사 → 부제에 "복사됨" 잠깐 보여 주고 닫음.</summary>

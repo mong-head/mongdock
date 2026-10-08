@@ -113,27 +113,63 @@ public static class SpotlightMatcher
 }
 
 /// <summary>
-/// Spotlight 에서 최근 실행한 앱 (파싱 이름, 최신 순 최대 20개).
-/// %APPDATA%\mongdock\spotlight-recent.txt 에 한 줄씩 저장 — 실패해도 메모리 기록으로 계속 동작.
+/// Spotlight 에서 최근 실행한 앱 (파싱 이름 + 실행 시각, 최신 순 최대 20개, 30일 지난 항목은 무시하고 저장할 때 정리).
+/// %APPDATA%\mongdock\spotlight-recent.txt 에 줄마다 "파싱 이름	유닉스 초" — 시각 없는 예전 형식 줄은 읽을 때 지금 시각으로 간주해 한 번 변환.
+/// 저장에 실패해도 메모리 기록으로 계속 동작. UI 스레드에서만 사용.
 /// </summary>
 public static class SpotlightRecents
 {
     private const int Limit = 20;
+    /// <summary>이보다 오래된 항목은 표시·순위 가산에서 제외.</summary>
+    public static readonly TimeSpan MaxAge = TimeSpan.FromDays(30);
     private static readonly string FilePath = Path.Combine(AppInfo.DataDirectory, "spotlight-recent.txt");
-    private static List<string>? _items;
+    private static List<(string Name, long Time)>? _items;
 
-    public static IReadOnlyList<string> Items => Load();
+    /// <summary>최근 30일 안에 실행한 앱의 파싱 이름 (최신 순).</summary>
+    public static IReadOnlyList<string> Items
+    {
+        get
+        {
+            long cutoff = Cutoff();
+            return Load().Where(e => e.Time >= cutoff).Select(e => e.Name).ToList();
+        }
+    }
 
     public static void Add(string parsingName)
     {
         if (string.IsNullOrWhiteSpace(parsingName)) return;
         var list = Load();
-        list.RemoveAll(s => s.Equals(parsingName, StringComparison.OrdinalIgnoreCase));
-        list.Insert(0, parsingName);
+        list.RemoveAll(e => e.Name.Equals(parsingName, StringComparison.OrdinalIgnoreCase));
+        list.Insert(0, (parsingName, DateTimeOffset.UtcNow.ToUnixTimeSeconds()));
+        Save();
+    }
+
+    /// <summary>한 항목 지우기 (다시 Spotlight 로 실행하면 다시 들어옴).</summary>
+    public static void Remove(string parsingName)
+    {
+        if (Load().RemoveAll(e => e.Name.Equals(parsingName, StringComparison.OrdinalIgnoreCase)) > 0) Save();
+    }
+
+    /// <summary>모두 지우기.</summary>
+    public static void Clear()
+    {
+        Load().Clear();
+        Save();
+    }
+
+    private static long Cutoff() => DateTimeOffset.UtcNow.Subtract(MaxAge).ToUnixTimeSeconds();
+
+    /// <summary>30일 지난 항목·20개 넘는 항목을 정리하고 저장.</summary>
+    private static void Save()
+    {
+        var list = Load();
+        long cutoff = Cutoff();
+        list.RemoveAll(e => e.Time < cutoff);
         if (list.Count > Limit) list.RemoveRange(Limit, list.Count - Limit);
         try
         {
-            AtomicFile.WriteAllLines(FilePath, list); // 임시 파일 → 바꿔 끼움 (중간에 꺼져도 잘린 파일이 남지 않음)
+            // 임시 파일 → 바꿔 끼움 (중간에 꺼져도 잘린 파일이 남지 않음)
+            AtomicFile.WriteAllLines(FilePath, list.Select(e => e.Name + "	" + e.Time.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         }
         catch (Exception ex)
         {
@@ -141,19 +177,44 @@ public static class SpotlightRecents
         }
     }
 
-    private static List<string> Load()
+    private static List<(string Name, long Time)> Load()
     {
         if (_items is not null) return _items;
-        _items = new List<string>();
+        _items = new List<(string, long)>();
+        bool legacy = false;
         try
         {
             if (File.Exists(FilePath))
-                _items.AddRange(File.ReadAllLines(FilePath).Select(l => l.Trim()).Where(l => l.Length > 0).Take(Limit));
+            {
+                long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                foreach (string raw in File.ReadAllLines(FilePath))
+                {
+                    string line = raw.Trim();
+                    if (line.Length == 0) continue;
+                    string name = line;
+                    long time = now;
+                    int tab = line.LastIndexOf('	');
+                    if (tab > 0 && long.TryParse(line[(tab + 1)..], System.Globalization.NumberStyles.Integer,
+                            System.Globalization.CultureInfo.InvariantCulture, out long t))
+                    {
+                        name = line[..tab].Trim();
+                        time = t;
+                    }
+                    else
+                    {
+                        legacy = true; // 예전 형식 (시각 없음) → 지금 시각으로 간주
+                    }
+                    if (name.Length == 0 || _items.Any(e => e.Name.Equals(name, StringComparison.OrdinalIgnoreCase))) continue;
+                    _items.Add((name, time));
+                    if (_items.Count >= Limit) break;
+                }
+            }
         }
         catch (Exception ex)
         {
             Log.Warn($"Spotlight 최근 항목 읽기 실패: {ex.Message}");
         }
+        if (legacy) Save(); // 한 번 새 형식으로 변환
         return _items;
     }
 }

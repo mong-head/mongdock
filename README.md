@@ -73,6 +73,7 @@ powershell -ExecutionPolicy Bypass -File build-release.ps1 -Version v0.2.0
 
 - 결과는 카테고리별(최상위 히트 · 응용 프로그램 · 시스템 설정 · 폴더 · 문서 · 사진·동영상·음악 · 기타 파일)로 묶여 나온다
 - **앱**: 이름으로 찾는다. 한글 초성 검색 가능 (예 `ㅋㅋㅇㅌ` → 카카오톡)
+- **최근 사용**: 검색창을 열면 최근 30일 동안 검색창에서 실행한 앱을 최대 8개 보여 준다. 행에 마우스를 올려 나오는 ×(또는 Delete 키)로 하나씩, 머리글 옆 "지우기"로 모두 뺄 수 있고, 설정 → 검색에서 아예 끌 수 있다
 - **윈도우 설정**: 블루투스·디스플레이·소리·Wi-Fi·배경화면 같은 설정 페이지 약 50개 (예 `ㅂㄹㅌㅅ`, `해상도`)
 - **계산기**: `12*3+4`, `200*15%`, `2^10` 처럼 입력하면 맨 위에 결과. Enter 로 결과를 복사
 - **파일·폴더**: 윈도우 검색 색인에서 파일 이름으로 찾는다(최근 수정순). Enter 로 열고, Ctrl+Enter(또는 마우스를 올리면 나오는 "폴더에서 보기")로 탐색기에서 위치를 연다. 색인 서비스가 꺼져 있으면 파일 결과만 빠진다
@@ -163,7 +164,7 @@ zip 으로 썼다면:
 | 앱 트레이 아이콘 | `topBar.showTrayIcons` (속성 기본 `false` — 새 설치는 `true`, 작업 표시줄 숨기기를 켜면 자동으로 `true`), `topBar.trayIconsVisibleCount` (상단바에 바로 보일 최대 개수, 기본 10 — 넘으면 ⌃ 안으로), `topBar.trayIconPlacement` (몽독에서 옮긴 자리 — 키는 GUID 또는 `"exe이름:uID"`, 값 `{ "onBar": true, "order": 0 }`, 비우면 윈도우 설정대로) |
 | 시계 달력 | `topBar.calendarApp` (날짜를 두 번 누르면 열 캘린더: `Google`/`OutlookWeb`/`Naver`/`NewOutlook`/`ClassicOutlook`/`WindowsCalendar`), `calendar.refreshMinutes` (구독 캘린더 새로고침 주기, 기본 15분) |
 | 검색 | `topBar.searchMode` (`Spotlight`/`Windows`), `topBar.spotlightHotkey` (`Auto`/`WinSpace`/`AltSpace`/`CtrlSpace`/`None`) |
-| 검색 항목 | `search.apps` · `settings` · `calculator` · `folders` · `documents` · `media` · `otherFiles` · `webSearch` · `windowsSearch` (기본 모두 `true`), `search.fileSearchFolders`, `search.maxPerCategory` (기본 5), `search.webSearchEngine` (`Google`/`Naver`/`Bing`) |
+| 검색 항목 | `search.apps` · `settings` · `calculator` · `folders` · `documents` · `media` · `otherFiles` · `webSearch` · `windowsSearch` (기본 모두 `true`), `search.showRecents` (기본 `true`), `search.fileSearchFolders`, `search.maxPerCategory` (기본 5), `search.webSearchEngine` (`Google`/`Naver`/`Bing`) |
 | 알림 | `notifications.showNotificationBanners` (기본 `true`), `notifications.hideWindowsToastPopups` (기본 `true`) |
 | 글꼴 | `fontFamily` — 기본 `"Pretendard"`(내장), 설치된 글꼴 이름도 가능 |
 | 앱 메뉴 직접 정의 | `appMenus` — 키는 exe 이름(예 `"chrome.exe"`), 항목마다 `text` 와 `keys`(예 `"Ctrl+Shift+T"`) |

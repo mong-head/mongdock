@@ -31,6 +31,8 @@ public sealed class SpotlightItem
     public required Action Execute { get; init; }
     /// <summary>보조 동작 "폴더에서 보기" (Ctrl/Alt+Enter, 호버 버튼). 없으면 null.</summary>
     public Action? Reveal { get; init; }
+    /// <summary>"최근 사용" 에서 빼기 (호버 ×, Delete 키). 없으면 null.</summary>
+    public Action? Forget { get; init; }
     /// <summary>계산기: 실행하면 이 글자를 클립보드로 복사하고 "복사됨" 표시 후 닫음.</summary>
     public string? CopyText { get; init; }
 }
@@ -69,6 +71,8 @@ public sealed class AppSearchProvider : ISpotlightProvider
     {
         if (!settings.Apps) return Task.FromResult<IReadOnlyList<SpotlightItem>>(Array.Empty<SpotlightItem>());
         bool empty = query.Trim().Length == 0;
+        // 최근 사용을 끄면 빈 검색어에선 아무것도 (입력칸만, 맥처럼). 검색 순위 가산은 그대로.
+        if (empty && !settings.ShowRecents) return Task.FromResult<IReadOnlyList<SpotlightItem>>(Array.Empty<SpotlightItem>());
         var found = SpotlightMatcher.Search(Apps, query, SpotlightRecents.Items, empty ? SpotlightMatcher.MaxResults : settings.MaxPerCategory);
         var category = empty ? SpotlightCategory.Recent : SpotlightCategory.Apps;
         IReadOnlyList<SpotlightItem> items = found.Select(app => new SpotlightItem
@@ -84,6 +88,7 @@ public sealed class AppSearchProvider : ISpotlightProvider
                 // shell:AppsFolder\<파싱 이름> 실행 (AppLauncher 의 AUMID 경로 — 데스크톱 앱 항목도 동작)
                 _services.Launcher.Launch(new PinItem { Name = app.Name, Kind = PinKind.Aumid, Target = app.ParsingName });
             },
+            Forget = empty ? () => SpotlightRecents.Remove(app.ParsingName) : null,
         }).ToList();
         return Task.FromResult(items);
     }

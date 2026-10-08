@@ -258,6 +258,8 @@ public sealed class SearchSettings
 {
     /// <summary>응용 프로그램 (시작 메뉴의 모든 앱).</summary>
     public bool Apps { get; set; } = true;
+    /// <summary>검색창을 열면(검색어 없음) 최근 실행한 앱을 "최근 사용" 으로 보여 줌. 꺼도 검색 순위 가산은 유지.</summary>
+    public bool ShowRecents { get; set; } = true;
     /// <summary>윈도우 설정 페이지 (ms-settings:).</summary>
     public bool Settings { get; set; } = true;
     /// <summary>수식을 입력하면 맨 위에 계산 결과.</summary>
