@@ -8,7 +8,10 @@ namespace Mongdock.Services.Search;
 public enum FileCategory { Folder, Document, Media, Other }
 
 /// <summary>색인에서 찾은 파일·폴더 하나.</summary>
-public sealed record IndexedFile(string Path, string Name, FileCategory Category);
+/// <param name="Path">실제 파일 시스템 경로(System.ItemUrl) — 열기·폴더에서 보기·아이콘용.</param>
+/// <param name="DisplayPath">화면 표시용 경로(System.ItemPathDisplay). 한국어 윈도우는 "C:\사용자\…\다운로드" 처럼 현지화돼
+/// 실제 경로가 아님 — 이걸로 탐색기를 열면 경로를 못 찾고 홈이 열린다.</param>
+public sealed record IndexedFile(string Path, string Name, FileCategory Category, string DisplayPath);
 
 /// <summary>
 /// 윈도우 검색 색인(Windows Search, SystemIndex)에서 파일 이름으로 찾기.
@@ -118,7 +121,7 @@ public static class WindowsIndexSearch
     /// <summary>cat 이 null 이면 System.ItemType·System.Kind 를 같이 받아 분류.</summary>
     private static List<IndexedFile> Query(dynamic conn, string where, int max, FileCategory? cat)
     {
-        string sql = $"SELECT TOP {Math.Clamp(max, 1, 50)} System.ItemPathDisplay, System.ItemNameDisplay, System.ItemType, System.Kind FROM SystemIndex WHERE {where} ORDER BY System.DateModified DESC";
+        string sql = $"SELECT TOP {Math.Clamp(max, 1, 50)} System.ItemPathDisplay, System.ItemNameDisplay, System.ItemType, System.Kind, System.ItemUrl FROM SystemIndex WHERE {where} ORDER BY System.DateModified DESC";
         var list = new List<IndexedFile>();
         dynamic? rs = null;
         try
@@ -130,12 +133,13 @@ public static class WindowsIndexSearch
             rs.Open(sql, conn);
             while (!(bool)rs.EOF)
             {
-                string? path = rs.Fields.Item(0).Value as string;
+                string? display = rs.Fields.Item(0).Value as string;
                 string? name = rs.Fields.Item(1).Value as string;
+                string? path = PathFromItemUrl(rs.Fields.Item(4).Value as string) ?? display;
                 if (!string.IsNullOrEmpty(path))
                 {
                     FileCategory c = cat ?? Classify(rs.Fields.Item(2).Value as string, Kinds((object?)rs.Fields.Item(3).Value));
-                    list.Add(new IndexedFile(path, string.IsNullOrEmpty(name) ? Path.GetFileName(path) : name, c));
+                    list.Add(new IndexedFile(path, string.IsNullOrEmpty(name) ? Path.GetFileName(path) : name, c, display ?? path));
                 }
                 rs.MoveNext();
             }
@@ -146,6 +150,18 @@ public static class WindowsIndexSearch
             if (rs is not null && Marshal.IsComObject(rs)) Marshal.ReleaseComObject(rs);
         }
         return list;
+    }
+
+    /// <summary>System.ItemUrl("file:C:/Users/x/Downloads/a.txt", "file:///C:/…", "file://server/share/…") → 실제 경로. 파일이 아니면 null.</summary>
+    internal static string? PathFromItemUrl(string? url)
+    {
+        if (string.IsNullOrEmpty(url) || !url.StartsWith("file:", StringComparison.OrdinalIgnoreCase)) return null;
+        string rest = url[5..].TrimStart('/');
+        if (rest.Length < 2) return null;
+        if (rest.Contains('%')) rest = Uri.UnescapeDataString(rest); // 공백 등이 %20 으로 오는 경우 (드묾)
+        string p = rest.Replace('/', '\\');
+        bool drive = p.Length > 1 && p[1] == ':';
+        return drive ? p : @"\\" + p; // 드라이브 문자가 없으면 UNC
     }
 
     /// <summary>

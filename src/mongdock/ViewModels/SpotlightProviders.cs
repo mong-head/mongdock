@@ -204,7 +204,7 @@ public sealed class FileSearchProvider : ISpotlightProvider
             },
             Key = "file:" + path,
             Title = f.Name,
-            Subtitle = Path.GetDirectoryName(path) ?? path,
+            Subtitle = Path.GetDirectoryName(f.DisplayPath) ?? f.DisplayPath,
             SubtitleIsPath = true,
             IconKey = null, // 캐시는 ShellFileIcons 가 확장자별로
             LoadIcon = () => ShellFileIcons.Get(path, folder),
