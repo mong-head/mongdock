@@ -30,6 +30,9 @@ internal static class Program
         if (args.Contains("--log"))
             Console.WriteLine(ReportService.AppendLog("", ReportRedactor.Context.Current(Array.Empty<string>())));
 
+        int iconsAt = Array.FindIndex(args, a => a == "--icons");
+        if (iconsAt >= 0 && iconsAt + 1 < args.Length) RenderAllAppsIcons(args[iconsAt + 1]);
+
         int png = Array.FindIndex(args, a => a == "--png");
         if (png >= 0 && png + 1 < args.Length) RenderPngs(args[png + 1]);
         return _failed == 0 ? 0 : 1;
@@ -164,6 +167,71 @@ internal static class Program
                 Console.WriteLine($"  저장  {name}");
             }
         }
+    }
+
+    /// <summary>
+    /// 독 "앱 모음" 아이콘 미리 보기 (#d26): 둥근 사각형·원본 스타일 × 16~128px, 라이트/다크 배경 + 16·24·32px 4배 확대(픽셀 확인).
+    /// 앱 쪽 그리기 함수는 internal 이라 리플렉션.
+    /// </summary>
+    private static void RenderAllAppsIcons(string dir)
+    {
+        Directory.CreateDirectory(dir);
+        var asm = typeof(Mongdock.App).Assembly;
+        var mac = (ImageSource)asm.GetType("Mongdock.Services.MacIconRenderer")!.GetMethod("AllApps")!.Invoke(null, null)!;
+        var flat = (ImageSource)asm.GetType("Mongdock.Services.IconService")!
+            .GetMethod("CreateAllAppsIcon", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.Invoke(null, null)!;
+        int[] sizes = { 16, 20, 24, 32, 40, 48, 64, 128 };
+        foreach (var (name, bg) in new[] { ("light", Color.FromRgb(0xF2, 0xF2, 0xF6)), ("dark", Color.FromRgb(0x1E, 0x1E, 0x22)) })
+        {
+            const int pad = 16, rowH = 150;
+            int width = pad + sizes.Sum(s => s + pad) + 3 * (32 * 4 + pad);
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen())
+            {
+                dc.DrawRectangle(new SolidColorBrush(bg), null, new Rect(0, 0, width, rowH * 2));
+                for (int row = 0; row < 2; row++)
+                {
+                    var img = row == 0 ? mac : flat;
+                    double x = pad, baseY = row * rowH + rowH - pad;
+                    foreach (int s in sizes)
+                    {
+                        // 앱처럼 큰 그림을 그 크기로 줄여서 (독은 256 을 슬롯 크기로 그림)
+                        dc.DrawImage(Downscale(img, s), new Rect(x, baseY - s, s, s));
+                        x += s + pad;
+                    }
+                    foreach (int s in new[] { 16, 24, 32 })
+                    {
+                        var small = Downscale(img, s);
+                        var zoom = new DrawingGroup();
+                        RenderOptions.SetBitmapScalingMode(zoom, BitmapScalingMode.NearestNeighbor);
+                        zoom.Children.Add(new ImageDrawing(small, new Rect(0, 0, s * 4, s * 4)));
+                        dc.PushTransform(new TranslateTransform(x, baseY - s * 4));
+                        dc.DrawDrawing(zoom);
+                        dc.Pop();
+                        x += 32 * 4 + pad;
+                    }
+                }
+            }
+            var rtb = new RenderTargetBitmap(width, rowH * 2, 96, 96, PixelFormats.Pbgra32);
+            rtb.Render(dv);
+            var enc = new PngBitmapEncoder();
+            enc.Frames.Add(BitmapFrame.Create(rtb));
+            string path = Path.Combine(dir, $"all-apps-{name}.png");
+            using (var fs = File.Create(path)) enc.Save(fs);
+            Console.WriteLine($"  저장  {path}");
+        }
+    }
+
+    /// <summary>그림을 size x size 픽셀로 고품질 축소 (독 슬롯에 그리는 것과 같게).</summary>
+    private static BitmapSource Downscale(ImageSource src, int size)
+    {
+        var dv = new DrawingVisual();
+        RenderOptions.SetBitmapScalingMode(dv, BitmapScalingMode.HighQuality);
+        using (var dc = dv.RenderOpen()) dc.DrawImage(src, new Rect(0, 0, size, size));
+        var rtb = new RenderTargetBitmap(size, size, 96, 96, PixelFormats.Pbgra32);
+        rtb.Render(dv);
+        rtb.Freeze();
+        return rtb;
     }
 
     private static void Save(Window w, string path)

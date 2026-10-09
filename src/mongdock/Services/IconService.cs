@@ -451,7 +451,7 @@ public sealed class IconService : IIconService
 
     private ImageSource DefaultIcon => _default ??= CreateDefaultIcon();
 
-    private ImageSource LaunchpadIcon => _launchpad ??= CreateLaunchpadIcon();
+    private ImageSource LaunchpadIcon => _launchpad ??= CreateAllAppsIcon();
 
     private ImageSource? _macDefault, _macLaunchpad;
 
@@ -459,7 +459,7 @@ public sealed class IconService : IIconService
     private ImageSource MacDefaultIcon => _macDefault ??=
         (DefaultIcon is BitmapSource b ? MacIconRenderer.Plate(b) : MacIconRenderer.Plate(null));
 
-    private ImageSource MacLaunchpadIcon => _macLaunchpad ??= MacIconRenderer.Launchpad();
+    private ImageSource MacLaunchpadIcon => _macLaunchpad ??= MacIconRenderer.AllApps();
 
     private static ImageSource CreateDefaultIcon()
     {
@@ -486,19 +486,17 @@ public sealed class IconService : IIconService
         return di;
     }
 
-    /// <summary>런치패드: 3x3 둥근 사각형 격자.</summary>
-    private static ImageSource CreateLaunchpadIcon()
+    /// <summary>독 "앱 모음" (원본 스타일, #d26): 몽독 하늘색~연보라 둥근 판 + 흰 2x2 둥근 칸 (MacIconRenderer.AllApps 와 같은 그림).</summary>
+    private static ImageSource CreateAllAppsIcon()
     {
-        var group = new DrawingGroup();
-        group.Children.Add(new GeometryDrawing(
-            new LinearGradientBrush(Color.FromRgb(0x5E, 0x5C, 0xE6), Color.FromRgb(0xBF, 0x5A, 0xF2), 90),
-            null, new RectangleGeometry(new Rect(0, 0, 64, 64), 14, 14)));
-        var white = new SolidColorBrush(Color.FromArgb(0xE6, 0xFF, 0xFF, 0xFF));
-        for (int r = 0; r < 3; r++)
-        for (int c = 0; c < 3; c++)
-            group.Children.Add(new GeometryDrawing(white, null,
-                new RectangleGeometry(new Rect(12 + c * 15, 12 + r * 15, 10, 10), 3, 3)));
-        var di = new DrawingImage(group);
+        var drawing = new DrawingGroup();
+        using (var dc = drawing.Open())
+        {
+            var plate = new Rect(0, 0, 64, 64);
+            dc.DrawRoundedRectangle(new LinearGradientBrush(MacIconRenderer.SkyTop, MacIconRenderer.SkyBottom, 75), null, plate, 14, 14);
+            MacIconRenderer.DrawAllAppsTiles(dc, plate);
+        }
+        var di = new DrawingImage(drawing);
         di.Freeze();
         return di;
     }

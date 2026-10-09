@@ -231,26 +231,33 @@ internal static class MacIconRenderer
         dc.DrawImage(content, new Rect(BodyRect.X + (BodySize - cw) / 2, BodyRect.Y + (BodySize - ch) / 2, cw, ch));
     });
 
-    /// <summary>맥 Launchpad 풍: 밝은 판 위 3x3 색 둥근 사각형.</summary>
-    public static BitmapSource Launchpad() => Render(dc =>
+    /// <summary>몽독 앱 아이콘 색(하늘색 #8FD0FF → 연보라 #C6B6FF, tools/make-icon)의 판.</summary>
+    internal static readonly Color SkyTop = Color.FromRgb(0x8F, 0xD0, 0xFF), SkyBottom = Color.FromRgb(0xC6, 0xB6, 0xFF);
+
+    /// <summary>
+    /// 독 "앱 모음" (#d26): 몽독 하늘색~연보라 판 위에 흰 2x2 둥근 칸 (아래로 옅은 보라 그림자). 칸이 크고 넷뿐이라 16px 에서도 보임.
+    /// 칸 배치는 IconService.CreateAllAppsIcon(원본 스타일)과 같은 비율.
+    /// </summary>
+    public static BitmapSource AllApps() => Render(dc =>
     {
-        DrawPlate(dc);
-        Color[] colors =
-        {
-            Color.FromRgb(0xFF, 0x45, 0x3A), Color.FromRgb(0xFF, 0x9F, 0x0A), Color.FromRgb(0xFF, 0xD6, 0x0A),
-            Color.FromRgb(0x30, 0xD1, 0x58), Color.FromRgb(0x40, 0xC8, 0xE0), Color.FromRgb(0x0A, 0x84, 0xFF),
-            Color.FromRgb(0x5E, 0x5C, 0xE6), Color.FromRgb(0xBF, 0x5A, 0xF2), Color.FromRgb(0xFF, 0x37, 0x5F),
-        };
-        double grid = BodySize * 0.62, cell = grid / 3, tile = cell * 0.78, r = tile * 0.26;
-        double x0 = BodyRect.X + (BodySize - grid) / 2, y0 = BodyRect.Y + (BodySize - grid) / 2;
-        for (int i = 0; i < 9; i++)
-        {
-            double x = x0 + (i % 3) * cell + (cell - tile) / 2, y = y0 + (i / 3) * cell + (cell - tile) / 2;
-            var c = colors[i];
-            var brush = new LinearGradientBrush(Lighten(c, 0.18), c, 90);
-            dc.DrawRoundedRectangle(brush, null, new Rect(x, y, tile, tile), r, r);
-        }
+        dc.DrawGeometry(new LinearGradientBrush(SkyTop, SkyBottom, 75), new Pen(new SolidColorBrush(Color.FromArgb(0x24, 0, 0, 0)), 0.5), Squircle);
+        DrawAllAppsTiles(dc, BodyRect);
     });
+
+    /// <summary>판 r 안에 흰 2x2 둥근 칸: 격자 = 판의 56%, 칸 사이 = 격자의 12%, 칸 모서리 = 칸의 28%.</summary>
+    internal static void DrawAllAppsTiles(DrawingContext dc, Rect r)
+    {
+        double grid = r.Width * 0.56, gap = grid * 0.12, tile = (grid - gap) / 2, radius = tile * 0.28;
+        double x0 = r.X + (r.Width - grid) / 2, y0 = r.Y + (r.Height - grid) / 2;
+        var shade = new SolidColorBrush(Color.FromArgb(0x38, 0x6A, 0x5C, 0xC8));
+        var white = new LinearGradientBrush(Colors.White, Color.FromRgb(0xF1, 0xEE, 0xFF), 90);
+        for (int i = 0; i < 4; i++)
+        {
+            double x = x0 + (i % 2) * (tile + gap), y = y0 + (i / 2) * (tile + gap);
+            dc.DrawRoundedRectangle(shade, null, new Rect(x, y + tile * 0.06, tile, tile), radius, radius);
+            dc.DrawRoundedRectangle(white, null, new Rect(x, y, tile, tile), radius, radius);
+        }
+    }
 
     private static Color Lighten(Color c, double t) => Color.FromRgb(
         (byte)(c.R + (255 - c.R) * t), (byte)(c.G + (255 - c.G) * t), (byte)(c.B + (255 - c.B) * t));
