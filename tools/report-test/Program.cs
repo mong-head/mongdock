@@ -88,6 +88,13 @@ internal static class Program
         Check("로그 경로+URL", L(@"업데이트 다운로드 완료: https://github.com/x/y.exe → C:\Users\melon\AppData\Local\Temp\y.exe"),
             "업데이트 다운로드 완료: <주소> → <경로>.exe");
         Check("빈 문자열", R(""), "");
+
+        // PC 를 오래 알아볼 값: GUID·긴 숫자 (트레이 "윈도우 ID")
+        Check("트레이 윈도우 ID", L("트레이 아이콘 배치: chrome.exe:5 → ⌃ (Default, 윈도우 ID 14798508125447284239)"),
+            "트레이 아이콘 배치: chrome.exe:5 → ⌃ (Default, 윈도우 ID <번호>)");
+        Check("GUID", L("트레이 아이콘 배치: ba82e2dc-f405-47ad-b032-cf0faa0e3933 → ⌃"), "트레이 아이콘 배치: <번호> → ⌃");
+        Check("중괄호 GUID", R("{6CDEC4D3-9697-40DF-B6C2-96E9ED842C0C}"), "<번호>");
+        Check("시각·pid·짧은 숫자는 그대로", R("2026-10-09 18:58:32.924 pid 12596 0x1017E 1920×1080"), "2026-10-09 18:58:32.924 pid 12596 0x1017E 1920×1080");
     }
 
     private static void Check(string name, string actual, string expected)
@@ -116,7 +123,7 @@ internal static class Program
             settings.Dock.Theme = theme;
             foreach (bool open in new[] { false, true })
             {
-                var w = new ReportWindow(settings, () => "test")
+                var w = new ReportWindow(settings)
                 {
                     Left = -20000,
                     Top = -20000,

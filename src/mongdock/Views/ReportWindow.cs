@@ -23,7 +23,6 @@ public sealed class ReportWindow : Window
     private static readonly Regex EmailPattern = new(@"^[^\s@<>()""',;]+@[^\s@<>()""',;]+\.[^\s@<>()""',;]+$", RegexOptions.CultureInvariant);
 
     private readonly UiPalette _p;
-    private readonly Func<string> _clientId;
     private ReportKind _kind = ReportKind.Bug;
     private string _diagnostics = "진단 정보를 모으는 중…";
     private bool _diagnosticsReady;
@@ -76,7 +75,7 @@ public sealed class ReportWindow : Window
                 string redacted = string.Join("\n", error.Replace("\r\n", "\n").Split('\n').Select(l => ReportRedactor.RedactLog(l, ctx)));
                 head = redacted.TrimEnd() + "\n\n" + head;
             }
-            var win = new ReportWindow(settings, () => ReportService.EnsureClientId(services.Settings));
+            var win = new ReportWindow(settings);
             if (prefill is not null) win.SetPreviewState(prefill.Kind, prefill.Title, prefill.Message, "", detailsOpen: false);
             _instance = win;
             win.Show();
@@ -92,10 +91,8 @@ public sealed class ReportWindow : Window
     }
 
     /// <param name="settings">테마(라이트/다크)만 씀.</param>
-    /// <param name="clientId">보낼 때 한 번 부름 (PC 별 id 를 만들어 저장).</param>
-    public ReportWindow(Settings settings, Func<string> clientId)
+    public ReportWindow(Settings settings)
     {
-        _clientId = clientId;
         _p = UiTheme.Palette(settings);
         Title = "문제 신고하기";
         AppIcon.Apply(this);
@@ -391,8 +388,7 @@ public sealed class ReportWindow : Window
         ReportSendResult result;
         try
         {
-            string id = _clientId();
-            result = await ReportService.SendAsync(_kind, message, contact, id, diagnostics);
+            result = await ReportService.SendAsync(_kind, message, contact, diagnostics);
         }
         catch (Exception ex)
         {

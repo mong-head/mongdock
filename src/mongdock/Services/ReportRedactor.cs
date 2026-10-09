@@ -19,6 +19,7 @@ public static class ReportRedactor
     public const string MachineMark = "<기기>";
     public const string TitleMark = "<창 제목>";
     public const string QuotedMark = "<가림>";
+    public const string IdMark = "<번호>";
 
     /// <summary>가릴 이름들. 창 제목은 로그에만, 3자 이상만 (짧은 제목은 흔한 낱말과 겹쳐 진단 내용을 망가뜨림).</summary>
     public sealed record Context(string? UserName, string? MachineName, IReadOnlyCollection<string> WindowTitles)
@@ -40,6 +41,13 @@ public static class ReportRedactor
     private static readonly Regex FilePath = new(
         @"(?<![A-Za-z0-9])(?:[A-Za-z]:[\\/]|\\\\[A-Za-z0-9_\-][^\\\s]*\\)(?:(?!\s+→)[^\r\n""'<>|*?,;:()\[\]])*",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    // PC 를 오래 알아볼 수 있는 값: GUID(앱·장치·설치 식별자), 12자리 넘는 긴 숫자(트레이 아이콘 "윈도우 ID" 등)
+    private static readonly Regex GuidPattern = new(
+        @"(?i)\{?\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b\}?",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly Regex LongNumber = new(@"(?<![\w.])\d{12,}(?![\w.])", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static readonly Regex Extension = new(@"\.([A-Za-z0-9]{1,8})$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
@@ -94,6 +102,8 @@ public static class ReportRedactor
             return mark + m.Value[path.Length..]; // 잘라 낸 뒤쪽 공백은 그대로
         });
         text = UsersFolder.Replace(text, m => m.Groups[1].Value + UserMark);
+        text = GuidPattern.Replace(text, IdMark);
+        text = LongNumber.Replace(text, IdMark);
         return ReplaceToken(text, ctx.UserName, UserMark);
     }
 

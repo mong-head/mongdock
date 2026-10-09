@@ -48,16 +48,32 @@ public static class ReportService
 
     private static readonly HttpClient Http = CreateHttpClient();
 
-    /// <summary>PC 별 무작위 id (하루 한도를 PC 단위로 세는 용도). 처음 한 번 만들어 settings.json 에 저장.</summary>
-    public static string EnsureClientId(ISettingsService settings)
+    /// <summary>하루에 보낼 수 있는 신고 수 (이 PC 안에서 셈 — 받는 쪽에 PC 를 알아볼 값을 보내지 않으려고).</summary>
+    public const int DailyLimit = 5;
+    private static readonly string CountPath = Path.Combine(AppInfo.DataDirectory, "cache", "report-count.json");
+
+    /// <summary>오늘 보낸 수 (cache/report-count.json 에 날짜·횟수만).</summary>
+    private static int SentToday()
     {
-        string? id = settings.Current.ReportClientId;
-        if (!string.IsNullOrWhiteSpace(id)) return id;
-        id = Guid.NewGuid().ToString("D");
-        settings.Current.ReportClientId = id;
-        try { settings.Save(); }
-        catch (Exception ex) { Log.Warn($"신고용 PC id 저장 실패: {ex.Message}"); }
-        return id;
+        try
+        {
+            if (!File.Exists(CountPath)) return 0;
+            using var doc = JsonDocument.Parse(File.ReadAllText(CountPath));
+            var r = doc.RootElement;
+            return r.TryGetProperty("date", out var d) && d.GetString() == DateTime.Today.ToString("yyyy-MM-dd")
+                   && r.TryGetProperty("count", out var c) && c.TryGetInt32(out int n) ? n : 0;
+        }
+        catch { return 0; }
+    }
+
+    private static void CountSent()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(CountPath)!);
+            AtomicFile.WriteAllText(CountPath, JsonSerializer.Serialize(new { date = DateTime.Today.ToString("yyyy-MM-dd"), count = SentToday() + 1 }));
+        }
+        catch (Exception ex) { Log.Warn($"신고 횟수 기록 실패: {ex.Message}"); }
     }
 
     /// <summary>어셈블리 정보 버전 ("+커밋" 꼬리 제거).</summary>
@@ -193,15 +209,21 @@ public static class ReportService
     };
 
     public static async Task<ReportSendResult> SendAsync(
-        ReportKind kind, string message, string contact, string clientId, string diagnostics, CancellationToken ct = default)
+        ReportKind kind, string message, string contact, string diagnostics, CancellationToken ct = default)
     {
         if (!IsConfigured) return ReportSendResult.NotConfigured;
+        if (SentToday() >= DailyLimit)
+        {
+            Log.Info($"문제 신고: 오늘 {DailyLimit}건을 넘어 보내지 않음");
+            return ReportSendResult.Limited;
+        }
         try
         {
             var body = new Dictionary<string, string>
             {
                 ["token"] = Token,
-                ["clientId"] = clientId,
+                // 받는 쪽(Code.gs)이 요구하는 칸이라 남기되 보낼 때마다 새 무작위 값 — 신고끼리·PC 를 잇지 못하게
+                ["clientId"] = Guid.NewGuid().ToString("D"),
                 ["kind"] = KindValue(kind),
                 ["message"] = Truncate(message.Trim(), MaxMessage),
                 ["contact"] = contact.Trim(),
@@ -219,6 +241,7 @@ public static class ReportService
             }
             int status = ParseStatus(text);
             Log.Info($"문제 신고 보냄: 종류 {KindValue(kind)}, 응답 {status}");
+            if (status == 200) CountSent();
             return status switch
             {
                 200 => ReportSendResult.Sent,

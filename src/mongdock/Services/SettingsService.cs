@@ -203,6 +203,10 @@ public sealed class SettingsService : ISettingsService, IDisposable
                 if (NumberIs(top, "fontSize", OldTopBarFontSize)) { s.TopBar.FontSize = new TopBarSettings().FontSize; notes.Add($"topBar.fontSize → {s.TopBar.FontSize}"); }
             }
 
+            // 문제 신고용 고정 PC 번호(reportClientId, v0.5 에서 없앰 — 연락처와 이어지면 같은 번호로 오는 것을 사람에게 이을 수 있음):
+            // 모델에 없는 키라 다음 저장에서 빠짐 → 있으면 바로 저장하게 이관으로 표시
+            if (TryGetProp(root, "reportClientId", out _)) notes.Add("reportClientId 삭제 (고정 PC 번호 안 씀)");
+
             // 3: 앱 트레이 아이콘 기본값 true → false. 키 없이(옛 기본값으로) 작업 표시줄을 숨기던 사용자는 지금처럼 켜 둔다.
             if (version < 3)
             {
