@@ -21,6 +21,7 @@ function doPost(e) {
   try {
     var body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     if (body.token !== APP_TOKEN) return reply_(403, 'bad token');
+    if (body.type === 'stats') return handleStats_(body);
 
     var message = String(body.message || '').trim();
     if (message.length < 3) return reply_(400, 'empty message');
@@ -69,8 +70,188 @@ function doPost(e) {
   }
 }
 
-function doGet() {
+function doGet(e) {
+  if (e && e.parameter && e.parameter.view === 'stats') return statsPage_();
   return reply_(200, 'mongdock report intake');
+}
+
+// ───────────────────────── 사용 통계 (#20) ─────────────────────────
+// 앱(Services/UsageStatsService.cs)이 { token, type:"stats", days:[ {하루치}, ... 최대 7개 ] } 를 보냄.
+// PC 번호·이름·IP 는 없다(Apps Script 는 IP 를 모름). 아래 STATS_COLUMNS 에 있는 칸만 시트에 남기고 나머지는 버린다.
+
+var MAX_STATS_ROWS_PER_DAY = 20000; // 하루 전체 상한 (막 보내는 것 거르기)
+var STATS_SHEET_PROP = 'STATS_SHEET_ID';
+
+// [칸 이름, 검사 함수] — 검사에 걸리면 그 칸은 빈칸
+var STATS_COLUMNS = [
+  ['date', function (v) { return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null; }],
+  ['appVersion', function (v) { return /^[0-9A-Za-z.\-]{1,40}$/.test(v) ? v : null; }],
+  ['install', oneOf_(['store', 'installer', 'zip'])],
+  ['windows', oneOf_(['10', '11'])],
+  ['build', function (v) { return /^[0-9.]{1,20}$/.test(v) ? v : null; }],
+  ['lang', oneOf_(['ko', 'en'])],
+  ['laptop', bool_],
+  ['monitors', int_(0, 16)],
+  ['scale', int_(50, 500)],
+  ['dockAutoHide', bool_],
+  ['topBar', bool_],
+  ['notifications', oneOf_(['mongdock', 'both', 'windows'])],
+  ['calendar', bool_],
+  ['searchButton', bool_],
+  ['hideTaskbar', bool_],
+  ['lightMode', bool_],
+  ['errors', int_(0, 1000000)]
+];
+
+function oneOf_(list) { return function (v) { v = String(v); return list.indexOf(v) >= 0 ? v : null; }; }
+function bool_(v) { return v === true || v === false ? v : null; }
+function int_(min, max) {
+  return function (v) { return typeof v === 'number' && Math.floor(v) === v && v >= min && v <= max ? v : null; };
+}
+
+function handleStats_(body) {
+  var days = Array.isArray(body.days) ? body.days.slice(0, 7) : [];
+  var rows = [];
+  var received = new Date();
+  days.forEach(function (d) {
+    if (!d || typeof d !== 'object') return;
+    var row = [received];
+    STATS_COLUMNS.forEach(function (c) {
+      var v = c[1](d[c[0]]);
+      if (v === null || v === undefined) v = '';
+      // 버전·빌드는 시트가 숫자로 바꾸지 않게 글자로 ("1.0" → 1 방지)
+      else if (c[0] === 'appVersion' || c[0] === 'build') v = "'" + v;
+      row.push(v);
+    });
+    if (row[1] !== '') rows.push(row); // 날짜 없는 건 버림
+  });
+  if (rows.length === 0) return reply_(400, 'no valid days');
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var cache = CacheService.getScriptCache();
+    var key = 's:' + Utilities.formatDate(received, 'Asia/Seoul', 'yyyyMMdd');
+    var n = Number(cache.get(key) || 0);
+    if (n + rows.length > MAX_STATS_ROWS_PER_DAY) return reply_(429, 'daily limit');
+    cache.put(key, String(n + rows.length), 21600);
+    var sheet = statsSheet_();
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+  } finally {
+    lock.releaseLock();
+  }
+  return reply_(200, 'ok');
+}
+
+/** 통계 시트 (처음이면 스크립트 소유자 드라이브에 "mongdock-stats" 를 만들고 id 를 스크립트 속성에 기억). */
+function statsSheet_() {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty(STATS_SHEET_PROP);
+  if (id) {
+    try { return SpreadsheetApp.openById(id).getSheets()[0]; } catch (err) { /* 지워졌으면 새로 */ }
+  }
+  var ss = SpreadsheetApp.create('mongdock-stats');
+  var sheet = ss.getSheets()[0];
+  sheet.setName('stats');
+  var header = ['received'].concat(STATS_COLUMNS.map(function (c) { return c[0]; }));
+  sheet.getRange(1, 1, 1, header.length).setValues([header]).setFontWeight('bold');
+  sheet.setFrozenRows(1);
+  props.setProperty(STATS_SHEET_PROP, ss.getId());
+  return sheet;
+}
+
+/**
+ * 본인만 보는 대시보드: .../exec?view=stats
+ * "실행 = 나" 웹 앱에서 Session.getActiveUser() 는 소유자가 직접 열 때만 이메일이 나오고, 다른 사람·로그아웃 상태는 빈 문자열 → 거부.
+ */
+function isOwner_() {
+  var active = Session.getActiveUser().getEmail();
+  return !!active && active === Session.getEffectiveUser().getEmail();
+}
+
+function statsPage_() {
+  if (!isOwner_()) {
+    return HtmlService.createHtmlOutput('<p style="font-family:sans-serif">권한 없음</p>').setTitle('mongdock');
+  }
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty(STATS_SHEET_PROP);
+  var values = [];
+  if (id) {
+    try { values = SpreadsheetApp.openById(id).getSheets()[0].getDataRange().getValues(); } catch (err) { values = []; }
+  }
+  var header = values.shift() || [];
+  var col = {};
+  header.forEach(function (h, i) { col[h] = i; });
+  var tz = 'Asia/Seoul';
+  var today = new Date();
+  function dayStr(offset) { return Utilities.formatDate(new Date(today.getTime() - offset * 86400000), tz, 'yyyy-MM-dd'); }
+  function cell(r, name) { return col[name] === undefined ? '' : r[col[name]]; }
+  function dateOf(r) {
+    var v = cell(r, 'date');
+    return v instanceof Date ? Utilities.formatDate(v, tz, 'yyyy-MM-dd') : String(v);
+  }
+
+  // 날짜별 신호 수 (최근 30일)
+  var perDay = {};
+  values.forEach(function (r) { var d = dateOf(r); perDay[d] = (perDay[d] || 0) + 1; });
+  var days30 = [];
+  for (var i = 29; i >= 0; i--) days30.push(dayStr(i));
+  var maxDay = Math.max.apply(null, [1].concat(days30.map(function (d) { return perDay[d] || 0; })));
+
+  // 최근 7일 분포
+  var from7 = dayStr(6);
+  var recent = values.filter(function (r) { return dateOf(r) >= from7; });
+  function dist(name) {
+    var m = {};
+    recent.forEach(function (r) { var v = String(cell(r, name)); if (v === '') v = '(없음)'; m[v] = (m[v] || 0) + 1; });
+    return Object.keys(m).sort(function (a, b) { return m[b] - m[a]; }).map(function (k) { return [k, m[k]]; });
+  }
+  function onRate(name) {
+    var on = recent.filter(function (r) { return cell(r, name) === true; }).length;
+    return recent.length ? Math.round(on * 100 / recent.length) + '%' : '-';
+  }
+  var errSum = 0, errRows = 0;
+  recent.forEach(function (r) { var n = Number(cell(r, 'errors')) || 0; errSum += n; if (n > 0) errRows++; });
+
+  var h = [];
+  h.push('<style>body{font-family:-apple-system,"Segoe UI","Malgun Gothic",sans-serif;margin:24px;color:#222}' +
+    'h1{font-size:20px}h2{font-size:15px;margin-top:28px}table{border-collapse:collapse;font-size:13px}' +
+    'td,th{padding:3px 10px;border-bottom:1px solid #eee;text-align:left}.bar{background:#0a66d8;height:10px;border-radius:3px}' +
+    '.grid{display:flex;flex-wrap:wrap;gap:28px}.muted{color:#888;font-size:12px}</style>');
+  h.push('<h1>mongdock 사용 통계</h1><p class="muted">신호 ' + values.length + '개 · 최근 7일(' + esc_(from7) + '~) ' + recent.length +
+    '개 · 신호 1개 = PC 1대의 하루 (PC 를 구분할 수 없어 같은 PC 가 여러 날이면 여러 개)</p>');
+  h.push('<h2>날짜별 신호 (최근 30일)</h2><table>');
+  days30.forEach(function (d) {
+    var n = perDay[d] || 0;
+    h.push('<tr><td>' + esc_(d) + '</td><td style="width:320px"><div class="bar" style="width:' + Math.round(n * 300 / maxDay) +
+      'px"></div></td><td>' + n + '</td></tr>');
+  });
+  h.push('</table>');
+
+  h.push('<h2>최근 7일</h2><div class="grid">');
+  [['appVersion', '앱 버전'], ['install', '설치 방식'], ['windows', '윈도우'], ['lang', '언어'], ['monitors', '모니터 수'],
+    ['scale', '주 모니터 배율'], ['notifications', '알림 표시']].forEach(function (p) {
+    h.push('<table><tr><th colspan="2">' + esc_(p[1]) + '</th></tr>');
+    dist(p[0]).forEach(function (kv) { h.push('<tr><td>' + esc_(kv[0]) + '</td><td>' + kv[1] + '</td></tr>'); });
+    h.push('</table>');
+  });
+  h.push('<table><tr><th colspan="2">켜짐 비율</th></tr>');
+  [['laptop', '노트북'], ['dockAutoHide', '독 자동 숨김'], ['topBar', '상단바'], ['calendar', '캘린더 연결'],
+    ['searchButton', '검색 버튼'], ['hideTaskbar', '작업 표시줄 숨기기'], ['lightMode', '가벼운 모드']].forEach(function (p) {
+    h.push('<tr><td>' + esc_(p[1]) + '</td><td>' + onRate(p[0]) + '</td></tr>');
+  });
+  h.push('</table>');
+  h.push('<table><tr><th colspan="2">오류</th></tr><tr><td>오류 합계</td><td>' + errSum + '</td></tr><tr><td>오류 있었던 신호</td><td>' +
+    errRows + ' / ' + recent.length + '</td></tr></table>');
+  h.push('</div>');
+  if (id) h.push('<p class="muted"><a href="https://docs.google.com/spreadsheets/d/' + esc_(id) + '/edit" target="_blank">시트 열기</a></p>');
+  return HtmlService.createHtmlOutput(h.join('')).setTitle('mongdock 사용 통계');
+}
+
+function esc_(s) {
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
 }
 
 function reply_(code, msg) {

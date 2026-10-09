@@ -60,6 +60,7 @@ public static class AppInfo
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), Name);
 
     private const string DataDirVariable = "MONGDOCK_DATA_DIR";
+    internal static bool UsesCustomDataDirectory => CustomDataDirectory;
     private static bool CustomDataDirectory => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(DataDirVariable));
 
     private static string LegacyDataDirectory { get; } =

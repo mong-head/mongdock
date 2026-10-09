@@ -29,6 +29,8 @@ internal sealed class CoachPage
     public (string Label, Action Run)? Action { get; init; }
     /// <summary>가리키는 기능을 직접 써 보면(Spotlight 를 열었다 닫으면) 저절로 다음 단계로.</summary>
     public bool AdvanceOnUse { get; init; }
+    /// <summary>카드 맨 아래 회색 작은 글씨 한 줄 (예: 마무리 카드의 사용 통계 안내).</summary>
+    public string? Footnote { get; init; }
 }
 
 /// <summary>둘러보기가 끝난 이유 (설정 창이 다시 나타날 때 포커스를 가져갈지 정하는 데 씀).</summary>
@@ -567,6 +569,7 @@ internal static class CoachMarks
             Anchor = final.Anchor,
             Groups = extras.Count > 0 ? new() { (Loc.T("이 밖에도"), extras.ToList()) } : null,
             Action = startup,
+            Footnote = s.SendUsageStats ? Loc.T("몽독을 다듬는 데 쓰도록, PC 를 알아볼 수 없는 사용 통계를 하루 한 번 보내요. 설정 → 정보에서 끌 수 있어요.") : null,
         });
         return pages;
     }

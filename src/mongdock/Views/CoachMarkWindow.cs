@@ -335,6 +335,18 @@ internal sealed class CoachMarkWindow : Window
         }
         if (page.Groups is { Count: > 0 } groups)
             body.Children.Add(BuildGroups(groups, page.More));
+        if (!string.IsNullOrEmpty(page.Footnote))
+        {
+            // 맨 아래 회색 작은 글씨 (마무리 카드의 사용 통계 안내)
+            body.Children.Add(new TextBlock
+            {
+                Text = KeepAll(page.Footnote),
+                FontSize = 11.5,
+                Foreground = _p.SubText,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 10, 0, 0),
+            });
+        }
         if (page.ChangelogLink)
         {
             var link = new Button

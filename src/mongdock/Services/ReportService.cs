@@ -37,7 +37,7 @@ public static class ReportService
     public const string Endpoint = "https://script.google.com/macros/s/AKfycbzsVgMMjzGK0ewuUb-PJ8ysfHIoD948CZEVFxpa-Td4gOvGJTuU8NUh_d7yocgVp747/exec";
 
     public const string SupportAddress = "mongdock+help@gmail.com";
-    private const string Token = "mongdock-report-v1";
+    internal const string Token = "mongdock-report-v1";
 
     /// <summary>받는 쪽 한도 (Code.gs MAX_MESSAGE / MAX_DIAG 와 같게).</summary>
     public const int MaxMessage = 4000;
@@ -46,7 +46,7 @@ public static class ReportService
 
     public static bool IsConfigured => Endpoint.Length > 0;
 
-    private static readonly HttpClient Http = CreateHttpClient();
+    internal static readonly HttpClient Http = CreateHttpClient();
 
     /// <summary>하루에 보낼 수 있는 신고 수 (이 PC 안에서 셈 — 받는 쪽에 PC 를 알아볼 값을 보내지 않으려고).</summary>
     public const int DailyLimit = 5;
@@ -228,7 +228,7 @@ public static class ReportService
                 ["message"] = Truncate(message.Trim(), MaxMessage),
                 ["contact"] = contact.Trim(),
                 ["appVersion"] = AppVersion(),
-                ["lang"] = CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "ko" ? "ko" : "en",
+                ["lang"] = Loc.Code,
                 ["diagnostics"] = Truncate(diagnostics, MaxDiagnostics),
             };
             using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
@@ -257,7 +257,7 @@ public static class ReportService
     }
 
     /// <summary>응답 JSON {"status":200,...} 의 status. 형식이 다르면 0.</summary>
-    private static int ParseStatus(string json)
+    internal static int ParseStatus(string json)
     {
         try
         {

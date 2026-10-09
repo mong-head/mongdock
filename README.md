@@ -184,6 +184,7 @@ zip 으로 썼다면:
 | 알림 | `notifications.showNotificationBanners` (기본 `true`), `notifications.hideWindowsToastPopups` (기본 `true`), `notifications.lowBatteryAlerts` (기본 `true`) |
 | 글꼴 | `fontFamily` — 기본 `"Pretendard"`(내장), 설치된 글꼴 이름도 가능 |
 | 앱 메뉴 직접 정의 | `appMenus` — 키는 exe 이름(예 `"chrome.exe"`), 항목마다 `text` 와 `keys`(예 `"Ctrl+Shift+T"`) |
+| 사용 통계 보내기 | `sendUsageStats` (기본 `true`) — 몽독이 켜진 날 하루 한 번 PC 를 알아볼 수 없는 작은 신호(버전·윈도우·기능 켜짐/꺼짐·오류 수). 자세한 항목은 [`tools/support-intake`](tools/support-intake/README.md) |
 | 앱 메뉴 규칙 갱신 | `updateMenuRules` (기본 `true`) — `false` 면 [앱 메뉴 규칙](#앱-메뉴-규칙)을 GitHub 에서 받지 않음 |
 | 앱 창 메뉴 줄 숨기기 (실험) | `topBar.hideNativeMenuBars` (기본 `false`) — 메모장·워드패드·그림판·레지스트리 편집기 같은 시스템 앱 창 안의 메뉴 줄을 떼고 상단바에서만 보이게. 끄거나 일시 정지·종료하면 되돌림 |
 | 업데이트 확인 | `checkForUpdates` (기본 `true`) — 시작 1분 뒤와 12시간마다 GitHub 릴리스 확인 |

@@ -352,6 +352,11 @@ public sealed class Settings
     /// <summary>화면 언어: "" = 윈도우 표시 언어 따라(한국어가 아니면 영어), "ko", "en". 바꾸면 다시 시작해야 반영 (Loc).</summary>
     public string Language { get; set; } = "";
     /// <summary>
+    /// 사용 통계 보내기 (#20): 몽독이 켜진 날 하루 한 번, PC 를 알아볼 수 없는 작은 신호(버전·윈도우·기능 켜짐/꺼짐·오류 수).
+    /// 끄면 모아 둔 것도 지움 (Services/UsageStatsService).
+    /// </summary>
+    public bool SendUsageStats { get; set; } = true;
+    /// <summary>
     /// mongdock 이 켜져 있는 동안 윈도우 작업 표시줄 숨김 (숨기는 동안 작업 표시줄 자동 숨김을 켜서 빈 띠가 안 남게).
     /// 일시 정지·종료·크래시 시 원래대로 복원. 속성 기본값은 false(키 없는 기존 파일 호환) — 새 설치는 SettingsService 가 켬.
     /// </summary>

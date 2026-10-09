@@ -1154,7 +1154,10 @@ internal sealed partial class SettingsWindow : Window
         body.Children.Add(SectionTitle(Loc.T("도움")));
         body.Children.Add(Group(
             Row(Loc.T("문제 신고하기"), Loc.T("버그·질문·제안을 몽독 지원 메일함으로 보내요. 보내기 전에 함께 보낼 정보를 확인할 수 있어요."),
-                ActionButton(Loc.T("문제 신고하기…"), () => ReportWindow.Open(_services)))));
+                ActionButton(Loc.T("문제 신고하기…"), () => ReportWindow.Open(_services))),
+            Row(Loc.T("사용 통계 보내기"),
+                Loc.T("몽독이 켜진 날 하루 한 번: 앱 버전, 윈도우 버전, 언어, 노트북 여부, 모니터 수·배율, 주요 기능 켜짐/꺼짐, 오류 수. PC 를 알아볼 수 있는 정보는 보내지 않아요."),
+                Toggle(_services.Settings.Current.SendUsageStats, on => Commit(() => _services.Settings.Current.SendUsageStats = on)))));
 
         // 코치마크: 처음 설치했을 때의 기능 둘러보기 (버전별 둘러보기는 위 링크와 변경 내역 페이지)
         body.Children.Add(SectionTitle(Loc.T("안내")));

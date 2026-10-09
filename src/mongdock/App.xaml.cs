@@ -25,6 +25,7 @@ public partial class App : Application
     private SpotlightHotkeyController? _spotlightHotkey;
     private IDisposable? _banners;
     private UpdateService? _updates;
+    private UsageStatsService? _stats;
     private IDisposable? _updateUi;
     private IDisposable? _lowBattery;
     private NativeToastSuppressor? _toastSuppressor;
@@ -187,6 +188,7 @@ public partial class App : Application
         if (_updates is not null) _updateUi = UpdateUi.Attach(_services, _updates);
         _lowBattery = LowBatteryBanner.Attach(_services); // 배터리 20·10·5% 알림 (배너 호스트 다음)
         _updates?.Start(); // 1분 뒤 첫 확인, 이후 12시간마다
+        _stats = UsageStatsService.Start(_services); // 사용 통계: 2분 뒤 첫 확인, 이후 1시간마다 (그날 처음이면 하나)
         _services.Notifications.Start();
         _toastSuppressor = new NativeToastSuppressor(_services.Notifications as NotificationService);
         AppState.Changed += OnPausedChanged;
@@ -431,6 +433,7 @@ public partial class App : Application
         _updateUi?.Dispose();
         _lowBattery?.Dispose();
         _updates?.Dispose();
+        _stats?.Dispose();
         if (_services is not null)
         {
             _services.Notifications.Stop();
