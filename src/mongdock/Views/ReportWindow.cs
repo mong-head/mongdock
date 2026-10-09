@@ -59,14 +59,14 @@ public sealed class ReportWindow : Window
                 return;
             }
             var settings = services.Settings.Current;
-            var titles = services.Windows.Windows.Select(x => x.Title).ToList();
-            bool touch = TouchSupport.HasTouch;
+            var ctx = ReportRedactor.Context.Current(services.Windows.Windows.Select(x => x.Title));
+            // 설정 요약은 지금 UI 스레드에서 (설정 객체는 UI 스레드에서 바뀜), 로그 읽기·가리기만 UI 밖에서
+            string head = ReportService.BuildSystemInfo(settings, Monitors.GetAll(), TouchSupport.HasTouch, ctx);
             var win = new ReportWindow(settings, () => ReportService.EnsureClientId(services.Settings));
             _instance = win;
             win.Show();
             win.Activate();
-            // 로그 읽기·가리기는 UI 밖에서
-            Task.Run(() => ReportService.BuildDiagnostics(settings, Monitors.GetAll(), touch, ReportRedactor.Context.Current(titles)))
+            Task.Run(() => ReportService.AppendLog(head, ctx))
                 .ContinueWith(t => win.SetDiagnostics(t.IsCompletedSuccessfully ? t.Result : $"(진단 정보를 모으지 못함: {t.Exception?.InnerException?.GetType().Name})"),
                     TaskScheduler.FromCurrentSynchronizationContext());
         }
@@ -195,7 +195,7 @@ public sealed class ReportWindow : Window
         var detailsStack = new StackPanel();
         detailsStack.Children.Add(new TextBlock
         {
-            Text = "앱 버전·윈도우·모니터·설정 요약·최근 로그예요. 이메일·주소(URL)·사용자 이름·기기 이름·창 제목은 가렸고, 보이는 그대로 보내요.",
+            Text = "앱 버전·윈도우·모니터·설정 요약·최근 로그예요. 이메일·주소(URL)·파일 경로·사용자 이름·기기 이름·창 제목은 가렸고, 보이는 그대로 보내요.",
             FontSize = 11.5,
             Foreground = _p.SubText,
             TextWrapping = TextWrapping.Wrap,

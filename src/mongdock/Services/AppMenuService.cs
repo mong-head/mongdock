@@ -475,7 +475,7 @@ public sealed class AppMenuService : IAppMenuService, IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error($"앱 메뉴 실행 실패: {item?.Text}", ex);
+            Log.Error($"앱 메뉴 실행 실패: '{item?.Text}'", ex);
         }
     }
 
@@ -517,7 +517,7 @@ public sealed class AppMenuService : IAppMenuService, IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error($"단축키 전송 실패: {text}", ex);
+            Log.Error($"단축키 전송 실패: '{text}'", ex);
         }
     }
 

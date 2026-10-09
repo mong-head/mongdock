@@ -47,7 +47,7 @@ public sealed class MyDockFinderImporter
             }
 
             while (pins.Count > 0 && pins[^1].Kind == PinKind.Separator) pins.RemoveAt(pins.Count - 1);
-            Log.Info($"ico.ini 가져오기: {pins.Count}개 ({string.Join(", ", pins.Select(p => $"{p.Kind}:{p.Name}"))})");
+            Log.Info($"ico.ini 가져오기: {pins.Count}개 ('{string.Join(", ", pins.Select(p => $"{p.Kind}:{p.Name}"))}')");
         }
         catch (Exception ex)
         {

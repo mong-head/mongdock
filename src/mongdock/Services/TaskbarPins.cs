@@ -57,7 +57,7 @@ public static class TaskbarPins
         {
             Log.Error("작업 표시줄 고정 앱 읽기 실패", ex);
         }
-        Log.Info($"작업 표시줄 고정 앱 {result.Count}개: {string.Join(", ", result.Select(p => p.Name))}");
+        Log.Info($"작업 표시줄 고정 앱 {result.Count}개: '{string.Join(", ", result.Select(p => p.Name))}'");
         return result;
     }
 
@@ -111,14 +111,14 @@ public static class TaskbarPins
             string file = Path.GetFileName(name);
             if (!File.Exists(name))
             {
-                Log.Info($"작업 표시줄 고정 건너뜀 (바로 가기 없음): {file}");
+                Log.Info($"작업 표시줄 고정 건너뜀 (바로 가기 없음): '{file}'");
                 return null;
             }
             PinItem? pin = PinFactory.CreatePin(name, settings);
             // 바로 가기 자체를 실행하는 핀 = 대상을 못 풀었음 → 작업 표시줄 고정을 풀면 깨지므로 건너뜀
             if (pin is null || string.Equals(NormalizeTarget(pin.Target), NormalizeTarget(name), StringComparison.OrdinalIgnoreCase))
             {
-                Log.Info($"작업 표시줄 고정 건너뜀 (바로 가기 대상을 해석 못 함): {file}");
+                Log.Info($"작업 표시줄 고정 건너뜀 (바로 가기 대상을 해석 못 함): '{file}'");
                 return null;
             }
             return pin;
@@ -136,7 +136,7 @@ public static class TaskbarPins
             string label = AppsFolder.GetAppDisplayName(aumid) ?? display ?? aumid;
             return new PinItem { Name = label, Kind = PinKind.Aumid, Target = aumid };
         }
-        Log.Info($"작업 표시줄 고정 건너뜀 (알 수 없는 항목): {(name.Length > 80 ? name[..80] + "…" : name)}");
+        Log.Info($"작업 표시줄 고정 건너뜀 (알 수 없는 항목): '{(name.Length > 80 ? name[..80] + "…" : name)}'");
         return null;
     }
 

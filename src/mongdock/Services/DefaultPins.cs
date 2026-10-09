@@ -57,7 +57,7 @@ public static class DefaultPins
         {
             Log.Error("기본 고정 앱 만들기 실패", ex);
         }
-        Log.Info($"기본 고정 앱: {string.Join(", ", pins.Select(p => p.Name))}");
+        Log.Info($"기본 고정 앱: '{string.Join(", ", pins.Select(p => p.Name))}'");
         return pins;
     }
 

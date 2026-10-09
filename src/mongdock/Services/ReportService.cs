@@ -76,10 +76,10 @@ public static class ReportService
     // ───────────────────────── 진단 정보 ─────────────────────────
 
     /// <summary>
-    /// 함께 보낼 진단 정보 (가린 뒤). 앱 버전·윈도우·모니터·배터리·터치·설정 요약(경로·주소 없이)·최근 로그.
-    /// 길면 오래된 로그 줄부터 빼서 <see cref="MaxDiagnostics"/> 안으로. UI 스레드가 아니어도 됨.
+    /// 진단 정보 앞부분 (가린 뒤): 앱 버전·윈도우·모니터·배터리·터치·설정 요약(경로·주소 없이).
+    /// 설정을 읽으므로 UI 스레드에서 (설정 객체는 UI 스레드에서 바뀜). 로그는 <see cref="AppendLog"/> 로 따로.
     /// </summary>
-    public static string BuildDiagnostics(Settings s, IEnumerable<MonitorInfo> monitors, bool hasTouch, ReportRedactor.Context ctx)
+    public static string BuildSystemInfo(Settings s, IEnumerable<MonitorInfo> monitors, bool hasTouch, ReportRedactor.Context ctx)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"앱: mongdock {AppVersion()} ({InstallKind()})");
@@ -105,8 +105,14 @@ public static class ReportService
         sb.AppendLine($"알림: 배너 {OnOff(n.ShowNotificationBanners)}, 윈도우 알림 숨기기 {OnOff(n.HideWindowsToastPopups)}, 배터리 부족 알림 {OnOff(n.LowBatteryAlerts)}, 알림 소리 {(string.IsNullOrEmpty(n.Sound) ? "기본" : "바꿈")}");
         sb.AppendLine($"기타: 작업 표시줄 숨기기 {OnOff(s.HideWindowsTaskbar)}, 성능 모드 {OnOff(s.PerformanceMode)}, 시작 시 실행 {OnOff(s.StartWithWindows)}, 업데이트 확인 {OnOff(s.CheckForUpdates)}, 글꼴 {(s.FontFamily == "Pretendard" ? "기본" : "바꿈")}");
 
-        string head = ReportRedactor.Redact(sb.ToString(), ctx);
+        return ReportRedactor.Redact(sb.ToString(), ctx);
+    }
 
+    /// <summary>
+    /// 앞부분 + 최근 로그 (가린 뒤). 길면 오래된 로그 줄부터 빼서 <see cref="MaxDiagnostics"/> 안으로. 파일을 읽으므로 UI 스레드 밖에서.
+    /// </summary>
+    public static string AppendLog(string head, ReportRedactor.Context ctx)
+    {
         // 최근 로그: 가린 뒤, 넘치면 오래된 줄부터 뺌
         var lines = ReadLogTail(LogLines).Select(l => ReportRedactor.RedactLog(l, ctx)).ToList();
         const string logTitle = "\n[최근 로그]\n";

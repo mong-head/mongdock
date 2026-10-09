@@ -22,6 +22,10 @@ internal static class Program
         RedactionTests();
         Console.WriteLine(_failed == 0 ? "가리기 시험: 모두 통과" : $"가리기 시험: {_failed}개 실패");
 
+        // 이 PC 의 실제 로그를 가린 결과 (보내지 않음 — 눈으로 확인용)
+        if (args.Contains("--log"))
+            Console.WriteLine(ReportService.AppendLog("", ReportRedactor.Context.Current(Array.Empty<string>())));
+
         int png = Array.FindIndex(args, a => a == "--png");
         if (png >= 0 && png + 1 < args.Length) RenderPngs(args[png + 1]);
         return _failed == 0 ? 0 : 1;
@@ -31,44 +35,56 @@ internal static class Program
 
     private static void RedactionTests()
     {
-        var ctx = new ReportRedactor.Context("melon", "DESKTOP-AB12CD", @"C:\Users\melon",
-            new[] { "연봉 협상안.xlsx - Excel", "카카오톡", "ab" });
+        var ctx = new ReportRedactor.Context("melon", "DESKTOP-AB12CD",
+            new[] { "연봉 협상안.xlsx - Excel", "카카오톡", "ab", "Google", "Windows" });
+        string R(string t) => ReportRedactor.Redact(t, ctx);
+        string L(string t) => ReportRedactor.RedactLog(t, ctx);
 
         // 이메일
-        Check("이메일", ReportRedactor.Redact("답장: hong.gil-dong+x@example.co.kr 로", ctx), "답장: <이메일> 로");
-        Check("이메일 여러 개", ReportRedactor.Redact("a@b.com, c_d@e.org", ctx), "<이메일>, <이메일>");
+        Check("이메일", R("답장: hong.gil-dong+x@example.co.kr 로"), "답장: <이메일> 로");
+        Check("이메일 여러 개", R("a@b.com, c_d@e.org"), "<이메일>, <이메일>");
 
         // URL (iCal 비밀 주소 포함)
-        Check("iCal https", ReportRedactor.Redact("캘린더 https://calendar.google.com/calendar/ical/abc%40group/private-123/basic.ics 실패", ctx),
-            "캘린더 <주소> 실패");
-        Check("webcal", ReportRedactor.Redact("webcal://p01-caldav.icloud.com/published/2/MTIz", ctx), "<주소>");
-        Check("http 와 따옴표", ReportRedactor.Redact("열기 \"http://example.com/a?b=c\" 끝", ctx), "열기 \"<주소>\" 끝");
-        Check("www", ReportRedactor.Redact("www.naver.com 열림", ctx), "<주소> 열림");
-        Check("ms-settings 는 그대로", ReportRedactor.Redact("ms-settings:privacy-microphone", ctx), "ms-settings:privacy-microphone");
+        Check("iCal https", R("캘린더 https://calendar.google.com/calendar/ical/abc%40group/private-123/basic.ics 실패"), "캘린더 <주소> 실패");
+        Check("webcal", R("webcal://p01-caldav.icloud.com/published/2/MTIz"), "<주소>");
+        Check("http 와 따옴표", R("열기 \"http://example.com/a?b=c\" 끝"), "열기 \"<주소>\" 끝");
+        Check("www", R("www.naver.com 열림"), "<주소> 열림");
+        Check("ms-settings 는 그대로", R("ms-settings:privacy-microphone"), "ms-settings:privacy-microphone");
 
-        // 경로의 사용자 이름
-        Check("내 프로필 경로", ReportRedactor.Redact(@"파일 C:\Users\melon\Desktop\a.txt", ctx), @"파일 C:\Users\<사용자>\Desktop\a.txt");
-        Check("다른 사용자 경로", ReportRedactor.Redact(@"D:\Users\홍길동\AppData\x", ctx), @"D:\Users\<사용자>\AppData\x");
-        Check("JSON 이스케이프 경로", ReportRedactor.Redact(@"""C:\\Users\\someone\\x""", ctx), @"""C:\\Users\\<사용자>\\x""");
-        Check("슬래시 경로", ReportRedactor.Redact("C:/Users/someone/x", ctx), "C:/Users/<사용자>/x");
-        Check("Users 폴더 자체는 그대로", ReportRedactor.Redact(@"C:\Program Files\mongdock", ctx), @"C:\Program Files\mongdock");
+        // 파일·폴더 경로 → <경로>.확장자
+        Check("내 프로필 경로", R(@"파일 C:\Users\melon\Desktop\a.txt"), "파일 <경로>.txt");
+        Check("회사 폴더 문서", L(@"INFO  [1] 파일 열기 실패: D:\회사\2026 연봉계약서.pdf"), "INFO  [1] 파일 열기 실패: <경로>.pdf");
+        Check("공백 있는 사용자 폴더", R(@"C:\Users\홍 길동\AppData\x"), "<경로>");
+        Check("JSON 이스케이프 경로", R(@"""C:\\Users\\someone\\x.json"""), @"""<경로>.json""");
+        Check("슬래시 경로", R("C:/Users/someone/x"), "<경로>");
+        Check("UNC 경로", R(@"열기 \\nas\공유\급여 2026.xlsx"), "열기 <경로>.xlsx");
+        Check("장치 이름은 그대로", R(@"전체 화면 앱: True (\\.\DISPLAY1)"), @"전체 화면 앱: True (\\.\DISPLAY1)");
+        Check("화살표 두 경로", R(@"적용: C:\a\b.wav → C:\c\d.wav"), "적용: <경로>.wav → <경로>.wav");
+        Check("따옴표 안 경로 + 괄호", R(@"알림 소리 적용: ""D:\내 소리\딩동.wav"" (→ C:\Users\melon\x.wav)"), @"알림 소리 적용: ""<경로>.wav"" (→ <경로>.wav)");
+        Check("스택 줄", R(@"   at A.B() in C:\dev\x\File.cs:line 288"), "   at A.B() in <경로>.cs:line 288");
+        Check("드라이브 없는 Users", R("/Users/someone/Library"), "/Users/<사용자>/Library");
+        Check("시각은 그대로", R("2026-10-09 10:00:00.000 INFO"), "2026-10-09 10:00:00.000 INFO");
 
         // 사용자 이름·기기 이름 (낱말 단위)
-        Check("기기 이름", ReportRedactor.Redact("기기 DESKTOP-AB12CD 에서", ctx), "기기 <기기> 에서");
-        Check("사용자 이름 낱말", ReportRedactor.Redact("user melon logged", ctx), "user <사용자> logged");
-        Check("다른 낱말 일부는 그대로", ReportRedactor.Redact("watermelons", ctx), "watermelons");
+        Check("기기 이름", R("기기 DESKTOP-AB12CD 에서"), "기기 <기기> 에서");
+        Check("사용자 이름 낱말", R("user melon logged"), "user <사용자> logged");
+        Check("다른 낱말 일부는 그대로", R("watermelons"), "watermelons");
 
-        // 창 제목 (3자 이상만, 긴 것부터)
-        Check("창 제목", ReportRedactor.Redact("포그라운드: 연봉 협상안.xlsx - Excel", ctx), "포그라운드: <창 제목>");
-        Check("창 제목 짧은 것", ReportRedactor.Redact("카카오톡 열림", ctx), "<창 제목> 열림");
-        Check("2자 제목은 무시", ReportRedactor.Redact("tab bar", ctx), "tab bar");
+        // 창 제목: 로그에만, 3자 이상, 긴 것부터, URL·경로를 먼저 가린 뒤
+        Check("앞부분엔 창 제목 안 씀", R("윈도우: Windows 11 Home"), "윈도우: Windows 11 Home");
+        Check("로그 창 제목", L("포그라운드: 연봉 협상안.xlsx - Excel"), "포그라운드: <창 제목>");
+        Check("로그 짧은 제목", L("카카오톡 열림"), "<창 제목> 열림");
+        Check("2자 제목은 무시", L("tab bar"), "tab bar");
+        Check("URL 안의 창 제목(순서)", L("가져오기 실패: https://calendar.google.com/x/private-1/basic.ics"), "가져오기 실패: <주소>");
 
-        // 로그: 작은따옴표 안 문구도 가림
-        Check("로그 따옴표", ReportRedactor.RedactLog("WARN 프로세스 경로를 알 수 없는 창 → 실행 불가 핀 (이름만): '비밀 문서 - 메모장'", ctx),
-            "WARN 프로세스 경로를 알 수 없는 창 → 실행 불가 핀 (이름만): '<가림>'");
-        Check("로그 경로+URL", ReportRedactor.RedactLog(@"업데이트 다운로드 완료: https://github.com/x/y.exe → C:\Users\melon\AppData\Local\Temp\y.exe", ctx),
-            @"업데이트 다운로드 완료: <주소> → C:\Users\<사용자>\AppData\Local\Temp\y.exe");
-        Check("빈 문자열", ReportRedactor.Redact("", ctx), "");
+        // 로그: 작은따옴표 안 문구 (줄 안 첫 ' ~ 마지막 ')
+        Check("로그 따옴표", L("실행 불가 핀 (이름만): '비밀 문서 - 메모장'"), "실행 불가 핀 (이름만): '<가림>'");
+        Check("아포스트로피", L("블루투스 'Melon's AirPods' 연결"), "블루투스 '<가림>' 연결");
+        Check("긴 따옴표", L("'" + new string('가', 500) + "'"), "'<가림>'");
+        Check("이름 목록", L("기본 고정 앱: '파일 탐색기, 내 비밀 앱'"), "기본 고정 앱: '<가림>'");
+        Check("로그 경로+URL", L(@"업데이트 다운로드 완료: https://github.com/x/y.exe → C:\Users\melon\AppData\Local\Temp\y.exe"),
+            "업데이트 다운로드 완료: <주소> → <경로>.exe");
+        Check("빈 문자열", R(""), "");
     }
 
     private static void Check(string name, string actual, string expected)
@@ -85,7 +101,7 @@ internal static class Program
         Directory.CreateDirectory(dir);
         var app = new Mongdock.App();
         app.InitializeComponent(); // Themes/Controls.xaml·Menus.xaml (CardButton, IconFont)
-        var ctx = new ReportRedactor.Context("melon", "DESKTOP-AB12CD", @"C:\Users\melon", new[] { "연봉 협상안.xlsx - Excel" });
+        var ctx = new ReportRedactor.Context("melon", "DESKTOP-AB12CD", new[] { "연봉 협상안.xlsx - Excel" });
         string sample = ReportRedactor.Redact(
             "앱: mongdock 0.4.2 (설치 프로그램)\n윈도우: Windows 11 Home 24H2 (26200.6584)\n언어: ko-KR\n모니터 1: 2560×1440, 배율 125%, 주 모니터\n배터리: 없음\n터치: 없음\n\n[설정 요약]\n독: 켜짐, 위치 Bottom, 모드 Reserve, 테마 System, 아이콘 52\n\n[최근 로그]\n", ctx)
             + ReportRedactor.RedactLog(@"2026-10-09 10:00:00.000 INFO  [1] 파일 열기 실패: C:\Users\melon\Desktop\연봉 협상안.xlsx - Excel", ctx) + "\n"
