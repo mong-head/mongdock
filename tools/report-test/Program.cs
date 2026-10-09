@@ -75,6 +75,9 @@ internal static class Program
         Check("로그 창 제목", L("포그라운드: 연봉 협상안.xlsx - Excel"), "포그라운드: <창 제목>");
         Check("로그 짧은 제목", L("카카오톡 열림"), "<창 제목> 열림");
         Check("2자 제목은 무시", L("tab bar"), "tab bar");
+        Check("exe 이름은 그대로", L("트레이 아이콘 추가: Google.exe"), "트레이 아이콘 추가: Google.exe");
+        Check("AUMID 는 그대로", L("새 알림 1개: Google_pzs8sxrjxfjjc!Google"), "새 알림 1개: Google_pzs8sxrjxfjjc!Google");
+        Check("낱말 제목은 가림", L("포그라운드: Google 열림"), "포그라운드: <창 제목> 열림");
         Check("URL 안의 창 제목(순서)", L("가져오기 실패: https://calendar.google.com/x/private-1/basic.ics"), "가져오기 실패: <주소>");
 
         // 로그: 작은따옴표 안 문구 (줄 안 첫 ' ~ 마지막 ')
@@ -121,7 +124,7 @@ internal static class Program
                 };
                 w.Show();
                 w.SetDiagnostics(sample);
-                w.SetPreviewState(ReportKind.Bug, "독에서 카카오톡 아이콘을 누르면 창이 안 떠요.\n다시 누르면 떠요.", open ? "me@example.com" : "", open);
+                w.SetPreviewState(ReportKind.Bug, open ? "" : "독에서 카카오톡이 안 열려요", "독에서 카카오톡 아이콘을 누르면 창이 안 떠요.\n다시 누르면 떠요.", open ? "me@example.com" : "", open);
                 w.UpdateLayout();
                 string name = $"report-{theme.ToString().ToLowerInvariant()}{(open ? "-details" : "")}.png";
                 Save(w, Path.Combine(dir, name));

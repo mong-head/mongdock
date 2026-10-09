@@ -31,6 +31,8 @@ public sealed class ReportWindow : Window
     private bool _sending;
     private bool _closed;
 
+    private readonly TextBox _title;
+    private readonly TextBlock _titlePlaceholder;
     private readonly TextBox _message;
     private readonly TextBlock _messagePlaceholder;
     private readonly TextBlock _counter;
@@ -98,6 +100,8 @@ public sealed class ReportWindow : Window
         Background = _p.WindowBackground;
         Foreground = _p.Text;
         SourceInitialized += (_, _) => ApplyTitleBarTheme();
+        // "함께 보낼 정보"를 펼치면 창이 아래로 길어짐 → 화면 아래를 넘으면 위로 올리고, 화면보다 길면 높이를 막아 안에서 스크롤
+        SizeChanged += (_, e) => { if (e.HeightChanged) KeepOnScreen(); };
         Closed += (_, _) =>
         {
             _closed = true;
@@ -115,10 +119,21 @@ public sealed class ReportWindow : Window
         });
         if (!ReportService.IsConfigured) body.Children.Add(NotReadyNote());
 
-        // ── 종류 ── (세그먼트가 내용 칸 안내 문구를 바꾸므로 안내 문구를 먼저 만듦)
+        // ── 종류 ── (세그먼트가 제목·내용 칸 안내 문구를 바꾸므로 안내 문구를 먼저 만듦)
+        _titlePlaceholder = Placeholder(TitlePlaceholderFor(_kind), multiLine: false);
         _messagePlaceholder = Placeholder(PlaceholderFor(_kind), multiLine: true);
         body.Children.Add(Label("종류"));
         body.Children.Add(KindSegments());
+
+        // ── 제목 (선택) ── 받는 쪽은 내용 첫 줄을 메일 제목으로 쓰므로, 적으면 내용 앞줄로 붙여 보냄 (비우면 내용 첫 줄)
+        body.Children.Add(Label("제목 (선택)"));
+        _title = Input(multiLine: false);
+        _title.MaxLength = TitleMax;
+        _title.TextChanged += (_, _) => UpdateForm();
+        var titleGrid = new Grid();
+        titleGrid.Children.Add(_titlePlaceholder);
+        titleGrid.Children.Add(_title);
+        body.Children.Add(InputBox(titleGrid));
 
         // ── 내용 ──
         body.Children.Add(Label("내용"));
@@ -235,7 +250,7 @@ public sealed class ReportWindow : Window
         Content = root;
 
         UpdateForm();
-        Loaded += (_, _) => _message.Focus();
+        Loaded += (_, _) => _title.Focus();
     }
 
     /// <summary>진단 정보가 준비됨 (가린 결과). 미리 보기와 보낼 내용이 같다.</summary>
@@ -249,9 +264,10 @@ public sealed class ReportWindow : Window
     }
 
     /// <summary>시험·스크린샷용: 펼침 상태와 입력값을 정함.</summary>
-    public void SetPreviewState(ReportKind kind, string message, string contact, bool detailsOpen)
+    public void SetPreviewState(ReportKind kind, string title, string message, string contact, bool detailsOpen)
     {
         SelectKind(kind);
+        _title.Text = title;
         _message.Text = message;
         _contact.Text = contact;
         SetDetailsOpen(detailsOpen);
@@ -265,6 +281,7 @@ public sealed class ReportWindow : Window
     {
         int len = _message.Text.Length;
         _messagePlaceholder.Visibility = len == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _titlePlaceholder.Visibility = _title.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         _contactPlaceholder.Visibility = _contact.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         _counter.Text = $"{len:N0} / {ReportService.MaxMessage:N0}";
         bool contactOk = ContactValid;
@@ -279,7 +296,35 @@ public sealed class ReportWindow : Window
         _detailsOpen = open;
         _detailsHost.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
         _detailsChevron.Text = open ? "" : ""; // ChevronDown / ChevronRight
+        // 창 높이가 막혀 안에서 스크롤될 때도 펼친 내용이 보이게
+        if (open) Dispatcher.BeginInvoke(() => _detailsHost.BringIntoView(), System.Windows.Threading.DispatcherPriority.Loaded);
     }
+
+    /// <summary>
+    /// 창이 있는 모니터의 작업 영역 안에 머물게: 높이 상한 = 작업 영역 - 여백, 아래가 넘치면 위로 올림.
+    /// (WPF 좌표는 그 모니터 기준 DIP = 물리 픽셀 / 배율 — Services/Monitors 설명)
+    /// </summary>
+    private void KeepOnScreen()
+    {
+        if (!IsLoaded || WindowState != WindowState.Normal) return;
+        IntPtr hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero || !GetWindowRect(hwnd, out var r)) return;
+        var center = new Point((r.Left + r.Right) / 2.0, (r.Top + r.Bottom) / 2.0);
+        var monitor = Monitors.GetAll().FirstOrDefault(m => m.ContainsPx(center)) ?? Monitors.GetPrimary();
+        Rect work = monitor.WorkArea;
+        const double gap = 12;
+        double max = Math.Max(360, work.Height - gap * 2);
+        if (Math.Abs(MaxHeight - max) > 0.5) MaxHeight = max;
+        double height = Math.Min(ActualHeight, max);
+        if (Top + height > work.Bottom - gap) Top = Math.Max(work.Top + gap, work.Bottom - gap - height);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WinRect { public int Left, Top, Right, Bottom; }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(IntPtr hwnd, out WinRect rect);
 
     private void SelectKind(ReportKind kind)
     {
@@ -291,7 +336,18 @@ public sealed class ReportWindow : Window
             b.Foreground = on ? _p.AccentText : _p.Text;
         }
         _messagePlaceholder.Text = PlaceholderFor(kind);
+        _titlePlaceholder.Text = TitlePlaceholderFor(kind);
     }
+
+    /// <summary>메일 제목 칸 최대 길이 (받는 쪽 Code.gs 가 첫 줄을 60자로 자름).</summary>
+    private const int TitleMax = 60;
+
+    private static string TitlePlaceholderFor(ReportKind kind) => kind switch
+    {
+        ReportKind.Question => "예: 상단바 시계 형식을 바꿀 수 있나요?",
+        ReportKind.Idea => "예: 독 아이콘에 알림 개수도 보여 주세요",
+        _ => "예: 독에서 카카오톡이 안 열려요",
+    } + "  (비우면 내용 첫 줄)";
 
     private static string PlaceholderFor(ReportKind kind) => kind switch
     {
@@ -303,7 +359,10 @@ public sealed class ReportWindow : Window
     private async Task SendAsync()
     {
         if (_sending || !_send.IsEnabled) return;
-        string message = _message.Text, contact = _contact.Text.Trim(), diagnostics = _diagnostics;
+        // 제목을 적었으면 내용 앞줄로 (받는 쪽이 첫 줄을 메일 제목으로 씀)
+        string title = _title.Text.Trim().ReplaceLineEndings(" ");
+        string message = title.Length > 0 ? title + "\n\n" + _message.Text.Trim() : _message.Text;
+        string contact = _contact.Text.Trim(), diagnostics = _diagnostics;
 
         if (!ReportService.IsConfigured)
         {

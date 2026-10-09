@@ -72,7 +72,9 @@ public static class ReportRedactor
                      .Distinct(StringComparer.OrdinalIgnoreCase)
                      .OrderByDescending(t => t.Length))
         {
-            text = text.Replace(title, TitleMark, StringComparison.OrdinalIgnoreCase);
+            // 낱말 단위로만: claude.exe, Claude_pzs8sxrjxfjjc!Claude 처럼 exe·AUMID 안의 같은 글자는 그대로 (제목 "Claude")
+            text = Regex.Replace(text, @"(?<![\w.!\\])" + Regex.Escape(title) + @"(?![\w.!\\])", TitleMark,
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         }
 
         text = ReplaceToken(text, ctx.MachineName, MachineMark);
