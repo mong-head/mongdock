@@ -167,6 +167,11 @@ function statsSheet_() {
   return sheet;
 }
 
+/** 재배포 때 편집기에서 한 번 실행: 시트 권한 허용 + 통계 시트 만들기. ("_" 로 끝나는 함수는 실행 목록에 안 보여서 따로 둠) */
+function setupStats() {
+  Logger.log('mongdock-stats: ' + statsSheet_().getParent().getUrl());
+}
+
 /**
  * 본인만 보는 대시보드: .../exec?view=stats
  * "실행 = 나" 웹 앱에서 Session.getActiveUser() 는 소유자가 직접 열 때만 이메일이 나오고, 다른 사람·로그아웃 상태는 빈 문자열 → 거부.
