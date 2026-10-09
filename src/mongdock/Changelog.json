@@ -11,7 +11,7 @@
           "kind": "feature",
           "major": true,
           "text": "문제 신고하기: 설정 → 정보나 상단바 로고 메뉴에서 버그·질문·제안을 바로 보낼 수 있어요. 메일 계정이 없어도 되고, 함께 보낼 정보는 보내기 전에 확인할 수 있어요. 이메일·주소·파일 경로·사용자 이름·창 제목은 가려서 보내요.",
-          "text_en": "Report a problem: send bugs, questions, and suggestions right from Settings → About or the logo menu. No email account needed, and you can review what's included before sending. Email addresses, street addresses, file paths, user names, and window titles are masked."
+          "text_en": "Report a problem: send bugs, questions, and suggestions right from Settings → About or the logo menu. No email account needed, and you can review what's included before sending. Email addresses, web addresses (URLs), file paths, user names, and window titles are masked."
         },
         {
           "kind": "feature",
