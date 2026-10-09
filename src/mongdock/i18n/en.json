@@ -37,7 +37,7 @@
  "M월 d일 (ddd) ": "ddd MMM d ",
  "Outlook (웹)": "Outlook (web)",
  "Outlook (클래식)": "Outlook (classic)",
- "PC 를 알아볼 수 없는 정보를 하루 한 번 보내요. 설정 → 정보에서 언제든 바꿀 수 있어요.": "Sends anonymous info once a day. You can change this anytime in Settings → About.",
+ "PC 를 알아볼 수 없는 정보만, 하루 한 번.": "Anonymous info only, once a day.",
  "PC 이름": "PC name",
  "PC 초기화": "Reset this PC",
  "Pretendard (기본)": "Pretendard (default)",

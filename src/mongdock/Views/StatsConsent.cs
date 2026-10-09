@@ -45,7 +45,7 @@ public static class StatsConsent
     {
         if (_services is null) return true;
         var item = new NotificationItem(BannerId, "", AppInfo.Name, Loc.T("사용 통계를 보낼까요?"),
-            new[] { Loc.T("PC 를 알아볼 수 없는 정보를 하루 한 번 보내요. 설정 → 정보에서 언제든 바꿀 수 있어요.") },
+            new[] { Loc.T("PC 를 알아볼 수 없는 정보만, 하루 한 번.") },
             DateTime.Now, null, null, false, null);
         var buttons = new[]
         {
