@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- "문제 신고하기" 시험 도구: 개인정보 가리기(ReportRedactor) 단위 시험 + 신고 창 라이트/다크 PNG 렌더링.
+       앱 코드를 참조만 함 — mongdock.sln 에 넣지 않음. 외부 NuGet 없음. 사용법은 README.md -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <AssemblyName>report-test</AssemblyName>
+    <RootNamespace>ReportTest</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\mongdock\mongdock.csproj" />
+  </ItemGroup>
+
+</Project>

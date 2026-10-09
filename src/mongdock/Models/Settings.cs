@@ -386,6 +386,8 @@ public sealed class Settings
     public string? SkippedUpdateVersion { get; set; }
     /// <summary>"업데이트 있음" 배너를 이미 띄운 버전 (같은 버전은 한 번만 배너).</summary>
     public string? NotifiedUpdateVersion { get; set; }
+    /// <summary>"문제 신고하기" 용 PC 별 무작위 id (GUID, 처음 신고할 때 만듦). 받는 쪽이 하루 한도를 PC 단위로 셈 (Services/ReportService).</summary>
+    public string? ReportClientId { get; set; }
     /// <summary>사용자 정의 앱 메뉴. 키 = exe 파일명(소문자, 예 "chrome.exe") 또는 AUMID. 있으면 기본 메뉴 대신 사용.</summary>
     public Dictionary<string, List<AppMenuDef>> AppMenus { get; set; } = new();
     /// <summary>

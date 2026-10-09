@@ -1058,6 +1058,8 @@ public partial class TopBarWindow : Window
         mongdock.Items.Add(DockMenus.HideTaskbar(_services));
         mongdock.Items.Add(DockMenus.Pause());
         mongdock.Items.Add(new Separator());
+        mongdock.Items.Add(DockMenus.Item("문제 신고하기…", () => ReportWindow.Open(_services)));
+        mongdock.Items.Add(new Separator());
         mongdock.Items.Add(DockMenus.Quit());
         menu.Items.Add(mongdock);
         UpdateUi.AddMenuItems(menu, _services); // 새 버전 있으면 맨 위에 (TopBarWindow.Update.cs)

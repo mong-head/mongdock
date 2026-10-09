@@ -1107,6 +1107,11 @@ internal sealed partial class SettingsWindow : Window
             Row("설정 파일", "settings.json (직접 편집하면 저장 즉시 반영)",
                 ActionButton("파일 열기", () => _services.Launcher.OpenFile(_services.Settings.SettingsPath)))));
 
+        body.Children.Add(SectionTitle("도움"));
+        body.Children.Add(Group(
+            Row("문제 신고하기", "버그·질문·제안을 몽독 지원 메일함으로 보내요. 보내기 전에 함께 보낼 정보를 확인할 수 있어요.",
+                ActionButton("문제 신고하기…", () => ReportWindow.Open(_services)))));
+
         // 코치마크: 처음 설치했을 때의 기능 둘러보기 (버전별 둘러보기는 위 링크와 변경 내역 페이지)
         body.Children.Add(SectionTitle("안내"));
         body.Children.Add(Group(
