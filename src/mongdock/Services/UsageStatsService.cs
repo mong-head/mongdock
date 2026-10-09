@@ -18,7 +18,7 @@ namespace Mongdock.Services;
 /// - 못 보내면(오프라인·받는 쪽 오류) 날짜를 붙여 두었다가 다음 확인(1시간마다) 때 한꺼번에. 최근 7일 안의 것만, 7개까지 (오래된 것부터 버림).
 /// - 하루치마다 무작위 nonce(그 하루치를 다시 보낼 때 같은 값 — 받는 쪽이 응답 시간 초과 뒤 재전송을 한 번만 적게. 날짜·PC 를 잇지 않음).
 /// - 오류 수 = 지난 신호 이후 로그의 ERROR 줄 수 (로그 파일 시각으로 셈 — 다시 시작·크래시에도 이어짐).
-/// - 설정 "사용 통계 보내기"(SendUsageStats)를 끄면 아무것도 만들지 않고 모아 둔 것도 지움.
+/// - 동의(SendUsageStats): null(아직 안 물음) = 모아만 두고 보내지 않음, true = 보냄, false = 만들지 않고 모아 둔 것도 지움.
 /// 받는 쪽: 저장소 tools/support-intake/Code.gs 의 {type:"stats"} → 구글 시트 한 줄씩.
 /// 시험: 환경 변수 MONGDOCK_STATS=log 면 보내지 않고 로그에 내용만 (MONGDOCK_DATA_DIR 로 띄운 시험 실행은 log 를 주지 않으면 아예 안 함).
 /// </summary>
@@ -34,6 +34,12 @@ public sealed class UsageStatsService : IDisposable
     private readonly string _path = Path.Combine(AppInfo.DataDirectory, "stats.json");
     private readonly bool _logOnly;
     private bool _sending;
+
+    /// <summary>지금 도는 인스턴스 (동의 직후 바로 한 번 확인하려고). 시험 폴더라 안 돌면 null.</summary>
+    public static UsageStatsService? Instance { get; private set; }
+
+    /// <summary>동의가 바뀜 → 곧바로 한 번 확인 (보내기 또는 지우기). UI 스레드.</summary>
+    public void Poke() => Tick();
 
     private UsageStatsService(AppServices services)
     {
@@ -57,6 +63,7 @@ public sealed class UsageStatsService : IDisposable
             return null;
         }
         svc._timer.Start();
+        Instance = svc;
         return svc;
     }
 
@@ -67,9 +74,10 @@ public sealed class UsageStatsService : IDisposable
         try
         {
             var state = Load();
-            if (!_services.Settings.Current.SendUsageStats)
+            bool? consent = _services.Settings.Current.SendUsageStats;
+            if (consent == false)
             {
-                if (state.Pending.Count > 0) { state.Pending.Clear(); Save(state); Log.Info("사용 통계 꺼짐: 모아 둔 것 지움"); }
+                if (state.Pending.Count > 0) { state.Pending.Clear(); Save(state); Log.Info("사용 통계 안 보냄: 모아 둔 것 지움"); }
                 return;
             }
             string today = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -82,7 +90,7 @@ public sealed class UsageStatsService : IDisposable
                 Save(state);
             }
             if (DropStale(state)) Save(state);
-            if (state.Pending.Count > 0 && !_sending) _ = SendAsync();
+            if (consent == true && state.Pending.Count > 0 && !_sending) _ = SendAsync(); // 묻기 전(null)엔 모아만 둠
         }
         catch (Exception ex)
         {

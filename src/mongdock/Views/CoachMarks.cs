@@ -593,7 +593,6 @@ internal static class CoachMarks
             Anchor = final.Anchor,
             Groups = extras.Count > 0 ? new() { (Loc.T("이 밖에도"), extras.ToList()) } : null,
             Action = startup,
-            Footnote = s.SendUsageStats ? Loc.T("몽독을 다듬는 데 쓰도록, PC 를 알아볼 수 없는 사용 통계를 하루 한 번 보내요. 설정 → 정보에서 끌 수 있어요.") : null,
         });
         return pages;
     }

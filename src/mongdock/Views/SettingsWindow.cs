@@ -442,8 +442,8 @@ internal sealed partial class SettingsWindow : Window
         top.Add(Row(Loc.T("아이콘 크기"), null, ValueSlider(d.IconSize, 24, 96, 1, v => $"{v:0}", v => D().IconSize = v)));
         top.Add(Row(Loc.T("마우스 올리면 크게"), Loc.T("맨 왼쪽 = 끔"),
             ValueSlider(d.HoverScale, 1.0, 2.5, 0.1, v => v <= 1.001 ? Loc.T("끔") : Loc.F($"{v:0.0}배"), v => D().HoverScale = v)));
-        top.Add(Row(Loc.T("아이콘 모양"), Loc.T("맥: 둥근 사각형으로 크기·여백을 맞춤 / 원본: 앱 아이콘 그대로"), Segmented(d.IconStyle,
-            new[] { (IconStyle.Mac, Loc.T("맥")), (IconStyle.Original, Loc.T("원본")) },
+        top.Add(Row(Loc.T("아이콘 모양"), Loc.T("둥근 사각형: 크기·여백을 맞춤 / 원본: 앱 아이콘 그대로"), Segmented(d.IconStyle,
+            new[] { (IconStyle.Mac, Loc.T("둥근 사각형")), (IconStyle.Original, Loc.T("원본")) },
             v => Commit(() => D().IconStyle = v))));
         body.Children.Add(Group(top.ToArray()));
 
@@ -1150,7 +1150,7 @@ internal sealed partial class SettingsWindow : Window
         });
         head.Children.Add(new TextBlock
         {
-            Text = Loc.T("윈도우용 맥 스타일 독 + 상단바"),
+            Text = Loc.T("윈도우용 독 + 상단바"),
             Foreground = _p.SubText,
             HorizontalAlignment = HorizontalAlignment.Center,
             Margin = new Thickness(0, 2, 0, 0),
@@ -1188,7 +1188,11 @@ internal sealed partial class SettingsWindow : Window
                 ActionButton(Loc.T("문제 신고하기…"), () => ReportWindow.Open(_services))),
             Row(Loc.T("사용 통계 보내기"),
                 Loc.T("몽독이 켜진 날 하루 한 번: 앱 버전, 윈도우 버전, 언어, 노트북 여부, 모니터 수·배율, 주요 기능 켜짐/꺼짐, 오류 수. PC 를 알아볼 수 있는 정보는 보내지 않아요."),
-                Toggle(_services.Settings.Current.SendUsageStats, on => Commit(() => _services.Settings.Current.SendUsageStats = on)))));
+                Toggle(_services.Settings.Current.SendUsageStats == true, on =>
+                {
+                    Commit(() => _services.Settings.Current.SendUsageStats = on);
+                    UsageStatsService.Instance?.Poke();
+                }))));
 
         // 코치마크: 처음 설치했을 때의 기능 둘러보기 (버전별 둘러보기는 위 링크와 변경 내역 페이지)
         body.Children.Add(SectionTitle(Loc.T("안내")));

@@ -8,7 +8,11 @@ public static class DefaultPins
 {
     private const string SettingsAumid = "windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel";
 
-    /// <summary>독에 처음 넣을 앱 수 상한 (Finder·Launchpad 제외).</summary>
+    /// <summary>독 첫 칸의 파일 탐색기·앱 모음 이름 (#d19 — 애플 이름 Finder·Launchpad 를 쓰지 않음. 코드 식별자 "launchpad" 는 그대로).</summary>
+    public static string ExplorerName => Loc.T("파일 탐색기");
+    public static string AllAppsName => Loc.T("앱 모음");
+
+    /// <summary>독에 처음 넣을 앱 수 상한 (파일 탐색기·앱 모음 제외).</summary>
     private const int MaxApps = 8;
 
     /// <summary>
@@ -24,7 +28,7 @@ public static class DefaultPins
         try { popular = AddPopular(pins, settings); }
         catch (Exception ex) { Log.Error("자주 쓰는 앱 찾기 실패", ex); }
         if (pins.Count <= Base().Count) return Create(); // 아무것도 못 찾으면 예전 기본값
-        Log.Info($"기본 고정 앱: Finder·Launchpad + 작업 표시줄 {fromTaskbar}개 + 자주 쓰는 앱 {popular}개");
+        Log.Info($"기본 고정 앱: 파일 탐색기·앱 모음 + 작업 표시줄 {fromTaskbar}개 + 자주 쓰는 앱 {popular}개");
         return pins;
     }
 
@@ -99,8 +103,8 @@ public static class DefaultPins
 
     private static List<PinItem> Base() => new()
     {
-        new PinItem { Name = "Finder", Kind = PinKind.Exe, Target = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe") },
-        new PinItem { Name = "Launchpad", Kind = PinKind.Special, Target = "launchpad" },
+        new PinItem { Name = ExplorerName, Kind = PinKind.Exe, Target = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe") },
+        new PinItem { Name = AllAppsName, Kind = PinKind.Special, Target = "launchpad" },
     };
 
     /// <summary>Finder(탐색기), Launchpad, 브라우저(크롬 우선, 없으면 엣지), 설정 — 설치 확인된 것만.</summary>

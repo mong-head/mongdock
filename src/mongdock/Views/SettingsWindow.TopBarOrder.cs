@@ -21,7 +21,7 @@ internal sealed partial class SettingsWindow
         var rows = new List<UIElement>
         {
             // 앱 이름과 앱 메뉴는 한 토글 (#21)
-            Row(Loc.T("앱 이름과 메뉴"), Loc.T("지금 앱 이름과 그 옆 파일·편집·보기… (맥 메뉴 막대처럼)"),
+            Row(Loc.T("앱 이름과 메뉴"), Loc.T("지금 앱 이름과 그 옆 파일·편집·보기…"),
                 Toggle(t.ShowActiveAppName && t.ShowAppMenus, on => Commit(() => { T().ShowActiveAppName = on; T().ShowAppMenus = on; }))),
         };
 

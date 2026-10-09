@@ -135,7 +135,7 @@ internal sealed class SpotlightWindow : Window
         Width = CardWidth + ShadowMargin * 2;
         SizeToContent = SizeToContent.Height;
         UseLayoutRounding = true;
-        Title = "mongdock Spotlight";
+        Title = "mongdock Search";
         SetResourceReference(FontFamilyProperty, UiFonts.Key);
         Foreground = _p.Text;
         TextOptions.SetTextFormattingMode(this, TextFormattingMode.Ideal);
@@ -168,7 +168,7 @@ internal sealed class SpotlightWindow : Window
         _box.TextChanged += (_, _) => OnQueryChanged();
         _placeholder = new TextBlock
         {
-            Text = Loc.T("Spotlight 검색"),
+            Text = Loc.T("몽독 검색"),
             FontSize = 24,
             Foreground = _p.Disabled,
             VerticalAlignment = VerticalAlignment.Center,

@@ -178,6 +178,24 @@ internal static class Program
             Check("가져오기: 틀린 값 두 개 있어도 핀 유지", imported.Pins.Count, 2);
             Check("숫자로 적은 없는 enum 값(7) → 기본값", imported.TopBar.ColorMode, Mongdock.Models.TopBarColorMode.Auto);
 
+            // 5: 핀 이름 Finder·Launchpad → 파일 탐색기·앱 모음 (정확히 같은 이름·대상만, 사용자가 바꾼 이름은 그대로)
+            var renamed = SettingsService.ParseForImport("""
+                { "settingsVersion": 4, "pins": [
+                  { "name": "Finder", "kind": "Exe", "target": "C:\\Windows\\explorer.exe" },
+                  { "name": "Launchpad", "kind": "Special", "target": "launchpad" },
+                  { "name": "내 Finder", "kind": "Exe", "target": "C:\\Windows\\explorer.exe" },
+                  { "name": "Finder", "kind": "Exe", "target": "C:\\Tools\\finder.exe" } ] }
+                """);
+            Check("Finder → 파일 탐색기", renamed.Pins[0].Name, Mongdock.Services.DefaultPins.ExplorerName);
+            Check("Launchpad → 앱 모음", renamed.Pins[1].Name, Mongdock.Services.DefaultPins.AllAppsName);
+            Check("사용자가 바꾼 이름은 그대로", renamed.Pins[2].Name, "내 Finder");
+            Check("다른 대상의 Finder 는 그대로", renamed.Pins[3].Name, "Finder");
+            // 5: 사용 통계는 동의를 받고서만 — 옛 파일의 true 도 다시 물음, 새 파일의 답은 그대로
+            Check("옛 파일 sendUsageStats true → 묻기 전(null)",
+                SettingsService.ParseForImport("""{ "settingsVersion": 4, "sendUsageStats": true }""").SendUsageStats, (bool?)null);
+            Check("이번 버전 파일의 답은 그대로",
+                SettingsService.ParseForImport("""{ "settingsVersion": 5, "sendUsageStats": false }""").SendUsageStats, (bool?)false);
+
             // 잘린 JSON → 전체 손상 → .corrupt- 백업 + 기본값
             foreach (var f in Directory.GetFiles(root)) File.Delete(f);
             File.WriteAllText(path, good[..(good.Length / 2)]);

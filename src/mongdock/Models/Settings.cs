@@ -331,12 +331,12 @@ public sealed class CalendarSettings
 public sealed class Settings
 {
     /// <summary>settings.json 형식 버전. 이관은 파일에 적힌 버전이 이보다 낮을 때만 한 번 (SettingsService.Migrate).</summary>
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 5;
 
     /// <summary>
     /// 이 파일이 어느 형식까지 이관됐는지. 키가 없는 옛 파일은 0 으로 본다 (원본 JSON 으로 판단 — 속성 기본값과 무관).
     /// 1 이하: 옛 기본 색·상단바 32/14 를 새 기본값으로 바꾼 적 없음.
-    /// 2: topBar.showTrayIcons 기본값이 true 였음 (3 부터 false — 키 없이 작업 표시줄을 숨기던 사용자는 true 로 이관). 3: 트레이 아이콘 이관 뒤. 4: 독 "공간 차지"(Reserve) 삭제 → Overlay 이관 뒤 (현재).
+    /// 2: topBar.showTrayIcons 기본값이 true 였음 (3 부터 false — 키 없이 작업 표시줄을 숨기던 사용자는 true 로 이관). 3: 트레이 아이콘 이관 뒤. 4: 독 "공간 차지"(Reserve) 삭제 → Overlay 이관 뒤. 5: 핀 이름 Finder·Launchpad → 파일 탐색기·앱 모음, 사용 통계 동의 묻기 (현재).
     /// </summary>
     public int SettingsVersion { get; set; } = CurrentVersion;
     public DockSettings Dock { get; set; } = new();
@@ -352,10 +352,11 @@ public sealed class Settings
     /// <summary>화면 언어: "" = 윈도우 표시 언어 따라(한국어가 아니면 영어), "ko", "en". 바꾸면 다시 시작해야 반영 (Loc).</summary>
     public string Language { get; set; } = "";
     /// <summary>
-    /// 사용 통계 보내기 (#20): 몽독이 켜진 날 하루 한 번, PC 를 알아볼 수 없는 작은 신호(버전·윈도우·기능 켜짐/꺼짐·오류 수).
-    /// 끄면 모아 둔 것도 지움 (Services/UsageStatsService).
+    /// 사용 통계 보내기 (#20, 동의 #d20): 몽독이 켜진 날 하루 한 번, PC 를 알아볼 수 없는 작은 신호(버전·윈도우·기능 켜짐/꺼짐·오류 수).
+    /// null = 아직 묻지 않음 → 보내지 않음(PC 에 모아만 둠), 첫 안내 뒤·업데이트 뒤 카드로 물음 (Views/StatsConsent).
+    /// false 면 모아 둔 것도 지움 (Services/UsageStatsService).
     /// </summary>
-    public bool SendUsageStats { get; set; } = true;
+    public bool? SendUsageStats { get; set; }
     /// <summary>체험 남은 날 카드(3일·1일)를 마지막으로 보인 날 "yyyy-MM-dd" — 하루 한 번만 (Views/LicenseUi).</summary>
     public string? TrialNoticeDay { get; set; }
     /// <summary>

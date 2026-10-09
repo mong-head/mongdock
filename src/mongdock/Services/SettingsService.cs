@@ -215,6 +215,33 @@ public sealed class SettingsService : ISettingsService, IDisposable
             // 모델에 없는 키라 다음 저장에서 빠짐 → 있으면 바로 저장하게 이관으로 표시
             if (TryGetProp(root, "reportClientId", out _)) notes.Add("reportClientId 삭제 (고정 PC 번호 안 씀)");
 
+            // 5: 사용 통계는 동의를 받고서만 (#d20) — 이 버전 전 파일은 켜져 있었어도 다시 물음
+            if (version < 5 && s.SendUsageStats is not null)
+            {
+                s.SendUsageStats = null;
+                notes.Add("sendUsageStats → 묻기 전 (동의 받고 보냄)");
+            }
+
+            // 5: 독 핀 이름 "Finder"(파일 탐색기)·"Launchpad"(앱 모음) → 새 이름 (#d19). 이름이 정확히 같고 대상이 맞는 것만 — 사용자가 바꾼 이름은 그대로
+            if (version < 5)
+            {
+                foreach (var pin in s.Pins)
+                {
+                    if (pin.Name == "Finder" && pin.Kind == PinKind.Exe
+                        && Path.GetFileName(pin.Target).Equals("explorer.exe", StringComparison.OrdinalIgnoreCase))
+                    {
+                        pin.Name = DefaultPins.ExplorerName;
+                        notes.Add($"핀 이름 Finder → {pin.Name}");
+                    }
+                    else if (pin.Name == "Launchpad" && pin.Kind == PinKind.Special
+                             && pin.Target.Equals("launchpad", StringComparison.OrdinalIgnoreCase))
+                    {
+                        pin.Name = DefaultPins.AllAppsName;
+                        notes.Add($"핀 이름 Launchpad → {pin.Name}");
+                    }
+                }
+            }
+
             // 3: 앱 트레이 아이콘 기본값 true → false. 키 없이(옛 기본값으로) 작업 표시줄을 숨기던 사용자는 지금처럼 켜 둔다.
             if (version < 3)
             {

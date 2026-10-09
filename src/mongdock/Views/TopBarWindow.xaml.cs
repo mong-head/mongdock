@@ -718,8 +718,8 @@ public partial class TopBarWindow : Window
         SyncAppMenus();
     }
 
-    // 바탕 화면이 앞에 있을 때 앱 이름 — 맥처럼 "Finder".
-    private const string DesktopAppName = "Finder";
+    // 바탕 화면이 앞에 있을 때 앱 이름 — 파일 탐색기 (애플 이름 Finder 는 쓰지 않음)
+    private static string DesktopAppName => DefaultPins.ExplorerName;
 
     private static PinItem ExplorerPin() => new()
     {

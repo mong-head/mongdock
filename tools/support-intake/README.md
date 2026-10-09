@@ -26,7 +26,7 @@
 
 - 앱이 보내는 것 (하루 한 번, 오프라인이면 최대 7일치를 한꺼번에): 날짜, 앱 버전, 설치 방식(store/installer/zip), 윈도우 10/11·빌드, 언어(ko/en), 노트북 여부, 모니터 수, 주 모니터 배율, 독 자동 숨김·상단바·알림 표시 방식·캘린더 연결 있음·검색 버튼·작업 표시줄 숨기기·가벼운 모드, 지난 신호 이후 오류 수.
 - PC 번호·이름·IP 는 없다. 하루치마다 무작위 `nonce` 가 붙는데(재전송 중복 거르기용, 6시간 기억, 시트에는 안 남김) 날짜·PC 를 잇지 않는다. 스크립트는 위 칸만 검사해서 남기고 그 밖의 값은 버린다(`STATS_COLUMNS`). 하루 전체 2만 줄 상한.
-- 앱 쪽: `src/mongdock/Services/UsageStatsService.cs`, 설정 → 정보 → "사용 통계 보내기" 로 끔. 시험할 때는 환경 변수 `MONGDOCK_STATS=log` (보내지 않고 로그에만).
+- 앱 쪽: `src/mongdock/Services/UsageStatsService.cs`, 동의(opt-in)한 사람만 보냄 — 첫 안내 뒤·업데이트 뒤 "사용 통계를 보낼까요?" 카드, 답하기 전엔 PC 에 모아만 둠. 설정 → 정보 → "사용 통계 보내기" 로 바꿈. 시험할 때는 환경 변수 `MONGDOCK_STATS=log` (보내지 않고 로그에만).
 
 ### 재배포 순서 (mongdock@gmail.com, 한 번)
 1. https://script.google.com 에서 `mongdock-report` 프로젝트를 열고 `Code.gs` 를 이 폴더의 것으로 통째로 바꿔 저장.

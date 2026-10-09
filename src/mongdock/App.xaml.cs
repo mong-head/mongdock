@@ -189,6 +189,7 @@ public partial class App : Application
         _lowBattery = LowBatteryBanner.Attach(_services); // 배터리 20·10·5% 알림 (배너 호스트 다음)
         _updates?.Start(); // 1분 뒤 첫 확인, 이후 12시간마다
         _stats = UsageStatsService.Start(_services); // 사용 통계: 2분 뒤 첫 확인, 이후 1시간마다 (그날 처음이면 하나)
+        StatsConsent.Attach(_services); // 아직 안 물었으면 첫 안내가 끝난 뒤·업데이트 뒤에 "사용 통계를 보낼까요?" 한 번
         _services.Notifications.Start();
         _toastSuppressor = new NativeToastSuppressor(_services.Notifications as NotificationService);
         AppState.Changed += OnPausedChanged;

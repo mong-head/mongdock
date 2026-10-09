@@ -27,7 +27,7 @@ zip 은 .NET 런타임까지 들어 있는 단일 실행 파일이라 크지만(
 2. `mongdock.exe` 실행.
 3. 컴퓨터를 켤 때 자동으로 켜려면: 알림 영역의 mongdock 아이콘 오른쪽 클릭 → "컴퓨터를 켜면 몽독도 켜기".
 
-처음 실행하면 독에 Finder(파일 탐색기), Launchpad(시작 메뉴), 브라우저, 설정이 고정된다. 다른 앱은 실행 중일 때 독 아이콘을 오른쪽 클릭 → "독에 고정".
+처음 실행하면 독에 파일 탐색기, 앱 모음(모든 앱), 브라우저, 설정이 고정된다. 다른 앱은 실행 중일 때 독 아이콘을 오른쪽 클릭 → "독에 고정".
 
 > 코드 서명이 없어서 처음 실행할 때 "Windows의 PC 보호" 창이 뜰 수 있다. "추가 정보" → "실행" 을 누르면 된다.
 
@@ -78,9 +78,9 @@ zip 은 self-contained 단일 파일(`dist\mongdock-portable`), setup 은 framew
 - **트레이 아이콘 색 맞춤**: 흰색·검은색처럼 거의 한 가지 색인 트레이 아이콘은 상단바 글자색으로 다시 칠해(맥 템플릿 이미지처럼) 바 색과 같아도 보인다. 컬러 아이콘은 그대로 두고, 바와 대비가 낮으면(대비비 1.5 미만) 뒤에 옅은 둥근 판을 깐다. 설정 > 상단바 > "단색 트레이 아이콘을 바 글자색으로" (`topBar.tintMonochromeTrayIcons`).
 - **여러 모니터**: 상단바는 모든 모니터에 표시(설정에서 주 모니터만으로 바꿀 수 있음), 독은 고른 모니터 하나에 표시.
 
-### 검색 (Spotlight)
+### 몽독 검색
 
-상단바 검색 버튼이나 전역 단축키로 화면 가운데에 맥 Spotlight 같은 검색창이 뜬다.
+상단바 검색 버튼이나 전역 단축키로 화면 가운데에 몽독 검색창이 뜬다.
 
 - 결과는 카테고리별(최상위 히트 · 응용 프로그램 · 시스템 설정 · 폴더 · 문서 · 사진·동영상·음악 · 기타 파일)로 묶여 나온다
 - **앱**: 이름으로 찾는다. 한글 초성 검색 가능 (예 `ㅋㅋㅇㅌ` → 카카오톡)
@@ -184,13 +184,13 @@ zip 으로 썼다면:
 | 알림 | `notifications.showNotificationBanners` (기본 `true`), `notifications.hideWindowsToastPopups` (기본 `true`), `notifications.lowBatteryAlerts` (기본 `true`) |
 | 글꼴 | `fontFamily` — 기본 `"Pretendard"`(내장), 설치된 글꼴 이름도 가능 |
 | 앱 메뉴 직접 정의 | `appMenus` — 키는 exe 이름(예 `"chrome.exe"`), 항목마다 `text` 와 `keys`(예 `"Ctrl+Shift+T"`) |
-| 사용 통계 보내기 | `sendUsageStats` (기본 `true`) — 몽독이 켜진 날 하루 한 번 PC 를 알아볼 수 없는 작은 신호(버전·윈도우·기능 켜짐/꺼짐·오류 수). 자세한 항목은 [`tools/support-intake`](tools/support-intake/README.md) |
+| 사용 통계 보내기 | `sendUsageStats` (`null` = 아직 안 물음 → 보내지 않음. 첫 안내 뒤·업데이트 뒤 카드로 한 번 묻고 `true`/`false`) — 동의하면 몽독이 켜진 날 하루 한 번 PC 를 알아볼 수 없는 작은 신호(버전·윈도우·기능 켜짐/꺼짐·오류 수). 자세한 항목은 [`tools/support-intake`](tools/support-intake/README.md) |
 | 앱 메뉴 규칙 갱신 | `updateMenuRules` (기본 `true`) — `false` 면 [앱 메뉴 규칙](#앱-메뉴-규칙)을 GitHub 에서 받지 않음 |
 | 앱 창 메뉴 줄 숨기기 (실험) | `topBar.hideNativeMenuBars` (기본 `false`, 설정 창에는 없음 — 이 파일로만) — 메모장·워드패드·그림판·레지스트리 편집기 같은 시스템 앱 창 안의 메뉴 줄을 떼고 상단바에서만 보이게. 끄거나 일시 정지·종료하면 되돌림 |
 | 업데이트 확인 | `checkForUpdates` (기본 `true`) — 시작 1분 뒤와 12시간마다 GitHub 릴리스 확인 |
 | 핀 목록 | `pins` |
 
-색 문자열이 `""` 이면 테마 기본값. 첫 실행 때 Finder·Launchpad 다음에 윈도우 작업 표시줄 고정 앱을 작업 표시줄 순서대로 둔다(파일 탐색기 제외, 고정 앱이 없으면 Finder·Launchpad·브라우저·설정).
+색 문자열이 `""` 이면 테마 기본값. 첫 실행 때 파일 탐색기·앱 모음 다음에 윈도우 작업 표시줄 고정 앱을 작업 표시줄 순서대로 둔다(파일 탐색기 제외, 고정 앱이 없으면 파일 탐색기·앱 모음·브라우저·설정).
 
 로그: `%APPDATA%\mongdock\logs\mongdock.log`
 
