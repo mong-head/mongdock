@@ -40,7 +40,7 @@ public sealed class MonitorInfo
     public Rect WorkArea => ToDip(WorkRect);
     /// <summary>표시용 이름 (예 "디스플레이 2 (주 모니터) — 2560×1440, 125%").</summary>
     public string DisplayName =>
-        $"디스플레이 {Number}{(IsPrimary ? " (주 모니터)" : "")} — {BoundsRect.Width}×{BoundsRect.Height}, {Math.Round(Scale * 100)}%";
+        Loc.F($"디스플레이 {Number}{(IsPrimary ? Loc.T(" (주 모니터)") : "")} — {BoundsRect.Width}×{BoundsRect.Height}, {Math.Round(Scale * 100)}%");
 
     public bool ContainsPx(Point px) =>
         px.X >= BoundsRect.Left && px.X < BoundsRect.Right && px.Y >= BoundsRect.Top && px.Y < BoundsRect.Bottom;

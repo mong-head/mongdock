@@ -98,7 +98,7 @@ public partial class TopBarWindow
     private Button TrayMoreButton()
     {
         if (_trayMore != null) return _trayMore;
-        var b = new Button { Style = (Style)FindResource("BarButton"), Padding = new Thickness(5, 0, 5, 0), MinWidth = 0, ToolTip = "트레이 아이콘 더 보기" };
+        var b = new Button { Style = (Style)FindResource("BarButton"), Padding = new Thickness(5, 0, 5, 0), MinWidth = 0, ToolTip = Loc.T("트레이 아이콘 더 보기") };
         var path = new ShapePath
         {
             Width = 14,

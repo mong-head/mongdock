@@ -55,14 +55,14 @@ public static class KoreanHolidays
         bool weekendFrom2023 = year >= 2023;
         bool from2014 = year >= 2014;
 
-        Solar(1, 1, "신정", Rule.None);
-        Solar(3, 1, "삼일절", weekendFrom2021 ? Rule.Weekend : Rule.None);
-        Solar(5, 5, "어린이날", from2014 ? Rule.Weekend : Rule.None);
-        Solar(6, 6, "현충일", Rule.None);
-        Solar(8, 15, "광복절", weekendFrom2021 ? Rule.Weekend : Rule.None);
-        Solar(10, 3, "개천절", weekendFrom2021 ? Rule.Weekend : Rule.None);
-        if (year >= 2013) Solar(10, 9, "한글날", weekendFrom2021 ? Rule.Weekend : Rule.None);
-        Solar(12, 25, "성탄절", weekendFrom2023 ? Rule.Weekend : Rule.None);
+        Solar(1, 1, Loc.T("신정"), Rule.None);
+        Solar(3, 1, Loc.T("삼일절"), weekendFrom2021 ? Rule.Weekend : Rule.None);
+        Solar(5, 5, Loc.T("어린이날"), from2014 ? Rule.Weekend : Rule.None);
+        Solar(6, 6, Loc.T("현충일"), Rule.None);
+        Solar(8, 15, Loc.T("광복절"), weekendFrom2021 ? Rule.Weekend : Rule.None);
+        Solar(10, 3, Loc.T("개천절"), weekendFrom2021 ? Rule.Weekend : Rule.None);
+        if (year >= 2013) Solar(10, 9, Loc.T("한글날"), weekendFrom2021 ? Rule.Weekend : Rule.None);
+        Solar(12, 25, Loc.T("성탄절"), weekendFrom2023 ? Rule.Weekend : Rule.None);
 
         // 음력 공휴일 (지원 범위 밖 연도는 양력만)
         var seollal = FromLunar(year, 1, 1);
@@ -70,18 +70,18 @@ public static class KoreanHolidays
         {
             // 음 12월 말일 = 설날 전날 (12월이 29일/30일인지 따질 필요 없음)
             var rule = from2014 ? Rule.LunarBreak : Rule.None;
-            list.Add(new Base(s.AddDays(-1), "설날", rule));
-            list.Add(new Base(s, "설날", rule));
-            list.Add(new Base(s.AddDays(1), "설날", rule));
+            list.Add(new Base(s.AddDays(-1), Loc.T("설날"), rule));
+            list.Add(new Base(s, Loc.T("설날"), rule));
+            list.Add(new Base(s.AddDays(1), Loc.T("설날"), rule));
         }
         if (FromLunar(year, 4, 8) is DateTime buddha)
-            list.Add(new Base(buddha, "부처님오신날", weekendFrom2023 ? Rule.Weekend : Rule.None));
+            list.Add(new Base(buddha, Loc.T("부처님오신날"), weekendFrom2023 ? Rule.Weekend : Rule.None));
         if (FromLunar(year, 8, 15) is DateTime c)
         {
             var rule = from2014 ? Rule.LunarBreak : Rule.None;
-            list.Add(new Base(c.AddDays(-1), "추석", rule));
-            list.Add(new Base(c, "추석", rule));
-            list.Add(new Base(c.AddDays(1), "추석", rule));
+            list.Add(new Base(c.AddDays(-1), Loc.T("추석"), rule));
+            list.Add(new Base(c, Loc.T("추석"), rule));
+            list.Add(new Base(c.AddDays(1), Loc.T("추석"), rule));
         }
 
         var result = new Dictionary<DateTime, string>();

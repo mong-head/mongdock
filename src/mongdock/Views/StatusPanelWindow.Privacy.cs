@@ -17,13 +17,13 @@ internal sealed partial class StatusPanelWindow
     {
         var svc = PrivacyUsageService.Shared;
         var root = new StackPanel();
-        root.Children.Add(HeaderRow("카메라·마이크", null));
+        root.Children.Add(HeaderRow(Loc.T("카메라·마이크"), null));
         root.Children.Add(Divider());
         var rows = new StackPanel();
         root.Children.Add(rows);
         root.Children.Add(Divider());
-        root.Children.Add(LinkRow("카메라 개인 정보 설정…", () => PrivacyUsageService.OpenSettings(PrivacyCapability.Camera)));
-        root.Children.Add(LinkRow("마이크 개인 정보 설정…", () => PrivacyUsageService.OpenSettings(PrivacyCapability.Microphone)));
+        root.Children.Add(LinkRow(Loc.T("카메라 개인 정보 설정…"), () => PrivacyUsageService.OpenSettings(PrivacyCapability.Camera)));
+        root.Children.Add(LinkRow(Loc.T("마이크 개인 정보 설정…"), () => PrivacyUsageService.OpenSettings(PrivacyCapability.Microphone)));
 
         string signature = "\0";
         _refreshers.Add(() =>
@@ -49,7 +49,7 @@ internal sealed partial class StatusPanelWindow
         {
             rows.Children.Add(new TextBlock
             {
-                Text = "카메라나 마이크를 쓰는 앱이 없어요.",
+                Text = Loc.T("카메라나 마이크를 쓰는 앱이 없어요."),
                 FontSize = 14,
                 Foreground = p.SubText,
                 TextWrapping = TextWrapping.Wrap,
@@ -77,7 +77,7 @@ internal sealed partial class StatusPanelWindow
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 Foreground = p.Text,
             };
-            text.Inlines.Add(new Run(camera ? "카메라 사용 중: " : "마이크 사용 중: ") { Foreground = p.SubText });
+            text.Inlines.Add(new Run(camera ? Loc.T("카메라 사용 중: ") : Loc.T("마이크 사용 중: ")) { Foreground = p.SubText });
             text.Inlines.Add(new Run(u.Name) { FontWeight = FontWeights.SemiBold });
             text.ToolTip = u.Packaged ? u.Name : u.Key;
             row.Children.Add(text);

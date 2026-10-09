@@ -30,17 +30,17 @@ internal static class TopBarRightOrder
     /// <summary>설정 창 목록에 보일 이름.</summary>
     public static string Label(string key) => key switch
     {
-        Privacy => "카메라·마이크 사용 중 표시",
-        Desktops => "가상 데스크톱",
-        NetSpeed => "네트워크 속도",
-        Tray => "앱 트레이 아이콘",
-        Bluetooth => "블루투스",
+        Privacy => Loc.T("카메라·마이크 사용 중 표시"),
+        Desktops => Loc.T("가상 데스크톱"),
+        NetSpeed => Loc.T("네트워크 속도"),
+        Tray => Loc.T("앱 트레이 아이콘"),
+        Bluetooth => Loc.T("블루투스"),
         Wifi => "Wi-Fi",
-        Volume => "볼륨",
-        Search => "검색",
-        ControlCenter => "제어 센터",
-        Ime => "한/영",
-        Battery => "배터리",
+        Volume => Loc.T("볼륨"),
+        Search => Loc.T("검색"),
+        ControlCenter => Loc.T("제어 센터"),
+        Ime => Loc.T("한/영"),
+        Battery => Loc.T("배터리"),
         _ => key,
     };
 

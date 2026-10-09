@@ -20,7 +20,7 @@ internal sealed class CoachPage
     /// <summary>"변경 내역 보기" 링크 표시 (설정 → 변경 내역).</summary>
     public bool ChangelogLink { get; init; }
     /// <summary>링크 문구 (예 "그 밖에 개선·수정 5개 — 변경 내역 보기 ›").</summary>
-    public string LinkText { get; init; } = "변경 내역 보기 ›";
+    public string LinkText { get; init; } = Loc.T("변경 내역 보기 ›");
     /// <summary>본문 아래 강조색 한 줄 (예 "시계를 눌러 보세요") — 앵커를 직접 눌러 보라는 안내.</summary>
     public string? Hint { get; init; }
     /// <summary>[다음 →] 대신 쓸 글자 (예 "좋아요").</summary>
@@ -157,7 +157,7 @@ internal static class CoachMarks
                 if (popup || Busy() || _session is not null || !AnchorVisible(step.Anchor)) return;
                 timer.Stop();
                 Log.Info($"처음 쓰기 힌트: {key}");
-                Start(new List<CoachPage> { new() { Title = step.Title, Body = step.Body, Anchor = step.Anchor, NextText = "알겠어요" } });
+                Start(new List<CoachPage> { new() { Title = step.Title, Body = step.Body, Anchor = step.Anchor, NextText = Loc.T("알겠어요") } });
             };
             timer.Start();
         }
@@ -183,7 +183,7 @@ internal static class CoachMarks
             }
             if (pages.Count == 0)
             {
-                pages.Add(new CoachPage { Title = "새로운 기능이 없어요", Body = $"버전 {WhatsNew.CurrentText} 에는 따로 소개할 기능이 없어요.", ChangelogLink = true });
+                pages.Add(new CoachPage { Title = Loc.T("새로운 기능이 없어요"), Body = Loc.F($"버전 {WhatsNew.CurrentText} 에는 따로 소개할 기능이 없어요."), ChangelogLink = true });
             }
             Start(pages);
         }
@@ -271,9 +271,9 @@ internal static class CoachMarks
         try
         {
             bool? choice = await ConfirmCardWindow.AskChoiceAsync(services,
-                "컴퓨터를 켜면 몽독도 같이 켤까요?",
-                "로그인하면 독과 상단바가 바로 나타나요. 설정 → 일반에서 언제든 바꿀 수 있어요.",
-                "켜기", "나중에");
+                Loc.T("컴퓨터를 켜면 몽독도 같이 켤까요?"),
+                Loc.T("로그인하면 독과 상단바가 바로 나타나요. 설정 → 일반에서 언제든 바꿀 수 있어요."),
+                Loc.T("켜기"), Loc.T("나중에"));
             if (choice is null) return; // 고르지 않음 → 다음 실행에 다시
             var s = services.Settings.Current;
             s.StartupPromptPending = false;
@@ -327,13 +327,13 @@ internal static class CoachMarks
         Title = step.Title,
         Body = step.Body.Replace("{hotkey}", HotkeyPhrase(s)).Replace("{dockedge}", DockEdgePhrase(s))
             .Replace("{dockhide}", s.Dock.Mode == DockMode.AutoHide
-                ? $" 평소엔 숨어 있다가 마우스를 {DockEdgePhrase(s)} 끝에 대면 나타나요 — [다음]을 누르면 숨는 걸 보여 드려요."
+                ? Loc.F($" 평소엔 숨어 있다가 마우스를 {DockEdgePhrase(s)} 끝에 대면 나타나요 — [다음]을 누르면 숨는 걸 보여 드려요.")
                 : ""),
         Anchor = step.Anchor,
-        NextText = step.Key == WhatsNew.IntroKey ? "좋아요" : null,
-        Action = step.Key == WhatsNew.IntroKey ? ("작업 표시줄 다시 보이기", ShowWindowsTaskbarAgain) : null,
+        NextText = step.Key == WhatsNew.IntroKey ? Loc.T("좋아요") : null,
+        Action = step.Key == WhatsNew.IntroKey ? (Loc.T("작업 표시줄 다시 보이기"), ShowWindowsTaskbarAgain) : null,
         AdvanceOnUse = step.Key == WhatsNew.SearchKey,
-        Hint = step.Title.Contains("눌러 보세요") || step.Body.Contains("눌러 보세요") ? null : PressHint(step.Anchor),
+        Hint = step.Title.Contains(Loc.T("눌러 보세요")) || step.Body.Contains(Loc.T("눌러 보세요")) ? null : PressHint(step.Anchor),
     };
 
     /// <summary>둘러보기 첫 카드 [작업 표시줄 다시 보이기]: "윈도우 작업 표시줄 숨기기" 끄기 (알림 숨김은 그대로).</summary>
@@ -348,21 +348,21 @@ internal static class CoachMarks
     /// <summary>독 위치 쪽 화면 가장자리 ("화면 아래" / "화면 왼쪽" …).</summary>
     private static string DockEdgePhrase(Settings s) => s.Dock.Edge switch
     {
-        DockEdge.Left => "화면 왼쪽",
-        DockEdge.Right => "화면 오른쪽",
-        DockEdge.Top => "화면 위",
-        _ => "화면 아래",
+        DockEdge.Left => Loc.T("화면 왼쪽"),
+        DockEdge.Right => Loc.T("화면 오른쪽"),
+        DockEdge.Top => Loc.T("화면 위"),
+        _ => Loc.T("화면 아래"),
     };
 
     /// <summary>앵커를 직접 눌러 보라는 짧은 안내 (상단바 요소만 — 독은 누르면 앱이 열려서 안내하지 않음).</summary>
     private static string? PressHint(CoachAnchor anchor) => anchor switch
     {
-        CoachAnchor.Logo => "로고를 눌러 보세요",
-        CoachAnchor.AppName => "앱 이름을 눌러 보세요",
-        CoachAnchor.Desktops => "가운데 숫자를 눌러 보세요",
-        CoachAnchor.Search => "검색 버튼을 눌러 보세요",
-        CoachAnchor.Clock => "시계를 눌러 보세요",
-        CoachAnchor.Tray => "⌃ 를 눌러 보세요",
+        CoachAnchor.Logo => Loc.T("로고를 눌러 보세요"),
+        CoachAnchor.AppName => Loc.T("앱 이름을 눌러 보세요"),
+        CoachAnchor.Desktops => Loc.T("가운데 숫자를 눌러 보세요"),
+        CoachAnchor.Search => Loc.T("검색 버튼을 눌러 보세요"),
+        CoachAnchor.Clock => Loc.T("시계를 눌러 보세요"),
+        CoachAnchor.Tray => Loc.T("⌃ 를 눌러 보세요"),
         _ => null,
     };
 
@@ -370,7 +370,7 @@ internal static class CoachMarks
     private static CoachPage OffPage(CoachStep step) => new()
     {
         Title = step.Title,
-        Body = "이 기능은 지금 꺼져 있어요. 설정에서 켤 수 있어요.",
+        Body = Loc.T("이 기능은 지금 꺼져 있어요. 설정에서 켤 수 있어요."),
     };
 
     private static CoachPage ReplayPage(CoachStep step, Settings s) =>
@@ -424,7 +424,7 @@ internal static class CoachMarks
             SpotlightHotkey.CtrlSpace => "Ctrl+Space",
             _ => null,
         };
-        return text is null ? "검색 버튼을 눌러" : $"{text}(또는 검색 버튼)로";
+        return text is null ? Loc.T("검색 버튼을 눌러") : Loc.F($"{text}(또는 검색 버튼)로");
     }
 
     /// <summary>
@@ -470,8 +470,8 @@ internal static class CoachMarks
             bool older = releases.Count > 1;
             pages.Add(new CoachPage
             {
-                Title = coach.Count > 0 ? "그 밖에 바뀐 것" : (older ? "그동안 바뀐 것" : $"v{latest.VersionText} 에서 바뀐 것"),
-                Body = older ? "업데이트하지 않은 사이에 바뀐 점이에요." : "",
+                Title = coach.Count > 0 ? Loc.T("그 밖에 바뀐 것") : (older ? Loc.T("그동안 바뀐 것") : Loc.F($"v{latest.VersionText} 에서 바뀐 것")),
+                Body = older ? Loc.T("업데이트하지 않은 사이에 바뀐 점이에요.") : "",
                 Groups = groups,
                 More = more,
                 ChangelogLink = true,
@@ -518,11 +518,11 @@ internal static class CoachMarks
         {
             pages.Add(new CoachPage
             {
-                Title = groups.Count > 0 ? "그동안 바뀐 주요 기능" : "그 밖에 바뀐 것",
-                Body = $"v{releases[^1].VersionText} 부터 v{releases[0].VersionText} 까지 {releases.Count}개 버전이 나왔어요.",
+                Title = groups.Count > 0 ? Loc.T("그동안 바뀐 주요 기능") : Loc.T("그 밖에 바뀐 것"),
+                Body = Loc.F($"v{releases[^1].VersionText} 부터 v{releases[0].VersionText} 까지 {releases.Count}개 버전이 나왔어요."),
                 Groups = groups,
                 ChangelogLink = true,
-                LinkText = minor > 0 ? $"그 밖에 개선·수정 {minor}개 — 변경 내역 보기 ›" : "변경 내역 보기 ›",
+                LinkText = minor > 0 ? Loc.F($"그 밖에 개선·수정 {minor}개 — 변경 내역 보기 ›") : Loc.T("변경 내역 보기 ›"),
             });
         }
         return pages;
@@ -552,7 +552,7 @@ internal static class CoachMarks
         var final = ToPage(last, s);
         var extras = WhatsNew.ExtraFeatureLines(s);
         (string, Action)? startup = s.StartupPromptPending
-            ? ("컴퓨터 켜면 몽독도 켜기", () =>
+            ? (Loc.T("컴퓨터 켜면 몽독도 켜기"), () =>
             {
                 services.Startup.SetEnabled(true);
                 services.Settings.Current.StartWithWindows = true;
@@ -565,7 +565,7 @@ internal static class CoachMarks
             Title = final.Title,
             Body = final.Body,
             Anchor = final.Anchor,
-            Groups = extras.Count > 0 ? new() { ("이 밖에도", extras.ToList()) } : null,
+            Groups = extras.Count > 0 ? new() { (Loc.T("이 밖에도"), extras.ToList()) } : null,
             Action = startup,
         });
         return pages;

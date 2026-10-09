@@ -27,7 +27,7 @@ internal sealed partial class StatusPanelWindow
         var st = _services.Status;
         var section = new StackPanel();
         section.Children.Add(Divider());
-        var title = Sub("입력");
+        var title = Sub(Loc.T("입력"));
         title.Margin = new Thickness(0, 0, 0, 6);
         section.Children.Add(title);
 
@@ -71,7 +71,7 @@ internal sealed partial class StatusPanelWindow
         controls.Children.Add(row);
 
         // 입력 레벨: 슬라이더 아래 작은 점 10개. 녹음 중인 앱이 없으면 윈도우가 0 만 주므로 그땐 모두 꺼진 점.
-        var dots = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(38, 7, 0, 0), ToolTip = "입력 레벨" };
+        var dots = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(38, 7, 0, 0), ToolTip = Loc.T("입력 레벨") };
         var dotList = new List<Ellipse>();
         for (int i = 0; i < InputMeterDots; i++)
         {
@@ -125,7 +125,7 @@ internal sealed partial class StatusPanelWindow
             slider.Opacity = muted ? 0.4 : 1;
             dots.Opacity = muted ? 0.4 : 1;
             SetCircle(micCircle, muted ? MicOffGlyph : MicGlyph, !muted);
-            micButton.ToolTip = muted ? "마이크 켜기" : "마이크 끄기";
+            micButton.ToolTip = muted ? Loc.T("마이크 켜기") : Loc.T("마이크 끄기");
 
             // 장치마다 지금 녹음 중인 앱 ("사용 중: Discord") — 슬라이더는 기본 장치만 바꾸므로, 앱이 다른 마이크를 쓰면 알 수 있게
             var inUse = InputUsageByDevice();
@@ -136,8 +136,8 @@ internal sealed partial class StatusPanelWindow
             foreach (var d in visible)
             {
                 var id = d.Id;
-                string? sub = inUse.TryGetValue(d.Id, out var apps) ? "사용 중: " + apps
-                    : d.Kind == AudioDeviceKind.Loopback ? "재생 소리 녹음" : null;
+                string? sub = inUse.TryGetValue(d.Id, out var apps) ? Loc.T("사용 중: ") + apps
+                    : d.Kind == AudioDeviceKind.Loopback ? Loc.T("재생 소리 녹음") : null;
                 devices.Children.Add(DeviceRow(InputGlyph(d.Kind), d.IsDefault, d.Name, sub,
                     d.IsDefault ? null : () => st.SetDefaultInput(id)));
             }

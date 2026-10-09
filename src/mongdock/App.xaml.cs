@@ -41,6 +41,9 @@ public partial class App : Application
     private EventWaitHandle? _exitEvent;
     private RegisteredWaitHandle? _exitWait;
 
+    /// <summary>화면 언어를 가장 먼저 정함 — 정적 목록(둘러보기 문구 등)이 만들어지기 전에 (Loc).</summary>
+    public App() => Loc.InitFromSettingsFile();
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -74,6 +77,16 @@ public partial class App : Application
         }
 
         _singleInstance = new Mutex(true, @"Local\mongdock.SingleInstance", out bool isFirst);
+        // --relaunch (언어 바꾼 뒤 다시 시작 등): 끝나 가는 이전 몽독이 단일 실행 표시를 놓을 때까지 최대 15초 기다림
+        if (!isFirst && e.Args.Any(a => string.Equals(a, "--relaunch", StringComparison.OrdinalIgnoreCase)))
+        {
+            for (int i = 0; i < 50 && !isFirst; i++)
+            {
+                _singleInstance.Dispose();
+                Thread.Sleep(300);
+                _singleInstance = new Mutex(true, @"Local\mongdock.SingleInstance", out isFirst);
+            }
+        }
         if (isFirst)
             AppInfo.MigrateLegacyInstall();
         if (!isFirst)
@@ -332,6 +345,25 @@ public partial class App : Application
     }
 
     /// <summary>mongdock 을 한 번 더 실행했을 때: 트레이가 숨김 아이콘 영역에 있어도 다시 켤 수 있게.</summary>
+    /// <summary>
+    /// 몽독 다시 시작 (설정 → 일반 → 언어를 바꾼 뒤): 새 몽독을 --relaunch 로 띄우고 이 몽독은 정상 종료.
+    /// 스토어판은 패키지 안 exe 를 직접 못 띄우므로 실행 별칭(mongdock.exe)으로.
+    /// </summary>
+    public static void Relaunch()
+    {
+        try
+        {
+            string exe = AppInfo.IsPackaged ? "mongdock.exe" : Environment.ProcessPath ?? "mongdock.exe";
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe, "--relaunch") { UseShellExecute = true })?.Dispose();
+            Log.Info("다시 시작");
+            Current.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("다시 시작 실패", ex);
+        }
+    }
+
     private void ResumeFromSecondLaunch()
     {
         if (_services is null) return;

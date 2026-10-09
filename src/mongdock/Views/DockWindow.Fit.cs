@@ -55,8 +55,8 @@ public partial class DockWindow
             if (_closed || AnyItemDrag || _itemDragging || _dragArmed) return;
             if (Math.Abs(newFit - _fitIcon) < 0.5 && Math.Abs(newSpacing - _fitSpacing) < 0.5) return;
             Log.Info(newFit > 0
-                ? $"독이 화면보다 길어 아이콘을 {newFit:0} 으로 줄임 (설정 {setting:0}{(newSpacing >= 0 ? $", 간격 {newSpacing:0}" : "")})"
-                : "독 아이콘 크기를 설정값으로 되돌림");
+                ? Loc.F($"독이 화면보다 길어 아이콘을 {newFit:0} 으로 줄임 (설정 {setting:0}{(newSpacing >= 0 ? Loc.F($", 간격 {newSpacing:0}") : "")})")
+                : Loc.T("독 아이콘 크기를 설정값으로 되돌림"));
             _fitIcon = newFit;
             _fitSpacing = newSpacing;
             ApplyAll();

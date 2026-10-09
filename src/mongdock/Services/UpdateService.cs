@@ -263,17 +263,17 @@ public sealed class UpdateService : IDisposable
                 result = IsSkipped(latest) ? UpdateCheckResult.Skipped : UpdateCheckResult.Available;
             }
             Log.Info($"업데이트 확인{(manual ? " (수동)" : "")}: 현재 {WhatsNew.CurrentText}, " +
-                     (latest is null ? "최신 버전" : $"새 버전 {latest.Tag}{(result == UpdateCheckResult.Skipped ? " (건너뛴 버전)" : "")}"));
+                     (latest is null ? "최신 버전" : Loc.F($"새 버전 {latest.Tag}{(result == UpdateCheckResult.Skipped ? " (건너뛴 버전)" : "")}")));
         }
         catch (Exception ex)
         {
             result = UpdateCheckResult.Failed;
             LastError = ex switch
             {
-                TaskCanceledException => "응답이 없어요 (15초)",
-                HttpRequestException h when h.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests => "GitHub 요청 한도를 넘었어요. 잠시 뒤 다시 시도해 주세요.",
-                HttpRequestException => "인터넷에 연결할 수 없어요",
-                _ => "확인하지 못했어요",
+                TaskCanceledException => Loc.T("응답이 없어요 (15초)"),
+                HttpRequestException h when h.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests => Loc.T("GitHub 요청 한도를 넘었어요. 잠시 뒤 다시 시도해 주세요."),
+                HttpRequestException => Loc.T("인터넷에 연결할 수 없어요"),
+                _ => Loc.T("확인하지 못했어요"),
             };
             Log.Warn($"업데이트 확인 실패 ({LatestApiUrl}): {ex.Message}");
         }
@@ -409,13 +409,13 @@ public sealed class UpdateService : IDisposable
             string? location = key?.GetValue("InstallLocation") as string;
             if (string.IsNullOrWhiteSpace(location))
             {
-                reason = "설치 프로그램으로 설치하지 않아서(zip) 자동 업데이트를 할 수 없어요. 릴리스 페이지에서 받아 주세요.";
+                reason = Loc.T("설치 프로그램으로 설치하지 않아서(zip) 자동 업데이트를 할 수 없어요. 릴리스 페이지에서 받아 주세요.");
                 return false;
             }
             string installed = Path.TrimEndingDirectorySeparator(Path.GetFullPath(location));
             if (!string.Equals(installed, running, StringComparison.OrdinalIgnoreCase))
             {
-                reason = "설치 프로그램이 설치한 폴더가 아닌 곳에서 실행 중이라(zip) 자동 업데이트를 할 수 없어요. 릴리스 페이지에서 받아 주세요.";
+                reason = Loc.T("설치 프로그램이 설치한 폴더가 아닌 곳에서 실행 중이라(zip) 자동 업데이트를 할 수 없어요. 릴리스 페이지에서 받아 주세요.");
                 return false;
             }
             return true;
@@ -423,7 +423,7 @@ public sealed class UpdateService : IDisposable
         catch (Exception ex)
         {
             Log.Warn($"설치 방식 확인 실패: {ex.Message}");
-            reason = "설치 정보를 읽지 못해 자동 업데이트를 할 수 없어요. 릴리스 페이지에서 받아 주세요.";
+            reason = Loc.T("설치 정보를 읽지 못해 자동 업데이트를 할 수 없어요. 릴리스 페이지에서 받아 주세요.");
             return false;
         }
     }
@@ -453,7 +453,7 @@ public sealed class UpdateService : IDisposable
             !info.SetupUrl.StartsWith(DownloadPrefix, StringComparison.OrdinalIgnoreCase) ||
             !info.SetupUrl.EndsWith("/" + info.SetupName, StringComparison.OrdinalIgnoreCase))
         {
-            DownloadError = "이 릴리스에는 설치 파일이 없어요. 릴리스 페이지에서 받아 주세요.";
+            DownloadError = Loc.T("이 릴리스에는 설치 파일이 없어요. 릴리스 페이지에서 받아 주세요.");
             Log.Warn($"업데이트 설치 파일 없음/형식 다름: {info.Tag} {info.SetupUrl}");
             RaiseChanged();
             return false;
@@ -478,7 +478,7 @@ public sealed class UpdateService : IDisposable
         }
         catch (Exception ex)
         {
-            DownloadError = ex is InvalidDataException ? ex.Message : "다운로드하지 못했어요. 인터넷 연결을 확인해 주세요.";
+            DownloadError = ex is InvalidDataException ? ex.Message : Loc.T("다운로드하지 못했어요. 인터넷 연결을 확인해 주세요.");
             Log.Warn($"업데이트 다운로드 실패: {info.SetupUrl}: {ex.Message}");
         }
         finally
@@ -520,8 +520,8 @@ public sealed class UpdateService : IDisposable
         {
             // 1260 = ERROR_ACCESS_DISABLED_BY_POLICY (AppLocker·소프트웨어 제한 정책)
             DownloadError = ex is System.ComponentModel.Win32Exception { NativeErrorCode: 1260 }
-                ? "회사 정책으로 설치 프로그램 실행이 막혀 있어요. IT 담당자에게 문의해 주세요."
-                : "설치 프로그램을 실행하지 못했어요.";
+                ? Loc.T("회사 정책으로 설치 프로그램 실행이 막혀 있어요. IT 담당자에게 문의해 주세요.")
+                : Loc.T("설치 프로그램을 실행하지 못했어요.");
             Log.Error($"업데이트 설치 프로그램 실행 실패: {path}", ex);
             RaiseChanged();
             return false;
@@ -535,7 +535,7 @@ public sealed class UpdateService : IDisposable
     private async Task WatchInstallAsync(Process? setup, UpdateInfo info)
     {
         string? failure = null;
-        string message = "설치가 끝나지 않았어요 — 다시 시도해 주세요.";
+        string message = Loc.T("설치가 끝나지 않았어요 — 다시 시도해 주세요.");
         try
         {
             if (setup is not null)
@@ -545,9 +545,9 @@ public sealed class UpdateService : IDisposable
                     using (var running = new CancellationTokenSource(SetupRunTimeout))
                         await setup.WaitForExitAsync(running.Token).ConfigureAwait(true);
                     int code = setup.ExitCode;
-                    if (code != 0) failure = $"setup 종료 코드 {code}";
+                    if (code != 0) failure = Loc.F($"setup 종료 코드 {code}");
                     if (code == SetupExitPrepareFailed)
-                        message = "설치 준비에 실패했어요 (.NET 런타임을 받지 못했거나 관리자 권한 확인이 취소됨) — 다시 시도해 주세요.";
+                        message = Loc.T("설치 준비에 실패했어요 (.NET 런타임을 받지 못했거나 관리자 권한 확인이 취소됨) — 다시 시도해 주세요.");
                 }
                 catch (OperationCanceledException) { }
                 catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
@@ -559,7 +559,7 @@ public sealed class UpdateService : IDisposable
             {
                 // setup 이 정상 종료했거나 (핸들 없음/너무 오래 도는 중) — 조금 더 몽독이 꺼지길 기다림
                 await Task.Delay(InstallTimeout).ConfigureAwait(true);
-                failure = "설치 프로그램 실행 뒤에도 몽독이 종료되지 않음";
+                failure = Loc.T("설치 프로그램 실행 뒤에도 몽독이 종료되지 않음");
             }
         }
         catch (Exception ex)
@@ -618,7 +618,7 @@ public sealed class UpdateService : IDisposable
         {
             resp.EnsureSuccessStatusCode();
             if (resp.Content.Headers.ContentLength is long len && len != info.SetupSize)
-                throw new InvalidDataException("받은 파일 크기가 릴리스 정보와 달라요.");
+                throw new InvalidDataException(Loc.T("받은 파일 크기가 릴리스 정보와 달라요."));
             await using var src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
             await using var dst = new FileStream(partial, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
             var buffer = new byte[81920];
@@ -628,7 +628,7 @@ public sealed class UpdateService : IDisposable
             while ((read = await src.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
             {
                 total += read;
-                if (total > info.SetupSize) throw new InvalidDataException("받은 파일이 릴리스 정보보다 커요.");
+                if (total > info.SetupSize) throw new InvalidDataException(Loc.T("받은 파일이 릴리스 정보보다 커요."));
                 await dst.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
                 if (total - lastReport >= 256 * 1024 || total == info.SetupSize)
                 {
@@ -659,18 +659,18 @@ public sealed class UpdateService : IDisposable
     {
         var fi = new FileInfo(path);
         if (fi.Length != info.SetupSize)
-            throw new InvalidDataException($"받은 파일 크기({fi.Length:N0})가 릴리스 정보({info.SetupSize:N0})와 달라요.");
+            throw new InvalidDataException(Loc.F($"받은 파일 크기({fi.Length:N0})가 릴리스 정보({info.SetupSize:N0})와 달라요."));
         await using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
         var head = new byte[64];
         if (await fs.ReadAsync(head, ct).ConfigureAwait(false) != head.Length || head[0] != (byte)'M' || head[1] != (byte)'Z')
-            throw new InvalidDataException("받은 파일이 실행 파일이 아니에요.");
+            throw new InvalidDataException(Loc.T("받은 파일이 실행 파일이 아니에요."));
         if (!await HasValidPeHeaderAsync(fs, head, ct).ConfigureAwait(false))
-            throw new InvalidDataException("받은 파일의 실행 파일 형식이 올바르지 않아요.");
+            throw new InvalidDataException(Loc.T("받은 파일의 실행 파일 형식이 올바르지 않아요."));
         if (info.SetupSha256 is null) return;
         fs.Position = 0;
         byte[] hash = await SHA256.HashDataAsync(fs, ct).ConfigureAwait(false);
         if (!string.Equals(Convert.ToHexString(hash), info.SetupSha256, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("받은 파일의 SHA-256 이 릴리스 정보와 달라요.");
+            throw new InvalidDataException(Loc.T("받은 파일의 SHA-256 이 릴리스 정보와 달라요."));
     }
 
     /// <summary>IMAGE_DOS_HEADER.e_lfanew → "PE" 서명 + IMAGE_FILE_HEADER (Machine x86/x64/ARM64, EXECUTABLE_IMAGE, DLL 아님).</summary>

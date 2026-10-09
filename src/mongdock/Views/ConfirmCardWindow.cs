@@ -25,9 +25,10 @@ internal sealed class ConfirmCardWindow : Window
     private bool _extraClicked;
 
     public ConfirmCardWindow(AppServices services, UiPalette p, string title, string message, string confirmText, Action onConfirm,
-        string cancelText = "취소", string? extraText = null)
+        string? cancelText = null, string? extraText = null)
     {
         _onConfirm = onConfirm;
+        cancelText ??= Loc.T("취소");
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
         Background = Brushes.Transparent;
@@ -131,7 +132,7 @@ internal sealed class ConfirmCardWindow : Window
         _watch = new OutsideClickWatcher(services, () => new[] { OutsideClickWatcher.ScreenRect(_card) }, Close)
         {
             CloseOnActivation = false,
-            LogName = $"확인 카드 '{title}'",
+            LogName = Loc.F($"확인 카드 '{title}'"),
         };
         SourceInitialized += (_, _) => services.DesktopWindows.MakeOverlay(this);
         Loaded += (_, _) =>
@@ -212,9 +213,9 @@ internal sealed class ConfirmCardWindow : Window
             Run();
             return;
         }
-        Ask(services, $"{appName} 창 {windows.Count}개를 모두 닫을까요?",
-            windows.Any(w => !w.OnCurrentDesktop) ? "다른 데스크톱에 있는 창도 함께 닫혀요." : "저장하지 않은 내용은 사라질 수 있어요.",
-            "닫기", Run);
+        Ask(services, Loc.F($"{appName} 창 {windows.Count}개를 모두 닫을까요?"),
+            windows.Any(w => !w.OnCurrentDesktop) ? Loc.T("다른 데스크톱에 있는 창도 함께 닫혀요.") : Loc.T("저장하지 않은 내용은 사라질 수 있어요."),
+            Loc.T("닫기"), Run);
     }
 
     /// <summary>확인 카드를 띄움. 확인을 눌렀을 때만 onConfirm 실행.</summary>

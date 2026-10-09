@@ -176,8 +176,8 @@ internal sealed class WindowPickerWindow : Window
                 VerticalAlignment = VerticalAlignment.Center,
             });
             string? badge = elsewhere
-                ? (w.DesktopIndex > 0 ? $"데스크톱 {w.DesktopIndex}" : "다른 데스크톱")
-                : "최소화됨";
+                ? (w.DesktopIndex > 0 ? Loc.F($"데스크톱 {w.DesktopIndex}") : Loc.T("다른 데스크톱"))
+                : Loc.T("최소화됨");
             g.Children.Add(new Border
             {
                 Background = elsewhere ? _p.Accent : _p.CircleOff,

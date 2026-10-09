@@ -54,7 +54,7 @@ internal sealed class DockDragIconWindow : Window
 
         _labelText = new TextBlock
         {
-            Text = "제거",
+            Text = Loc.T("제거"),
             FontSize = 12,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,

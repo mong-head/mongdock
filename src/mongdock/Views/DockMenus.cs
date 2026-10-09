@@ -32,8 +32,8 @@ internal static class DockMenus
     public static MenuItem DockPosition(AppServices services)
     {
         var dock = services.Settings.Current.Dock;
-        return Choice("독 위치",
-            new[] { (DockEdge.Left, "왼쪽"), (DockEdge.Right, "오른쪽"), (DockEdge.Bottom, "아래"), (DockEdge.Top, "위") },
+        return Choice(Loc.T("독 위치"),
+            new[] { (DockEdge.Left, Loc.T("왼쪽")), (DockEdge.Right, Loc.T("오른쪽")), (DockEdge.Bottom, Loc.T("아래")), (DockEdge.Top, Loc.T("위")) },
             dock.Edge, v => Update(services, () => services.Settings.Current.Dock.Edge = v));
     }
 
@@ -41,11 +41,11 @@ internal static class DockMenus
     public static MenuItem DockBehavior(AppServices services)
     {
         var dock = services.Settings.Current.Dock;
-        var parent = Choice("독 동작",
-            new[] { (DockMode.AutoHide, "자동 숨김"), (DockMode.Overlay, "항상 보이기") },
+        var parent = Choice(Loc.T("독 동작"),
+            new[] { (DockMode.AutoHide, Loc.T("자동 숨김")), (DockMode.Overlay, Loc.T("항상 보이기")) },
             dock.Mode, v => Update(services, () => services.Settings.Current.Dock.Mode = v));
         parent.Items.Add(new Separator());
-        foreach (var (value, label) in new[] { (MultiWindowClick.Picker, "여러 창 클릭: 창 선택"), (MultiWindowClick.MostRecent, "여러 창 클릭: 최근 창") })
+        foreach (var (value, label) in new[] { (MultiWindowClick.Picker, Loc.T("여러 창 클릭: 창 선택")), (MultiWindowClick.MostRecent, Loc.T("여러 창 클릭: 최근 창")) })
         {
             parent.Items.Add(Item(label, () => Update(services, () => services.Settings.Current.Dock.MultiWindowClick = value),
                 isChecked: dock.MultiWindowClick == value));
@@ -57,8 +57,8 @@ internal static class DockMenus
     public static MenuItem DockThemeMenu(AppServices services)
     {
         var dock = services.Settings.Current.Dock;
-        return Choice("독 테마",
-            new[] { (DockTheme.System, "시스템"), (DockTheme.Light, "라이트"), (DockTheme.Dark, "다크") },
+        return Choice(Loc.T("독 테마"),
+            new[] { (DockTheme.System, Loc.T("시스템")), (DockTheme.Light, Loc.T("라이트")), (DockTheme.Dark, Loc.T("다크")) },
             dock.Theme, v => Update(services, () => services.Settings.Current.Dock.Theme = v));
     }
 
@@ -66,11 +66,11 @@ internal static class DockMenus
     public static MenuItem TopBarColor(AppServices services)
     {
         var top = services.Settings.Current.TopBar;
-        return Choice("상단바 색",
+        return Choice(Loc.T("상단바 색"),
             new[]
             {
-                (TopBarColorMode.Transparent, "투명"), (TopBarColorMode.Auto, "앱 색에 맞춤"),
-                (TopBarColorMode.Blur, "블러"), (TopBarColorMode.Fixed, "고정 색"),
+                (TopBarColorMode.Transparent, Loc.T("투명")), (TopBarColorMode.Auto, Loc.T("앱 색에 맞춤")),
+                (TopBarColorMode.Blur, Loc.T("블러")), (TopBarColorMode.Fixed, Loc.T("고정 색")),
             },
             top.ColorMode, v => Update(services, () => services.Settings.Current.TopBar.ColorMode = v));
     }
@@ -88,12 +88,12 @@ internal static class DockMenus
         try { state = services.Startup.State; }
         catch { state = services.Settings.Current.StartWithWindows ? StartupState.Enabled : StartupState.Disabled; }
         if (state == StartupState.DisabledByUser)
-            return Item("컴퓨터를 켜면 몽독도 켜기 (윈도우 설정에서 켜기…)", () => services.Launcher.OpenFile(StartupAppsSettingsUri));
+            return Item(Loc.T("컴퓨터를 켜면 몽독도 켜기 (윈도우 설정에서 켜기…)"), () => services.Launcher.OpenFile(StartupAppsSettingsUri));
         if (state is StartupState.DisabledByPolicy or StartupState.EnabledByPolicy)
-            return Item("컴퓨터를 켜면 몽독도 켜기", () => { }, enabled: false, isChecked: state == StartupState.EnabledByPolicy);
+            return Item(Loc.T("컴퓨터를 켜면 몽독도 켜기"), () => { }, enabled: false, isChecked: state == StartupState.EnabledByPolicy);
 
         bool on = state == StartupState.Enabled;
-        return Item("컴퓨터를 켜면 몽독도 켜기", () =>
+        return Item(Loc.T("컴퓨터를 켜면 몽독도 켜기"), () =>
         {
             bool next = !on;
             services.Startup.SetEnabled(next);
@@ -104,42 +104,42 @@ internal static class DockMenus
 
     /// <summary>"독 숨기기" (Dock.Enabled=false 저장). 트레이 "독 보이기" 로 다시 켬.</summary>
     public static MenuItem HideDock(AppServices services)
-        => Item("독 숨기기", () => Update(services, () => services.Settings.Current.Dock.Enabled = false));
+        => Item(Loc.T("독 숨기기"), () => Update(services, () => services.Settings.Current.Dock.Enabled = false));
 
     /// <summary>"독 보이기" 체크 (Dock.Enabled 토글).</summary>
     public static MenuItem ShowDock(AppServices services)
     {
         bool on = services.Settings.Current.Dock.Enabled;
-        return Item("독 보이기", () => Update(services, () => services.Settings.Current.Dock.Enabled = !on), isChecked: on);
+        return Item(Loc.T("독 보이기"), () => Update(services, () => services.Settings.Current.Dock.Enabled = !on), isChecked: on);
     }
 
     /// <summary>"상단바 보이기" 체크 (TopBar.Enabled 토글).</summary>
     public static MenuItem ShowTopBar(AppServices services)
     {
         bool on = services.Settings.Current.TopBar.Enabled;
-        return Item("상단바 보이기", () => Update(services, () => services.Settings.Current.TopBar.Enabled = !on), isChecked: on);
+        return Item(Loc.T("상단바 보이기"), () => Update(services, () => services.Settings.Current.TopBar.Enabled = !on), isChecked: on);
     }
 
     /// <summary>"일시 정지" 체크 (저장 안 하는 런타임 상태).</summary>
     public static MenuItem Pause()
-        => Item("일시 정지", ViewModels.AppState.TogglePaused, isChecked: ViewModels.AppState.Paused);
+        => Item(Loc.T("일시 정지"), ViewModels.AppState.TogglePaused, isChecked: ViewModels.AppState.Paused);
 
     /// <summary>"윈도우 작업 표시줄 숨기기" 체크 (HideWindowsTaskbar 저장, 실제 숨김은 TrayController 가 상태에 맞춰).</summary>
     public static MenuItem HideTaskbar(AppServices services)
     {
         bool on = services.Settings.Current.HideWindowsTaskbar;
-        return Item("윈도우 작업 표시줄 숨기기", () => Update(services, () => services.Settings.Current.SetHideWindowsTaskbar(!on)), isChecked: on);
+        return Item(Loc.T("윈도우 작업 표시줄 숨기기"), () => Update(services, () => services.Settings.Current.SetHideWindowsTaskbar(!on)), isChecked: on);
     }
 
     /// <summary>설정 창 열기 (클릭으로 바꾸는 설정 화면). 이미 열려 있으면 앞으로.</summary>
-    public static MenuItem SettingsWindow(AppServices services, string header = "설정…")
-        => Item(header, () => Views.SettingsWindow.Open(services));
+    public static MenuItem SettingsWindow(AppServices services, string? header = null)
+        => Item(header ?? Loc.T("설정…"), () => Views.SettingsWindow.Open(services));
 
     public static MenuItem OpenSettings(AppServices services)
-        => Item("설정 파일 열기", () => services.Launcher.OpenFile(services.Settings.SettingsPath));
+        => Item(Loc.T("설정 파일 열기"), () => services.Launcher.OpenFile(services.Settings.SettingsPath));
 
     public static MenuItem Quit()
-        => Item($"{AppInfo.Name} 종료", () => System.Windows.Application.Current.Shutdown());
+        => Item(Loc.F($"{AppInfo.Name} 종료"), () => System.Windows.Application.Current.Shutdown());
 
     private static void Update(AppServices services, Action change)
     {

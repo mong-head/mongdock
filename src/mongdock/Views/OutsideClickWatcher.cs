@@ -63,7 +63,7 @@ internal sealed class OutsideClickWatcher
             if (LogName is not null && _running) Log.Info($"{LogName}: 다른 창 활성화 무시 ({ProcessOf(hwnd)})");
             return;
         }
-        Fire(LogName is null ? null : $"다른 창 활성화 ({ProcessOf(hwnd)})");
+        Fire(LogName is null ? null : Loc.F($"다른 창 활성화 ({ProcessOf(hwnd)})"));
     }
 
     private static string ProcessOf(IntPtr hwnd)
@@ -87,7 +87,7 @@ internal sealed class OutsideClickWatcher
                 if (!r.IsEmpty && r.Contains(c)) return; // 안쪽 클릭은 WPF 가 처리 (메뉴 항목 클릭 등)
             }
         }
-        Fire(LogName is null ? null : $"바깥 클릭 {position?.ToString() ?? "(모니터 밖)"} / 안쪽 {string.Join(" ", _insideAreas())}");
+        Fire(LogName is null ? null : Loc.F($"바깥 클릭 {position?.ToString() ?? Loc.T("(모니터 밖)")} / 안쪽 {string.Join(" ", _insideAreas())}"));
     }
 
     private void Fire(string? reason)

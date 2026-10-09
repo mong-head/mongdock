@@ -364,7 +364,7 @@ internal sealed class CoachMarkWindow : Window
                 Padding = new Thickness(8, 5, 8, 5),
                 Margin = new Thickness(-8, 0, 0, 0),
                 HorizontalAlignment = HorizontalAlignment.Left,
-                Content = new TextBlock { Text = "건너뛰기", FontSize = 13, Foreground = _p.SubText },
+                Content = new TextBlock { Text = Loc.T("건너뛰기"), FontSize = 13, Foreground = _p.SubText },
             };
             skip.Click += (_, _) => SkipClicked?.Invoke();
             buttons.Children.Add(skip);
@@ -376,7 +376,7 @@ internal sealed class CoachMarkWindow : Window
             Foreground = _p.AccentText,
             Height = 28,
             MinWidth = 76,
-            Content = new TextBlock { Text = page.NextText ?? (last ? "완료" : "다음 →"), FontSize = 13, FontWeight = FontWeights.SemiBold },
+            Content = new TextBlock { Text = page.NextText ?? (last ? Loc.T("완료") : Loc.T("다음 →")), FontSize = 13, FontWeight = FontWeights.SemiBold },
         };
         next.Click += (_, _) => NextClicked?.Invoke();
         Grid.SetColumn(next, 2);
@@ -440,7 +440,7 @@ internal sealed class CoachMarkWindow : Window
         {
             list.Children.Add(new TextBlock
             {
-                Text = $"외 {more}개",
+                Text = Loc.F($"외 {more}개"),
                 FontSize = 12,
                 Foreground = _p.SubText,
                 Margin = new Thickness(14, 4, 0, 0),

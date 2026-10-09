@@ -69,7 +69,7 @@ public sealed class TrayController : IDisposable
         bool paused = AppState.Paused;
         var icon = paused ? _pausedIcon : _normalIcon;
         if (!ReferenceEquals(_icon.Icon, icon)) _icon.Icon = icon;
-        _icon.Text = paused ? $"{AppInfo.Name} (일시 정지)" : AppInfo.Name;
+        _icon.Text = paused ? Loc.F($"{AppInfo.Name} (일시 정지)") : AppInfo.Name;
 
         bool hide = _services.Settings.Current.HideWindowsTaskbar && !paused;
         if (_taskbarHidden == hide) return;
@@ -124,7 +124,7 @@ public sealed class TrayController : IDisposable
         menu.Items.Add(DockMenus.HideTaskbar(_services));
         menu.Items.Add(DockMenus.StartWithWindows(_services));
         menu.Items.Add(new Separator());
-        menu.Items.Add(DockMenus.Item("새로운 기능 보기", CoachMarks.ShowWhatsNew));
+        menu.Items.Add(DockMenus.Item(Loc.T("새로운 기능 보기"), CoachMarks.ShowWhatsNew));
         menu.Items.Add(DockMenus.OpenSettings(_services));
         menu.Items.Add(DockMenus.Quit());
         UpdateUi.AddMenuItems(menu, _services); // 새 버전 있으면 맨 위에 "업데이트 있음 — vX 설치…"

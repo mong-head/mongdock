@@ -53,7 +53,7 @@ public partial class TopBarWindow
         {
             var fill = camera ? PrivacyCameraBrush : PrivacyMicBrush;
             if (!ReferenceEquals(PrivacyDot.Fill, fill)) PrivacyDot.Fill = fill;
-            PrivacyButton.ToolTip = camera && mic ? "카메라·마이크 사용 중" : camera ? "카메라 사용 중" : "마이크 사용 중";
+            PrivacyButton.ToolTip = camera && mic ? Loc.T("카메라·마이크 사용 중") : camera ? Loc.T("카메라 사용 중") : Loc.T("마이크 사용 중");
         }
 
         var vis = show ? Visibility.Visible : Visibility.Collapsed;

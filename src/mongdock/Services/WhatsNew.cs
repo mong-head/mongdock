@@ -82,20 +82,20 @@ public static class WhatsNew
     /// </summary>
     public static readonly IReadOnlyList<CoachStep> Tour =
     [
-        new("", IntroKey, "작업 표시줄은 숨겨 뒀어요",
-            "윈도우 작업 표시줄 대신 위쪽 상단바와 독을 써요. 윈도우 알림도 오른쪽 위 몽독 배너로 떠요. 되돌리려면 설정 → 일반 → '윈도우 작업 표시줄 숨기기'를 끄면 돼요.",
+        new("", IntroKey, Loc.T("작업 표시줄은 숨겨 뒀어요"),
+            Loc.T("윈도우 작업 표시줄 대신 위쪽 상단바와 독을 써요. 윈도우 알림도 오른쪽 위 몽독 배너로 떠요. 되돌리려면 설정 → 일반 → '윈도우 작업 표시줄 숨기기'를 끄면 돼요."),
             CoachAnchor.Center, s => s.HideWindowsTaskbar),
-        new("", "dock", "여기가 독이에요",
-            "자주 쓰는 앱은 오른쪽 클릭 → 독에 고정, 끌어서 순서를 바꿔요.{dockhide}",
+        new("", "dock", Loc.T("여기가 독이에요"),
+            Loc.T("자주 쓰는 앱은 오른쪽 클릭 → 독에 고정, 끌어서 순서를 바꿔요.{dockhide}"),
             CoachAnchor.Dock, s => s.Dock.Enabled),
-        new("", SearchKey, "검색",
-            "{hotkey} 앱·파일·윈도우 설정·계산기까지 찾아요. 지금 눌러 보세요.",
+        new("", SearchKey, Loc.T("검색"),
+            Loc.T("{hotkey} 앱·파일·윈도우 설정·계산기까지 찾아요. 지금 눌러 보세요."),
             CoachAnchor.Search, s => TopBarOn(s) && s.TopBar.ShowQuickButtons && s.TopBar.SearchMode == SearchMode.Spotlight),
-        new("", "logo", "로고 메뉴",
-            "몽독 설정·이 PC 정보·잠자기·다시 시작은 여기서 해요.",
+        new("", "logo", Loc.T("로고 메뉴"),
+            Loc.T("몽독 설정·이 PC 정보·잠자기·다시 시작은 여기서 해요."),
             CoachAnchor.Logo, s => TopBarOn(s) && s.TopBar.ShowLogo),
-        new("", "settings", "이 밖에도 있어요",
-            "설정은 로고 메뉴 → mongdock → 설정…에서 모두 클릭으로 바꿔요. 아래 기능은 처음 써 볼 때 짧게 알려 드릴게요.",
+        new("", "settings", Loc.T("이 밖에도 있어요"),
+            Loc.T("설정은 로고 메뉴 → mongdock → 설정…에서 모두 클릭으로 바꿔요. 아래 기능은 처음 써 볼 때 짧게 알려 드릴게요."),
             CoachAnchor.Center),
     ];
 
@@ -105,24 +105,24 @@ public static class WhatsNew
     /// </summary>
     public static readonly IReadOnlyList<CoachStep> Hints =
     [
-        new("", "appmenu", "지금 앱의 메뉴",
-            "앱 이름과 그 옆 메뉴(파일·편집·보기…)를 클릭으로 열어요. 단축키 없이도 돼요.",
+        new("", "appmenu", Loc.T("지금 앱의 메뉴"),
+            Loc.T("앱 이름과 그 옆 메뉴(파일·편집·보기…)를 클릭으로 열어요. 단축키 없이도 돼요."),
             CoachAnchor.AppName, s => TopBarOn(s) && s.TopBar.ShowActiveAppName),
-        new("", "desktops", "가상 데스크톱",
-            "‹ › 로 데스크톱을 넘기고, 가운데 숫자를 누르면 작업 보기가 열려요.",
+        new("", "desktops", Loc.T("가상 데스크톱"),
+            Loc.T("‹ › 로 데스크톱을 넘기고, 가운데 숫자를 누르면 작업 보기가 열려요."),
             CoachAnchor.Desktops, s => TopBarOn(s) && s.TopBar.ShowDesktopButtons),
-        new("", "calendar", "시계와 달력",
-            "날짜를 누르면 음력·공휴일과 일정이 보여요. 설정 → 캘린더에서 구글 일정도 연결할 수 있어요.",
+        new("", "calendar", Loc.T("시계와 달력"),
+            Loc.T("날짜를 누르면 음력·공휴일과 일정이 보여요. 설정 → 캘린더에서 구글 일정도 연결할 수 있어요."),
             CoachAnchor.Clock, TopBarOn),
-        new("", "tray", "다른 앱 트레이 아이콘",
-            "카카오톡 같은 앱 아이콘이 여기 있어요. 끌어서 ⌃ 안팎으로 옮기고, 오른쪽 클릭하면 앱 메뉴가 떠요.",
+        new("", "tray", Loc.T("다른 앱 트레이 아이콘"),
+            Loc.T("카카오톡 같은 앱 아이콘이 여기 있어요. 끌어서 ⌃ 안팎으로 옮기고, 오른쪽 클릭하면 앱 메뉴가 떠요."),
             CoachAnchor.Tray, s => TopBarOn(s) && s.TopBar.ShowTrayIcons),
     ];
 
     /// <summary>마무리 카드 "이 밖에도" 목록 (힌트 제목 + 알림).</summary>
     public static IReadOnlyList<string> ExtraFeatureLines(Settings s) =>
         Hints.Where(h => h.IsAvailable(s)).Select(h => h.Title)
-            .Concat(s.Notifications.ShowNotificationBanners ? new[] { "알림은 오른쪽 위 배너로" } : Array.Empty<string>())
+            .Concat(s.Notifications.ShowNotificationBanners ? new[] { Loc.T("알림은 오른쪽 위 배너로") } : Array.Empty<string>())
             .ToList();
 
     /// <summary>"v0.3.0", "0.3.0-test", "0.3" → 0.3.0. 못 읽으면 null.</summary>

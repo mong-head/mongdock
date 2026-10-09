@@ -25,16 +25,16 @@ internal static class BuiltinMenus
     /// <summary>Electron 앱(Claude 등): 확대/축소/새로고침은 Electron 기본 메뉴 역할 단축키.</summary>
     private static List<AppMenuDef> Electron() => new()
     {
-        M("편집",
-            I("실행 취소", "Ctrl+Z"), I("다시 실행", "Ctrl+Y"),
-            Sep, I("잘라내기", "Ctrl+X"), I("복사", "Ctrl+C"), I("붙여넣기", "Ctrl+V"), I("모두 선택", "Ctrl+A"),
-            Sep, I("찾기", "Ctrl+F")),
-        M("보기", I("확대", "Ctrl+="), I("축소", "Ctrl+-"), I("실제 크기", "Ctrl+0"), Sep, I("새로고침", "Ctrl+R")),
+        M(Loc.T("편집"),
+            I(Loc.T("실행 취소"), "Ctrl+Z"), I(Loc.T("다시 실행"), "Ctrl+Y"),
+            Sep, I(Loc.T("잘라내기"), "Ctrl+X"), I(Loc.T("복사"), "Ctrl+C"), I(Loc.T("붙여넣기"), "Ctrl+V"), I(Loc.T("모두 선택"), "Ctrl+A"),
+            Sep, I(Loc.T("찾기"), "Ctrl+F")),
+        M(Loc.T("보기"), I(Loc.T("확대"), "Ctrl+="), I(Loc.T("축소"), "Ctrl+-"), I(Loc.T("실제 크기"), "Ctrl+0"), Sep, I(Loc.T("새로고침"), "Ctrl+R")),
     };
 
     /// <summary>알 수 없는 앱: 보기(확대/축소/실제 크기)만 — 편집 단축키는 앱마다 의미가 달라 넣지 않음.</summary>
     private static List<AppMenuDef> Generic() => new()
     {
-        M("보기", I("확대", "Ctrl+="), I("축소", "Ctrl+-"), I("실제 크기", "Ctrl+0")),
+        M(Loc.T("보기"), I(Loc.T("확대"), "Ctrl+="), I(Loc.T("축소"), "Ctrl+-"), I(Loc.T("실제 크기"), "Ctrl+0")),
     };
 }

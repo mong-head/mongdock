@@ -168,7 +168,7 @@ public sealed class BrightnessService
         }
 
         int? wmi = WmiGet();
-        if (wmi is int w) list.Add(new DisplayBrightness(WmiId, "내장 디스플레이", w, true));
+        if (wmi is int w) list.Add(new DisplayBrightness(WmiId, Loc.T("내장 디스플레이"), w, true));
 
         foreach (var m in Monitors.GetAll())
         {
@@ -184,7 +184,7 @@ public sealed class BrightnessService
                     ? matches[i].FriendlyName
                     : !string.IsNullOrWhiteSpace(ddc[i].Description) && !ddc[i].Description.StartsWith("Generic", StringComparison.OrdinalIgnoreCase)
                         ? ddc[i].Description
-                        : $"디스플레이 {m.Number}";
+                        : Loc.F($"디스플레이 {m.Number}");
                 list.Add(new DisplayBrightness($"{DdcPrefix}{m.DeviceName}#{i}", friendly, ddc[i].Percent, false));
             }
         }
@@ -234,7 +234,7 @@ public sealed class BrightnessService
             bool isInternal = name.Contains("내장", StringComparison.Ordinal)
                 || name.Contains("internal", StringComparison.OrdinalIgnoreCase)
                 || name.Contains("built-in", StringComparison.OrdinalIgnoreCase);
-            if (name == "내장") name = "내장 디스플레이";
+            if (name == "내장") name = Loc.T("내장 디스플레이");
             list.Add(new DisplayBrightness($"{FakePrefix}{list.Count}", name, percent, isInternal));
         }
         return list.Where(d => d.Internal).Concat(list.Where(d => !d.Internal)).ToList();

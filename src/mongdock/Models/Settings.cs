@@ -349,6 +349,8 @@ public sealed class Settings
     public List<PinItem> Pins { get; set; } = new();
     /// <summary>상단바·메뉴·패널·독 말풍선 글꼴. "Pretendard" = 앱에 내장된 Pretendard(맥 느낌). 설치된 글꼴 이름을 쓰면 그 글꼴. 쉼표로 대체 글꼴 나열 가능.</summary>
     public string FontFamily { get; set; } = "Pretendard";
+    /// <summary>화면 언어: "" = 윈도우 표시 언어 따라(한국어가 아니면 영어), "ko", "en". 바꾸면 다시 시작해야 반영 (Loc).</summary>
+    public string Language { get; set; } = "";
     /// <summary>
     /// mongdock 이 켜져 있는 동안 윈도우 작업 표시줄 숨김 (숨기는 동안 작업 표시줄 자동 숨김을 켜서 빈 띠가 안 남게).
     /// 일시 정지·종료·크래시 시 원래대로 복원. 속성 기본값은 false(키 없는 기존 파일 호환) — 새 설치는 SettingsService 가 켬.

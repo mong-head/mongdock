@@ -15,10 +15,13 @@ namespace ReportTest;
 internal static class Program
 {
     private static int _failed;
+    private static bool _english;
 
     [STAThread]
     private static int Main(string[] args)
     {
+        _english = args.Contains("--en"); // 영어 화면으로 렌더링 (App 생성자가 언어를 다시 정하므로 렌더링 때 다시 적용)
+        if (_english) Mongdock.Loc.Init("en");
         RedactionTests();
         Console.WriteLine(_failed == 0 ? "가리기 시험: 모두 통과" : $"가리기 시험: {_failed}개 실패");
 
@@ -112,6 +115,7 @@ internal static class Program
     {
         Directory.CreateDirectory(dir);
         var app = new Mongdock.App();
+        if (_english) Mongdock.Loc.Init("en");
         app.InitializeComponent(); // Themes/Controls.xaml·Menus.xaml (CardButton, IconFont)
         var ctx = new ReportRedactor.Context("melon", "DESKTOP-AB12CD", new[] { "연봉 협상안.xlsx - Excel" });
         string sample = ReportRedactor.Redact(
@@ -135,7 +139,7 @@ internal static class Program
                 w.SetDiagnostics(sample);
                 w.SetPreviewState(ReportKind.Bug, open ? "" : "독에서 카카오톡이 안 열려요", "독에서 카카오톡 아이콘을 누르면 창이 안 떠요.\n다시 누르면 떠요.", open ? "me@example.com" : "", open);
                 w.UpdateLayout();
-                string name = $"report-{theme.ToString().ToLowerInvariant()}{(open ? "-details" : "")}.png";
+                string name = $"report-{(Mongdock.Loc.IsEnglish ? "en-" : "")}{theme.ToString().ToLowerInvariant()}{(open ? "-details" : "")}.png";
                 Save(w, Path.Combine(dir, name));
                 w.Close();
                 Console.WriteLine($"  저장  {name}");

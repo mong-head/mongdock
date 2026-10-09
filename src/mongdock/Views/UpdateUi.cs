@@ -32,8 +32,8 @@ internal static class UpdateUi
         private void OnAvailable(object? sender, UpdateInfo info)
         {
             if (WhatsNew.Parse(_services.Settings.Current.NotifiedUpdateVersion) == info.Version) return;
-            var item = new NotificationItem(BannerId, "", AppInfo.Name, "mongdock 업데이트 있음 · v" + info.VersionText,
-                new[] { "눌러서 새 버전 정보를 보고 설치할 수 있어요." }, DateTime.Now, null, null, false, null);
+            var item = new NotificationItem(BannerId, "", AppInfo.Name, Loc.T("mongdock 업데이트 있음 · v") + info.VersionText,
+                new[] { Loc.T("눌러서 새 버전 정보를 보고 설치할 수 있어요.") }, DateTime.Now, null, null, false, null);
             if (NotificationBannerWindow.ShowCustom(item, AppIcon(_services), () => OpenAbout(_services)))
                 _updates.MarkNotified(info);
         }
@@ -64,7 +64,7 @@ internal static class UpdateUi
     public static void AddMenuItems(ItemsControl menu, AppServices services)
     {
         if (UpdateService.Instance?.Pending is not { } info) return;
-        var item = DockMenus.Item($"업데이트 있음 — v{info.VersionText} 설치…", () => OpenAbout(services));
+        var item = DockMenus.Item(Loc.F($"업데이트 있음 — v{info.VersionText} 설치…"), () => OpenAbout(services));
         item.FontWeight = System.Windows.FontWeights.SemiBold;
         menu.Items.Insert(0, item);
         menu.Items.Insert(1, new Separator());

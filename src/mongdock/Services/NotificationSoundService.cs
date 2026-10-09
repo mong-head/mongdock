@@ -30,21 +30,21 @@ public static class NotificationSoundService
     /// <summary>C:\Windows\Media 에서 알림용으로 어울리는 것 (파일명, 표시 이름). 없는 파일은 빠짐.</summary>
     private static readonly (string File, string Label)[] MediaCandidates =
     {
-        ("Windows Notify System Generic.wav", "윈도우 알림"),
-        ("Windows Notify Messaging.wav", "메시지"),
-        ("Windows Notify Email.wav", "메일"),
-        ("Windows Notify Calendar.wav", "캘린더"),
-        ("Windows Proximity Notification.wav", "띠링"),
-        ("Windows Message Nudge.wav", "톡톡"),
-        ("Windows Background.wav", "작은 알림"),
-        ("Windows Ding.wav", "딩"),
-        ("Windows Information Bar.wav", "정보 표시줄"),
-        ("Windows Notify.wav", "알림 (Windows 10)"),
-        ("chimes.wav", "차임 (클래식)"),
-        ("chord.wav", "화음 (클래식)"),
-        ("ding.wav", "딩 (클래식)"),
-        ("notify.wav", "알림 (클래식)"),
-        ("tada.wav", "짜잔"),
+        ("Windows Notify System Generic.wav", Loc.T("윈도우 알림")),
+        ("Windows Notify Messaging.wav", Loc.T("메시지")),
+        ("Windows Notify Email.wav", Loc.T("메일")),
+        ("Windows Notify Calendar.wav", Loc.T("캘린더")),
+        ("Windows Proximity Notification.wav", Loc.T("띠링")),
+        ("Windows Message Nudge.wav", Loc.T("톡톡")),
+        ("Windows Background.wav", Loc.T("작은 알림")),
+        ("Windows Ding.wav", Loc.T("딩")),
+        ("Windows Information Bar.wav", Loc.T("정보 표시줄")),
+        ("Windows Notify.wav", Loc.T("알림 (Windows 10)")),
+        ("chimes.wav", Loc.T("차임 (클래식)")),
+        ("chord.wav", Loc.T("화음 (클래식)")),
+        ("ding.wav", Loc.T("딩 (클래식)")),
+        ("notify.wav", Loc.T("알림 (클래식)")),
+        ("tada.wav", Loc.T("짜잔")),
     };
 
     private static SoundPlayer? _player;
@@ -185,8 +185,8 @@ public static class NotificationSoundService
     /// <summary>표시 이름: 후보면 그 이름, "" 면 무음, 아니면 파일 이름.</summary>
     public static string Describe(string? path)
     {
-        if (path is null) return "알 수 없음";
-        if (path.Length == 0) return "무음";
+        if (path is null) return Loc.T("알 수 없음");
+        if (path.Length == 0) return Loc.T("무음");
         string expanded = Environment.ExpandEnvironmentVariables(path);
         foreach (var o in GetCandidates())
             if (SamePath(o.Path, expanded)) return o.Label;

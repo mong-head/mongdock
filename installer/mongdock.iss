@@ -57,8 +57,13 @@ WizardStyle=modern
 CloseApplications=no
 RestartApplications=no
 
+; 윈도우 표시 언어로 고름 (한국어면 한국어, 그 밖은 영어). 고르는 창은 띄우지 않음
+ShowLanguageDialog=no
+LanguageDetectionMethod=uilanguage
+
 [Languages]
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
+Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [CustomMessages]
 korean.AutoStartTask=로그인 시 자동 실행
@@ -69,6 +74,23 @@ korean.RuntimeInstalling=.NET 8 Desktop Runtime 설치 중... (관리자 권한 
 korean.RuntimeDownloadFailed=.NET 8 Desktop Runtime 을 받지 못했습니다: %1%n%n인터넷 연결을 확인하고 다시 시도하거나, 직접 설치한 뒤 다시 실행하세요:%nhttps://dotnet.microsoft.com/download/dotnet/8.0
 korean.RuntimeInstallFailed=.NET 8 Desktop Runtime 을 설치하지 못했습니다 (%1).%n%n관리자 권한 확인을 "예" 로 하거나, 직접 설치한 뒤 다시 실행하세요:%nhttps://dotnet.microsoft.com/download/dotnet/8.0
 korean.DeleteSettingsPrompt=mongdock 설정과 로그(AppData\Roaming\mongdock 폴더)도 지울까요?%n%n"아니요" 를 누르면 남겨 두어 나중에 다시 설치할 때 그대로 쓸 수 있습니다.
+korean.ElevationCancelled=관리자 권한 확인 취소
+korean.RuntimeNotFoundAfter=설치 후에도 런타임을 찾지 못함, 코드 %1
+korean.Cancelled=취소함
+korean.CloseFailed=mongdock 을 종료하지 못했습니다. 트레이 아이콘 오른쪽 클릭 → 종료 후 다시 시도하세요.
+
+english.AutoStartTask=Open mongdock at sign-in
+english.OtherTasks=Other:
+english.RuntimeDownloadTitle=Preparing .NET Desktop Runtime
+english.RuntimeDownloadDesc=mongdock needs the .NET 8 Desktop Runtime (x64). It will be downloaded from Microsoft and installed (first time only).
+english.RuntimeInstalling=Installing .NET 8 Desktop Runtime... (choose "Yes" if Windows asks for administrator permission)
+english.RuntimeDownloadFailed=Couldn't download the .NET 8 Desktop Runtime: %1%n%nCheck your internet connection and try again, or install it yourself and run setup again:%nhttps://dotnet.microsoft.com/download/dotnet/8.0
+english.RuntimeInstallFailed=Couldn't install the .NET 8 Desktop Runtime (%1).%n%nChoose "Yes" when Windows asks for administrator permission, or install it yourself and run setup again:%nhttps://dotnet.microsoft.com/download/dotnet/8.0
+english.DeleteSettingsPrompt=Also delete mongdock settings and logs (the AppData\Roaming\mongdock folder)?%n%nChoose "No" to keep them for a later reinstall.
+english.ElevationCancelled=administrator permission was cancelled
+english.RuntimeNotFoundAfter=runtime not found after installing, code %1
+english.Cancelled=cancelled
+english.CloseFailed=Couldn't close mongdock. Right-click its tray icon → Quit, then try again.
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -294,12 +316,12 @@ begin
   if not ShellExec('runas', Path, '/install /quiet /norestart', '', SW_SHOW, ewWaitUntilTerminated, Code) then
   begin
     if Code = ERROR_CANCELLED then
-      Result := FmtMessage(CustomMessage('RuntimeInstallFailed'), ['관리자 권한 확인 취소'])
+      Result := FmtMessage(CustomMessage('RuntimeInstallFailed'), [CustomMessage('ElevationCancelled')])
     else
       Result := FmtMessage(CustomMessage('RuntimeInstallFailed'), [SysErrorMessage(Code)]);
   end
   else if not IsDesktopRuntime8Installed() then
-    Result := FmtMessage(CustomMessage('RuntimeInstallFailed'), ['설치 후에도 런타임을 찾지 못함, 코드 ' + IntToStr(Code)]);
+    Result := FmtMessage(CustomMessage('RuntimeInstallFailed'), [FmtMessage(CustomMessage('RuntimeNotFoundAfter'), [IntToStr(Code)])]);
   DeleteFile(Path);
   if Result = '' then
     Log('.NET Desktop Runtime 설치 완료')
@@ -331,7 +353,7 @@ begin
         RuntimePage.Download;
       except
         if RuntimePage.AbortedByUser then
-          Result := FmtMessage(CustomMessage('RuntimeDownloadFailed'), ['취소함'])
+          Result := FmtMessage(CustomMessage('RuntimeDownloadFailed'), [CustomMessage('Cancelled')])
         else
           Result := FmtMessage(CustomMessage('RuntimeDownloadFailed'), [GetExceptionMessage]);
         Log(Result);
@@ -373,7 +395,7 @@ begin
     Exit;
   CloseMongdock();
   if IsMongdockRunning() then
-    Result := 'mongdock 을 종료하지 못했습니다. 트레이 아이콘 오른쪽 클릭 → 종료 후 다시 시도하세요.'
+    Result := CustomMessage('CloseFailed')
   else
     Result := '';
 end;

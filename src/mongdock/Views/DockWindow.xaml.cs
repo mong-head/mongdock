@@ -1366,19 +1366,19 @@ public partial class DockWindow : Window
             AddWindowList(menu, item);
             AddNewWindowItem(menu, pin);
             if (item.IsRunning)
-                menu.Items.Add(Item("창 닫기", () => CloseAll(item)));
+                menu.Items.Add(Item(Loc.T("창 닫기"), () => CloseAll(item)));
             menu.Items.Add(new Separator());
-            menu.Items.Add(Item("아이콘 변경…", () => ChangeIcon(pin)));
-            menu.Items.Add(DockMenus.Item("기본 아이콘으로", () => ModifyPins(_ => pin.IconPath = null), enabled: pin.IconPath != null));
+            menu.Items.Add(Item(Loc.T("아이콘 변경…"), () => ChangeIcon(pin)));
+            menu.Items.Add(DockMenus.Item(Loc.T("기본 아이콘으로"), () => ModifyPins(_ => pin.IconPath = null), enabled: pin.IconPath != null));
             menu.Items.Add(new Separator());
         }
 
         bool vertical = _layout.IsVertical;
-        menu.Items.Add(DockMenus.Item(vertical ? "위로 이동" : "왼쪽으로 이동", () => MovePin(pin, -1), enabled: index > 0));
-        menu.Items.Add(DockMenus.Item(vertical ? "아래로 이동" : "오른쪽으로 이동", () => MovePin(pin, +1),
+        menu.Items.Add(DockMenus.Item(vertical ? Loc.T("위로 이동") : Loc.T("왼쪽으로 이동"), () => MovePin(pin, -1), enabled: index > 0));
+        menu.Items.Add(DockMenus.Item(vertical ? Loc.T("아래로 이동") : Loc.T("오른쪽으로 이동"), () => MovePin(pin, +1),
             enabled: index >= 0 && index < pins.Count - 1));
         menu.Items.Add(new Separator());
-        menu.Items.Add(Item(item.IsSeparator ? "구분선 제거" : "독에서 제거", () => ModifyPins(p => p.Remove(pin))));
+        menu.Items.Add(Item(item.IsSeparator ? Loc.T("구분선 제거") : Loc.T("독에서 제거"), () => ModifyPins(p => p.Remove(pin))));
     }
 
     /// <summary>맥 독처럼 메뉴 맨 위에 그 앱의 창 목록 (제목 + 다른 데스크톱이면 "— 데스크톱 N", 활성 창 ✓).</summary>
@@ -1395,7 +1395,7 @@ public partial class DockWindow : Window
             {
                 header.Children.Add(new TextBlock
                 {
-                    Text = w.DesktopIndex > 0 ? $"  — 데스크톱 {w.DesktopIndex}" : "  — 다른 데스크톱",
+                    Text = w.DesktopIndex > 0 ? Loc.F($"  — 데스크톱 {w.DesktopIndex}") : Loc.T("  — 다른 데스크톱"),
                     Opacity = 0.55,
                 });
             }
@@ -1425,11 +1425,11 @@ public partial class DockWindow : Window
 
         if (profiles.Count == 0)
         {
-            menu.Items.Add(Item("새 창 열기", () => _services.Launcher.Launch(pin)));
+            menu.Items.Add(Item(Loc.T("새 창 열기"), () => _services.Launcher.Launch(pin)));
             return;
         }
 
-        var parent = new MenuItem { Header = "새 창" };
+        var parent = new MenuItem { Header = Loc.T("새 창") };
         foreach (var profile in profiles)
         {
             var header = new StackPanel { Orientation = Orientation.Horizontal };
@@ -1471,7 +1471,7 @@ public partial class DockWindow : Window
         }
         if (pinnable)
         {
-            menu.Items.Add(Item("독에 고정", () =>
+            menu.Items.Add(Item(Loc.T("독에 고정"), () =>
             {
                 if (item.Windows.Count == 0) return;
                 var newPin = _services.Windows.CreatePin(item.Windows[0]);
@@ -1479,20 +1479,20 @@ public partial class DockWindow : Window
             }));
         }
         if (item.IsRunning)
-            menu.Items.Add(Item("창 닫기", () => CloseAll(item)));
+            menu.Items.Add(Item(Loc.T("창 닫기"), () => CloseAll(item)));
     }
 
     private void BuildEmptyAreaMenu(ContextMenu menu)
     {
         var dock = _services.Settings.Current.Dock;
-        menu.Items.Add(DockMenus.SettingsWindow(_services, $"{AppInfo.Name} 설정…"));
+        menu.Items.Add(DockMenus.SettingsWindow(_services, Loc.F($"{AppInfo.Name} 설정…")));
         menu.Items.Add(new Separator());
-        menu.Items.Add(Item("구분선 추가", () => ModifyPins(p => p.Add(new PinItem { Kind = PinKind.Separator, Name = "" }))));
+        menu.Items.Add(Item(Loc.T("구분선 추가"), () => ModifyPins(p => p.Add(new PinItem { Kind = PinKind.Separator, Name = "" }))));
         menu.Items.Add(new Separator());
         menu.Items.Add(DockMenus.DockPosition(_services));
         menu.Items.Add(DockMenus.DockBehavior(_services));
         menu.Items.Add(DockMenus.DockThemeMenu(_services));
-        menu.Items.Add(DockMenus.Item("가운데로 정렬", () =>
+        menu.Items.Add(DockMenus.Item(Loc.T("가운데로 정렬"), () =>
         {
             _services.Settings.Current.Dock.Offset = 0.5;
             _services.Settings.Save();
@@ -1528,8 +1528,8 @@ public partial class DockWindow : Window
     {
         var dlg = new OpenFileDialog
         {
-            Title = $"{PinDisplayName(pin)} 아이콘 선택",
-            Filter = "아이콘 이미지 (*.png;*.ico)|*.png;*.ico|모든 파일 (*.*)|*.*",
+            Title = Loc.F($"{PinDisplayName(pin)} 아이콘 선택"),
+            Filter = Loc.T("아이콘 이미지 (*.png;*.ico)|*.png;*.ico|모든 파일 (*.*)|*.*"),
             CheckFileExists = true,
         };
         bool ok;

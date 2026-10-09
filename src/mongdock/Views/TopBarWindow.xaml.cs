@@ -20,7 +20,8 @@ namespace Mongdock.Views;
 /// </summary>
 public partial class TopBarWindow : Window
 {
-    private static readonly CultureInfo Korean = CultureInfo.GetCultureInfo("ko-KR");
+    /// <summary>시계 문화권: 한국어 = ko-KR, 영어 = 윈도우 영어 문화권 또는 en-US (Loc).</summary>
+    private static CultureInfo Korean => Loc.Culture;
     private const string DefaultClockFormat = "ddd tt h:mm"; // 예: 수 오전 10:02
     private static readonly Color DarkText = BrushParser.Hex("#E6000000");
     private static readonly Color LightText = BrushParser.Hex("#F2FFFFFF");
@@ -134,7 +135,8 @@ public partial class TopBarWindow : Window
         try { time = CultureInfo.CurrentCulture.DateTimeFormat.ShortTimePattern; }
         catch { time = "tt h:mm"; }
         if (string.IsNullOrWhiteSpace(time)) time = "tt h:mm";
-        return t.ShowClockDate ? "M월 d일 (ddd) " + time : time;
+        // 영어: 맥처럼 "Thu Oct 9  7:50 PM" (날짜 서식은 번역 사전이 아니라 여기서)
+        return !t.ShowClockDate ? time : Loc.IsEnglish ? "ddd MMM d  " + time : "M월 d일 (ddd) " + time;
     }
 
     private void ScheduleClock()
@@ -679,7 +681,7 @@ public partial class TopBarWindow : Window
         switch (state)
         {
             case 1:
-                ImeText.Text = "한";
+                ImeText.Text = Loc.T("한");
                 ImeBadge.Background = fg;
                 ImeBadge.BorderBrush = fg;
                 ImeText.Foreground = inverse;
@@ -961,7 +963,7 @@ public partial class TopBarWindow : Window
         bool single = known && count == 1;
         DesktopIndex.Text = !known ? "" : single ? "1" : $"{index} / {count}";
         DesktopIndexButton.Visibility = known ? Visibility.Visible : Visibility.Collapsed;
-        DesktopIndexButton.ToolTip = single ? "데스크톱 보기 · 새 데스크톱 추가" : "데스크톱 보기";
+        DesktopIndexButton.ToolTip = single ? Loc.T("데스크톱 보기 · 새 데스크톱 추가") : Loc.T("데스크톱 보기");
         PrevDesktopButton.Visibility = single ? Visibility.Collapsed : Visibility.Visible;
         NextDesktopButton.Visibility = single ? Visibility.Collapsed : Visibility.Visible;
         PrevDesktopButton.Opacity = known && index <= 1 ? 0.35 : 1;
@@ -1000,24 +1002,24 @@ public partial class TopBarWindow : Window
         bool hasApp = app != null;
         // 경로를 못 읽은 창(관리자 권한 등)은 새 창·독 고정 불가 (빈 경로 Launch 방지)
         bool launchable = app == null || (pin != null && DockWindow.CanLaunch(pin)) || DockWindow.CanPin(app);
-        menu.Items.Add(DockMenus.Item($"{name} 새 창", () =>
+        menu.Items.Add(DockMenus.Item(Loc.F($"{name} 새 창"), () =>
         {
             // 바탕 화면이면 맥처럼 Finder(파일 탐색기) 새 창.
             var target = app == null ? ExplorerPin() : pin != null && DockWindow.CanLaunch(pin) ? pin : _services.Windows.CreatePin(app);
             if (DockWindow.CanLaunch(target)) _services.Launcher.Launch(target);
         }, enabled: launchable));
-        menu.Items.Add(DockMenus.Item($"{name} 최소화", () =>
+        menu.Items.Add(DockMenus.Item(Loc.F($"{name} 최소화"), () =>
         {
             foreach (var w in appWindows.Where(w => !w.IsMinimized))
                 _services.Launcher.Minimize(w.Hwnd);
         }, enabled: hasApp && appWindows.Any(w => !w.IsMinimized)));
-        menu.Items.Add(DockMenus.Item($"{name} 종료",
+        menu.Items.Add(DockMenus.Item(Loc.F($"{name} 종료"),
             () => ConfirmCardWindow.CloseWindows(_services, name, appWindows),
             enabled: hasApp && appWindows.Count > 0));
         menu.Items.Add(new Separator());
         if (pin != null)
         {
-            menu.Items.Add(DockMenus.Item("독에서 제거", () =>
+            menu.Items.Add(DockMenus.Item(Loc.T("독에서 제거"), () =>
             {
                 _services.Settings.Current.Pins.Remove(pin);
                 _services.Settings.Save();
@@ -1025,16 +1027,16 @@ public partial class TopBarWindow : Window
         }
         else
         {
-            menu.Items.Add(DockMenus.Item("독에 고정", () =>
+            menu.Items.Add(DockMenus.Item(Loc.T("독에 고정"), () =>
             {
                 _services.Settings.Current.Pins.Add(_services.Windows.CreatePin(app!));
                 _services.Settings.Save();
             }, enabled: hasApp && DockWindow.CanPin(app!)));
         }
         menu.Items.Add(new Separator());
-        menu.Items.Add(DockMenus.Item("바탕 화면 보기", () => _services.Shell.ShowDesktop()));
+        menu.Items.Add(DockMenus.Item(Loc.T("바탕 화면 보기"), () => _services.Shell.ShowDesktop()));
         menu.Items.Add(new Separator());
-        menu.Items.Add(DockMenus.Item($"{AppInfo.Name} 설정 파일 열기", () => _services.Launcher.OpenFile(_services.Settings.SettingsPath)));
+        menu.Items.Add(DockMenus.Item(Loc.F($"{AppInfo.Name} 설정 파일 열기"), () => _services.Launcher.OpenFile(_services.Settings.SettingsPath)));
         menu.Items.Add(DockMenus.Quit());
         menu.IsOpen = true;
     }
@@ -1070,34 +1072,34 @@ public partial class TopBarWindow : Window
         menu.Closed += (_, _) => LogoButton.Tag = null;
 
         var shell = _services.Shell;
-        menu.Items.Add(DockMenus.Item("이 PC 정보", shell.OpenAbout));
+        menu.Items.Add(DockMenus.Item(Loc.T("이 PC 정보"), shell.OpenAbout));
         menu.Items.Add(new Separator());
-        menu.Items.Add(DockMenus.Item("설정…", shell.OpenSettings));
+        menu.Items.Add(DockMenus.Item(Loc.T("설정…"), shell.OpenSettings));
         menu.Items.Add(DockMenus.Item("Microsoft Store", shell.OpenStore));
         menu.Items.Add(new Separator());
-        menu.Items.Add(DockMenus.Item("작업 관리자", shell.OpenTaskManager));
+        menu.Items.Add(DockMenus.Item(Loc.T("작업 관리자"), shell.OpenTaskManager));
         menu.Items.Add(new Separator());
-        menu.Items.Add(DockMenus.Item("절전", shell.Sleep));
-        menu.Items.Add(DockMenus.Item("다시 시작…", () => ConfirmCardWindow.Ask(_services,
-            "지금 컴퓨터를 다시 시작할까요?", "저장하지 않은 작업은 사라질 수 있어요.", "다시 시작", shell.Restart)));
-        menu.Items.Add(DockMenus.Item("시스템 종료…", () => ConfirmCardWindow.Ask(_services,
-            "지금 시스템을 종료할까요?", "저장하지 않은 작업은 사라질 수 있어요.", "종료", shell.Shutdown)));
+        menu.Items.Add(DockMenus.Item(Loc.T("절전"), shell.Sleep));
+        menu.Items.Add(DockMenus.Item(Loc.T("다시 시작…"), () => ConfirmCardWindow.Ask(_services,
+            Loc.T("지금 컴퓨터를 다시 시작할까요?"), Loc.T("저장하지 않은 작업은 사라질 수 있어요."), Loc.T("다시 시작"), shell.Restart)));
+        menu.Items.Add(DockMenus.Item(Loc.T("시스템 종료…"), () => ConfirmCardWindow.Ask(_services,
+            Loc.T("지금 시스템을 종료할까요?"), Loc.T("저장하지 않은 작업은 사라질 수 있어요."), Loc.T("종료"), shell.Shutdown)));
         menu.Items.Add(new Separator());
-        menu.Items.Add(DockMenus.Item("화면 잠금", shell.LockScreen));
-        menu.Items.Add(DockMenus.Item("로그아웃…", () => ConfirmCardWindow.Ask(_services,
-            "지금 로그아웃할까요?", "열려 있는 앱이 모두 닫혀요.", "로그아웃", shell.SignOut)));
+        menu.Items.Add(DockMenus.Item(Loc.T("화면 잠금"), shell.LockScreen));
+        menu.Items.Add(DockMenus.Item(Loc.T("로그아웃…"), () => ConfirmCardWindow.Ask(_services,
+            Loc.T("지금 로그아웃할까요?"), Loc.T("열려 있는 앱이 모두 닫혀요."), Loc.T("로그아웃"), shell.SignOut)));
         menu.Items.Add(new Separator());
 
         // 몽독 항목은 하위 메뉴 하나로 (예전엔 "mongdock 설정…" + "mongdock ›" 이 나란히 있어 중복돼 보였음).
         // 위치·동작·테마·색 같은 세부 설정은 설정 창에 있으니 여기엔 자주 쓰는 켜고 끄기만.
         var mongdock = new MenuItem { Header = AppInfo.Name };
-        mongdock.Items.Add(DockMenus.SettingsWindow(_services, "설정…"));
+        mongdock.Items.Add(DockMenus.SettingsWindow(_services, Loc.T("설정…")));
         mongdock.Items.Add(new Separator());
         mongdock.Items.Add(DockMenus.HideDock(_services));
         mongdock.Items.Add(DockMenus.HideTaskbar(_services));
         mongdock.Items.Add(DockMenus.Pause());
         mongdock.Items.Add(new Separator());
-        mongdock.Items.Add(DockMenus.Item("문제 신고하기…", () => ReportWindow.Open(_services)));
+        mongdock.Items.Add(DockMenus.Item(Loc.T("문제 신고하기…"), () => ReportWindow.Open(_services)));
         mongdock.Items.Add(new Separator());
         mongdock.Items.Add(DockMenus.Quit());
         menu.Items.Add(mongdock);
@@ -1147,7 +1149,7 @@ public partial class TopBarWindow : Window
         {
             _panel?.Close();
             menu.Items.Clear();
-            menu.Items.Add(DockMenus.SettingsWindow(_services, $"{AppInfo.Name} 설정…"));
+            menu.Items.Add(DockMenus.SettingsWindow(_services, Loc.F($"{AppInfo.Name} 설정…")));
             menu.Items.Add(DockMenus.TopBarColor(_services));
             menu.Items.Add(new Separator());
             menu.Items.Add(DockMenus.Quit());

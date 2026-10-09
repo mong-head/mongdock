@@ -48,13 +48,13 @@ internal sealed partial class SettingsWindow
 
     private void AddTrayArrange(Panel body)
     {
-        body.Children.Add(SectionTitle("트레이 아이콘 정리"));
+        body.Children.Add(SectionTitle(Loc.T("트레이 아이콘 정리")));
         var top = _services.Settings.Current.TopBar;
         var slots = TrayIconLayout.Compute(_services.TrayIcons.Icons, top);
         var rows = new List<UIElement>();
         if (slots.Count == 0)
         {
-            rows.Add(Row("표시할 트레이 아이콘이 없어요", "앱이 트레이 아이콘을 만들면 여기 나타나요.", new Border()));
+            rows.Add(Row(Loc.T("표시할 트레이 아이콘이 없어요"), Loc.T("앱이 트레이 아이콘을 만들면 여기 나타나요."), new Border()));
         }
         else
         {
@@ -67,11 +67,11 @@ internal sealed partial class SettingsWindow
                 rows.Add(TrayArrangeRow(s, canUp: i > 0, canDown: i < group.Count - 1));
             }
         }
-        rows.Add(Row("윈도우 설정대로 되돌리기",
+        rows.Add(Row(Loc.T("윈도우 설정대로 되돌리기"),
             NotifyIconSettingsReader.Shared.IsAvailable
-                ? "몽독에서 옮긴 자리를 지우고 윈도우의 '작업 표시줄에 항상 표시' 설정을 따릅니다. 상단바에서 아이콘을 끌어 ⌃ 에 넣거나 꺼낼 수도 있어요."
-                : "몽독에서 옮긴 자리를 지웁니다 (이 윈도우에는 트레이 아이콘 설정이 없어 모두 ⌃ 안으로). 상단바에서 아이콘을 끌어 옮길 수도 있어요.",
-            ActionButton("되돌리기", () => Commit(() => _services.Settings.Current.TopBar.TrayIconPlacement.Clear(), rebuild: true))));
+                ? Loc.T("몽독에서 옮긴 자리를 지우고 윈도우의 '작업 표시줄에 항상 표시' 설정을 따릅니다. 상단바에서 아이콘을 끌어 ⌃ 에 넣거나 꺼낼 수도 있어요.")
+                : Loc.T("몽독에서 옮긴 자리를 지웁니다 (이 윈도우에는 트레이 아이콘 설정이 없어 모두 ⌃ 안으로). 상단바에서 아이콘을 끌어 옮길 수도 있어요."),
+            ActionButton(Loc.T("되돌리기"), () => Commit(() => _services.Settings.Current.TopBar.TrayIconPlacement.Clear(), rebuild: true))));
         body.Children.Add(Group(rows.ToArray()));
     }
 
@@ -83,12 +83,12 @@ internal sealed partial class SettingsWindow
         if (tip.Length > 60) tip = tip[..60] + "…";
         bool wantsBar = slot.Source == TrayPlacementSource.Windows
             || slot.Source == TrayPlacementSource.Mongdock && _services.Settings.Current.TopBar.TrayIconPlacement.TryGetValue(slot.PlacementKey, out var pl) && pl.OnBar;
-        string why = wantsBar && !slot.OnBar ? "최대 개수를 넘어 ⌃ 안"
+        string why = wantsBar && !slot.OnBar ? Loc.T("최대 개수를 넘어 ⌃ 안")
             : slot.Source switch
             {
-                TrayPlacementSource.Mongdock => "몽독에서 옮김",
-                TrayPlacementSource.Windows => "윈도우 설정: 항상 표시",
-                _ => "기본: ⌃ 안",
+                TrayPlacementSource.Mongdock => Loc.T("몽독에서 옮김"),
+                TrayPlacementSource.Windows => Loc.T("윈도우 설정: 항상 표시"),
+                _ => Loc.T("기본: ⌃ 안"),
             };
         string sub = tip.Length > 0 && !string.Equals(tip, title, StringComparison.OrdinalIgnoreCase) ? $"{tip} · {why}" : why;
 
@@ -110,11 +110,11 @@ internal sealed partial class SettingsWindow
     {
         string key = slot.PlacementKey;
         var panel = new StackPanel { Orientation = Orientation.Horizontal };
-        panel.Children.Add(SmallButton("▲", slot.OnBar ? "왼쪽으로" : "위로", canUp,
+        panel.Children.Add(SmallButton("▲", slot.OnBar ? Loc.T("왼쪽으로") : Loc.T("위로"), canUp,
             () => Commit(() => TrayIconLayout.Nudge(_services.TrayIcons.Icons, _services.Settings.Current.TopBar, key, -1), rebuild: true)));
-        panel.Children.Add(SmallButton("▼", slot.OnBar ? "오른쪽으로" : "아래로", canDown,
+        panel.Children.Add(SmallButton("▼", slot.OnBar ? Loc.T("오른쪽으로") : Loc.T("아래로"), canDown,
             () => Commit(() => TrayIconLayout.Nudge(_services.TrayIcons.Icons, _services.Settings.Current.TopBar, key, +1), rebuild: true)));
-        var label = new TextBlock { Text = "바에 표시", FontSize = 12, Foreground = _p.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 8, 0) };
+        var label = new TextBlock { Text = Loc.T("바에 표시"), FontSize = 12, Foreground = _p.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 8, 0) };
         panel.Children.Add(label);
         panel.Children.Add(Toggle(slot.OnBar, on => Commit(() =>
         {

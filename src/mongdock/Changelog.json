@@ -5,177 +5,223 @@
       "version": "0.5.0",
       "date": "2026-10-09",
       "headline": "믿을 수 있는 몽독: 문제 신고·오류 알림·독 정리",
+      "headline_en": "A more dependable mongdock: problem reports, crash notices, simpler Dock",
       "entries": [
         {
           "kind": "feature",
           "major": true,
-          "text": "문제 신고하기: 설정 → 정보나 상단바 로고 메뉴에서 버그·질문·제안을 바로 보낼 수 있어요. 메일 계정이 없어도 되고, 함께 보낼 정보는 보내기 전에 확인할 수 있어요. 이메일·주소·파일 경로·사용자 이름·창 제목은 가려서 보내요."
+          "text": "문제 신고하기: 설정 → 정보나 상단바 로고 메뉴에서 버그·질문·제안을 바로 보낼 수 있어요. 메일 계정이 없어도 되고, 함께 보낼 정보는 보내기 전에 확인할 수 있어요. 이메일·주소·파일 경로·사용자 이름·창 제목은 가려서 보내요.",
+          "text_en": "Report a problem: send bugs, questions, and suggestions right from Settings → About or the logo menu. No email account needed, and you can review what's included before sending. Email addresses, street addresses, file paths, user names, and window titles are masked."
         },
         {
           "kind": "feature",
           "major": true,
-          "text": "몽독이 갑자기 꺼지거나 오류가 나면 다음에 켤 때 알려 드려요. 보낼지는 직접 고르고, 보내기 전에 내용을 확인할 수 있어요."
+          "text": "몽독이 갑자기 꺼지거나 오류가 나면 다음에 켤 때 알려 드려요. 보낼지는 직접 고르고, 보내기 전에 내용을 확인할 수 있어요.",
+          "text_en": "If mongdock quits unexpectedly or hits an error, it lets you know the next time it opens. You choose whether to send a report, and you can review it first."
         },
         {
           "kind": "improvement",
           "major": true,
-          "text": "독 동작이 '자동 숨김'과 '항상 보이기' 두 가지로 정리됐어요. '공간 차지'를 쓰던 분은 '항상 보이기'로 바뀌어요. 새로 설치하면 독은 평소에 숨어 있다가 화면 끝에 마우스를 대면 나타나요(처음 둘러보기에서 직접 보여 드려요)."
+          "text": "독 동작이 '자동 숨김'과 '항상 보이기' 두 가지로 정리됐어요. '공간 차지'를 쓰던 분은 '항상 보이기'로 바뀌어요. 새로 설치하면 독은 평소에 숨어 있다가 화면 끝에 마우스를 대면 나타나요(처음 둘러보기에서 직접 보여 드려요).",
+          "text_en": "Dock behavior is now just two options: 'Auto-hide' and 'Always show'. If you used 'Reserve space', you're switched to 'Always show'. On a new install, the Dock stays hidden until you move the pointer to the screen edge (the first-run tour shows you how)."
         },
         {
           "kind": "improvement",
           "major": false,
-          "text": "화면 아래 윈도우 작업 표시줄이 가끔 잠깐 보이던 깜빡임을 없앴어요."
+          "text": "화면 아래 윈도우 작업 표시줄이 가끔 잠깐 보이던 깜빡임을 없앴어요.",
+          "text_en": "Fixed the Windows taskbar sometimes flickering into view at the bottom of the screen."
         },
         {
           "kind": "improvement",
           "major": false,
-          "text": "메모리를 덜 써요(아이콘·검색 결과를 쌓아 두는 양을 줄였어요)."
+          "text": "메모리를 덜 써요(아이콘·검색 결과를 쌓아 두는 양을 줄였어요).",
+          "text_en": "Uses less memory (fewer icons and search results are kept in cache)."
         },
         {
           "kind": "improvement",
           "major": false,
-          "text": "업데이트할 때 바로 전 설정을 자동으로 백업해 둬요."
+          "text": "업데이트할 때 바로 전 설정을 자동으로 백업해 둬요.",
+          "text_en": "Your previous settings are backed up automatically when you update."
         },
         {
           "kind": "feature",
           "major": false,
-          "text": "설정 → 정보에 '몽독 제거하기…'가 생겼어요. 작업 표시줄·알림 소리를 원래대로 돌린 뒤 윈도우 앱 제거 화면을 열어요."
+          "text": "설정 → 정보에 '몽독 제거하기…'가 생겼어요. 작업 표시줄·알림 소리를 원래대로 돌린 뒤 윈도우 앱 제거 화면을 열어요.",
+          "text_en": "New 'Uninstall mongdock…' in Settings → About. It restores the taskbar and notification sound, then opens the Windows uninstall page."
         },
         {
           "kind": "fix",
           "major": false,
-          "text": "시스템 종료·다시 시작 같은 확인 카드가 버튼을 누르기 전에 닫혀 버리던 문제를 고쳤어요."
+          "text": "시스템 종료·다시 시작 같은 확인 카드가 버튼을 누르기 전에 닫혀 버리던 문제를 고쳤어요.",
+          "text_en": "Fixed confirmation cards like Shut down and Restart closing before you could click a button."
         }
       ],
       "knownIssues": [
         "카카오톡 알림은 자체 팝업이라 배너로 잡히지 않아요(독 아이콘의 빨간 점은 표시돼요).",
         "알림 소리는 처음 한 번 바꾼 뒤 다시 로그인해야 적용돼요.",
         "네이버 캘린더는 구독 주소(iCal)를 주지 않아 연결할 수 없어요."
+      ],
+      "knownIssues_en": [
+        "KakaoTalk uses its own pop-ups, so its notifications don't appear as banners (the red dot on its Dock icon still shows).",
+        "After you change the notification sound for the first time, sign out and back in for it to take effect.",
+        "Naver Calendar can't be connected because it doesn't offer a subscription (iCal) address."
       ]
     },
     {
       "version": "0.4.2",
       "date": "2026-10-09",
       "headline": "마이크 조절",
+      "headline_en": "Microphone controls",
       "entries": [
         {
           "kind": "feature",
           "major": true,
-          "text": "소리 패널에 입력(마이크) 조절이 생겼어요: 마이크 음량 슬라이더, 마이크 끄기/켜기, 말할 때 켜지는 레벨 점, 입력 장치가 둘 이상이면 눌러서 바꾸기. 어떤 앱이 그 마이크를 쓰는지도 보여요(마이크가 없는 PC에선 보이지 않아요)."
+          "text": "소리 패널에 입력(마이크) 조절이 생겼어요: 마이크 음량 슬라이더, 마이크 끄기/켜기, 말할 때 켜지는 레벨 점, 입력 장치가 둘 이상이면 눌러서 바꾸기. 어떤 앱이 그 마이크를 쓰는지도 보여요(마이크가 없는 PC에선 보이지 않아요).",
+          "text_en": "The Sound panel now has input (microphone) controls: a mic volume slider, mic mute/unmute, level dots that light up when you speak, and click-to-switch when you have more than one input device. It also shows which apps are using the mic (hidden on PCs without a microphone)."
         },
         {
           "kind": "fix",
           "major": true,
-          "text": "새 버전 디스코드처럼 윈도우 기록을 남기지 않는 앱이 마이크를 써도 상단바에 주황 점이 보여요."
+          "text": "새 버전 디스코드처럼 윈도우 기록을 남기지 않는 앱이 마이크를 써도 상단바에 주황 점이 보여요.",
+          "text_en": "The orange dot now appears in the menu bar even when the mic is used by apps that don't report it to Windows, like newer versions of Discord."
         }
       ],
       "knownIssues": [
         "카카오톡 알림은 자체 팝업이라 배너로 잡히지 않아요(독 아이콘의 빨간 점은 표시돼요).",
         "알림 소리는 처음 한 번 바꾼 뒤 다시 로그인해야 적용돼요.",
         "네이버 캘린더는 구독 주소(iCal)를 주지 않아 연결할 수 없어요."
+      ],
+      "knownIssues_en": [
+        "KakaoTalk uses its own pop-ups, so its notifications don't appear as banners (the red dot on its Dock icon still shows).",
+        "After you change the notification sound for the first time, sign out and back in for it to take effect.",
+        "Naver Calendar can't be connected because it doesn't offer a subscription (iCal) address."
       ]
     },
     {
       "version": "0.4.1",
       "date": "2026-10-08",
       "headline": "야간 모드 켜기·노트북 전용 항목·알림 놓침 수정",
+      "headline_en": "Night light toggle, laptop-only items, missed-notification fix",
       "entries": [
         {
           "kind": "improvement",
           "major": true,
-          "text": "제어 센터의 달 동그라미를 누르면 야간 모드가 바로 켜지고 꺼져요."
+          "text": "제어 센터의 달 동그라미를 누르면 야간 모드가 바로 켜지고 꺼져요.",
+          "text_en": "Click the moon button in Control Center to turn Night light on or off right away."
         },
         {
           "kind": "improvement",
           "major": false,
-          "text": "전원 모드는 배터리가 있는 기기(노트북·태블릿)에서만 보여요."
+          "text": "전원 모드는 배터리가 있는 기기(노트북·태블릿)에서만 보여요.",
+          "text_en": "Power mode now appears only on devices with a battery (laptops and tablets)."
         },
         {
           "kind": "fix",
           "major": true,
-          "text": "이전 알림을 바꿔치기하는 알림(Claude 등)이 몽독 배너로 뜨지 않던 문제를 고쳤어요."
+          "text": "이전 알림을 바꿔치기하는 알림(Claude 등)이 몽독 배너로 뜨지 않던 문제를 고쳤어요.",
+          "text_en": "Fixed notifications that replace an earlier one (such as Claude's) not showing as mongdock banners."
         },
         {
           "kind": "fix",
           "major": false,
-          "text": "카메라·마이크 카드: 마이크가 잠깐 끊겼다 다시 켜지거나 회의 앱 창이 앞으로 올 때 카드가 저절로 닫혀 '마이크 개인 정보 설정…'을 눌러도 반응이 없던 문제를 고쳤어요(사용이 끝난 뒤 점을 3초 남겨요)."
+          "text": "카메라·마이크 카드: 마이크가 잠깐 끊겼다 다시 켜지거나 회의 앱 창이 앞으로 올 때 카드가 저절로 닫혀 '마이크 개인 정보 설정…'을 눌러도 반응이 없던 문제를 고쳤어요(사용이 끝난 뒤 점을 3초 남겨요).",
+          "text_en": "Camera & mic card: fixed the card closing on its own when the mic briefly dropped and came back, or when a meeting app came to the front, so 'Microphone privacy settings…' didn't respond (the dot now stays for 3 seconds after use ends)."
         },
         {
           "kind": "fix",
           "major": false,
-          "text": "다른 앱 대화상자로 전환한 직후 상단바 패널이 이유 없이 닫히던 문제를 고쳤어요."
+          "text": "다른 앱 대화상자로 전환한 직후 상단바 패널이 이유 없이 닫히던 문제를 고쳤어요.",
+          "text_en": "Fixed menu bar panels closing for no reason right after switching to another app's dialog."
         }
       ],
       "knownIssues": [
         "카카오톡 알림은 자체 팝업이라 배너로 잡히지 않아요(독 아이콘의 빨간 점은 표시돼요).",
         "알림 소리는 처음 한 번 바꾼 뒤 다시 로그인해야 적용돼요.",
         "네이버 캘린더는 구독 주소(iCal)를 주지 않아 연결할 수 없어요."
+      ],
+      "knownIssues_en": [
+        "KakaoTalk uses its own pop-ups, so its notifications don't appear as banners (the red dot on its Dock icon still shows).",
+        "After you change the notification sound for the first time, sign out and back in for it to take effect.",
+        "Naver Calendar can't be connected because it doesn't offer a subscription (iCal) address."
       ]
     },
     {
       "version": "0.4.0",
       "date": "2026-10-08",
       "headline": "노트북·여러 환경 대응",
+      "headline_en": "Laptops and more setups",
       "entries": [
         {
           "kind": "feature",
           "major": true,
-          "text": "제어 센터에 화면 밝기 슬라이더가 생겼어요(노트북 화면, 밝기 조절을 지원하는 외장 모니터는 모니터마다 한 줄)."
+          "text": "제어 센터에 화면 밝기 슬라이더가 생겼어요(노트북 화면, 밝기 조절을 지원하는 외장 모니터는 모니터마다 한 줄).",
+          "text_en": "Control Center now has a display brightness slider (for laptop screens, plus one row per external monitor that supports brightness control)."
         },
         {
           "kind": "feature",
           "major": true,
-          "text": "전원 모드(최고 효율 / 균형 / 최고 성능)를 제어 센터와 배터리 패널에서 바로 바꿀 수 있어요."
+          "text": "전원 모드(최고 효율 / 균형 / 최고 성능)를 제어 센터와 배터리 패널에서 바로 바꿀 수 있어요.",
+          "text_en": "Change Power mode (Best power efficiency / Balanced / Best performance) right from Control Center and the battery panel."
         },
         {
           "kind": "feature",
           "major": true,
-          "text": "맥처럼 카메라를 쓰는 앱이 있으면 상단바에 초록 점, 마이크만 쓰면 주황 점이 보여요. 점을 누르면 어떤 앱이 쓰는지 나와요(설정 → 상단바에서 끌 수 있어요)."
+          "text": "맥처럼 카메라를 쓰는 앱이 있으면 상단바에 초록 점, 마이크만 쓰면 주황 점이 보여요. 점을 누르면 어떤 앱이 쓰는지 나와요(설정 → 상단바에서 끌 수 있어요).",
+          "text_en": "Like on a Mac, a green dot appears in the menu bar when an app uses the camera, and an orange dot when only the mic is in use. Click the dot to see which app (turn it off in Settings → Menu Bar)."
         },
         {
           "kind": "feature",
           "major": false,
-          "text": "배터리로 쓰는 중 20%·10%·5%가 되면 몽독 알림으로 알려 줘요(설정 → 알림에서 끌 수 있어요)."
+          "text": "배터리로 쓰는 중 20%·10%·5%가 되면 몽독 알림으로 알려 줘요(설정 → 알림에서 끌 수 있어요).",
+          "text_en": "On battery power, mongdock notifies you at 20%, 10%, and 5% (turn it off in Settings → Notifications)."
         },
         {
           "kind": "feature",
           "major": true,
-          "text": "가벼운 모드: 설정 → 일반에서 켜면 애니메이션·블러·파도 확대를 끄고 확인 주기를 늘려 저사양 PC·원격 접속에서 더 가벼워요."
+          "text": "가벼운 모드: 설정 → 일반에서 켜면 애니메이션·블러·파도 확대를 끄고 확인 주기를 늘려 저사양 PC·원격 접속에서 더 가벼워요.",
+          "text_en": "Lightweight mode: turn it on in Settings → General to switch off animations, blur, and wave magnification and check for changes less often, so mongdock runs lighter on low-end PCs and over remote connections."
         },
         {
           "kind": "improvement",
           "major": false,
-          "text": "제어 센터에 야간 모드 상태가 보여요(누르면 윈도우 야간 모드 설정)."
+          "text": "제어 센터에 야간 모드 상태가 보여요(누르면 윈도우 야간 모드 설정).",
+          "text_en": "Control Center shows Night light status (click it to open Windows Night light settings)."
         },
         {
           "kind": "improvement",
           "major": false,
-          "text": "터치스크린: 독·트레이 아이콘을 길게 누르면 메뉴, 상단바 아이콘은 길게 눌러 끌면 순서 바꾸기, 그대로 떼면 메뉴가 떠요. 탭한 뒤 독 확대가 남지 않아요."
+          "text": "터치스크린: 독·트레이 아이콘을 길게 누르면 메뉴, 상단바 아이콘은 길게 눌러 끌면 순서 바꾸기, 그대로 떼면 메뉴가 떠요. 탭한 뒤 독 확대가 남지 않아요.",
+          "text_en": "Touchscreens: press and hold a Dock or tray icon to open its menu. Press and hold a menu bar icon, then drag to reorder it or release to open its menu. The Dock no longer stays magnified after a tap."
         },
         {
           "kind": "improvement",
           "major": false,
-          "text": "세로 모니터·높은 배율: 독 아이콘이 화면에 맞게 자동으로 작아지고, 상단바 오른쪽이 좁으면 트레이 아이콘부터 ⌃ 안으로 접혀요. 검색 창도 화면보다 넓어지지 않아요."
+          "text": "세로 모니터·높은 배율: 독 아이콘이 화면에 맞게 자동으로 작아지고, 상단바 오른쪽이 좁으면 트레이 아이콘부터 ⌃ 안으로 접혀요. 검색 창도 화면보다 넓어지지 않아요.",
+          "text_en": "Portrait monitors and high scaling: Dock icons shrink automatically to fit the screen, and when the right side of the menu bar runs out of room, tray icons fold into ⌃ first. The Search window no longer gets wider than the screen."
         },
         {
           "kind": "improvement",
           "major": false,
-          "text": "윈도우 10 지원 보강: 트레이 아이콘이 윈도우 10의 '작업 표시줄에 표시할 아이콘' 설정을 따르고, 알림 센터 단추가 관리 센터를 열며, 독·창 배경 모서리가 둥글게 보여요."
+          "text": "윈도우 10 지원 보강: 트레이 아이콘이 윈도우 10의 '작업 표시줄에 표시할 아이콘' 설정을 따르고, 알림 센터 단추가 관리 센터를 열며, 독·창 배경 모서리가 둥글게 보여요.",
+          "text_en": "Better Windows 10 support: tray icons follow Windows 10's 'Select which icons appear on the taskbar' setting, the Notifications button opens Action Center, and the Dock and window backgrounds have rounded corners."
         },
         {
           "kind": "improvement",
           "major": false,
-          "text": "회사 PC: 인증 프록시 환경에서도 업데이트·캘린더를 받아 오고, 회사 정책으로 설치가 막히면 그렇다고 알려 줘요."
+          "text": "회사 PC: 인증 프록시 환경에서도 업데이트·캘린더를 받아 오고, 회사 정책으로 설치가 막히면 그렇다고 알려 줘요.",
+          "text_en": "Work PCs: updates and calendars now download behind authenticating proxies, and mongdock tells you when company policy blocks an install."
         },
         {
           "kind": "improvement",
           "major": false,
-          "text": "시계가 1초마다 깨지 않고 분이 바뀔 때만 갱신해 더 가벼워요."
+          "text": "시계가 1초마다 깨지 않고 분이 바뀔 때만 갱신해 더 가벼워요.",
+          "text_en": "The clock now updates only when the minute changes instead of waking every second, so it's lighter."
         },
         {
           "kind": "fix",
           "major": false,
-          "text": "화면이 낮은 노트북에서 시계 달력 패널이 좌우로 흔들리던 문제를 고쳤어요(스크롤바가 내용 위에 겹쳐 떠요)."
+          "text": "화면이 낮은 노트북에서 시계 달력 패널이 좌우로 흔들리던 문제를 고쳤어요(스크롤바가 내용 위에 겹쳐 떠요).",
+          "text_en": "Fixed the clock's calendar panel shifting side to side on laptops with short screens (the scroll bar now floats over the content)."
         }
       ],
       "knownIssues": [
@@ -183,162 +229,214 @@
         "카카오톡 알림은 자체 팝업이라 배너로 잡히지 않아요(독 아이콘의 빨간 점은 표시돼요).",
         "알림 소리는 처음 한 번 바꾼 뒤 다시 로그인해야 적용돼요.",
         "네이버 캘린더는 구독 주소(iCal)를 주지 않아 연결할 수 없어요."
+      ],
+      "knownIssues_en": [
+        "Windows doesn't let other apps change Night light, so mongdock can't turn it on or off directly (clicking it opens Windows Settings).",
+        "KakaoTalk uses its own pop-ups, so its notifications don't appear as banners (the red dot on its Dock icon still shows).",
+        "After you change the notification sound for the first time, sign out and back in for it to take effect.",
+        "Naver Calendar can't be connected because it doesn't offer a subscription (iCal) address."
       ]
     },
     {
       "version": "0.3.5",
       "date": "2026-10-08",
       "headline": "상단바 순서 바꾸기",
+      "headline_en": "Reorder the menu bar",
       "entries": [
         {
           "kind": "improvement",
           "major": true,
-          "text": "상단바 오른쪽 아이콘을 길게 눌러(0.4초) 좌우로 끌면 순서를 바꿀 수 있어요. 설정 → 상단바 → 오른쪽 아이콘 순서에서 ▲▼ 로도 바꾸고 기본 순서로 되돌릴 수 있어요(시계는 항상 맨 오른쪽)."
+          "text": "상단바 오른쪽 아이콘을 길게 눌러(0.4초) 좌우로 끌면 순서를 바꿀 수 있어요. 설정 → 상단바 → 오른쪽 아이콘 순서에서 ▲▼ 로도 바꾸고 기본 순서로 되돌릴 수 있어요(시계는 항상 맨 오른쪽).",
+          "text_en": "Press and hold an icon on the right side of the menu bar (0.4 seconds), then drag left or right to reorder it. You can also use ▲▼ in Settings → Menu Bar → Right-side icon order, or reset to the default order (the clock always stays at the far right)."
         },
         {
           "kind": "improvement",
           "major": false,
-          "text": "배터리 아이콘을 맥처럼 통통하게 다듬었어요."
+          "text": "배터리 아이콘을 맥처럼 통통하게 다듬었어요.",
+          "text_en": "The battery icon is now chunkier, like on a Mac."
         },
         {
           "kind": "fix",
           "major": false,
-          "text": "상단바 색과 같아 안 보이던 트레이 아이콘(흰 바의 흰 아이콘 등)을 바 글자색으로 칠하거나, 컬러 아이콘이면 옅은 판을 깔아 보이게 했어요."
+          "text": "상단바 색과 같아 안 보이던 트레이 아이콘(흰 바의 흰 아이콘 등)을 바 글자색으로 칠하거나, 컬러 아이콘이면 옅은 판을 깔아 보이게 했어요.",
+          "text_en": "Tray icons that blended into the menu bar (like white icons on a white bar) are now drawn in the bar's text color, or get a faint backing if they're in color."
         }
       ],
       "knownIssues": [
         "카카오톡 알림은 자체 팝업이라 배너로 잡히지 않아요(독 아이콘의 빨간 점은 표시돼요).",
         "알림 소리는 처음 한 번 바꾼 뒤 다시 로그인해야 적용돼요.",
         "네이버 캘린더는 구독 주소(iCal)를 주지 않아 연결할 수 없어요."
+      ],
+      "knownIssues_en": [
+        "KakaoTalk uses its own pop-ups, so its notifications don't appear as banners (the red dot on its Dock icon still shows).",
+        "After you change the notification sound for the first time, sign out and back in for it to take effect.",
+        "Naver Calendar can't be connected because it doesn't offer a subscription (iCal) address."
       ]
     },
     {
       "version": "0.3.4",
       "date": "2026-10-08",
       "headline": "노트북: 배터리·화면 맞춤·소리 끄기",
+      "headline_en": "Laptops: battery, screen fit, mute",
       "entries": [
         {
           "kind": "fix",
           "major": false,
-          "text": "화면이 낮은 노트북에서 시계 달력·알림 패널 아래가 잘리던 문제를 고쳤어요. 공간이 모자라면 알림 목록이 줄어들고 스크롤돼요."
+          "text": "화면이 낮은 노트북에서 시계 달력·알림 패널 아래가 잘리던 문제를 고쳤어요. 공간이 모자라면 알림 목록이 줄어들고 스크롤돼요.",
+          "text_en": "Fixed the bottom of the calendar and notifications panel getting cut off on laptops with short screens. When space is tight, the notification list shrinks and scrolls."
         },
         {
           "kind": "improvement",
           "major": true,
-          "text": "노트북이면 상단바 시계 옆에 맥처럼 배터리가 보여요. 남은 양·퍼센트, 충전 중 번개, 20% 이하 빨강, 절전 모드 노랑. 누르면 전원 상태·남은 시간과 배터리 설정 링크가 나와요(설정 → 상단바에서 끌 수 있어요)."
+          "text": "노트북이면 상단바 시계 옆에 맥처럼 배터리가 보여요. 남은 양·퍼센트, 충전 중 번개, 20% 이하 빨강, 절전 모드 노랑. 누르면 전원 상태·남은 시간과 배터리 설정 링크가 나와요(설정 → 상단바에서 끌 수 있어요).",
+          "text_en": "On laptops, the battery appears next to the menu bar clock, like on a Mac: charge level and percentage, a bolt while charging, red at 20% or below, and yellow in Battery saver. Click it for power status, time remaining, and a link to battery settings (turn it off in Settings → Menu Bar)."
         },
         {
           "kind": "improvement",
           "major": false,
-          "text": "사운드 패널 맨 위 스위치로 소리를 바로 끄고 켤 수 있어요."
+          "text": "사운드 패널 맨 위 스위치로 소리를 바로 끄고 켤 수 있어요.",
+          "text_en": "Mute or unmute sound right away with the switch at the top of the Sound panel."
         },
         {
           "kind": "improvement",
           "major": false,
-          "text": "인터넷이 없어 업데이트 확인에 실패하면, 다시 연결될 때와 30분마다 다시 확인해요."
+          "text": "인터넷이 없어 업데이트 확인에 실패하면, 다시 연결될 때와 30분마다 다시 확인해요.",
+          "text_en": "If checking for updates fails because you're offline, mongdock checks again when you reconnect and every 30 minutes."
         }
       ],
       "knownIssues": [
         "카카오톡 알림은 자체 팝업이라 배너로 잡히지 않아요(독 아이콘의 빨간 점은 표시돼요).",
         "알림 소리는 처음 한 번 바꾼 뒤 다시 로그인해야 적용돼요.",
         "네이버 캘린더는 구독 주소(iCal)를 주지 않아 연결할 수 없어요."
+      ],
+      "knownIssues_en": [
+        "KakaoTalk uses its own pop-ups, so its notifications don't appear as banners (the red dot on its Dock icon still shows).",
+        "After you change the notification sound for the first time, sign out and back in for it to take effect.",
+        "Naver Calendar can't be connected because it doesn't offer a subscription (iCal) address."
       ]
     },
     {
       "version": "0.3.3",
       "date": "2026-10-08",
       "headline": "메뉴 정리",
+      "headline_en": "Menu cleanup",
       "entries": [
         {
           "kind": "improvement",
           "major": false,
-          "text": "로고 메뉴의 몽독 항목을 \"mongdock ›\" 하나로 합쳤어요(설정…·독 보이기·작업 표시줄 숨기기·일시 정지·종료)."
+          "text": "로고 메뉴의 몽독 항목을 \"mongdock ›\" 하나로 합쳤어요(설정…·독 보이기·작업 표시줄 숨기기·일시 정지·종료).",
+          "text_en": "The mongdock items in the logo menu are now grouped under a single \"mongdock ›\" (Settings…, Show Dock, Hide taskbar, Pause, Quit)."
         },
         {
           "kind": "improvement",
           "major": false,
-          "text": "검색창 '최근 사용'의 지우기 버튼 이름을 '모두 지우기'로 바꿨어요."
+          "text": "검색창 '최근 사용'의 지우기 버튼 이름을 '모두 지우기'로 바꿨어요.",
+          "text_en": "Renamed the clear button in Search's 'Recent' section to 'Clear All'."
         },
         {
           "kind": "fix",
           "major": false,
-          "text": "업데이트한 뒤에도 시작 메뉴에 예전 아이콘이 보이던 문제를 고쳤어요."
+          "text": "업데이트한 뒤에도 시작 메뉴에 예전 아이콘이 보이던 문제를 고쳤어요.",
+          "text_en": "Fixed the Start menu still showing the old icon after an update."
         }
       ],
       "knownIssues": [
         "카카오톡 알림은 자체 팝업이라 배너로 잡히지 않아요(독 아이콘의 빨간 점은 표시돼요).",
         "알림 소리는 처음 한 번 바꾼 뒤 다시 로그인해야 적용돼요.",
         "네이버 캘린더는 구독 주소(iCal)를 주지 않아 연결할 수 없어요."
+      ],
+      "knownIssues_en": [
+        "KakaoTalk uses its own pop-ups, so its notifications don't appear as banners (the red dot on its Dock icon still shows).",
+        "After you change the notification sound for the first time, sign out and back in for it to take effect.",
+        "Naver Calendar can't be connected because it doesn't offer a subscription (iCal) address."
       ]
     },
     {
       "version": "0.3.2",
       "date": "2026-10-08",
       "headline": "구름 아이콘·작은 설치 파일",
+      "headline_en": "Cloud icon, smaller installer",
       "entries": [
         {
           "kind": "improvement",
           "major": true,
-          "text": "몽독 전용 구름 아이콘이 생겼어요. 설정 창·작업 관리자·시작 메뉴·설치 프로그램·알림 영역에 윈도우 기본 그림 대신 몽독 구름이 보여요."
+          "text": "몽독 전용 구름 아이콘이 생겼어요. 설정 창·작업 관리자·시작 메뉴·설치 프로그램·알림 영역에 윈도우 기본 그림 대신 몽독 구름이 보여요.",
+          "text_en": "mongdock has its own cloud icon. It now appears in the Settings window, Task Manager, the Start menu, the installer, and the notification area instead of the default Windows image."
         },
         {
           "kind": "improvement",
           "major": true,
-          "text": "설치 파일이 약 10MB 로 작아졌어요. .NET 8 데스크톱 런타임이 없는 PC 는 처음 설치할 때 한 번만 마이크로소프트에서 받아 설치해요(관리자 권한 확인). zip 은 지금처럼 설치 없이 바로 쓸 수 있어요."
+          "text": "설치 파일이 약 10MB 로 작아졌어요. .NET 8 데스크톱 런타임이 없는 PC 는 처음 설치할 때 한 번만 마이크로소프트에서 받아 설치해요(관리자 권한 확인). zip 은 지금처럼 설치 없이 바로 쓸 수 있어요.",
+          "text_en": "The installer is now about 10 MB. On PCs without the .NET 8 Desktop Runtime, it's downloaded from Microsoft and installed once during the first install (requires admin approval). The zip still works without installing."
         },
         {
           "kind": "fix",
           "major": false,
-          "text": "캡처 도구처럼 화면 맨 위에 뜨거나 상단바 밑으로 끌어 놓은 창이 상단바에 가려지지 않게 바로 아래로 내려 줘요(설정 → 상단바에서 끌 수 있어요)."
+          "text": "캡처 도구처럼 화면 맨 위에 뜨거나 상단바 밑으로 끌어 놓은 창이 상단바에 가려지지 않게 바로 아래로 내려 줘요(설정 → 상단바에서 끌 수 있어요).",
+          "text_en": "Windows that open at the very top of the screen (like Snipping Tool) or are dragged under the menu bar are moved just below it so they aren't covered (turn it off in Settings → Menu Bar)."
         },
         {
           "kind": "improvement",
           "major": false,
-          "text": "검색창의 '최근 사용'을 정리할 수 있어요: 마우스를 올려 ×(또는 Delete 키)로 하나씩, 머리글 옆 '모두 지우기'로 한꺼번에 뺄 수 있고, 30일 지난 기록은 자동으로 사라져요. 설정 → 검색에서 최근 사용 표시를 끌 수 있어요."
+          "text": "검색창의 '최근 사용'을 정리할 수 있어요: 마우스를 올려 ×(또는 Delete 키)로 하나씩, 머리글 옆 '모두 지우기'로 한꺼번에 뺄 수 있고, 30일 지난 기록은 자동으로 사라져요. 설정 → 검색에서 최근 사용 표시를 끌 수 있어요.",
+          "text_en": "You can now tidy up 'Recent' in Search: hover and click × (or press Delete) to remove one item, or use 'Clear All' next to the heading to remove them all. Items older than 30 days are removed automatically. Turn off Recent in Settings → Search."
         }
       ],
       "knownIssues": [
         "카카오톡 알림은 자체 팝업이라 배너로 잡히지 않아요(독 아이콘의 빨간 점은 표시돼요).",
         "알림 소리는 처음 한 번 바꾼 뒤 다시 로그인해야 적용돼요.",
         "네이버 캘린더는 구독 주소(iCal)를 주지 않아 연결할 수 없어요."
+      ],
+      "knownIssues_en": [
+        "KakaoTalk uses its own pop-ups, so its notifications don't appear as banners (the red dot on its Dock icon still shows).",
+        "After you change the notification sound for the first time, sign out and back in for it to take effect.",
+        "Naver Calendar can't be connected because it doesn't offer a subscription (iCal) address."
       ]
     },
     {
       "version": "0.3.1",
       "date": "2026-10-08",
       "headline": "작업 표시줄 앱 가져오기·검색 수정",
+      "headline_en": "Taskbar pins import, Search fixes",
       "entries": [
         {
           "kind": "improvement",
           "major": true,
-          "text": "윈도우 작업 표시줄에 고정했던 앱을 독에 같은 순서로 가져와요(처음 설치·작업 표시줄 숨기기를 처음 켤 때, 설정 → 독에서 다시 가져오기)."
+          "text": "윈도우 작업 표시줄에 고정했던 앱을 독에 같은 순서로 가져와요(처음 설치·작업 표시줄 숨기기를 처음 켤 때, 설정 → 독에서 다시 가져오기).",
+          "text_en": "Your taskbar pins are brought into the Dock in the same order (on first install and the first time you hide the taskbar; import again from Settings → Dock)."
         },
         {
           "kind": "fix",
           "major": false,
-          "text": "검색에서 폴더·파일을 열면 홈 폴더가 열리던 문제를 고쳤어요."
+          "text": "검색에서 폴더·파일을 열면 홈 폴더가 열리던 문제를 고쳤어요.",
+          "text_en": "Fixed opening a folder or file from Search opening your home folder instead."
         },
         {
           "kind": "fix",
-          "text": "작업 표시줄 자동 숨김을 안 쓰는 PC 에서 작업 표시줄을 숨기면 아래에 빈 띠가 남던 문제를 고쳤어요."
+          "text": "작업 표시줄 자동 숨김을 안 쓰는 PC 에서 작업 표시줄을 숨기면 아래에 빈 띠가 남던 문제를 고쳤어요.",
+          "text_en": "Fixed an empty strip left at the bottom when hiding the taskbar on PCs that don't use taskbar auto-hide."
         },
         {
           "kind": "improvement",
-          "text": "처음 설치하면 윈도우 작업 표시줄을 숨기고 상단바에 트레이 아이콘을 보여 줘요."
+          "text": "처음 설치하면 윈도우 작업 표시줄을 숨기고 상단바에 트레이 아이콘을 보여 줘요.",
+          "text_en": "On first install, mongdock hides the Windows taskbar and shows tray icons in the menu bar."
         },
         {
           "kind": "improvement",
           "text": "앱을 켤 때 아이콘이 통통 튀어서 눌렸는지 바로 알 수 있어요(설정 → 독에서 점 깜빡임으로 바꿀 수 있어요).",
+          "text_en": "App icons bounce while launching so you know your click registered (switch to a blinking dot in Settings → Dock).",
           "major": false
         },
         {
           "kind": "improvement",
           "text": "독에서 앱이 더 빨리 켜져요(스토어 앱은 약 2배).",
+          "text_en": "Apps open faster from the Dock (about 2x faster for Store apps).",
           "major": false
         },
         {
           "kind": "improvement",
           "text": "달력 패널의 \"알림 센터 열기\"를 뺐어요. 몽독에서 지운 알림은 윈도우 알림 센터에는 남기 때문이에요.",
+          "text_en": "Removed \"Open Notification Center\" from the calendar panel, because notifications cleared in mongdock still remain in the Windows notification center.",
           "major": false
         }
       ],
@@ -346,22 +444,31 @@
         "카카오톡 알림은 자체 팝업이라 배너로 잡히지 않아요(독 아이콘의 빨간 점은 표시돼요).",
         "알림 소리는 처음 한 번 바꾼 뒤 다시 로그인해야 적용돼요.",
         "네이버 캘린더는 구독 주소(iCal)를 주지 않아 연결할 수 없어요."
+      ],
+      "knownIssues_en": [
+        "KakaoTalk uses its own pop-ups, so its notifications don't appear as banners (the red dot on its Dock icon still shows).",
+        "After you change the notification sound for the first time, sign out and back in for it to take effect.",
+        "Naver Calendar can't be connected because it doesn't offer a subscription (iCal) address."
       ]
     },
     {
       "version": "0.3.0",
       "date": "2026-10-08",
       "headline": "트레이 아이콘·검색 확장·구글 일정",
+      "headline_en": "Tray icons, wider Search, Google Calendar",
       "entries": [
         {
           "kind": "feature",
           "major": true,
           "text": "다른 앱 트레이 아이콘이 상단바에 생겼어요. 끌어서 ⌃ 안팎으로 옮기고, 윈도우 \"항상 표시\" 설정을 따라요.",
+          "text_en": "Other apps' tray icons now appear in the menu bar. Drag them into or out of ⌃; they follow the Windows \"Always show\" setting.",
           "coach": {
             "key": "tray",
             "anchor": "Tray",
             "title": "다른 앱 트레이 아이콘이 여기 생겼어요",
+            "title_en": "Other apps' tray icons are here now",
             "body": "끌어서 ⌃ 안팎으로 옮기고, 오른쪽 클릭하면 앱 메뉴가 떠요.",
+            "body_en": "Drag them into or out of ⌃, and right-click to open the app's menu.",
             "condition": "trayIcons"
           }
         },
@@ -369,11 +476,14 @@
           "kind": "feature",
           "major": true,
           "text": "검색이 파일·폴더·윈도우 설정·계산기까지 찾아요. 설정의 \"검색\" 탭에서 고를 수 있어요.",
+          "text_en": "Search now finds files, folders, and Windows settings, and does quick math. Choose what's included in the \"Search\" tab of Settings.",
           "coach": {
             "key": "search",
             "anchor": "Search",
             "title": "검색이 넓어졌어요",
+            "title_en": "Search does more now",
             "body": "{hotkey} 앱·파일·윈도우 설정·계산기까지 찾아요.",
+            "body_en": "{hotkey} Find apps, files, and Windows settings, or do quick math.",
             "condition": "spotlight"
           }
         },
@@ -381,11 +491,14 @@
           "kind": "feature",
           "major": true,
           "text": "달력 날짜를 누르면 음력·며칠 후가 보이고 캘린더 앱이 열려요. 구글 캘린더 일정도 연결할 수 있어요.",
+          "text_en": "Click a date in the calendar to see its lunar date and how many days away it is, and to open your calendar app. You can also connect Google Calendar events.",
           "coach": {
             "key": "calendar",
             "anchor": "Clock",
             "title": "달력을 눌러 보세요",
+            "title_en": "Try the calendar",
             "body": "날짜를 누르면 음력·공휴일이, 두 번 누르면 캘린더가 열려요. 설정 → 캘린더에서 구글 일정도 연결할 수 있어요.",
+            "body_en": "Click a date to see the lunar date and holidays; double-click to open your calendar. Connect Google Calendar in Settings → Calendar.",
             "condition": "topBar"
           }
         },
@@ -393,75 +506,97 @@
           "kind": "feature",
           "major": true,
           "text": "상단바 앱 메뉴: 메모장·그림판은 실제 메뉴를, VS Code·카카오톡·디스코드·탐색기는 전용 메뉴를 보여 줘요.",
+          "text_en": "App menus in the menu bar: Notepad and Paint show their real menus, and VS Code, KakaoTalk, Discord, and File Explorer get custom menus.",
           "coach": {
             "key": "appmenu",
             "anchor": "AppName",
             "title": "상단바에서 앱 메뉴를 열어요",
+            "title_en": "App menus in the menu bar",
             "body": "앱 이름 옆 파일·편집·보기…를 클릭으로 열어요. 메모장·그림판은 실제 메뉴, VS Code·카카오톡 등은 전용 메뉴예요.",
+            "body_en": "Click File, Edit, View… next to the app name. Notepad and Paint show their real menus; VS Code, KakaoTalk, and others get custom menus.",
             "condition": "appMenus"
           }
         },
         {
           "kind": "feature",
-          "text": "새 버전이 나오면 로고에 빨간 점이 떠요. 설정 → 정보에서 바로 업데이트할 수 있어요."
+          "text": "새 버전이 나오면 로고에 빨간 점이 떠요. 설정 → 정보에서 바로 업데이트할 수 있어요.",
+          "text_en": "A red dot appears on the logo when a new version is out. Update right from Settings → About."
         },
         {
           "kind": "feature",
-          "text": "업데이트하면 새로운 기능을 짚어 주고, 처음 설치하면 둘러보기를 보여 줘요."
+          "text": "업데이트하면 새로운 기능을 짚어 주고, 처음 설치하면 둘러보기를 보여 줘요.",
+          "text_en": "After an update, mongdock points out what's new; on first install, it shows a tour."
         },
         {
           "kind": "improvement",
-          "text": "처음 설치하면 독은 아래에 항상 보이고, 상단바는 앱 색에 맞추고, 윈도우 알림 팝업은 숨겨요."
+          "text": "처음 설치하면 독은 아래에 항상 보이고, 상단바는 앱 색에 맞추고, 윈도우 알림 팝업은 숨겨요.",
+          "text_en": "On first install, the Dock always shows at the bottom, the menu bar matches the app's color, and Windows notification pop-ups are hidden."
         },
         {
           "kind": "improvement",
-          "text": "앱 이름을 시작 메뉴 이름으로 보여 줘요(예: \"카카오톡\")."
+          "text": "앱 이름을 시작 메뉴 이름으로 보여 줘요(예: \"카카오톡\").",
+          "text_en": "App names now match their Start menu names (e.g. \"KakaoTalk\")."
         },
         {
           "kind": "improvement",
-          "text": "상단바 글자를 위아래 가운데에 맞췄어요."
+          "text": "상단바 글자를 위아래 가운데에 맞췄어요.",
+          "text_en": "Menu bar text is now vertically centered."
         },
         {
           "kind": "improvement",
-          "text": "트레이·달력 패널에서 앱 메뉴를 띄워도 패널이 닫히지 않아요."
+          "text": "트레이·달력 패널에서 앱 메뉴를 띄워도 패널이 닫히지 않아요.",
+          "text_en": "Opening an app menu from the tray or calendar panel no longer closes the panel."
         },
         {
           "kind": "fix",
-          "text": "디스코드 알림이 위아래 두 군데 뜨던 문제를 고쳤어요."
+          "text": "디스코드 알림이 위아래 두 군데 뜨던 문제를 고쳤어요.",
+          "text_en": "Fixed Discord notifications showing up twice, at the top and bottom."
         },
         {
           "kind": "fix",
-          "text": "앱 이름에 \"(32-bit)\"·\"memo.exe\" 같은 군더더기가 붙던 문제를 고쳤어요."
+          "text": "앱 이름에 \"(32-bit)\"·\"memo.exe\" 같은 군더더기가 붙던 문제를 고쳤어요.",
+          "text_en": "Fixed app names showing extras like \"(32-bit)\" or \"memo.exe\"."
         },
         {
           "kind": "fix",
-          "text": "몽독을 다시 켜면 일부 트레이 아이콘이 안 보이던 문제를 고쳤어요."
+          "text": "몽독을 다시 켜면 일부 트레이 아이콘이 안 보이던 문제를 고쳤어요.",
+          "text_en": "Fixed some tray icons missing after restarting mongdock."
         },
         {
           "kind": "fix",
-          "text": "몽독을 지워도 바꾼 알림 소리가 남던 문제를 고쳤어요."
+          "text": "몽독을 지워도 바꾼 알림 소리가 남던 문제를 고쳤어요.",
+          "text_en": "Fixed the changed notification sound staying after uninstalling mongdock."
         }
       ],
       "knownIssues": [
         "카카오톡 알림은 자체 팝업이라 배너로 잡히지 않아요(독 아이콘의 빨간 점은 표시돼요).",
         "알림 소리는 처음 한 번 바꾼 뒤 다시 로그인해야 적용돼요.",
         "네이버 캘린더는 구독 주소(iCal)를 주지 않아 연결할 수 없어요."
+      ],
+      "knownIssues_en": [
+        "KakaoTalk uses its own pop-ups, so its notifications don't appear as banners (the red dot on its Dock icon still shows).",
+        "After you change the notification sound for the first time, sign out and back in for it to take effect.",
+        "Naver Calendar can't be connected because it doesn't offer a subscription (iCal) address."
       ]
     },
     {
       "version": "0.2.0",
       "date": "2026-10-07",
       "headline": "설정 창·화면 가운데 검색·맥 스타일 알림·몽독 달력",
+      "headline_en": "Settings window, centered Search, Mac-style notifications, mongdock calendar",
       "entries": [
         {
           "kind": "feature",
           "major": true,
           "text": "모든 설정을 클릭으로 바꾸는 설정 창이 생겼어요.",
+          "text_en": "A new Settings window lets you change everything with clicks.",
           "coach": {
             "key": "settings",
             "anchor": "Logo",
             "title": "설정 창이 생겼어요",
+            "title_en": "Meet the Settings window",
             "body": "로고 메뉴 → mongdock 설정…에서 모든 설정을 클릭으로 바꿔요.",
+            "body_en": "Go to logo menu → mongdock Settings… to change everything with clicks.",
             "condition": "topBar"
           }
         },
@@ -469,11 +604,14 @@
           "kind": "feature",
           "major": true,
           "text": "화면 가운데 몽독 검색(Win+Space)으로 앱을 찾아요.",
+          "text_en": "Find apps with mongdock Search (Win+Space) in the center of the screen.",
           "coach": {
             "key": "search",
             "anchor": "Search",
             "title": "화면 가운데 검색",
+            "title_en": "Search, front and center",
             "body": "{hotkey} 앱을 바로 찾아 열어요.",
+            "body_en": "{hotkey} Find and open apps instantly.",
             "condition": "spotlight"
           }
         },
@@ -481,66 +619,85 @@
           "kind": "feature",
           "major": true,
           "text": "맥 스타일 알림 배너, 앱별 알림 묶음과 모두 지우기가 생겼어요.",
+          "text_en": "Mac-style notification banners, with notifications grouped by app and Clear All.",
           "coach": {
             "key": "notifications",
             "anchor": "Center",
             "title": "알림이 맥처럼 오른쪽 위에",
+            "title_en": "Notifications at the top right, like a Mac",
             "body": "윈도우 알림이 오른쪽 위 배너로 뜨고, 앱별로 묶여요. 알림 소리도 고를 수 있어요.",
+            "body_en": "Windows notifications appear as banners at the top right, grouped by app. You can pick the notification sound, too.",
             "condition": "banners"
           }
         },
         {
           "kind": "feature",
-          "text": "윈도우 기본 알림 팝업을 숨길 수 있어요."
+          "text": "윈도우 기본 알림 팝업을 숨길 수 있어요.",
+          "text_en": "You can hide the default Windows notification pop-ups."
         },
         {
           "kind": "feature",
           "major": true,
           "text": "시계를 누르면 몽독 달력이 떠요(한국 공휴일·대체공휴일 표시).",
+          "text_en": "Click the clock to open the mongdock calendar (shows Korean public holidays and substitute holidays).",
           "coach": {
             "key": "calendar",
             "anchor": "Clock",
             "title": "시계를 누르면 달력",
+            "title_en": "Click the clock for a calendar",
             "body": "한국 공휴일·대체공휴일까지 보여 줘요.",
+            "body_en": "It even shows Korean public holidays and substitute holidays.",
             "condition": "topBar"
           }
         },
         {
           "kind": "feature",
-          "text": "블루투스 이어폰·헤드폰을 눌러서 연결하거나 끊어요."
+          "text": "블루투스 이어폰·헤드폰을 눌러서 연결하거나 끊어요.",
+          "text_en": "Connect or disconnect Bluetooth earbuds and headphones with a click."
         },
         {
           "kind": "feature",
-          "text": "독 아이콘을 끌어서 순서를 바꾸고, 끌어내 제거하고, 파일을 끌어다 고정해요."
+          "text": "독 아이콘을 끌어서 순서를 바꾸고, 끌어내 제거하고, 파일을 끌어다 고정해요.",
+          "text_en": "Drag Dock icons to reorder them, drag them out to remove them, and drag files in to keep them in the Dock."
         },
         {
           "kind": "feature",
-          "text": "여러 모니터를 지원해요(상단바는 모든 모니터, 독은 고른 모니터)."
+          "text": "여러 모니터를 지원해요(상단바는 모든 모니터, 독은 고른 모니터).",
+          "text_en": "Multiple monitors are supported (the menu bar on every monitor, the Dock on the one you choose)."
         },
         {
           "kind": "feature",
-          "text": "설치 프로그램(setup.exe)으로 설치·업데이트·제거해요."
+          "text": "설치 프로그램(setup.exe)으로 설치·업데이트·제거해요.",
+          "text_en": "Install, update, and uninstall with the installer (setup.exe)."
         },
         {
           "kind": "feature",
-          "text": "알림 소리를 고를 수 있어요(설정 → 상단바 → 알림 소리)."
+          "text": "알림 소리를 고를 수 있어요(설정 → 상단바 → 알림 소리).",
+          "text_en": "Choose your notification sound (Settings → Menu Bar → Notification sound)."
         },
         {
           "kind": "improvement",
-          "text": "상단바를 맥 메뉴바 크기로 줄이고 글자를 부드럽게 했어요."
+          "text": "상단바를 맥 메뉴바 크기로 줄이고 글자를 부드럽게 했어요.",
+          "text_en": "The menu bar is now the size of a Mac menu bar, with smoother text."
         },
         {
           "kind": "improvement",
-          "text": "패널·배너·메뉴가 부드럽게 열리고 닫혀요."
+          "text": "패널·배너·메뉴가 부드럽게 열리고 닫혀요.",
+          "text_en": "Panels, banners, and menus open and close smoothly."
         },
         {
           "kind": "fix",
-          "text": "\"앱 색에 맞춤\"에서 상단바 아래 선이 보이던 문제를 고쳤어요."
+          "text": "\"앱 색에 맞춤\"에서 상단바 아래 선이 보이던 문제를 고쳤어요.",
+          "text_en": "Fixed a line showing under the menu bar with \"Match app color\"."
         }
       ],
       "knownIssues": [
         "카카오톡처럼 자체 팝업을 쓰는 앱 알림은 배너로 잡히지 않아요(독 아이콘의 빨간 점은 표시돼요).",
         "알림 소리는 처음 한 번 바꾼 뒤 다시 로그인해야 적용돼요."
+      ],
+      "knownIssues_en": [
+        "Apps that use their own pop-ups, like KakaoTalk, don't appear as banners (the red dot on their Dock icon still shows).",
+        "After you change the notification sound for the first time, sign out and back in for it to take effect."
       ]
     }
   ]

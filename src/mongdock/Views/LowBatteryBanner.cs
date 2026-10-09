@@ -39,9 +39,9 @@ internal static class LowBatteryBanner
                 if (!_services.Settings.Current.Notifications.LowBatteryAlerts || AppState.Paused) return;
                 string pct = b.Percent.ToString(CultureInfo.InvariantCulture);
                 string hint = level <= 5
-                    ? "곧 꺼질 수 있어요. 전원을 연결해 주세요."
-                    : b.Saver ? "전원을 연결해 주세요." : "전원을 연결하거나 절전 모드를 켜 보세요.";
-                var item = new NotificationItem(BannerIdBase - level, "", AppInfo.Name, $"배터리가 {pct}% 남았어요",
+                    ? Loc.T("곧 꺼질 수 있어요. 전원을 연결해 주세요.")
+                    : b.Saver ? Loc.T("전원을 연결해 주세요.") : Loc.T("전원을 연결하거나 절전 모드를 켜 보세요.");
+                var item = new NotificationItem(BannerIdBase - level, "", AppInfo.Name, Loc.F($"배터리가 {pct}% 남았어요"),
                     new[] { hint }, DateTime.Now, null, null, false, null);
                 bool shown = NotificationBannerWindow.ShowCustom(item, AppIcon(_services), () => _services.Status.OpenBatterySettings());
                 Log.Info($"배터리 부족 알림 {level}% (현재 {pct}%){(shown ? "" : " — 배너 꺼짐/전체 화면이라 표시 안 함")}");

@@ -37,7 +37,7 @@ internal sealed class SpotlightHotkeyController : IDisposable
         if (_disposed) return;
         if (e.Reason is Microsoft.Win32.SessionSwitchReason.SessionUnlock or Microsoft.Win32.SessionSwitchReason.ConsoleConnect
             or Microsoft.Win32.SessionSwitchReason.RemoteConnect)
-            _hotkey.Reinstall($"세션 {e.Reason}");
+            _hotkey.Reinstall(Loc.F($"세션 {e.Reason}"));
     }
 
     private void OnChanged(object? sender, EventArgs e) => Sync();

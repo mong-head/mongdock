@@ -34,12 +34,12 @@ public static class CalendarApps
 
     public static string DisplayName(CalendarApp app) => app switch
     {
-        CalendarApp.OutlookWeb => "Outlook (웹)",
-        CalendarApp.Naver => "네이버 캘린더 (웹)",
-        CalendarApp.NewOutlook => "새 Outlook",
-        CalendarApp.ClassicOutlook => "Outlook (클래식)",
-        CalendarApp.WindowsCalendar => "메일 및 일정",
-        _ => "Google 캘린더 (웹)",
+        CalendarApp.OutlookWeb => Loc.T("Outlook (웹)"),
+        CalendarApp.Naver => Loc.T("네이버 캘린더 (웹)"),
+        CalendarApp.NewOutlook => Loc.T("새 Outlook"),
+        CalendarApp.ClassicOutlook => Loc.T("Outlook (클래식)"),
+        CalendarApp.WindowsCalendar => Loc.T("메일 및 일정"),
+        _ => Loc.T("Google 캘린더 (웹)"),
     };
 
     /// <summary>설치 안 됐을 때 받을 수 있는 스토어 주소 (확인된 것만). 없으면 null.</summary>

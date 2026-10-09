@@ -22,7 +22,7 @@ internal sealed partial class SettingsWindow
         {
             body.Children.Add(new TextBlock
             {
-                Text = "변경 내역을 읽지 못했어요.",
+                Text = Loc.T("변경 내역을 읽지 못했어요."),
                 Foreground = _p.SubText,
                 Margin = new Thickness(4, 0, 0, 12),
             });
@@ -37,7 +37,7 @@ internal sealed partial class SettingsWindow
             body.Children.Add(card);
         }
 
-        body.Children.Add(LinkButton("GitHub 릴리스 전체 보기 ↗", () => _services.Launcher.OpenFile(UpdateService.ReleasesPageUrl), HorizontalAlignment.Left));
+        body.Children.Add(LinkButton(Loc.T("GitHub 릴리스 전체 보기 ↗"), () => _services.Launcher.OpenFile(UpdateService.ReleasesPageUrl), HorizontalAlignment.Left));
     }
 
     /// <summary>변경 내역 페이지의 버전 카드 (주요 업데이트에서 누르면 여기로 스크롤). 다시 그릴 때마다 새로.</summary>
@@ -53,7 +53,7 @@ internal sealed partial class SettingsWindow
         var head = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 0, 0, 4) };
         var title = new TextBlock
         {
-            Text = "주요 업데이트",
+            Text = Loc.T("주요 업데이트"),
             FontSize = 16,
             FontWeight = FontWeights.Bold,
             VerticalAlignment = VerticalAlignment.Center,
@@ -62,7 +62,7 @@ internal sealed partial class SettingsWindow
         head.Children.Add(title);
         if (releases.Any(r => r.Majors.Any(e => e.Coach is not null)))
         {
-            var tour = TourLink("주요 기능 둘러보기 ▶", CoachMarks.BuildMajorTour);
+            var tour = TourLink(Loc.T("주요 기능 둘러보기 ▶"), CoachMarks.BuildMajorTour);
             DockPanel.SetDock(tour, Dock.Right);
             head.Children.Add(tour);
         }
@@ -125,7 +125,7 @@ internal sealed partial class SettingsWindow
                 Margin = new Thickness(-8, 4, -8, 0),
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 Content = block,
-                ToolTip = $"v{release.VersionText} 변경 내역으로",
+                ToolTip = Loc.F($"v{release.VersionText} 변경 내역으로"),
             };
             string key = release.VersionText;
             button.Click += (_, _) => ScrollToWhenReady(() => _releaseCards.GetValueOrDefault(key));
@@ -244,7 +244,7 @@ internal sealed partial class SettingsWindow
         var current = Changelog.Releases.FirstOrDefault(r => r.Version <= WhatsNew.Current);
         if (current is not null && CoachMarks.HasTour(current))
         {
-            var tour = LinkButton($"v{current.VersionText} 둘러보기 ▶", () => PlayCoach(() => CoachMarks.BuildReleaseTour(current)), HorizontalAlignment.Center);
+            var tour = LinkButton(Loc.F($"v{current.VersionText} 둘러보기 ▶"), () => PlayCoach(() => CoachMarks.BuildReleaseTour(current)), HorizontalAlignment.Center);
             row.Children.Add(tour);
         }
         row.Children.Add(ChangelogLinkButton());
@@ -275,7 +275,7 @@ internal sealed partial class SettingsWindow
                 Padding = new Thickness(7, 1, 7, 2),
                 Margin = new Thickness(8, 1, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
-                Child = new TextBlock { Text = "지금 버전", FontSize = 11, Foreground = _p.AccentText },
+                Child = new TextBlock { Text = Loc.T("지금 버전"), FontSize = 11, Foreground = _p.AccentText },
             };
             DockPanel.SetDock(badge, Dock.Left);
             head.Children.Add(badge);
@@ -294,16 +294,16 @@ internal sealed partial class SettingsWindow
         }
         if (CoachMarks.HasTour(release))
         {
-            var tour = TourLink("둘러보기 ▶", () => CoachMarks.BuildReleaseTour(release));
+            var tour = TourLink(Loc.T("둘러보기 ▶"), () => CoachMarks.BuildReleaseTour(release));
             DockPanel.SetDock(tour, Dock.Right);
             head.Children.Add(tour);
         }
         stack.Children.Add(head);
 
-        AddChangeSection(stack, "새 기능", release.Entries.Where(e => e.Kind == ChangeKind.Feature).Select(e => e.Text));
-        AddChangeSection(stack, "개선", release.Entries.Where(e => e.Kind == ChangeKind.Improvement).Select(e => e.Text));
-        AddChangeSection(stack, "고친 문제", release.Entries.Where(e => e.Kind == ChangeKind.Fix).Select(e => e.Text));
-        AddChangeSection(stack, "알려진 한계", release.KnownIssues);
+        AddChangeSection(stack, Loc.T("새 기능"), release.Entries.Where(e => e.Kind == ChangeKind.Feature).Select(e => e.Text));
+        AddChangeSection(stack, Loc.T("개선"), release.Entries.Where(e => e.Kind == ChangeKind.Improvement).Select(e => e.Text));
+        AddChangeSection(stack, Loc.T("고친 문제"), release.Entries.Where(e => e.Kind == ChangeKind.Fix).Select(e => e.Text));
+        AddChangeSection(stack, Loc.T("알려진 한계"), release.KnownIssues);
 
         return new Border
         {
@@ -319,7 +319,7 @@ internal sealed partial class SettingsWindow
     /// <summary>"2026-10-08" → "2026년 10월 8일". 못 읽으면 그대로.</summary>
     private static string DateText(string date) =>
         DateTime.TryParseExact(date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d)
-            ? $"{d.Year}년 {d.Month}월 {d.Day}일"
+            ? Loc.DateFull(d)
             : date;
 
     /// <summary>소제목 + 점 목록 (단어 단위 줄바꿈). 항목이 없으면 아무것도 안 넣음.</summary>
@@ -363,7 +363,7 @@ internal sealed partial class SettingsWindow
     }
 
     /// <summary>정보 페이지 머리글 아래 "변경 내역 보기" 링크 한 줄.</summary>
-    private Button ChangelogLinkButton() => LinkButton("변경 내역 보기 ›", () => GoToPage(Page.Changelog), HorizontalAlignment.Center);
+    private Button ChangelogLinkButton() => LinkButton(Loc.T("변경 내역 보기 ›"), () => GoToPage(Page.Changelog), HorizontalAlignment.Center);
 
     private Button LinkButton(string text, Action action, HorizontalAlignment align)
     {

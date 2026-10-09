@@ -27,9 +27,9 @@ internal sealed partial class SettingsWindow
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 1, 8, 0),
         });
-        header.Children.Add(new TextBlock { Text = "세부 설정", FontWeight = FontWeights.SemiBold, Foreground = _p.SubText });
+        header.Children.Add(new TextBlock { Text = Loc.T("세부 설정"), FontWeight = FontWeights.SemiBold, Foreground = _p.SubText });
         if (!open)
-            header.Children.Add(new TextBlock { Text = $"  {rows.Count}개", FontSize = 12, Foreground = _p.Disabled, VerticalAlignment = VerticalAlignment.Center });
+            header.Children.Add(new TextBlock { Text = Loc.F($"  {rows.Count}개"), FontSize = 12, Foreground = _p.Disabled, VerticalAlignment = VerticalAlignment.Center });
         var toggle = new Button
         {
             Style = (Style)FindResource("CardLinkButton"),

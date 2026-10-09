@@ -141,7 +141,7 @@ internal sealed class NotificationListView : Border
             {
                 var empty = new TextBlock
                 {
-                    Text = _services.Notifications.IsAvailable ? "새 알림 없음" : "알림을 읽을 수 없음",
+                    Text = _services.Notifications.IsAvailable ? Loc.T("새 알림 없음") : Loc.T("알림을 읽을 수 없음"),
                     FontSize = 12.5,
                     Foreground = _p.SubText,
                     HorizontalAlignment = HorizontalAlignment.Center,
@@ -175,13 +175,13 @@ internal sealed class NotificationListView : Border
         var header = new DockPanel { Margin = new Thickness(2, 0, 0, 8), LastChildFill = true, MinHeight = 20 };
         if (any)
         {
-            _clearAll = LinkButton("모두 지우기", ClearAll);
+            _clearAll = LinkButton(Loc.T("모두 지우기"), ClearAll);
             DockPanel.SetDock(_clearAll, Dock.Right);
             header.Children.Add(_clearAll);
         }
         header.Children.Add(new TextBlock
         {
-            Text = _showHeader ? "알림" : "",
+            Text = _showHeader ? Loc.T("알림") : "",
             FontSize = 13,
             FontWeight = FontWeights.Bold,
             VerticalAlignment = VerticalAlignment.Center,
@@ -210,7 +210,7 @@ internal sealed class NotificationListView : Border
         {
             // 겹친 스택: 맨 위 카드 + 아래로 비치는 카드 1~2장
             int layers = Math.Min(2, group.Count - 1);
-            var stack = new Grid { Cursor = Cursors.Hand, ToolTip = $"알림 {group.Count}개 — 눌러서 펼치기" };
+            var stack = new Grid { Cursor = Cursors.Hand, ToolTip = Loc.F($"알림 {group.Count}개 — 눌러서 펼치기") };
             for (int i = layers; i >= 1; i--)
             {
                 stack.Children.Add(new Border
@@ -231,7 +231,7 @@ internal sealed class NotificationListView : Border
             // 호버 시 묶음 × = 이 앱 알림 전부 숨기기 (밀려나며 사라짐). 카드 × 와 같은 자리·모양
             var closeGroup = NotificationUi.CloseButton(_p, () => HideGroup(panel, aumid));
             closeGroup.Margin = new Thickness(-6, -6, 0, 0);
-            closeGroup.ToolTip = "이 묶음 지우기";
+            closeGroup.ToolTip = Loc.T("이 묶음 지우기");
             stack.Children.Add(closeGroup);
             stack.Margin = new Thickness(6, 6, 0, 0); // × 가 잘리지 않게
             stack.MouseEnter += (_, _) => NotificationUi.ShowClose(closeGroup, true);
@@ -248,8 +248,8 @@ internal sealed class NotificationListView : Border
 
         // 펼친 묶음: 헤더(앱 이름 · 접기 · 모두 숨기기) + 모든 카드
         var header = new DockPanel { Margin = new Thickness(2, 0, 0, 6), LastChildFill = true };
-        var hide = LinkButton("모두 숨기기", () => HideGroup(panel, aumid));
-        var collapse = LinkButton("접기", () => Fold(panel, aumid));
+        var hide = LinkButton(Loc.T("모두 숨기기"), () => HideGroup(panel, aumid));
+        var collapse = LinkButton(Loc.T("접기"), () => Fold(panel, aumid));
         DockPanel.SetDock(hide, Dock.Right);
         DockPanel.SetDock(collapse, Dock.Right);
         header.Children.Add(hide);
@@ -638,7 +638,7 @@ internal static class NotificationUi
             Cursor = Cursors.Hand,
             Opacity = 0,
             IsHitTestVisible = false,
-            ToolTip = "닫기",
+            ToolTip = Loc.T("닫기"),
             Child = new TextBlock
             {
                 Text = "",
@@ -669,11 +669,11 @@ internal static class NotificationUi
     {
         var now = DateTime.Now;
         var diff = now - local;
-        if (diff < TimeSpan.FromMinutes(1)) return "지금";
-        if (diff < TimeSpan.FromHours(1)) return $"{(int)diff.TotalMinutes}분 전";
-        if (local.Date == now.Date) return local.ToString("tt h:mm", CultureInfo.GetCultureInfo("ko-KR"));
-        if (local.Date == now.Date.AddDays(-1)) return "어제";
-        return local.ToString("M월 d일", CultureInfo.GetCultureInfo("ko-KR"));
+        if (diff < TimeSpan.FromMinutes(1)) return Loc.T("지금");
+        if (diff < TimeSpan.FromHours(1)) return Loc.F($"{(int)diff.TotalMinutes}분 전");
+        if (local.Date == now.Date) return Loc.ShortTime(local);
+        if (local.Date == now.Date.AddDays(-1)) return Loc.T("어제");
+        return Loc.MonthDay(local);
     }
 
     /// <summary>로컬 이미지 파일 (축소 디코드, Frozen). 실패 시 null. 경로+수정 시각으로 캐시.</summary>

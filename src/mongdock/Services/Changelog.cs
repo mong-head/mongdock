@@ -76,7 +76,7 @@ public static class Changelog
             {
                 foreach (var e in arr.EnumerateArray())
                 {
-                    string? line = Str(e, "text");
+                    string? line = Text(e, "text");
                     if (string.IsNullOrWhiteSpace(line)) continue;
                     var kind = (Str(e, "kind") ?? "").ToLowerInvariant() switch
                     {
@@ -89,12 +89,13 @@ public static class Changelog
                 }
             }
             var issues = new List<string>();
-            if (v.TryGetProperty("knownIssues", out var ki) && ki.ValueKind == JsonValueKind.Array)
+            if ((Loc.IsEnglish && v.TryGetProperty("knownIssues_en", out var ki) && ki.ValueKind == JsonValueKind.Array)
+                || (v.TryGetProperty("knownIssues", out ki) && ki.ValueKind == JsonValueKind.Array))
             {
                 foreach (var i in ki.EnumerateArray())
                     if (i.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(i.GetString())) issues.Add(i.GetString()!);
             }
-            list.Add(new ChangeRelease(ver, ver.ToString(3), Str(v, "date") ?? "", entries, issues, Str(v, "headline")?.Trim() ?? ""));
+            list.Add(new ChangeRelease(ver, ver.ToString(3), Str(v, "date") ?? "", entries, issues, Text(v, "headline")?.Trim() ?? ""));
         }
         return list.OrderByDescending(r => r.Version).ToList();
     }
@@ -102,12 +103,16 @@ public static class Changelog
     private static ChangeCoach? ReadCoach(JsonElement entry)
     {
         if (!entry.TryGetProperty("coach", out var c) || c.ValueKind != JsonValueKind.Object) return null;
-        string? title = Str(c, "title");
+        string? title = Text(c, "title");
         if (string.IsNullOrWhiteSpace(title)) return null;
         var anchor = Enum.TryParse<CoachAnchor>(Str(c, "anchor"), ignoreCase: true, out var a) ? a : CoachAnchor.Center;
-        string key = Str(c, "key") ?? title;
-        return new ChangeCoach(key, anchor, title, Str(c, "body") ?? "", Str(c, "condition"));
+        string key = Str(c, "key") ?? Str(c, "title") ?? title; // 키는 언어와 상관없이 같게
+        return new ChangeCoach(key, anchor, title, Text(c, "body") ?? "", Str(c, "condition"));
     }
+
+    /// <summary>화면 문구: 영어면 "{name}_en" 이 있으면 그것 (없으면 한국어 원문). build-release.ps1 은 한국어만 읽음.</summary>
+    private static string? Text(JsonElement e, string name) =>
+        (Loc.IsEnglish ? Str(e, name + "_en") : null) ?? Str(e, name);
 
     private static string? Str(JsonElement e, string name) =>
         e.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;

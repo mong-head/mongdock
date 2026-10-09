@@ -231,27 +231,27 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
     public async Task<CalendarAddResult> AddAsync(string text)
     {
         if (!TryNormalizeUrl(text, out var uri))
-            return new CalendarAddResult(false, "클립보드에 캘린더 주소(https:// 또는 webcal://)가 없어요.", null, CalendarAddError.NotUrl);
+            return new CalendarAddResult(false, Loc.T("클립보드에 캘린더 주소(https:// 또는 webcal://)가 없어요."), null, CalendarAddError.NotUrl);
         if (!IsSecure(uri))
         {
             Log.Info($"캘린더 추가 거부: http 주소 ({uri.Host})");
             return new CalendarAddResult(false,
-                "https 주소만 지원해요. 캘린더 앱에서 https:// 또는 webcal:// 로 시작하는 주소를 복사해 주세요.", null, CalendarAddError.InsecureUrl);
+                Loc.T("https 주소만 지원해요. 캘린더 앱에서 https:// 또는 webcal:// 로 시작하는 주소를 복사해 주세요."), null, CalendarAddError.InsecureUrl);
         }
         string url = uri.AbsoluteUri;
         if (_feeds.Any(f => string.Equals(f.Feed.Url, url, StringComparison.Ordinal)))
-            return new CalendarAddResult(false, "이미 추가된 캘린더예요.", null, CalendarAddError.Duplicate);
+            return new CalendarAddResult(false, Loc.T("이미 추가된 캘린더예요."), null, CalendarAddError.Duplicate);
 
         var result = await Task.Run(() => FetchAsync(url, null, null));
         if (_disposed) return new CalendarAddResult(false, "", null, CalendarAddError.Disposed);
         if (result.Kind == FetchKind.Invalid)
         {
             Log.Warn($"캘린더 추가 실패 ({uri.Host}): {result.LogDetail}");
-            return new CalendarAddResult(false, result.UserMessage ?? "캘린더를 가져오지 못했어요.", null, CalendarAddError.Invalid);
+            return new CalendarAddResult(false, result.UserMessage ?? Loc.T("캘린더를 가져오지 못했어요."), null, CalendarAddError.Invalid);
         }
         // 그 사이 같은 주소가 추가됐으면 (버튼 연타)
         if (_feeds.Any(f => string.Equals(f.Feed.Url, url, StringComparison.Ordinal)))
-            return new CalendarAddResult(false, "이미 추가된 캘린더예요.", null, CalendarAddError.Duplicate);
+            return new CalendarAddResult(false, Loc.T("이미 추가된 캘린더예요."), null, CalendarAddError.Duplicate);
 
         var feed = new CalendarFeed
         {
@@ -265,13 +265,13 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
         if (result.Kind == FetchKind.Ok)
         {
             ApplyFetched(st, result);
-            message = $"'{feed.Name}' 를 추가했어요.";
+            message = Loc.F($"'{feed.Name}' 를 추가했어요.");
         }
         else
         {
             st.Error = result.UserMessage;
             Log.Warn($"캘린더 '{MaskName(feed.Name)}' 추가 — 지금은 가져오기 실패 ({uri.Host}): {result.LogDetail}");
-            message = $"'{feed.Name}' 를 추가했지만 지금은 가져오지 못했어요. 나중에 다시 시도합니다.";
+            message = Loc.F($"'{feed.Name}' 를 추가했지만 지금은 가져오지 못했어요. 나중에 다시 시도합니다.");
         }
         Log.Info($"캘린더 구독 추가: {MaskName(feed.Name)} ({uri.Host})");
         SaveStore();
@@ -318,11 +318,11 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
     public static string DefaultName(Uri uri)
     {
         string h = uri.Host.ToLowerInvariant();
-        if (h.EndsWith("google.com", StringComparison.Ordinal)) return "Google 캘린더";
-        if (h.EndsWith("naver.com", StringComparison.Ordinal) || h.EndsWith("worksmobile.com", StringComparison.Ordinal)) return "네이버 캘린더";
+        if (h.EndsWith("google.com", StringComparison.Ordinal)) return Loc.T("Google 캘린더");
+        if (h.EndsWith("naver.com", StringComparison.Ordinal) || h.EndsWith("worksmobile.com", StringComparison.Ordinal)) return Loc.T("네이버 캘린더");
         if (h.Contains("outlook", StringComparison.Ordinal) || h.EndsWith("office365.com", StringComparison.Ordinal)
             || h.EndsWith("office.com", StringComparison.Ordinal) || h.EndsWith("live.com", StringComparison.Ordinal)) return "Outlook";
-        return "캘린더";
+        return Loc.T("캘린더");
     }
 
     /// <summary>https 만 허용 (비공개 캘린더 링크·일정 내용이 평문으로 오가지 않게). webcal 은 TryNormalizeUrl 이 https 로 바꿈.</summary>
@@ -343,7 +343,7 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
         string s = (name ?? "").Replace('\r', ' ').Replace('\n', ' ').Trim();
         s = EmailLike.Replace(s, m => m.Groups[1].Value[0] + "***@" + m.Groups[2].Value);
         if (s.Length > 30) s = s[..30] + "…";
-        return s.Length > 0 ? s : "(이름 없음)";
+        return s.Length > 0 ? s : Loc.T("(이름 없음)");
     }
 
     // ───────────────────────── 일정 ─────────────────────────
@@ -374,7 +374,7 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
                 }
                 foreach (var o in occurrences)
                 {
-                    string title = o.Event.Summary.Length > 0 ? o.Event.Summary.Replace('\n', ' ') : "(제목 없음)";
+                    string title = o.Event.Summary.Length > 0 ? o.Event.Summary.Replace('\n', ' ') : Loc.T("(제목 없음)");
                     list.Add(new CalendarOccurrence(st.Feed.Id, title, o.Event.Location?.Replace('\n', ' '), o.Start, o.End, o.AllDay, st.Feed.Color));
                 }
             }
@@ -456,7 +456,7 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
         if (st.Busy || _disposed) return;
         if (st.Feed.Url.Length == 0)
         {
-            st.Error = "주소를 읽을 수 없어요 — 삭제 후 다시 추가해 주세요.";
+            st.Error = Loc.T("주소를 읽을 수 없어요 — 삭제 후 다시 추가해 주세요.");
             RaiseChanged();
             return;
         }
@@ -464,7 +464,7 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
         {
             // 예전 버전에서 추가한 http:// 구독 — 가져오지 않음 (캐시된 일정은 그대로 보임)
             if (st.Error == null) Log.Warn($"캘린더 '{MaskName(st.Feed.Name)}' http 주소 → 가져오지 않음 ({HostOf(st.Feed.Url)})");
-            st.Error = "https 주소만 지원해요 — 삭제 후 https 주소로 다시 추가해 주세요.";
+            st.Error = Loc.T("https 주소만 지원해요 — 삭제 후 https 주소로 다시 추가해 주세요.");
             st.LastAttempt = DateTime.Now;
             RaiseChanged();
             return;
@@ -482,7 +482,7 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
         }
         catch (Exception ex)
         {
-            result = FetchResult.Fail(FetchKind.Transient, "가져오기 실패", ex.GetType().Name);
+            result = FetchResult.Fail(FetchKind.Transient, Loc.T("가져오기 실패"), ex.GetType().Name);
         }
         st.Busy = false;
         if (_disposed) return;
@@ -589,11 +589,11 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
             if (resp.StatusCode == HttpStatusCode.NotModified)
                 return new FetchResult(FetchKind.NotModified, null, null, etag, lastModified, null, "304");
             if (code is 400 or 401 or 403 or 404 or 410)
-                return FetchResult.Fail(FetchKind.Invalid, "가져오기 실패 — 주소를 확인하세요", $"HTTP {code}");
+                return FetchResult.Fail(FetchKind.Invalid, Loc.T("가져오기 실패 — 주소를 확인하세요"), $"HTTP {code}");
             if (!resp.IsSuccessStatusCode)
-                return FetchResult.Fail(FetchKind.Transient, $"가져오기 실패 — 서버 오류 ({code})", $"HTTP {code}");
+                return FetchResult.Fail(FetchKind.Transient, Loc.F($"가져오기 실패 — 서버 오류 ({code})"), $"HTTP {code}");
             if (resp.Content.Headers.ContentLength is long len && len > MaxBytes)
-                return FetchResult.Fail(FetchKind.Invalid, "캘린더가 너무 커요 (20MB 초과)", $"Content-Length {len}");
+                return FetchResult.Fail(FetchKind.Invalid, Loc.T("캘린더가 너무 커요 (20MB 초과)"), $"Content-Length {len}");
 
             using var ms = new MemoryStream();
             await using (var stream = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false))
@@ -603,7 +603,7 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
                 while ((n = await stream.ReadAsync(buffer).ConfigureAwait(false)) > 0)
                 {
                     if (ms.Length + n > MaxBytes)
-                        return FetchResult.Fail(FetchKind.Invalid, "캘린더가 너무 커요 (20MB 초과)", "body > 20MB");
+                        return FetchResult.Fail(FetchKind.Invalid, Loc.T("캘린더가 너무 커요 (20MB 초과)"), "body > 20MB");
                     ms.Write(buffer, 0, n);
                 }
             }
@@ -619,7 +619,7 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
             using (var reader = new StreamReader(ms, enc, detectEncodingFromByteOrderMarks: true))
                 text = reader.ReadToEnd();
             if (text.IndexOf("BEGIN:VCALENDAR", StringComparison.OrdinalIgnoreCase) < 0)
-                return FetchResult.Fail(FetchKind.Invalid, "캘린더(ICS) 주소가 아니에요 — iCal 주소를 복사했는지 확인하세요", "본문이 ICS 아님");
+                return FetchResult.Fail(FetchKind.Invalid, Loc.T("캘린더(ICS) 주소가 아니에요 — iCal 주소를 복사했는지 확인하세요"), "본문이 ICS 아님");
 
             var parsed = IcsParser.Parse(text);
             string? newEtag = resp.Headers.ETag?.ToString();
@@ -628,16 +628,16 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
         }
         catch (TaskCanceledException)
         {
-            return FetchResult.Fail(FetchKind.Transient, "가져오기 실패 — 시간 초과", "시간 초과 (15초)");
+            return FetchResult.Fail(FetchKind.Transient, Loc.T("가져오기 실패 — 시간 초과"), "시간 초과 (15초)");
         }
         catch (HttpRequestException ex)
         {
             // 메시지에는 보통 "호스트:포트" 만 들어가지만 혹시 몰라 주소 조각을 지움
-            return FetchResult.Fail(FetchKind.Transient, "가져오기 실패 — 네트워크를 확인하세요", $"{ex.HttpRequestError}: {Scrub(ex.Message, url)}");
+            return FetchResult.Fail(FetchKind.Transient, Loc.T("가져오기 실패 — 네트워크를 확인하세요"), $"{ex.HttpRequestError}: {Scrub(ex.Message, url)}");
         }
         catch (Exception ex)
         {
-            return FetchResult.Fail(FetchKind.Transient, "가져오기 실패", ex.GetType().Name);
+            return FetchResult.Fail(FetchKind.Transient, Loc.T("가져오기 실패"), ex.GetType().Name);
         }
     }
 
@@ -710,13 +710,13 @@ public sealed class CalendarFeedService : ICalendarFeedService, IDisposable
                 var feed = new CalendarFeed
                 {
                     Id = f.Id,
-                    Name = string.IsNullOrWhiteSpace(f.Name) ? "캘린더" : f.Name,
+                    Name = string.IsNullOrWhiteSpace(f.Name) ? Loc.T("캘린더") : f.Name,
                     Url = url ?? "",
                     Color = NormalizeColor(f.Color) ?? CalendarFeed.Palette[0],
                     Enabled = f.Enabled,
                 };
                 var st = new FeedState(feed);
-                if (url == null) st.Error = "주소를 읽을 수 없어요 — 삭제 후 다시 추가해 주세요.";
+                if (url == null) st.Error = Loc.T("주소를 읽을 수 없어요 — 삭제 후 다시 추가해 주세요.");
                 _feeds.Add(st);
             }
             if (resave) SaveStore();

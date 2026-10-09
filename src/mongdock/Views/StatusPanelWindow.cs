@@ -442,7 +442,7 @@ internal sealed partial class StatusPanelWindow : Window
     {
         if (!on)
         {
-            bool ok = await ConfirmCardWindow.AskAsync(_services, "Wi-Fi 를 끌까요?", "원격 연결이 끊길 수 있어요.", "끄기");
+            bool ok = await ConfirmCardWindow.AskAsync(_services, Loc.T("Wi-Fi 를 끌까요?"), Loc.T("원격 연결이 끊길 수 있어요."), Loc.T("끄기"));
             if (!ok) return null;
         }
         return await _services.Status.SetWifiAsync(on);
@@ -483,7 +483,7 @@ internal sealed partial class StatusPanelWindow : Window
                 _updating = false;
                 if (ok == false && errorLine != null)
                 {
-                    errorLine.Text = "여기서 바꿀 수 없어요. 설정에서 바꿔 주세요.";
+                    errorLine.Text = Loc.T("여기서 바꿀 수 없어요. 설정에서 바꿔 주세요.");
                     errorLine.Visibility = Visibility.Visible;
                 }
             }
@@ -557,7 +557,7 @@ internal sealed partial class StatusPanelWindow : Window
         root.Children.Add(Divider());
 
         var current = new StackPanel();
-        var currentTitle = Sub("현재 네트워크");
+        var currentTitle = Sub(Loc.T("현재 네트워크"));
         currentTitle.Margin = new Thickness(0, 0, 0, 6);
         current.Children.Add(currentTitle);
         var netRow = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 8) };
@@ -587,11 +587,11 @@ internal sealed partial class StatusPanelWindow : Window
         current.Children.Add(Divider());
         root.Children.Add(current);
 
-        var others = LinkRow("다른 네트워크", () => st.OpenAvailableNetworks());
+        var others = LinkRow(Loc.T("다른 네트워크"), () => st.OpenAvailableNetworks());
         root.Children.Add(others);
         var othersDivider = Divider();
         root.Children.Add(othersDivider);
-        root.Children.Add(LinkRow("네트워크 설정…", () => st.OpenWifiSettings()));
+        root.Children.Add(LinkRow(Loc.T("네트워크 설정…"), () => st.OpenWifiSettings()));
 
         _refreshers.Add(() =>
         {
@@ -602,7 +602,7 @@ internal sealed partial class StatusPanelWindow : Window
             bool connected = st.Wifi == WifiState.Connected || ethernet;
             current.Visibility = connected ? Visibility.Visible : Visibility.Collapsed;
             SetCircle(circle, ethernet ? "" : "", true);
-            ssid.Text = ethernet ? "유선 연결" : st.WifiName ?? "연결됨";
+            ssid.Text = ethernet ? Loc.T("유선 연결") : st.WifiName ?? Loc.T("연결됨");
             lockIcon.Visibility = ethernet ? Visibility.Collapsed : Visibility.Visible;
             ip.Text = st.IpAddress ?? "";
             speed.Text = FormatLinkSpeed(st.LinkSpeedBps);
@@ -635,14 +635,14 @@ internal sealed partial class StatusPanelWindow : Window
             if (on && st.Volume <= 0) st.SetVolume(0.3); // 볼륨 0 인 채로 켜면 들리지 않으니 조금 올림
             return Task.FromResult(true);
         }, null);
-        soundSwitch.ToolTip = "소리 켜기/끄기";
-        root.Children.Add(HeaderRow("사운드", soundSwitch));
+        soundSwitch.ToolTip = Loc.T("소리 켜기/끄기");
+        root.Children.Add(HeaderRow(Loc.T("사운드"), soundSwitch));
         var slider = new PillSlider(_p) { Margin = new Thickness(0, 6, 0, 2) };
         slider.UserChanged += (_, v) => SetVolume(v);
         root.Children.Add(slider);
         root.Children.Add(Divider());
 
-        var devTitle = Sub("출력 장치");
+        var devTitle = Sub(Loc.T("출력 장치"));
         devTitle.Margin = new Thickness(0, 0, 0, 4);
         root.Children.Add(devTitle);
         var devices = new StackPanel();
@@ -655,7 +655,7 @@ internal sealed partial class StatusPanelWindow : Window
         root.Children.Add(media);
 
         root.Children.Add(Divider());
-        root.Children.Add(LinkRow("사운드 설정…", () => st.OpenSoundSettings()));
+        root.Children.Add(LinkRow(Loc.T("사운드 설정…"), () => st.OpenSoundSettings()));
 
         string signature = "";
         _refreshers.Add(() =>
@@ -673,7 +673,7 @@ internal sealed partial class StatusPanelWindow : Window
                 devices.Children.Add(DeviceRow(DeviceGlyph(d.Kind), d.IsDefault, d.Name, null,
                     d.IsDefault ? null : () => st.SetDefaultOutput(id)));
             }
-            if (list.Count == 0) devices.Children.Add(Sub("재생 장치 없음"));
+            if (list.Count == 0) devices.Children.Add(Sub(Loc.T("재생 장치 없음")));
         });
         return root;
     }
@@ -829,16 +829,16 @@ internal sealed partial class StatusPanelWindow : Window
         var root = new StackPanel();
         var error = ErrorLine();
         var sw = Switch(on => st.SetBluetoothAsync(on), error);
-        root.Children.Add(HeaderRow("블루투스", sw));
+        root.Children.Add(HeaderRow(Loc.T("블루투스"), sw));
         root.Children.Add(error);
         root.Children.Add(Divider());
-        var devTitle = Sub("기기");
+        var devTitle = Sub(Loc.T("기기"));
         devTitle.Margin = new Thickness(0, 0, 0, 4);
         root.Children.Add(devTitle);
         var devices = new StackPanel();
         root.Children.Add(devices);
         root.Children.Add(Divider());
-        root.Children.Add(LinkRow("블루투스 설정…", () => st.OpenBluetoothSettings()));
+        root.Children.Add(LinkRow(Loc.T("블루투스 설정…"), () => st.OpenBluetoothSettings()));
 
         string signature = "";
         _refreshers.Add(() =>
@@ -861,17 +861,17 @@ internal sealed partial class StatusPanelWindow : Window
                 var dev = d;
                 string? sub;
                 Brush? subBrush = null;
-                if (_btPending.TryGetValue(d.Id, out var pending)) sub = pending.Target ? "연결 중…" : "연결 해제 중…";
+                if (_btPending.TryGetValue(d.Id, out var pending)) sub = pending.Target ? Loc.T("연결 중…") : Loc.T("연결 해제 중…");
                 else if (_btErrors.TryGetValue(d.Id, out var err)) { sub = err; subBrush = ErrorBrush; }
-                else if (d.Connected) sub = "연결됨";
-                else sub = d.CanConnect ? null : "설정에서 연결";
+                else if (d.Connected) sub = Loc.T("연결됨");
+                else sub = d.CanConnect ? null : Loc.T("설정에서 연결");
                 Action onClick = d.CanConnect
                     ? () => ToggleBluetoothDevice(dev)
                     : () => { st.OpenBluetoothSettings(); Close(); };
                 devices.Children.Add(DeviceRow(BluetoothGlyph(d.Kind), d.Connected, d.Name, sub, onClick, subBrush));
             }
             if (list.Count == 0)
-                devices.Children.Add(Sub(st.BluetoothOn switch { true => "페어링된 기기 없음", false => "블루투스가 꺼져 있음", null => "어댑터를 찾을 수 없음" }));
+                devices.Children.Add(Sub(st.BluetoothOn switch { true => Loc.T("페어링된 기기 없음"), false => Loc.T("블루투스가 꺼져 있음"), null => Loc.T("어댑터를 찾을 수 없음") }));
         });
         return root;
     }
@@ -922,8 +922,8 @@ internal sealed partial class StatusPanelWindow : Window
         {
             _btPending.Remove(d.Id);
             _btErrors[d.Id] = target
-                ? "연결하지 못했습니다 — 기기가 켜져 있고 가까이 있는지 확인"
-                : "연결을 해제하지 못했습니다";
+                ? Loc.T("연결하지 못했습니다 — 기기가 켜져 있고 가까이 있는지 확인")
+                : Loc.T("연결을 해제하지 못했습니다");
             RefreshAll();
         }
     }
@@ -1028,7 +1028,7 @@ internal sealed partial class StatusPanelWindow : Window
             bool on = st.WifiRadioOn ?? st.Wifi == WifiState.Connected;
             await SetWifiConfirmed(!on);
         });
-        var bt = ToggleLine("", "블루투스", async () =>
+        var bt = ToggleLine("", Loc.T("블루투스"), async () =>
         {
             if (st.BluetoothOn is bool on) await st.SetBluetoothAsync(!on);
         });
@@ -1043,8 +1043,8 @@ internal sealed partial class StatusPanelWindow : Window
         right.RowDefinitions.Add(new RowDefinition());
         right.RowDefinitions.Add(new RowDefinition { Height = new GridLength(10) });
         right.RowDefinitions.Add(new RowDefinition());
-        var quick = Tile(SmallTile("", "Windows 빠른 설정", () => _services.Shell.OpenQuickSettings()), new Thickness(2));
-        var settings = Tile(SmallTile("", "설정", () => _services.Shell.OpenSettings()), new Thickness(2));
+        var quick = Tile(SmallTile("", Loc.T("Windows 빠른 설정"), () => _services.Shell.OpenQuickSettings()), new Thickness(2));
+        var settings = Tile(SmallTile("", Loc.T("설정"), () => _services.Shell.OpenSettings()), new Thickness(2));
         Grid.SetRow(settings, 2);
         right.Children.Add(quick);
         right.Children.Add(settings);
@@ -1057,7 +1057,7 @@ internal sealed partial class StatusPanelWindow : Window
 
         // 사운드 타일
         var soundStack = new StackPanel();
-        var soundTitle = Heading("사운드");
+        var soundTitle = Heading(Loc.T("사운드"));
         soundTitle.FontSize = 13.5;
         soundTitle.Margin = new Thickness(0, 0, 0, 8);
         soundStack.Children.Add(soundTitle);
@@ -1093,17 +1093,17 @@ internal sealed partial class StatusPanelWindow : Window
             bool wifiOn = st.WifiRadioOn ?? st.Wifi == WifiState.Connected;
             bool ethernet = st.Wifi == WifiState.Ethernet;
             SetCircle(wifi.Circle, ethernet ? "" : "", wifiOn || ethernet);
-            wifi.State.Text = ethernet ? "유선 연결" : st.Wifi == WifiState.Connected ? st.WifiName ?? "연결됨" : wifiOn ? "연결 안 됨" : "끔";
+            wifi.State.Text = ethernet ? Loc.T("유선 연결") : st.Wifi == WifiState.Connected ? st.WifiName ?? Loc.T("연결됨") : wifiOn ? Loc.T("연결 안 됨") : Loc.T("끔");
             wifi.Button.IsEnabled = st.WifiRadioOn != null;
             SetCircle(bt.Circle, "", st.BluetoothOn == true);
-            bt.State.Text = st.BluetoothOn switch { true => "켬", false => "끔", null => "없음" };
+            bt.State.Text = st.BluetoothOn switch { true => Loc.T("켬"), false => Loc.T("끔"), null => Loc.T("없음") };
             bt.Button.IsEnabled = st.BluetoothOn != null;
             if (!slider.IsDragging) slider.Value = st.Muted ? 0 : st.Volume;
 
             mediaTile.Visibility = m.HasSession ? Visibility.Visible : Visibility.Collapsed;
             if (m.HasSession)
             {
-                mediaTitle.Text = string.IsNullOrEmpty(m.Title) ? "재생 중" : m.Title;
+                mediaTitle.Text = string.IsNullOrEmpty(m.Title) ? Loc.T("재생 중") : m.Title;
                 thumb.Background = m.Thumbnail != null ? new ImageBrush(m.Thumbnail) { Stretch = Stretch.UniformToFill } : _p.CircleOff;
                 SetMediaGlyph(playBtn, m.IsPlaying ? MediaGlyph.Pause : MediaGlyph.Play);
             }

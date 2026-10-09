@@ -55,9 +55,9 @@ internal static class CrashPrompt
             }
             bool crashed = pending.Crashed;
             var choice = await ConfirmCardWindow.AskWithExtraAsync(services,
-                crashed ? "몽독이 지난번에 갑자기 꺼졌어요" : "몽독에서 오류가 있었어요",
-                "문제를 몽독 지원으로 보내면 고치는 데 도움이 돼요. 보내기 전에 내용을 확인할 수 있어요.",
-                "보내기", "안 보내기", "다시 묻지 않기");
+                crashed ? Loc.T("몽독이 지난번에 갑자기 꺼졌어요") : Loc.T("몽독에서 오류가 있었어요"),
+                Loc.T("문제를 몽독 지원으로 보내면 고치는 데 도움이 돼요. 보내기 전에 내용을 확인할 수 있어요."),
+                Loc.T("보내기"), Loc.T("안 보내기"), Loc.T("다시 묻지 않기"));
             Log.Info($"오류 자동 신고 카드: {choice}");
             switch (choice)
             {
@@ -71,8 +71,8 @@ internal static class CrashPrompt
                     }
                     ReportWindow.Open(services, new ReportWindow.Prefill(
                         ReportKind.Bug,
-                        crashed ? "갑자기 꺼짐 (자동)" : "오류 (자동)",
-                        (crashed ? "몽독이 갑자기 꺼졌어요." : "몽독에서 오류가 났어요.") + " 그때 하던 일을 적어 주시면 도움이 돼요.",
+                        crashed ? Loc.T("갑자기 꺼짐 (자동)") : Loc.T("오류 (자동)"),
+                        (crashed ? Loc.T("몽독이 갑자기 꺼졌어요.") : Loc.T("몽독에서 오류가 났어요.")) + Loc.T(" 그때 하던 일을 적어 주시면 도움이 돼요."),
                         CrashReporter.Describe(pending)));
                     CrashReporter.Clear();
                     break;

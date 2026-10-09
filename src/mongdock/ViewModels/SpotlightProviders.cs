@@ -64,7 +64,7 @@ public sealed class AppSearchProvider : ISpotlightProvider
         _iconStyle = iconStyle;
     }
 
-    public string Name => "앱";
+    public string Name => Loc.T("앱");
     public bool IsSlow => false;
 
     public Task<IReadOnlyList<SpotlightItem>> SearchAsync(string query, SearchSettings settings, CancellationToken ct)
@@ -99,7 +99,7 @@ public sealed class AppSearchProvider : ISpotlightProvider
 /// <summary>ms-settings: 페이지 (이름·별칭, 한글 초성 검색).</summary>
 public sealed class SettingsSearchProvider : ISpotlightProvider
 {
-    public string Name => "설정";
+    public string Name => Loc.T("설정");
     public bool IsSlow => false;
 
     public Task<IReadOnlyList<SpotlightItem>> SearchAsync(string query, SearchSettings settings, CancellationToken ct)
@@ -129,7 +129,7 @@ public sealed class SettingsSearchProvider : ISpotlightProvider
                 Category = SpotlightCategory.Settings,
                 Key = "settings:" + h.Page.Uri,
                 Title = h.Page.Name,
-                Subtitle = "시스템 설정",
+                Subtitle = Loc.T("시스템 설정"),
                 Glyph = h.Page.Glyph,
                 Execute = () => ShellOpen(h.Page.Uri),
             })
@@ -145,7 +145,7 @@ public sealed class SettingsSearchProvider : ISpotlightProvider
 
 public sealed class CalculatorProvider : ISpotlightProvider
 {
-    public string Name => "계산기";
+    public string Name => Loc.T("계산기");
     public bool IsSlow => false;
 
     public Task<IReadOnlyList<SpotlightItem>> SearchAsync(string query, SearchSettings settings, CancellationToken ct)
@@ -160,7 +160,7 @@ public sealed class CalculatorProvider : ISpotlightProvider
                 Category = SpotlightCategory.Calculator,
                 Key = "calc",
                 Title = "= " + Calculator.FormatDisplay(v),
-                Subtitle = query.Trim() + "  ·  Enter 로 결과 복사",
+                Subtitle = query.Trim() + Loc.T("  ·  Enter 로 결과 복사"),
                 Glyph = "", // Calculator
                 CopyText = plain,
                 Execute = () => Clipboard.SetText(plain),
@@ -174,7 +174,7 @@ public sealed class CalculatorProvider : ISpotlightProvider
 
 public sealed class FileSearchProvider : ISpotlightProvider
 {
-    public string Name => "파일";
+    public string Name => Loc.T("파일");
     public bool IsSlow => true;
 
     public async Task<IReadOnlyList<SpotlightItem>> SearchAsync(string query, SearchSettings settings, CancellationToken ct)
@@ -230,7 +230,7 @@ public sealed class FallbackProvider : ISpotlightProvider
 
     public FallbackProvider(Action<string> sendToWindowsSearch) => _sendToWindowsSearch = sendToWindowsSearch;
 
-    public string Name => "웹/Windows 검색";
+    public string Name => Loc.T("웹/Windows 검색");
     public bool IsSlow => false;
 
     public Task<IReadOnlyList<SpotlightItem>> SearchAsync(string query, SearchSettings settings, CancellationToken ct)
@@ -243,7 +243,7 @@ public sealed class FallbackProvider : ISpotlightProvider
             {
                 Category = SpotlightCategory.Fallback,
                 Key = "windows-search",
-                Title = $"Windows 검색에서 ‘{q}’ 찾기",
+                Title = Loc.F($"Windows 검색에서 ‘{q}’ 찾기"),
                 Glyph = "", // Search
                 Execute = () => _sendToWindowsSearch(q),
             });
@@ -254,7 +254,7 @@ public sealed class FallbackProvider : ISpotlightProvider
             {
                 Category = SpotlightCategory.Fallback,
                 Key = "web",
-                Title = $"{EngineName(engine)}에서 ‘{q}’ 검색",
+                Title = Loc.F($"{EngineName(engine)}에서 ‘{q}’ 검색"),
                 Glyph = "", // Globe
                 Execute = () =>
                 {
@@ -268,7 +268,7 @@ public sealed class FallbackProvider : ISpotlightProvider
 
     public static string EngineName(WebSearchEngine engine) => engine switch
     {
-        WebSearchEngine.Naver => "네이버",
+        WebSearchEngine.Naver => Loc.T("네이버"),
         WebSearchEngine.Bing => "Bing",
         _ => "Google",
     };
@@ -388,7 +388,7 @@ public sealed class SpotlightSearchSession : IDisposable
             {
                 var top = groups[tc][0];
                 groups[tc].RemoveAt(0);
-                sections.Add(new SpotlightSection(SpotlightCategory.TopHit, "최상위 히트", new[] { top }));
+                sections.Add(new SpotlightSection(SpotlightCategory.TopHit, Loc.T("최상위 히트"), new[] { top }));
             }
         }
         foreach (var (category, list) in groups.OrderBy(kv => kv.Key))
@@ -401,15 +401,15 @@ public sealed class SpotlightSearchSession : IDisposable
 
     public static string? HeaderOf(SpotlightCategory c) => c switch
     {
-        SpotlightCategory.TopHit => "최상위 히트",
-        SpotlightCategory.Calculator => "계산기",
-        SpotlightCategory.Recent => "최근 사용",
-        SpotlightCategory.Apps => "응용 프로그램",
-        SpotlightCategory.Settings => "시스템 설정",
-        SpotlightCategory.Folders => "폴더",
-        SpotlightCategory.Documents => "문서",
-        SpotlightCategory.Media => "사진·동영상·음악",
-        SpotlightCategory.OtherFiles => "기타 파일",
+        SpotlightCategory.TopHit => Loc.T("최상위 히트"),
+        SpotlightCategory.Calculator => Loc.T("계산기"),
+        SpotlightCategory.Recent => Loc.T("최근 사용"),
+        SpotlightCategory.Apps => Loc.T("응용 프로그램"),
+        SpotlightCategory.Settings => Loc.T("시스템 설정"),
+        SpotlightCategory.Folders => Loc.T("폴더"),
+        SpotlightCategory.Documents => Loc.T("문서"),
+        SpotlightCategory.Media => Loc.T("사진·동영상·음악"),
+        SpotlightCategory.OtherFiles => Loc.T("기타 파일"),
         _ => null,
     };
 }

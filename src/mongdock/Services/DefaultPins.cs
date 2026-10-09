@@ -65,7 +65,7 @@ public static class DefaultPins
             if (added >= room) break;
             string? real = AppsFolder.RestoreAumidCase(aumid);
             if (real is null || pins.Any(p => p.Kind == PinKind.Aumid && p.Target.Equals(real, StringComparison.OrdinalIgnoreCase))) continue;
-            pins.Add(new PinItem { Name = AppsFolder.GetAppDisplayName(real) ?? (aumid == SettingsAumid ? "설정" : "메모장"), Kind = PinKind.Aumid, Target = real });
+            pins.Add(new PinItem { Name = AppsFolder.GetAppDisplayName(real) ?? (aumid == SettingsAumid ? Loc.T("설정") : Loc.T("메모장")), Kind = PinKind.Aumid, Target = real });
             added++;
         }
         return added;
@@ -126,7 +126,7 @@ public static class DefaultPins
             if (browser is not null) pins.Add(new PinItem { Name = browserName, Kind = PinKind.Exe, Target = browser });
 
             string? settings = AppsFolder.RestoreAumidCase(SettingsAumid);
-            if (settings is not null) pins.Add(new PinItem { Name = AppsFolder.GetAppDisplayName(settings) ?? "설정", Kind = PinKind.Aumid, Target = settings });
+            if (settings is not null) pins.Add(new PinItem { Name = AppsFolder.GetAppDisplayName(settings) ?? Loc.T("설정"), Kind = PinKind.Aumid, Target = settings });
         }
         catch (Exception ex)
         {

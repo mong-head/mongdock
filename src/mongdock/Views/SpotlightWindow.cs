@@ -168,7 +168,7 @@ internal sealed class SpotlightWindow : Window
         _box.TextChanged += (_, _) => OnQueryChanged();
         _placeholder = new TextBlock
         {
-            Text = "Spotlight 검색",
+            Text = Loc.T("Spotlight 검색"),
             FontSize = 24,
             Foreground = _p.Disabled,
             VerticalAlignment = VerticalAlignment.Center,
@@ -614,7 +614,7 @@ internal sealed class SpotlightWindow : Window
                 Visibility = Visibility.Collapsed,
                 Cursor = Cursors.Hand,
                 ToolTip = "Ctrl+Enter",
-                Child = new TextBlock { Text = "폴더에서 보기", FontSize = 11.5, Foreground = _p.Text },
+                Child = new TextBlock { Text = Loc.T("폴더에서 보기"), FontSize = 11.5, Foreground = _p.Text },
             };
             r.RevealButton.MouseLeftButtonDown += (_, e) => e.Handled = true;
             r.RevealButton.MouseLeftButtonUp += (_, e) => { e.Handled = true; Execute(index, reveal: true); };
@@ -634,7 +634,7 @@ internal sealed class SpotlightWindow : Window
                 VerticalAlignment = VerticalAlignment.Center,
                 Visibility = Visibility.Collapsed,
                 Cursor = Cursors.Hand,
-                ToolTip = "최근 사용에서 빼기 (Delete)",
+                ToolTip = Loc.T("최근 사용에서 빼기 (Delete)"),
                 Child = new TextBlock
                 {
                     Text = "\uE711", // Cancel
@@ -946,7 +946,7 @@ internal sealed class SpotlightWindow : Window
     {
         var text = new TextBlock
         {
-            Text = "모두 지우기",
+            Text = Loc.T("모두 지우기"),
             FontSize = 11.5,
             Foreground = _p.SubText,
         };
@@ -958,7 +958,7 @@ internal sealed class SpotlightWindow : Window
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Top,
             Cursor = Cursors.Hand,
-            ToolTip = "최근 사용 기록 모두 지우기",
+            ToolTip = Loc.T("최근 사용 기록 모두 지우기"),
             Child = text,
         };
         link.MouseEnter += (_, _) => { text.Foreground = _p.Text; text.TextDecorations = TextDecorations.Underline; };
@@ -1013,7 +1013,7 @@ internal sealed class SpotlightWindow : Window
                 Log.Error("계산 결과 복사 실패", ex);
             }
         }
-        if (r.Sub is not null) r.Sub.Text = ok ? "✓ 복사됨" : "복사하지 못했어요";
+        if (r.Sub is not null) r.Sub.Text = ok ? Loc.T("✓ 복사됨") : Loc.T("복사하지 못했어요");
         _root.IsHitTestVisible = false;
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ok ? 550 : 1200) };
         timer.Tick += (_, _) =>

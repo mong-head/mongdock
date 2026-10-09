@@ -24,7 +24,7 @@ internal sealed partial class StatusPanelWindow
     {
         var brightness = BrightnessService.Instance;
         var stack = new StackPanel();
-        var title = Heading("디스플레이");
+        var title = Heading(Loc.T("디스플레이"));
         title.FontSize = 13.5;
         title.Margin = new Thickness(0, 0, 0, 8);
         stack.Children.Add(title);
@@ -34,18 +34,18 @@ internal sealed partial class StatusPanelWindow
 
         // 야간 모드: 동그라미를 누르면 켜고 끔 (NightLightService.TrySet — 윈도우 설정 앱과 같은 값을 씀).
         // 상태를 읽지 못하거나 쓰기에 실패하면 윈도우 야간 모드 설정을 엶.
-        var night = ToggleLine(MoonGlyph, "야간 모드", () =>
+        var night = ToggleLine(MoonGlyph, Loc.T("야간 모드"), () =>
         {
             if (NightLightService.IsOn is bool on && NightLightService.TrySet(!on)) return Task.CompletedTask;
             NightLightService.OpenSettings();
             Close();
             return Task.CompletedTask;
         });
-        night.Button.ToolTip = "야간 모드 켜기/끄기";
+        night.Button.ToolTip = Loc.T("야간 모드 켜기/끄기");
         var nightRow = (FrameworkElement)night.Button.Parent;
         nightRow.Margin = new Thickness(0, 10, 0, 0);
         stack.Children.Add(nightRow);
-        var nightLink = LinkRow("야간 모드 설정…", NightLightService.OpenSettings);
+        var nightLink = LinkRow(Loc.T("야간 모드 설정…"), NightLightService.OpenSettings);
         nightLink.Margin = new Thickness(-6, 6, -6, -4);
         stack.Children.Add(nightLink);
 
@@ -76,7 +76,7 @@ internal sealed partial class StatusPanelWindow
             nightRow.Visibility = nightOn is null ? Visibility.Collapsed : Visibility.Visible;
             nightLink.Visibility = nightOn is null ? Visibility.Visible : Visibility.Collapsed;
             SetCircle(night.Circle, MoonGlyph, nightOn == true);
-            night.State.Text = nightOn == true ? "켬" : "끔";
+            night.State.Text = nightOn == true ? Loc.T("켬") : Loc.T("끔");
 
             // 밝기 행이 없으면 제목 아래 간격 없이 야간 모드만
             rows.Visibility = list.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -150,7 +150,7 @@ internal sealed partial class StatusPanelWindow
     private UIElement BuildPowerModeTile()
     {
         var stack = new StackPanel();
-        var title = Heading("전원 모드");
+        var title = Heading(Loc.T("전원 모드"));
         title.FontSize = 13.5;
         title.Margin = new Thickness(0, 0, 0, 8);
         stack.Children.Add(title);
@@ -171,7 +171,7 @@ internal sealed partial class StatusPanelWindow
     private UIElement BuildPowerModeSection()
     {
         var section = new StackPanel();
-        var title = new TextBlock { Text = "전원 모드", FontSize = 15, Margin = new Thickness(0, 0, 0, 6) };
+        var title = new TextBlock { Text = Loc.T("전원 모드"), FontSize = 15, Margin = new Thickness(0, 0, 0, 6) };
         section.Children.Add(title);
         section.Children.Add(PowerModeSegments());
         section.Children.Add(Divider());
@@ -184,9 +184,9 @@ internal sealed partial class StatusPanelWindow
     {
         var modes = new (PowerMode Mode, string Label)[]
         {
-            (PowerMode.BestEfficiency, "최고 효율"),
-            (PowerMode.Balanced, "균형"),
-            (PowerMode.BestPerformance, "최고 성능"),
+            (PowerMode.BestEfficiency, Loc.T("최고 효율")),
+            (PowerMode.Balanced, Loc.T("균형")),
+            (PowerMode.BestPerformance, Loc.T("최고 성능")),
         };
         var grid = new Grid();
         var buttons = new Button[modes.Length];

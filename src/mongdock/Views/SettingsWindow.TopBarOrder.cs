@@ -17,11 +17,11 @@ internal sealed partial class SettingsWindow
     {
         TopBarSettings T() => _services.Settings.Current.TopBar;
         var t = T();
-        body.Children.Add(SectionTitle("표시할 항목"));
+        body.Children.Add(SectionTitle(Loc.T("표시할 항목")));
         var rows = new List<UIElement>
         {
             // 앱 이름과 앱 메뉴는 한 토글 (#21)
-            Row("앱 이름과 메뉴", "지금 앱 이름과 그 옆 파일·편집·보기… (맥 메뉴 막대처럼)",
+            Row(Loc.T("앱 이름과 메뉴"), Loc.T("지금 앱 이름과 그 옆 파일·편집·보기… (맥 메뉴 막대처럼)"),
                 Toggle(t.ShowActiveAppName && t.ShowAppMenus, on => Commit(() => { T().ShowActiveAppName = on; T().ShowAppMenus = on; }))),
         };
 
@@ -33,40 +33,40 @@ internal sealed partial class SettingsWindow
         {
             string key = shown[i];
             var controls = new StackPanel { Orientation = Orientation.Horizontal };
-            controls.Children.Add(SmallButton("▲", "왼쪽으로", i > 0,
+            controls.Children.Add(SmallButton("▲", Loc.T("왼쪽으로"), i > 0,
                 () => Commit(() => T().RightItemsOrder = TopBarRightOrder.Nudge(T().RightItemsOrder, key, -1), rebuild: true)));
-            controls.Children.Add(SmallButton("▼", "오른쪽으로", i < shown.Count - 1,
+            controls.Children.Add(SmallButton("▼", Loc.T("오른쪽으로"), i < shown.Count - 1,
                 () => Commit(() => T().RightItemsOrder = TopBarRightOrder.Nudge(T().RightItemsOrder, key, +1), rebuild: true)));
             var toggle = Toggle(IsRightItemShown(t, key), on => Commit(() => SetRightItemShown(T(), key, on), rebuild: true));
             toggle.Margin = new Thickness(10, 0, 0, 0);
             controls.Children.Add(toggle);
             rows.Add(Row(ItemLabel(key), ItemNote(key, battery), controls));
         }
-        rows.Add(Row("시계", "항상 맨 오른쪽", new Border()));
-        var reset = ActionButton("기본 순서로", () => Commit(() => T().RightItemsOrder = new List<string>(), rebuild: true));
+        rows.Add(Row(Loc.T("시계"), Loc.T("항상 맨 오른쪽"), new Border()));
+        var reset = ActionButton(Loc.T("기본 순서로"), () => Commit(() => T().RightItemsOrder = new List<string>(), rebuild: true));
         reset.IsEnabled = !TopBarRightOrder.IsDefault(t.RightItemsOrder);
         reset.Opacity = reset.IsEnabled ? 1 : 0.35;
-        rows.Add(Row("순서 되돌리기", "상단바에서 아이콘을 0.4초쯤 길게 누른 채 좌우로 끌어도 순서를 바꿀 수 있어요.", reset));
+        rows.Add(Row(Loc.T("순서 되돌리기"), Loc.T("상단바에서 아이콘을 0.4초쯤 길게 누른 채 좌우로 끌어도 순서를 바꿀 수 있어요."), reset));
         body.Children.Add(Group(rows.ToArray()));
     }
 
     /// <summary>목록에 보일 쉬운 이름 (#21 문구).</summary>
     private static string ItemLabel(string key) => key switch
     {
-        TopBarRightOrder.Tray => "다른 앱 아이콘 (카카오톡 등)",
-        TopBarRightOrder.Volume => "소리",
-        TopBarRightOrder.Search => "검색 버튼",
-        TopBarRightOrder.ControlCenter => "제어 센터 버튼",
-        TopBarRightOrder.Ime => "한/영 전환 버튼",
+        TopBarRightOrder.Tray => Loc.T("다른 앱 아이콘 (카카오톡 등)"),
+        TopBarRightOrder.Volume => Loc.T("소리"),
+        TopBarRightOrder.Search => Loc.T("검색 버튼"),
+        TopBarRightOrder.ControlCenter => Loc.T("제어 센터 버튼"),
+        TopBarRightOrder.Ime => Loc.T("한/영 전환 버튼"),
         _ => TopBarRightOrder.Label(key),
     };
 
     private static string? ItemNote(string key, bool battery) => key switch
     {
-        TopBarRightOrder.Bluetooth or TopBarRightOrder.Wifi or TopBarRightOrder.Volume => "Wi-Fi·블루투스·소리는 함께 켜고 꺼져요",
-        TopBarRightOrder.Search or TopBarRightOrder.ControlCenter => "검색·제어 센터 버튼은 함께 켜고 꺼져요",
-        TopBarRightOrder.Privacy => "앱이 카메라를 쓰면 초록 점, 마이크만 쓰면 주황 점",
-        TopBarRightOrder.Desktops => "누르면 데스크톱 보기·새 데스크톱",
+        TopBarRightOrder.Bluetooth or TopBarRightOrder.Wifi or TopBarRightOrder.Volume => Loc.T("Wi-Fi·블루투스·소리는 함께 켜고 꺼져요"),
+        TopBarRightOrder.Search or TopBarRightOrder.ControlCenter => Loc.T("검색·제어 센터 버튼은 함께 켜고 꺼져요"),
+        TopBarRightOrder.Privacy => Loc.T("앱이 카메라를 쓰면 초록 점, 마이크만 쓰면 주황 점"),
+        TopBarRightOrder.Desktops => Loc.T("누르면 데스크톱 보기·새 데스크톱"),
         _ => null,
     };
 

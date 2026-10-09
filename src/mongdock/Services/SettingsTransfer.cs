@@ -75,10 +75,10 @@ public static class SettingsTransfer
     public static Preview ReadPreview(string path)
     {
         using var zip = ZipFile.OpenRead(path);
-        var manifest = ReadJson<Manifest>(zip, "manifest.json") ?? throw new InvalidDataException("몽독 설정 파일이 아니에요.");
-        if (manifest.Format != Format) throw new InvalidDataException("몽독 설정 파일이 아니에요.");
-        if (manifest.FormatVersion > FormatVersion) throw new InvalidDataException($"더 새 몽독(v{manifest.AppVersion})에서 만든 파일이에요. 몽독을 업데이트한 뒤 가져와 주세요.");
-        string settingsJson = ReadText(zip, "settings.json") ?? throw new InvalidDataException("설정이 들어 있지 않아요.");
+        var manifest = ReadJson<Manifest>(zip, "manifest.json") ?? throw new InvalidDataException(Loc.T("몽독 설정 파일이 아니에요."));
+        if (manifest.Format != Format) throw new InvalidDataException(Loc.T("몽독 설정 파일이 아니에요."));
+        if (manifest.FormatVersion > FormatVersion) throw new InvalidDataException(Loc.F($"더 새 몽독(v{manifest.AppVersion})에서 만든 파일이에요. 몽독을 업데이트한 뒤 가져와 주세요."));
+        string settingsJson = ReadText(zip, "settings.json") ?? throw new InvalidDataException(Loc.T("설정이 들어 있지 않아요."));
         var s = SettingsService.ParseForImport(settingsJson);
         var cals = ReadJson<List<CalendarEntry>>(zip, "calendars.json") ?? new List<CalendarEntry>();
         return new Preview(manifest, s.Pins.Select(p => p.Name).ToList(), cals);
@@ -104,7 +104,7 @@ public static class SettingsTransfer
         int icons = 0;
         using (var zip = ZipFile.OpenRead(path))
         {
-            imported = SettingsService.ParseForImport(ReadText(zip, "settings.json") ?? throw new InvalidDataException("설정이 들어 있지 않아요."));
+            imported = SettingsService.ParseForImport(ReadText(zip, "settings.json") ?? throw new InvalidDataException(Loc.T("설정이 들어 있지 않아요.")));
             cals = ReadJson<List<CalendarEntry>>(zip, "calendars.json") ?? new List<CalendarEntry>();
             Directory.CreateDirectory(iconsDir);
             foreach (var entry in zip.Entries.Where(e => e.FullName.StartsWith("icons/", StringComparison.Ordinal) && e.Name.Length > 0))
@@ -159,7 +159,7 @@ public static class SettingsTransfer
     {
         var entry = zip.GetEntry(name);
         if (entry is null) return null;
-        if (entry.Length > 4 * 1024 * 1024) throw new InvalidDataException("파일이 너무 커요.");
+        if (entry.Length > 4 * 1024 * 1024) throw new InvalidDataException(Loc.T("파일이 너무 커요."));
         using var r = new StreamReader(entry.Open(), Encoding.UTF8);
         return r.ReadToEnd();
     }

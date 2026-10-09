@@ -24,7 +24,7 @@ public sealed class ReportWindow : Window
 
     private readonly UiPalette _p;
     private ReportKind _kind = ReportKind.Bug;
-    private string _diagnostics = "진단 정보를 모으는 중…";
+    private string _diagnostics = Loc.T("진단 정보를 모으는 중…");
     private bool _diagnosticsReady;
     private bool _detailsOpen;
     private bool _sending;
@@ -81,7 +81,7 @@ public sealed class ReportWindow : Window
             win.Show();
             win.Activate();
             Task.Run(() => ReportService.AppendLog(head, ctx))
-                .ContinueWith(t => win.SetDiagnostics(t.IsCompletedSuccessfully ? t.Result : $"(진단 정보를 모으지 못함: {t.Exception?.InnerException?.GetType().Name})"),
+                .ContinueWith(t => win.SetDiagnostics(t.IsCompletedSuccessfully ? t.Result : Loc.F($"(진단 정보를 모으지 못함: {t.Exception?.InnerException?.GetType().Name})")),
                     TaskScheduler.FromCurrentSynchronizationContext());
         }
         catch (Exception ex)
@@ -94,7 +94,7 @@ public sealed class ReportWindow : Window
     public ReportWindow(Settings settings)
     {
         _p = UiTheme.Palette(settings);
-        Title = "문제 신고하기";
+        Title = Loc.T("문제 신고하기");
         AppIcon.Apply(this);
         var work = SystemParameters.WorkArea;
         Width = Math.Min(540, Math.Max(360, work.Width - 24));
@@ -119,10 +119,10 @@ public sealed class ReportWindow : Window
         };
 
         var body = new StackPanel { Margin = new Thickness(24, 20, 24, 20) };
-        body.Children.Add(new TextBlock { Text = "문제 신고하기", FontSize = 20, FontWeight = FontWeights.Bold });
+        body.Children.Add(new TextBlock { Text = Loc.T("문제 신고하기"), FontSize = 20, FontWeight = FontWeights.Bold });
         body.Children.Add(new TextBlock
         {
-            Text = "보낸 내용은 몽독 지원 메일함으로 가요. 메일 계정이 없어도 보낼 수 있어요.",
+            Text = Loc.T("보낸 내용은 몽독 지원 메일함으로 가요. 메일 계정이 없어도 보낼 수 있어요."),
             Foreground = _p.SubText,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 4, 0, 14),
@@ -132,11 +132,11 @@ public sealed class ReportWindow : Window
         // ── 종류 ── (세그먼트가 제목·내용 칸 안내 문구를 바꾸므로 안내 문구를 먼저 만듦)
         _titlePlaceholder = Placeholder(TitlePlaceholderFor(_kind), multiLine: false);
         _messagePlaceholder = Placeholder(PlaceholderFor(_kind), multiLine: true);
-        body.Children.Add(Label("종류"));
+        body.Children.Add(Label(Loc.T("종류")));
         body.Children.Add(KindSegments());
 
         // ── 제목 (선택) ── 받는 쪽은 내용 첫 줄을 메일 제목으로 쓰므로, 적으면 내용 앞줄로 붙여 보냄 (비우면 내용 첫 줄)
-        body.Children.Add(Label("제목 (선택)"));
+        body.Children.Add(Label(Loc.T("제목 (선택)")));
         _title = Input(multiLine: false);
         _title.MaxLength = TitleMax;
         _title.TextChanged += (_, _) => UpdateForm();
@@ -146,7 +146,7 @@ public sealed class ReportWindow : Window
         body.Children.Add(InputBox(titleGrid));
 
         // ── 내용 ──
-        body.Children.Add(Label("내용"));
+        body.Children.Add(Label(Loc.T("내용")));
         _message = Input(multiLine: true);
         _message.MaxLength = ReportService.MaxMessage;
         _message.TextChanged += (_, _) => UpdateForm();
@@ -158,18 +158,18 @@ public sealed class ReportWindow : Window
         body.Children.Add(_counter);
 
         // ── 답장 받을 이메일 ──
-        body.Children.Add(Label("답장 받을 이메일 (선택)"));
+        body.Children.Add(Label(Loc.T("답장 받을 이메일 (선택)")));
         _contact = Input(multiLine: false);
         _contact.MaxLength = 254;
         _contact.TextChanged += (_, _) => UpdateForm();
         var contactGrid = new Grid();
-        _contactPlaceholder = Placeholder("적으면 답장을 메일로 보내 드려요", multiLine: false);
+        _contactPlaceholder = Placeholder(Loc.T("적으면 답장을 메일로 보내 드려요"), multiLine: false);
         contactGrid.Children.Add(_contactPlaceholder);
         contactGrid.Children.Add(_contact);
         body.Children.Add(InputBox(contactGrid));
         _contactError = new TextBlock
         {
-            Text = "이메일 형식을 확인해 주세요.",
+            Text = Loc.T("이메일 형식을 확인해 주세요."),
             FontSize = 11.5,
             Foreground = _p.HolidayText,
             Margin = new Thickness(2, 4, 0, 0),
@@ -189,7 +189,7 @@ public sealed class ReportWindow : Window
         };
         var toggleContent = new StackPanel { Orientation = Orientation.Horizontal };
         toggleContent.Children.Add(_detailsChevron);
-        toggleContent.Children.Add(new TextBlock { Text = "함께 보낼 정보", FontWeight = FontWeights.SemiBold, Foreground = _p.SubText });
+        toggleContent.Children.Add(new TextBlock { Text = Loc.T("함께 보낼 정보"), FontWeight = FontWeights.SemiBold, Foreground = _p.SubText });
         var toggle = new Button
         {
             Style = (Style)FindResource("CardButton"),
@@ -220,7 +220,7 @@ public sealed class ReportWindow : Window
         var detailsStack = new StackPanel();
         detailsStack.Children.Add(new TextBlock
         {
-            Text = "앱 버전·윈도우·모니터·설정 요약·최근 로그예요. 이메일·주소(URL)·파일 경로·사용자 이름·기기 이름·창 제목은 가렸고, 보이는 그대로 보내요.",
+            Text = Loc.T("앱 버전·윈도우·모니터·설정 요약·최근 로그예요. 이메일·주소(URL)·파일 경로·사용자 이름·기기 이름·창 제목은 가렸고, 보이는 그대로 보내요."),
             FontSize = 11.5,
             Foreground = _p.SubText,
             TextWrapping = TextWrapping.Wrap,
@@ -239,8 +239,8 @@ public sealed class ReportWindow : Window
         _status = new TextBlock { Foreground = _p.SubText, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0), FontSize = 12 };
         bottom.Children.Add(_status);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-        _cancel = Button("취소", primary: false, Close);
-        _send = Button("보내기", primary: true, () => _ = SendAsync());
+        _cancel = Button(Loc.T("취소"), primary: false, Close);
+        _send = Button(Loc.T("보내기"), primary: true, () => _ = SendAsync());
         _send.Margin = new Thickness(8, 0, 0, 0);
         buttons.Children.Add(_cancel);
         buttons.Children.Add(_send);
@@ -354,16 +354,16 @@ public sealed class ReportWindow : Window
 
     private static string TitlePlaceholderFor(ReportKind kind) => kind switch
     {
-        ReportKind.Question => "예: 상단바 시계 형식을 바꿀 수 있나요?",
-        ReportKind.Idea => "예: 독 아이콘에 알림 개수도 보여 주세요",
-        _ => "예: 독에서 카카오톡이 안 열려요",
-    } + "  (비우면 내용 첫 줄)";
+        ReportKind.Question => Loc.T("예: 상단바 시계 형식을 바꿀 수 있나요?"),
+        ReportKind.Idea => Loc.T("예: 독 아이콘에 알림 개수도 보여 주세요"),
+        _ => Loc.T("예: 독에서 카카오톡이 안 열려요"),
+    } + Loc.T("  (비우면 내용 첫 줄)");
 
     private static string PlaceholderFor(ReportKind kind) => kind switch
     {
-        ReportKind.Question => "궁금한 점을 적어 주세요.",
-        ReportKind.Idea => "있으면 좋겠는 기능이나 바꾸면 좋겠는 점을 적어 주세요.",
-        _ => "무엇을 했을 때 어떻게 됐는지 적어 주세요.\n예: 독에서 카카오톡을 누르면 창이 안 떠요.",
+        ReportKind.Question => Loc.T("궁금한 점을 적어 주세요."),
+        ReportKind.Idea => Loc.T("있으면 좋겠는 기능이나 바꾸면 좋겠는 점을 적어 주세요."),
+        _ => Loc.T("무엇을 했을 때 어떻게 됐는지 적어 주세요.\n예: 독에서 카카오톡을 누르면 창이 안 떠요."),
     };
 
     private async Task SendAsync()
@@ -377,12 +377,12 @@ public sealed class ReportWindow : Window
         if (!ReportService.IsConfigured)
         {
             CopyFallback(message, contact, diagnostics);
-            ShowStatus($"아직 신고 받는 곳을 준비 중이에요. 내용을 클립보드에 복사했어요 — {ReportService.SupportAddress} 로 메일에 붙여 넣어 보내 주세요.", error: false);
+            ShowStatus(Loc.F($"아직 신고 받는 곳을 준비 중이에요. 내용을 클립보드에 복사했어요 — {ReportService.SupportAddress} 로 메일에 붙여 넣어 보내 주세요."), error: false);
             return;
         }
 
         _sending = true;
-        _send.Content = "보내는 중…";
+        _send.Content = Loc.T("보내는 중…");
         ShowStatus("", error: false);
         UpdateForm();
         ReportSendResult result;
@@ -397,7 +397,7 @@ public sealed class ReportWindow : Window
         }
         if (_closed) return;
         _sending = false;
-        _send.Content = "보내기";
+        _send.Content = Loc.T("보내기");
         UpdateForm();
 
         switch (result)
@@ -406,11 +406,11 @@ public sealed class ReportWindow : Window
                 ShowDone(contact.Length > 0);
                 break;
             case ReportSendResult.Limited:
-                ShowStatus("오늘은 더 보낼 수 없어요. 내일 다시 보내 주세요.", error: true);
+                ShowStatus(Loc.T("오늘은 더 보낼 수 없어요. 내일 다시 보내 주세요."), error: true);
                 break;
             default:
                 CopyFallback(message, contact, diagnostics);
-                ShowStatus($"보내지 못했어요. 내용을 클립보드에 복사했어요 — {ReportService.SupportAddress} 로 메일에 붙여 넣어 보내 주세요.", error: true);
+                ShowStatus(Loc.F($"보내지 못했어요. 내용을 클립보드에 복사했어요 — {ReportService.SupportAddress} 로 메일에 붙여 넣어 보내 주세요."), error: true);
                 break;
         }
     }
@@ -441,7 +441,7 @@ public sealed class ReportWindow : Window
         });
         _done.Children.Add(new TextBlock
         {
-            Text = "보냈어요",
+            Text = Loc.T("보냈어요"),
             FontSize = 20,
             FontWeight = FontWeights.Bold,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -449,13 +449,13 @@ public sealed class ReportWindow : Window
         });
         _done.Children.Add(new TextBlock
         {
-            Text = willReply ? "고마워요. 답장은 메일로 갈게요." : "고마워요. 보내 주신 내용은 꼼꼼히 읽어 볼게요.",
+            Text = willReply ? Loc.T("고마워요. 답장은 메일로 갈게요.") : Loc.T("고마워요. 보내 주신 내용은 꼼꼼히 읽어 볼게요."),
             Foreground = _p.SubText,
             HorizontalAlignment = HorizontalAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 6, 0, 20),
         });
-        var close = Button("닫기", primary: true, Close);
+        var close = Button(Loc.T("닫기"), primary: true, Close);
         close.HorizontalAlignment = HorizontalAlignment.Center;
         close.MinWidth = 96;
         _done.Children.Add(close);
@@ -468,7 +468,7 @@ public sealed class ReportWindow : Window
     {
         var text = new TextBlock
         {
-            Text = $"신고 받는 곳을 준비 중이에요. 그동안은 {ReportService.SupportAddress} 로 메일을 보내 주세요. 아래에 적고 \"보내기\"를 누르면 내용을 클립보드에 복사해 드려요.",
+            Text = Loc.F($"신고 받는 곳을 준비 중이에요. 그동안은 {ReportService.SupportAddress} 로 메일을 보내 주세요. 아래에 적고 \"보내기\"를 누르면 내용을 클립보드에 복사해 드려요."),
             TextWrapping = TextWrapping.Wrap,
             FontSize = 12,
             VerticalAlignment = VerticalAlignment.Center,
@@ -477,7 +477,7 @@ public sealed class ReportWindow : Window
         grid.ColumnDefinitions.Add(new ColumnDefinition());
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.Children.Add(text);
-        var copy = Button("주소 복사", primary: false, () =>
+        var copy = Button(Loc.T("주소 복사"), primary: false, () =>
         {
             try { Clipboard.SetText(ReportService.SupportAddress); }
             catch (Exception ex) { Log.Warn($"지원 주소 복사 실패: {ex.Message}"); }
@@ -509,7 +509,7 @@ public sealed class ReportWindow : Window
     private Border KindSegments()
     {
         var panel = new StackPanel { Orientation = Orientation.Horizontal };
-        foreach (var (kind, label) in new[] { (ReportKind.Bug, "버그"), (ReportKind.Question, "질문"), (ReportKind.Idea, "제안") })
+        foreach (var (kind, label) in new[] { (ReportKind.Bug, Loc.T("버그")), (ReportKind.Question, Loc.T("질문")), (ReportKind.Idea, Loc.T("제안")) })
         {
             var b = new Button
             {

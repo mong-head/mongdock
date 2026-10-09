@@ -15,9 +15,9 @@ internal static class UninstallFlow
     public static async Task RunAsync(AppServices services)
     {
         bool ok = await ConfirmCardWindow.AskAsync(services,
-            "몽독을 제거할까요?",
-            "작업 표시줄과 알림 소리를 원래대로 돌리고 몽독을 끈 뒤, 윈도우의 앱 제거 화면을 열어요. 거기서 mongdock 을 제거해 주세요.",
-            "제거 준비");
+            Loc.T("몽독을 제거할까요?"),
+            Loc.T("작업 표시줄과 알림 소리를 원래대로 돌리고 몽독을 끈 뒤, 윈도우의 앱 제거 화면을 열어요. 거기서 mongdock 을 제거해 주세요."),
+            Loc.T("제거 준비"));
         if (!ok) return;
         Log.Info("몽독 제거하기: 원래대로 돌리고 종료");
 

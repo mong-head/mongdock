@@ -49,16 +49,16 @@ internal sealed partial class SettingsWindow
     {
         long total = u.Pending?.SetupSize ?? 0;
         return total > 0
-            ? $"내려받는 중… {u.DownloadProgress:P0} ({u.DownloadedBytes / 1048576.0:0.0} / {total / 1048576.0:0.0} MB)"
-            : "내려받는 중…";
+            ? Loc.F($"내려받는 중… {u.DownloadProgress:P0} ({u.DownloadedBytes / 1048576.0:0.0} / {total / 1048576.0:0.0} MB)")
+            : Loc.T("내려받는 중…");
     }
 
     private void BuildUpdateSection(Panel body)
     {
-        body.Children.Add(SectionTitle("업데이트"));
+        body.Children.Add(SectionTitle(Loc.T("업데이트")));
         if (UpdateService.Instance is not { } updates)
         {
-            body.Children.Add(Group(Row("업데이트", "업데이트 확인을 사용할 수 없어요.", ActionButton("릴리스 페이지",
+            body.Children.Add(Group(Row(Loc.T("업데이트"), Loc.T("업데이트 확인을 사용할 수 없어요."), ActionButton(Loc.T("릴리스 페이지"),
                 () => _services.Launcher.OpenFile(UpdateService.ReleasesPageUrl)))));
             return;
         }
@@ -66,14 +66,14 @@ internal sealed partial class SettingsWindow
 
         // 확인 상태 한 줄
         string status;
-        if (updates.IsChecking) status = "확인 중…";
-        else if (_updateManualChecked && updates.LastResult == UpdateCheckResult.Failed) status = updates.LastError ?? "확인하지 못했어요";
-        else if (_updateManualChecked && updates.Pending is null && updates.LastResult is UpdateCheckResult.UpToDate) status = "최신 버전이에요";
-        else if (updates.Pending is { } p) status = $"새 버전 v{p.VersionText} 이 있어요";
-        else if (updates.LastChecked is { } t) status = $"마지막 확인 {t:M월 d일 tt h:mm}";
-        else status = "아직 확인하지 않았어요";
+        if (updates.IsChecking) status = Loc.T("확인 중…");
+        else if (_updateManualChecked && updates.LastResult == UpdateCheckResult.Failed) status = updates.LastError ?? Loc.T("확인하지 못했어요");
+        else if (_updateManualChecked && updates.Pending is null && updates.LastResult is UpdateCheckResult.UpToDate) status = Loc.T("최신 버전이에요");
+        else if (updates.Pending is { } p) status = Loc.F($"새 버전 v{p.VersionText} 이 있어요");
+        else if (updates.LastChecked is { } t) status = Loc.F($"마지막 확인 {t:M월 d일 tt h:mm}");
+        else status = Loc.T("아직 확인하지 않았어요");
 
-        var check = ActionButton(updates.IsChecking ? "확인 중…" : "업데이트 확인", async () =>
+        var check = ActionButton(updates.IsChecking ? Loc.T("확인 중…") : Loc.T("업데이트 확인"), async () =>
         {
             _updateManualChecked = true;
             await updates.CheckAsync(manual: true);
@@ -81,8 +81,8 @@ internal sealed partial class SettingsWindow
         check.IsEnabled = !updates.IsChecking && !updates.IsDownloading && !updates.IsInstalling;
 
         body.Children.Add(Group(
-            Row($"지금 버전 {VersionText()}", status, check),
-            Row("자동으로 업데이트 확인", "몽독을 켜고 1분 뒤, 그 뒤 12시간마다 GitHub 릴리스를 확인해요.",
+            Row(Loc.F($"지금 버전 {VersionText()}"), status, check),
+            Row(Loc.T("자동으로 업데이트 확인"), Loc.T("몽독을 켜고 1분 뒤, 그 뒤 12시간마다 GitHub 릴리스를 확인해요."),
                 Toggle(_services.Settings.Current.CheckForUpdates, on => Commit(() => _services.Settings.Current.CheckForUpdates = on)))));
 
         if (updates.Pending is { } info)
@@ -101,7 +101,7 @@ internal sealed partial class SettingsWindow
         });
         stack.Children.Add(new TextBlock
         {
-            Text = $"지금 버전 {VersionText()} → 새 버전 {info.VersionText}",
+            Text = Loc.F($"지금 버전 {VersionText()} → 새 버전 {info.VersionText}"),
             FontSize = 11.5,
             Foreground = _p.SubText,
             Margin = new Thickness(0, 2, 0, 10),
@@ -142,7 +142,7 @@ internal sealed partial class SettingsWindow
 
         if (updates.IsInstalling)
         {
-            stack.Children.Add(Note("설치 프로그램을 실행했어요. 잠시 뒤 몽독이 꺼졌다가 새 버전으로 다시 켜져요."));
+            stack.Children.Add(Note(Loc.T("설치 프로그램을 실행했어요. 잠시 뒤 몽독이 꺼졌다가 새 버전으로 다시 켜져요.")));
         }
         else if (updates.IsDownloading)
         {
@@ -161,7 +161,7 @@ internal sealed partial class SettingsWindow
             row.Children.Add(track);
             row.Children.Add(_updateProgressText);
             stack.Children.Add(row);
-            buttons.Children.Add(Spaced(ActionButton("취소", updates.CancelDownload)));
+            buttons.Children.Add(Spaced(ActionButton(Loc.T("취소"), updates.CancelDownload)));
         }
         else
         {
@@ -170,7 +170,7 @@ internal sealed partial class SettingsWindow
             if (canSelf && info.SetupUrl is not null)
             {
                 // 설치가 끝나지 않았으면(2분 안에 몽독이 안 꺼짐·setup 실패) DownloadError 와 함께 "다시 시도"
-                var now = ActionButton(updates.DownloadError is null ? "지금 업데이트" : "다시 시도", async () =>
+                var now = ActionButton(updates.DownloadError is null ? Loc.T("지금 업데이트") : Loc.T("다시 시도"), async () =>
                 {
                     if (await updates.DownloadAndInstallAsync(info)) QueueRebuild();
                 });
@@ -180,8 +180,8 @@ internal sealed partial class SettingsWindow
             }
             else
             {
-                stack.Children.Add(Note(canSelf ? "이 릴리스에는 설치 파일이 없어요. 릴리스 페이지에서 받아 주세요." : why));
-                var page = ActionButton("릴리스 페이지 열기", () => _services.Launcher.OpenFile(UpdateService.SafeReleaseUrl(info.HtmlUrl)));
+                stack.Children.Add(Note(canSelf ? Loc.T("이 릴리스에는 설치 파일이 없어요. 릴리스 페이지에서 받아 주세요.") : why));
+                var page = ActionButton(Loc.T("릴리스 페이지 열기"), () => _services.Launcher.OpenFile(UpdateService.SafeReleaseUrl(info.HtmlUrl)));
                 page.Background = _p.Accent;
                 page.Foreground = _p.AccentText;
                 buttons.Children.Add(Spaced(page));
@@ -191,9 +191,9 @@ internal sealed partial class SettingsWindow
         }
 
         if (canSelf && info.SetupUrl is not null)
-            buttons.Children.Add(Spaced(ActionButton("릴리스 노트 보기", () => _services.Launcher.OpenFile(UpdateService.SafeReleaseUrl(info.HtmlUrl)))));
+            buttons.Children.Add(Spaced(ActionButton(Loc.T("릴리스 노트 보기"), () => _services.Launcher.OpenFile(UpdateService.SafeReleaseUrl(info.HtmlUrl)))));
         if (!updates.IsDownloading && !updates.IsInstalling)
-            buttons.Children.Add(Spaced(ActionButton("이 버전 건너뛰기", () => updates.Skip(info))));
+            buttons.Children.Add(Spaced(ActionButton(Loc.T("이 버전 건너뛰기"), () => updates.Skip(info))));
         stack.Children.Add(buttons);
 
         return new Border

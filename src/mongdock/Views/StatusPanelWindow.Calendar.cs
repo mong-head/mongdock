@@ -31,7 +31,7 @@ internal sealed partial class StatusPanelWindow
     /// <summary>달력 아래 알림 목록 최대 높이 (화면이 낮으면 <see cref="NotificationsMinHeight"/> 까지 줄임).</summary>
     private const double NotificationsMaxHeight = 320;
     private const double NotificationsMinHeight = 120;
-    private static readonly string[] DayNames = { "일", "월", "화", "수", "목", "금", "토" };
+    private static readonly string[] DayNames = Loc.WeekdayLetters;
 
     private UIElement BuildCalendar()
     {
@@ -63,8 +63,8 @@ internal sealed partial class StatusPanelWindow
 
         // ── 월 머리: [2026년 10월]          [‹][›]
         var header = new DockPanel { LastChildFill = false, Margin = new Thickness(0, 0, 0, 4) };
-        var next = CalendarNavButton("", "다음 달"); // ChevronRight
-        var prev = CalendarNavButton("", "이전 달"); // ChevronLeft
+        var next = CalendarNavButton("", Loc.T("다음 달")); // ChevronRight
+        var prev = CalendarNavButton("", Loc.T("이전 달")); // ChevronLeft
         DockPanel.SetDock(next, Dock.Right);
         DockPanel.SetDock(prev, Dock.Right);
         var monthText = new TextBlock { FontSize = 15, FontWeight = FontWeights.SemiBold };
@@ -76,7 +76,7 @@ internal sealed partial class StatusPanelWindow
             Content = monthText,
             Padding = new Thickness(6, 3, 6, 3),
             Margin = new Thickness(-6, 0, 0, 0),
-            ToolTip = "이번 달로",
+            ToolTip = Loc.T("이번 달로"),
         };
         header.Children.Add(next);
         header.Children.Add(prev);
@@ -176,7 +176,7 @@ internal sealed partial class StatusPanelWindow
         var infoTop = new DockPanel { LastChildFill = true, Height = 19 };
         var openLink = new TextBlock
         {
-            Text = "캘린더에서 열기",
+            Text = Loc.T("캘린더에서 열기"),
             FontSize = 12,
             Foreground = _p.Accent,
             Cursor = Cursors.Hand,
@@ -228,14 +228,14 @@ internal sealed partial class StatusPanelWindow
         if (TryFindResource("ThinScrollBar") is Style thin) eventsScroll.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), thin);
         var connectLink = new TextBlock
         {
-            Text = "캘린더 일정 연결하기…",
+            Text = Loc.T("캘린더 일정 연결하기…"),
             FontSize = 12,
             Foreground = _p.Accent,
             Cursor = Cursors.Hand,
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Top,
             Margin = new Thickness(0, 2, 0, 0),
-            ToolTip = "Google·Outlook 캘린더의 iCal 주소를 연결하면 여기에 일정이 보여요",
+            ToolTip = Loc.T("Google·Outlook 캘린더의 iCal 주소를 연결하면 여기에 일정이 보여요"),
         };
         connectLink.MouseEnter += (_, _) => connectLink.TextDecorations = TextDecorations.Underline;
         connectLink.MouseLeave += (_, _) => connectLink.TextDecorations = null;
@@ -270,7 +270,7 @@ internal sealed partial class StatusPanelWindow
 
         root.Children.Add(Divider());
         // 윈도우 알림 센터 링크는 두지 않음: 몽독에서 지운 알림이 윈도우 쪽엔 남아(다른 앱 알림은 지울 권한 없음) 헷갈림
-        root.Children.Add(LinkRow("날짜 및 시간 설정…", () =>
+        root.Children.Add(LinkRow(Loc.T("날짜 및 시간 설정…"), () =>
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:dateandtime") { UseShellExecute = true })?.Dispose()));
 
         void Draw()
@@ -290,12 +290,12 @@ internal sealed partial class StatusPanelWindow
             drawnSelected = selected;
             drawnEventsVersion = eventsVersion;
 
-            bigDate.Text = $"{today.Month}월 {today.Day}일 {DayNames[(int)today.DayOfWeek]}요일";
-            yearRun.Text = $"{today.Year}년";
+            bigDate.Text = Loc.DateLong(today);
+            yearRun.Text = Loc.F($"{today.Year}년");
             string? todayName = KoreanHolidays.NameOf(today);
             todayHoliday.Text = todayName != null ? $" · {todayName}" : "";
 
-            monthText.Text = $"{shown.Year}년 {shown.Month}월";
+            monthText.Text = Loc.MonthYear(shown);
             bool isCurrent = shown.Year == today.Year && shown.Month == today.Month;
             monthText.Foreground = isCurrent ? _p.Text : _p.Accent; // 다른 달을 보고 있으면 "누르면 돌아감" 힌트
 
@@ -334,17 +334,17 @@ internal sealed partial class StatusPanelWindow
 
             // 선택한 날: "10월 9일 금요일 · 한글날" / "음력 8월 29일 · 2일 후" (다른 해면 연도도)
             string? selHoliday = KoreanHolidays.NameOf(selected);
-            infoDateRun.Text = $"{selected.Month}월 {selected.Day}일 {DayNames[(int)selected.DayOfWeek]}요일"
-                + (selected.Year != today.Year ? $" ({selected.Year}년)" : "");
+            infoDateRun.Text = Loc.DateLong(selected)
+                + (selected.Year != today.Year ? Loc.F($" ({selected.Year}년)") : "");
             infoHolidayRun.Text = selHoliday != null ? $" · {selHoliday}" : "";
             var parts = new List<string>(2);
             if (KoreanHolidays.ToLunar(selected) is (int lm, int ld, bool leap))
-                parts.Add($"음력 {(leap ? "윤" : "")}{lm}월 {ld}일");
+                parts.Add(Loc.F($"음력 {(leap ? Loc.T("윤") : "")}{lm}월 {ld}일"));
             parts.Add(RelativeDay(selected, today));
             infoSub.Text = string.Join(" · ", parts);
 
             var list = KoreanHolidays.ForMonth(shown.Year, shown.Month);
-            holidayLine.Text = list.Count == 0 ? "이번 달 공휴일 없음" : FormatHolidays(list);
+            holidayLine.Text = list.Count == 0 ? Loc.T("이번 달 공휴일 없음") : FormatHolidays(list);
             holidayLine.ToolTip = list.Count == 0 ? null : holidayLine.Text;
 
             DrawEvents();
@@ -371,7 +371,7 @@ internal sealed partial class StatusPanelWindow
             {
                 eventsStack.Children.Add(new TextBlock
                 {
-                    Text = "일정 없음",
+                    Text = Loc.T("일정 없음"),
                     FontSize = 12,
                     Foreground = _p.SubText,
                     Opacity = 0.7,
@@ -555,14 +555,14 @@ internal sealed partial class StatusPanelWindow
     /// <summary>"종일" / "14:00–15:00" / 전날부터 이어지면 "~02:00", 다음 날까지면 "23:00~", 길이 0 이면 "14:00".</summary>
     private static string EventTimeText(CalendarOccurrence ev, DateTime day)
     {
-        if (ev.AllDay) return "종일";
+        if (ev.AllDay) return Loc.T("종일");
         var dayStart = day.Date;
         var dayEnd = dayStart.AddDays(1);
         var ci = System.Globalization.CultureInfo.InvariantCulture;
         bool startsBefore = ev.Start < dayStart;
         bool endsAfter = ev.End > dayEnd;
         string end = ev.End == dayEnd ? "24:00" : ev.End.ToString("HH:mm", ci);
-        if (startsBefore && endsAfter) return "종일";
+        if (startsBefore && endsAfter) return Loc.T("종일");
         if (startsBefore) return "~" + end;
         if (endsAfter) return ev.Start.ToString("HH:mm", ci) + "~";
         if (ev.End <= ev.Start) return ev.Start.ToString("HH:mm", ci);
@@ -614,11 +614,11 @@ internal sealed partial class StatusPanelWindow
         int diff = (date.Date - today.Date).Days;
         return diff switch
         {
-            0 => "오늘",
-            1 => "내일",
-            -1 => "어제",
-            > 0 => $"{diff}일 후",
-            _ => $"{-diff}일 전",
+            0 => Loc.T("오늘"),
+            1 => Loc.T("내일"),
+            -1 => Loc.T("어제"),
+            > 0 => Loc.F($"{diff}일 후"),
+            _ => Loc.F($"{-diff}일 전"),
         };
     }
 
