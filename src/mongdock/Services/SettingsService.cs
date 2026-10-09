@@ -92,6 +92,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
             // (SetHideWindowsTaskbar 와 같은 효과지만 작업 표시줄 고정 앱 가져오기는 App 의 첫 핀 설정이 맡음)
             s.HideWindowsTaskbar = true;
             s.TopBar.ShowTrayIcons = true;
+            s.TopBar.CalendarApp = CalendarApps.DefaultForNewInstall(); // Outlook 이 있으면 Outlook, 없으면 Google 웹 (#21 결정 7)
             Current = s;
             CreatedThisRun = true;
             Save();

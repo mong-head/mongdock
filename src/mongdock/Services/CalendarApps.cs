@@ -30,6 +30,17 @@ public static class CalendarApps
         CalendarApp.NewOutlook, CalendarApp.ClassicOutlook, CalendarApp.WindowsCalendar,
     };
 
+    /// <summary>
+    /// 새 설치 기본값 (#21 결정 7): 클래식 Outlook → 새 Outlook → Google 웹 순. 이미 고른 사람은 그대로(설정 파일이 있으면 안 부름).
+    /// 클래식을 먼저: 회사 PC 처럼 Office 를 쓰는 곳에서 실제로 쓰는 쪽 (새 Outlook 은 윈도우 11 에 기본으로 깔려 있기도 함).
+    /// </summary>
+    public static CalendarApp DefaultForNewInstall()
+    {
+        foreach (var app in new[] { CalendarApp.ClassicOutlook, CalendarApp.NewOutlook })
+            if (IsInstalled(app)) return app;
+        return CalendarApp.Google;
+    }
+
     public static bool IsWeb(CalendarApp app) => app is CalendarApp.Google or CalendarApp.OutlookWeb or CalendarApp.Naver;
 
     public static string DisplayName(CalendarApp app) => app switch

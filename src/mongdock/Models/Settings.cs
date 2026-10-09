@@ -393,7 +393,9 @@ public sealed class Settings
     public List<string> SeenHints { get; set; } = new();
     /// <summary>오류 자동 신고 카드에서 "다시 묻지 않기" (Views/CrashPrompt). 오류 기록은 계속 로그에 남음.</summary>
     public bool CrashPromptDisabled { get; set; }
-    /// <summary>MyDockFinder ico.ini 를 한 번 가져왔는지. true 면 다시 가져오지 않음.</summary>
+    /// <summary>
+    /// 첫 핀 설정을 마쳤는지 (true 면 핀을 다시 채우지 않음). 이름은 옛 MyDockFinder 가져오기 때 것 — 기존 settings.json 과 맞추려고 그대로.
+    /// </summary>
     public bool ImportedFromMyDockFinder { get; set; }
     /// <summary>
     /// "새로운 기능"/첫 둘러보기를 마지막으로 본(또는 건너뛴) 몽독 버전 (예 "0.3.0"). null = 아직 없음

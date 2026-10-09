@@ -9,8 +9,6 @@ namespace Mongdock;
 
 public partial class App : Application
 {
-    private const string MyDockFinderIni = @"C:\Tweaks\My Dock\MyDock\ico.ini";
-
     private Mutex? _singleInstance;
     private AppServices? _services;
     private DockWindow? _dock;
@@ -312,8 +310,8 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// 첫 실행에만 핀을 채운다: MyDockFinder 의 ico.ini 가 있으면 그것을, 없으면 기본 핀(Finder·Launchpad·브라우저·설정).
-    /// ImportedFromMyDockFinder 를 "초기 핀 설정 완료" 표시로 써서, 사용자가 핀을 다 지워도 다시 채우지 않는다.
+    /// 첫 실행에만 핀을 채운다: 기본 핀(Finder·Launchpad + 작업 표시줄 고정 앱).
+    /// ImportedFromMyDockFinder(옛 이름 그대로)를 "초기 핀 설정 완료" 표시로 써서, 사용자가 핀을 다 지워도 다시 채우지 않는다.
     /// </summary>
     private static void InitializePinsOnce(SettingsService settings)
     {
@@ -323,19 +321,9 @@ public partial class App : Application
 
         try
         {
-            if (File.Exists(MyDockFinderIni))
-            {
-                current.Pins.AddRange(new MyDockFinderImporter(settings).Import(MyDockFinderIni));
-                Log.Info($"MyDockFinder 핀 {current.Pins.Count}개 가져옴");
-                // 그 뒤 작업 표시줄 고정 앱 중 없는 것만
-                TaskbarPins.AddMissingTo(current, settings);
-            }
-            else
-            {
-                // Finder·Launchpad + 작업 표시줄 고정 앱 (없으면 기존 기본 핀)
-                current.Pins.AddRange(DefaultPins.CreateInitial(settings));
-                Log.Info($"기본 핀 {current.Pins.Count}개 설정");
-            }
+            // Finder·Launchpad + 작업 표시줄 고정 앱 (없으면 기존 기본 핀). MyDockFinder ico.ini 가져오기는 뺐음 (#21 결정 11)
+            current.Pins.AddRange(DefaultPins.CreateInitial(settings));
+            Log.Info($"기본 핀 {current.Pins.Count}개 설정");
             current.ImportedFromMyDockFinder = true;
             current.TaskbarPinsImported = true;
             settings.Save();

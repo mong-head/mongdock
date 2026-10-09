@@ -3,7 +3,7 @@ using Mongdock.Models;
 
 namespace Mongdock.Services;
 
-/// <summary>처음 실행이고 가져올 MyDockFinder 설정도 없을 때의 기본 고정 앱.</summary>
+/// <summary>처음 실행 때의 기본 고정 앱.</summary>
 public static class DefaultPins
 {
     private const string SettingsAumid = "windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel";

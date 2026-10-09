@@ -901,9 +901,12 @@ public partial class TopBarWindow : Window
         CoachMarks.HintUsed("desktops");
     }
 
+    /// <summary>다음 데스크톱. 마지막 데스크톱이면 새 데스크톱을 만들어 그리로 (#21 결정 13).</summary>
     private void OnNextDesktop(object sender, RoutedEventArgs e)
     {
-        SwitchDesktop(() => _services.VirtualDesktops.Next());
+        var desktops = _services.VirtualDesktops;
+        bool last = desktops.Count > 0 && desktops.CurrentIndex >= desktops.Count;
+        SwitchDesktop(last ? desktops.New : desktops.Next);
         CoachMarks.HintUsed("desktops");
     }
 
@@ -947,7 +950,7 @@ public partial class TopBarWindow : Window
 
     private void OnDesktopChanged(object? sender, EventArgs e) => UpdateDesktopIndex();
 
-    /// <summary>"2 / 3" 표시, 첫/마지막 데스크톱이면 ‹/› 흐리게.</summary>
+    /// <summary>"2 / 3" 표시, 첫 데스크톱이면 ‹ 흐리게. 마지막 데스크톱의 › 는 새 데스크톱 만들기.</summary>
     private void UpdateDesktopIndex()
     {
         int index = 0, count = 0;
@@ -967,7 +970,8 @@ public partial class TopBarWindow : Window
         PrevDesktopButton.Visibility = single ? Visibility.Collapsed : Visibility.Visible;
         NextDesktopButton.Visibility = single ? Visibility.Collapsed : Visibility.Visible;
         PrevDesktopButton.Opacity = known && index <= 1 ? 0.35 : 1;
-        NextDesktopButton.Opacity = known && index >= count ? 0.35 : 1;
+        NextDesktopButton.ToolTip = known && index >= count ? Loc.T("새 데스크톱 만들기") : Loc.T("다음 데스크톱");
+        PrevDesktopButton.ToolTip = Loc.T("이전 데스크톱");
     }
 
     // ───────────────────────── 앱 메뉴 (앱 이름 클릭) ─────────────────────────

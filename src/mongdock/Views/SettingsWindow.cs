@@ -569,8 +569,7 @@ internal sealed partial class SettingsWindow : Window
                 ValueSlider(t.TrayIconsVisibleCount, 1, 20, 1, v => Loc.F($"{v:0}개"), v => T().TrayIconsVisibleCount = (int)Math.Round(v))),
             Row(Loc.T("단색 트레이 아이콘을 바 색에 맞추기"), Loc.T("흰 아이콘이 안 보일 때 바 색에 맞춰 칠해요."),
                 Toggle(t.TintMonochromeTrayIcons, on => Commit(() => T().TintMonochromeTrayIcons = on))),
-            Row(Loc.T("앱 창 안 메뉴 줄 숨기기 (실험)"), Loc.T("실험: 메모장·그림판 같은 앱의 창 안 메뉴 줄을 숨기고 상단바에서만 보이게 (옛날식 표준 메뉴 앱만 — 윈도우 11 새 메모장·그림판은 해당 없음)"),
-                Toggle(t.HideNativeMenuBars, on => Commit(() => T().HideNativeMenuBars = on))),
+            // 실험 기능 "앱 창 안 메뉴 줄 숨기기"(topBar.hideNativeMenuBars)는 출시판 화면에서 뺌 — settings.json 으로만 (#21 결정 6)
         });
     }
 

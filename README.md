@@ -178,7 +178,7 @@ zip 으로 썼다면:
 | 상단바 색·표시 항목 | `topBar.colorMode` (`Auto`(기본, 앱 색에 맞춤)/`Fixed`/`Transparent`/`Blur`), `topBar.background`, `topBar.showAppMenus` … |
 | 상단바 모니터 | `topBar.showOnAllMonitors` — `false` 면 주 모니터에만 |
 | 앱 트레이 아이콘 | `topBar.showTrayIcons` (속성 기본 `false` — 새 설치는 `true`, 작업 표시줄 숨기기를 켜면 자동으로 `true`), `topBar.trayIconsVisibleCount` (상단바에 바로 보일 최대 개수, 기본 10 — 넘으면 ⌃ 안으로), `topBar.trayIconPlacement` (몽독에서 옮긴 자리 — 키는 GUID 또는 `"exe이름:uID"`, 값 `{ "onBar": true, "order": 0 }`, 비우면 윈도우 설정대로) |
-| 시계 달력 | `topBar.calendarApp` (날짜를 두 번 누르면 열 캘린더: `Google`/`OutlookWeb`/`Naver`/`NewOutlook`/`ClassicOutlook`/`WindowsCalendar`), `calendar.refreshMinutes` (구독 캘린더 새로고침 주기, 기본 15분) |
+| 시계 달력 | `topBar.calendarApp` (날짜를 두 번 누르면 열 캘린더: `Google`/`OutlookWeb`/`Naver`/`NewOutlook`/`ClassicOutlook`/`WindowsCalendar`. 새 설치 기본값은 클래식 Outlook → 새 Outlook → `Google` 중 설치된 첫째), `calendar.refreshMinutes` (구독 캘린더 새로고침 주기, 기본 15분) |
 | 검색 | `topBar.searchMode` (`Spotlight`/`Windows`), `topBar.spotlightHotkey` (`Auto`/`WinSpace`/`AltSpace`/`CtrlSpace`/`None`) |
 | 검색 항목 | `search.apps` · `settings` · `calculator` · `folders` · `documents` · `media` · `otherFiles` · `webSearch` · `windowsSearch` (기본 모두 `true`), `search.showRecents` (기본 `true`), `search.fileSearchFolders`, `search.maxPerCategory` (기본 5), `search.webSearchEngine` (`Google`/`Naver`/`Bing`) |
 | 알림 | `notifications.showNotificationBanners` (기본 `true`), `notifications.hideWindowsToastPopups` (기본 `true`), `notifications.lowBatteryAlerts` (기본 `true`) |
@@ -186,11 +186,11 @@ zip 으로 썼다면:
 | 앱 메뉴 직접 정의 | `appMenus` — 키는 exe 이름(예 `"chrome.exe"`), 항목마다 `text` 와 `keys`(예 `"Ctrl+Shift+T"`) |
 | 사용 통계 보내기 | `sendUsageStats` (기본 `true`) — 몽독이 켜진 날 하루 한 번 PC 를 알아볼 수 없는 작은 신호(버전·윈도우·기능 켜짐/꺼짐·오류 수). 자세한 항목은 [`tools/support-intake`](tools/support-intake/README.md) |
 | 앱 메뉴 규칙 갱신 | `updateMenuRules` (기본 `true`) — `false` 면 [앱 메뉴 규칙](#앱-메뉴-규칙)을 GitHub 에서 받지 않음 |
-| 앱 창 메뉴 줄 숨기기 (실험) | `topBar.hideNativeMenuBars` (기본 `false`) — 메모장·워드패드·그림판·레지스트리 편집기 같은 시스템 앱 창 안의 메뉴 줄을 떼고 상단바에서만 보이게. 끄거나 일시 정지·종료하면 되돌림 |
+| 앱 창 메뉴 줄 숨기기 (실험) | `topBar.hideNativeMenuBars` (기본 `false`, 설정 창에는 없음 — 이 파일로만) — 메모장·워드패드·그림판·레지스트리 편집기 같은 시스템 앱 창 안의 메뉴 줄을 떼고 상단바에서만 보이게. 끄거나 일시 정지·종료하면 되돌림 |
 | 업데이트 확인 | `checkForUpdates` (기본 `true`) — 시작 1분 뒤와 12시간마다 GitHub 릴리스 확인 |
 | 핀 목록 | `pins` |
 
-색 문자열이 `""` 이면 테마 기본값. 첫 실행 때 MyDockFinder 의 `ico.ini` 가 있으면 핀 목록을 가져오고(그 뒤 작업 표시줄 고정 앱 중 없는 것 추가), 없으면 Finder·Launchpad 다음에 윈도우 작업 표시줄 고정 앱을 작업 표시줄 순서대로 둔다(파일 탐색기 제외, 고정 앱이 없으면 Finder·Launchpad·브라우저·설정).
+색 문자열이 `""` 이면 테마 기본값. 첫 실행 때 Finder·Launchpad 다음에 윈도우 작업 표시줄 고정 앱을 작업 표시줄 순서대로 둔다(파일 탐색기 제외, 고정 앱이 없으면 Finder·Launchpad·브라우저·설정).
 
 로그: `%APPDATA%\mongdock\logs\mongdock.log`
 
