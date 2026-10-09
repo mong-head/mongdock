@@ -1281,6 +1281,9 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
 
     private static volatile bool _taskbarHidden;
 
+    /// <summary>지금 윈도우 작업 표시줄을 숨기는 중인지 (트레이 가로채기 스레드가 전달 직후 다시 숨길 때 봄).</summary>
+    internal static bool IsTaskbarHidden => _taskbarHidden;
+
     /// <summary>
     /// 윈도우 작업 표시줄(Shell_TrayWnd + 모든 Shell_SecondaryTrayWnd) 숨김/복원 (ShowWindowAsync — 탐색기가 응답 없어도 안 멈춤).
     /// 숨기는 동안은 작업 표시줄 자동 숨김을 켜 둔다(<see cref="TaskbarAutoHide"/>) — 자동 숨김이 꺼진 PC 에서 창만 숨기면
@@ -1402,7 +1405,11 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
             {
                 DesktopApi.GetCursorPos(out var c);
                 string fgAgo = _lastForegroundAt == 0 ? "-" : $"{now - _lastForegroundAt}ms 전 {_lastForeground}";
-                Log.Info($"작업 표시줄이 다시 보여 바로 숨김 ({cls}) 마우스=({c.X},{c.Y}) 포그라운드={ProcessAndClass(User32.GetForegroundWindow())} 직전 포그라운드 변화={fgAgo}");
+                long fwdAgo = TrayIconService.LastForwardTick == 0 ? -1 : now - TrayIconService.LastForwardTick;
+                string fwd = fwdAgo < 0 ? "-" : $"{fwdAgo}ms 전 0x{TrayIconService.LastForwardMsg:X}" +
+                    (TrayIconService.LastForwardSender != IntPtr.Zero ? $" data={TrayIconService.LastForwardData} {ProcessAndClass(TrayIconService.LastForwardSender)}" : "");
+                Log.Info($"작업 표시줄이 다시 보여 바로 숨김 ({cls}) 마우스=({c.X},{c.Y}) 포그라운드={ProcessAndClass(User32.GetForegroundWindow())} " +
+                    $"직전 포그라운드 변화={fgAgo} 직전 트레이 전달={fwd} 전달 직후 숨김 누계={TrayIconService.ForwardRehides}");
             }
         }
         catch (Exception e)

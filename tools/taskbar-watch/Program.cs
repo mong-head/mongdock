@@ -32,6 +32,10 @@ internal static class Program
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT p);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr h, out RECT r);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr CreateWindowEx(int ex, string cls, string name, int style, int x, int y, int w, int h, IntPtr parent, IntPtr menu, IntPtr inst, IntPtr param);
+    [DllImport("user32.dll")] private static extern bool RegisterShellHookWindow(IntPtr h);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterWindowMessage(string s);
+    [DllImport("user32.dll")] private static extern bool DestroyWindow(IntPtr h);
 
     [StructLayout(LayoutKind.Sequential)] private struct MSG { public IntPtr hwnd; public uint message; public IntPtr wParam, lParam; public uint time; public POINT pt; }
     [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
@@ -59,14 +63,25 @@ internal static class Program
             SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, _proc, 0, 0, WINEVENT_OUTOFCONTEXT),
             SetWinEventHook(EVENT_OBJECT_SHOW, EVENT_OBJECT_HIDE, IntPtr.Zero, _proc, 0, 0, WINEVENT_OUTOFCONTEXT),
         };
+        // 셸 훅: 작업 표시줄 단추 깜빡임(HSHELL_FLASH)·활성화 — 자동 숨김 작업 표시줄을 튀어나오게 하는 흔한 원인
+        IntPtr shellWnd = CreateWindowEx(0, "Static", "taskbar-watch", 0, 0, 0, 0, 0, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        uint shellMsg = RegisterWindowMessage("SHELLHOOK");
+        if (shellWnd != IntPtr.Zero) RegisterShellHookWindow(shellWnd);
         uint tid = GetCurrentThreadId();
         var timer = new Timer(_ => PostThreadMessage(tid, 0x0012 /* WM_QUIT */, IntPtr.Zero, IntPtr.Zero), null, TimeSpan.FromMinutes(minutes), Timeout.InfiniteTimeSpan);
         while (GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
         {
+            if (msg.hwnd == shellWnd && msg.message == shellMsg)
+            {
+                int code = (int)(msg.wParam.ToInt64() & 0xFFFF);
+                if (code == 0x8006) W($"{DateTime.Now:HH:mm:ss.fff} (깜빡임 HSHELL_FLASH {Describe(msg.lParam)})");
+                continue;
+            }
             TranslateMessage(ref msg);
             DispatchMessage(ref msg);
         }
         foreach (var h in hooks) UnhookWinEvent(h);
+        if (shellWnd != IntPtr.Zero) DestroyWindow(shellWnd);
         timer.Dispose();
 
         double total = Durations.Sum();

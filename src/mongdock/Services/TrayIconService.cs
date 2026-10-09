@@ -381,7 +381,7 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
                     case T.WM_COPYDATA:
                     {
                         IntPtr result = OnCopyData(w, msg, wParam, lParam);
-                        EnsureOnTop(w);
+                        AfterForward(w, msg, wParam, lParam);
                         return result;
                     }
                     case T.WM_TIMER:
@@ -414,7 +414,7 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
                         // 작업 표시줄에 보내는 명령(예: WM_COMMAND 419 = 모두 최소화)은 explorer 로
                     {
                         IntPtr result = Forward(w, msg, wParam, lParam, ForwardTimeoutMs);
-                        EnsureOnTop(w);
+                        AfterForward(w, msg, wParam, lParam);
                         return result;
                     }
                 }
@@ -422,7 +422,7 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
                 if (msg >= T.WM_USER && msg < T.RegisteredMessageFirst)
                 {
                     IntPtr result = Forward(w, msg, wParam, lParam, ForwardTimeoutMs);
-                    EnsureOnTop(w);
+                    AfterForward(w, msg, wParam, lParam);
                     return result;
                 }
             }
@@ -630,6 +630,35 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
     /// (실측: 카카오톡·디스코드·Parsec·휴대폰과 연결이 매번 빠짐). 앱은 아직 이 SendMessage 응답을 기다리는 중이므로
     /// 돌려주기 전에 다시 올리면 다음 호출은 확실히 몽독으로 온다.
     /// </summary>
+    /// <summary>마지막으로 explorer 에 전달한 메시지 (작업 표시줄 재표시 진단 로그용 — DesktopWindowService).</summary>
+    internal static long LastForwardTick;
+    internal static uint LastForwardMsg;
+    internal static IntPtr LastForwardSender;
+    internal static long LastForwardData;
+
+    /// <summary>
+    /// explorer 로 전달한 뒤: 맨 위 유지(<see cref="EnsureOnTop"/>) + "윈도우 작업 표시줄 숨기기" 중이면 explorer 작업 표시줄을 바로 다시 숨김.
+    /// explorer 는 트레이 메시지(아이콘 갱신 등)를 처리하며 자동 숨김 작업 표시줄을 다시 보이게 한다(#13 실측: 트레이 아이콘을
+    /// 주기적으로 갱신하는 앱이 있으면 수십 초마다) — 전달이 돌아온 그 자리에서 숨기면 화면에 그려지기 전에 끝난다.
+    /// </summary>
+    private static void AfterForward(Worker w, uint msg, IntPtr wParam, IntPtr lParam)
+    {
+        LastForwardTick = Environment.TickCount64;
+        LastForwardMsg = msg;
+        LastForwardSender = msg == T.WM_COPYDATA ? wParam : IntPtr.Zero;
+        LastForwardData = msg == T.WM_COPYDATA && lParam != IntPtr.Zero ? Marshal.ReadIntPtr(lParam).ToInt64() : 0;
+        EnsureOnTop(w);
+        IntPtr tray = w.ExplorerTray;
+        if (DesktopWindowService.IsTaskbarHidden && tray != IntPtr.Zero && Native.User32.IsWindowVisible(tray))
+        {
+            Native.User32.ShowWindowAsync(tray, Native.User32.SW_HIDE);
+            Interlocked.Increment(ref ForwardRehides);
+        }
+    }
+
+    /// <summary>전달 직후 다시 숨긴 횟수 (진단).</summary>
+    internal static int ForwardRehides;
+
     private static void EnsureOnTop(Worker w)
     {
         if (!w.Stopping && w.Hwnd != IntPtr.Zero && T.FindWindow(T.TrayWndClass, null) != w.Hwnd) RaiseTopmost(w);
