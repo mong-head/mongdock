@@ -17,7 +17,10 @@ namespace Mongdock.Services;
 public sealed class IconService : IIconService
 {
     private const int IconPx = 256;
-    private const int CacheLimit = 256;
+    /// <summary>
+    /// 캐시 개수 상한. 256px 아이콘 하나가 픽셀만 256KB(네이티브 메모리)라 256개면 64MB — 독·실행 중 앱·최근 검색에 넉넉한 128 (#15).
+    /// </summary>
+    private const int CacheLimit = 128;
 
     private readonly Dictionary<string, LinkedListNode<(string Key, ImageSource Image)>> _map = new(StringComparer.OrdinalIgnoreCase);
     private readonly LinkedList<(string Key, ImageSource Image)> _lru = new();
@@ -119,9 +122,13 @@ public sealed class IconService : IIconService
     /// </summary>
     private ImageSource Styled(string rawKey, IconStyle style, string? windowsAumid, Func<ImageSource?> loadRaw)
     {
-        ImageSource raw = GetOrAdd("orig|" + rawKey, loadRaw, DefaultIcon);
-        if (style != IconStyle.Mac) return raw;
-        return GetOrAdd(MacStyleVersion + "|" + rawKey, () =>
+        if (style != IconStyle.Mac) return GetOrAdd("orig|" + rawKey, loadRaw, DefaultIcon);
+        // 맥 스타일: 원본은 맥 아이콘을 만들 때만 쓰고 캐시하지 않음 — 앱마다 256px 두 장을 들고 있지 않게 (#15).
+        // (원본 스타일로 이미 캐시돼 있으면 그것을 씀)
+        string macKey = MacStyleVersion + "|" + rawKey;
+        if (TryGetCached(macKey) is { } hit) return hit;
+        ImageSource raw = TryGetCached("orig|" + rawKey) ?? LoadUncached("orig|" + rawKey, loadRaw) ?? DefaultIcon;
+        return GetOrAdd(macKey, () =>
         {
             if (windowsAumid is not null)
             {
@@ -137,6 +144,52 @@ public sealed class IconService : IIconService
     private ImageSource Fallback(IconStyle style) => style == IconStyle.Mac ? MacDefaultIcon : DefaultIcon;
 
     // ───────────────────────── 캐시 ─────────────────────────
+
+    private ImageSource? TryGetCached(string key)
+    {
+        lock (_gate)
+        {
+            if (!_map.TryGetValue(key, out var node)) return null;
+            _lru.Remove(node);
+            _lru.AddFirst(node);
+            return node.Value.Image;
+        }
+    }
+
+    /// <summary>캐시에 넣지 않고 한 번 불러옴 (실패 표시는 GetOrAdd 와 같이 — 10초 동안 다시 시도 안 함).</summary>
+    private ImageSource? LoadUncached(string key, Func<ImageSource?> factory)
+    {
+        lock (_gate)
+        {
+            if (_failed.TryGetValue(key, out var until) && DateTime.UtcNow < until) return null;
+        }
+        ImageSource? img = null;
+        try { img = factory(); }
+        catch (Exception ex) { Log.Error($"아이콘 로드 실패: {key}", ex); }
+        if (img is null)
+        {
+            lock (_gate)
+            {
+                if (_failed.Count > 256) _failed.Clear();
+                _failed[key] = DateTime.UtcNow + FailedRetry;
+            }
+            return null;
+        }
+        if (img.CanFreeze && !img.IsFrozen) img.Freeze();
+        return img;
+    }
+
+    /// <summary>메모리 진단용: 캐시 개수·픽셀 크기 합 (MemoryReport).</summary>
+    public string CacheStats()
+    {
+        lock (_gate)
+        {
+            long bytes = 0;
+            foreach (var (_, img) in _lru)
+                if (img is BitmapSource b) bytes += (long)b.PixelWidth * b.PixelHeight * 4;
+            return $"아이콘 캐시 {_lru.Count}개 ~{bytes / (1024 * 1024)}MB, 창 아이콘 {_windowIcons.Count}개";
+        }
+    }
 
     private ImageSource GetOrAdd(string key, Func<ImageSource?> factory, ImageSource fallback)
     {

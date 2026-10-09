@@ -171,6 +171,9 @@ public partial class App : Application
         // 지난 실행이 갑자기 꺼졌거나 오류가 있었으면 조용한 때에 "문제를 보낼까요?" (Views/CrashPrompt)
         CrashPrompt.Schedule(_services, _crashPending);
         CrashReporter.ScheduleTestCrash(Dispatcher); // MONGDOCK_TEST_CRASH 가 있을 때만 (개발 시험)
+        // 메모리 진단 로그 (2분 뒤, 30분마다)
+        var icons = _services.Icons as IconService;
+        MemoryReport.Start(() => $"{icons?.CacheStats()}, 검색 아이콘 {SpotlightWindow.CachedIconCount}개");
         // --tour: 첫 설치 둘러보기를 지금 설정 그대로 다시 보기 (확인·시연용)
         bool tour = Environment.GetCommandLineArgs().Any(a => string.Equals(a, "--tour", StringComparison.OrdinalIgnoreCase));
         CoachMarks.ScheduleStartup(settings.CreatedThisRun, forceTour: tour);
@@ -384,6 +387,7 @@ public partial class App : Application
                 catch (Exception ex) { Log.Error("종료 정리 실패", ex); }
             }
         }
+        MemoryReport.Stop();
         _resumeWait?.Unregister(null);
         _resumeEvent?.Dispose();
         _exitWait?.Unregister(null);

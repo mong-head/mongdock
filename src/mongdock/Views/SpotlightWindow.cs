@@ -45,6 +45,11 @@ internal sealed class SpotlightWindow : Window
     private static long _closedAt;
     /// <summary>앱 아이콘 캐시 (IconKey → Frozen 이미지). 창을 다시 열 때 바로 보이게 정적. 파일 아이콘은 ShellFileIcons 가 확장자별로 캐시.</summary>
     private static readonly Dictionary<string, ImageSource> IconCache = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>검색 결과 아이콘 캐시 상한 (#15: 앱 아이콘은 256px 라 400개면 100MB 까지 갈 수 있었음).</summary>
+    private const int IconCacheLimit = 120;
+
+    /// <summary>메모리 진단용 (MemoryReport).</summary>
+    internal static int CachedIconCount => IconCache.Count;
 
     private readonly AppServices _services;
     private readonly UiPalette _p;
@@ -732,7 +737,7 @@ internal sealed class SpotlightWindow : Window
                 if (icon is null) return;
                 if (item.IconKey is not null)
                 {
-                    if (IconCache.Count > 400) IconCache.Clear();
+                    if (IconCache.Count >= IconCacheLimit) IconCache.Clear();
                     IconCache[item.IconKey] = icon;
                 }
             }
