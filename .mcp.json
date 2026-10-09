@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "mongdock-support-mail": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["tools/support-mail-mcp/server.py"],
+      "env": {}
+    }
+  }
+}

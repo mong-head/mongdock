@@ -1,0 +1,49 @@
+{
+  "rule": "아래 형식 중 하나에 '정확히' 맞을 때만 send_template_reply 로 보낸다. 조금이라도 애매하거나, 화가 난 고객, 환불·결제·개인정보·법적 문제, 형식에 없는 질문이면 보내지 말고 create_draft_reply 로 초안만 저장하고 PM 세션에 넘긴다. 같은 사람에게 같은 형식을 두 번 보내지 않는다.",
+  "templates": {
+    "fixed_in_update": {
+      "use_when": "신고한 버그가 이미 고쳐진 버전이 나와 있을 때 (Changelog.json 에서 확인한 버전만)",
+      "ko": "안녕하세요, 몽독을 써 주셔서 고맙습니다.\n\n말씀해 주신 문제({issue})는 v{version} 에서 고쳐졌어요. 몽독을 최신 버전으로 업데이트하면 해결돼요.\n- 업데이트 방법: {how_to_update}\n\n업데이트한 뒤에도 같은 문제가 있으면 이 메일에 답장으로 알려 주세요.",
+      "en": "Hi, thanks for using mongdock.\n\nThe problem you reported ({issue}) is fixed in v{version}. Updating mongdock to the latest version will solve it.\n- How to update: {how_to_update}\n\nIf it still happens after updating, just reply to this email."
+    },
+    "how_to_use": {
+      "use_when": "버그가 아니라 기능이 이미 있는데 찾지 못했거나 다르게 이해했을 때 (README·docs 에서 확인한 기능만)",
+      "ko": "안녕하세요, 몽독을 써 주셔서 고맙습니다.\n\n말씀하신 건 '{feature}' 기능으로 할 수 있어요.\n- 위치: {where}\n- 방법: {steps}\n\n해 보시고 안 되면 이 메일에 답장으로 알려 주세요.",
+      "en": "Hi, thanks for using mongdock.\n\nYou can do this with the '{feature}' feature.\n- Where: {where}\n- How: {steps}\n\nIf it doesn't work, just reply to this email."
+    },
+    "bug_received": {
+      "use_when": "새 버그 신고를 받았고 재현 정보가 충분해 팀에 넘겼을 때 (보드에 항목을 만든 뒤)",
+      "ko": "안녕하세요, 신고해 주셔서 고맙습니다.\n\n말씀해 주신 문제({issue})를 확인했고 고치기 위해 살펴보고 있어요. 고친 버전이 나오면 업데이트 알림으로 알려 드릴게요.",
+      "en": "Hi, thanks for the report.\n\nWe've confirmed the problem you described ({issue}) and are working on a fix. You'll see an update notice when the fixed version is out."
+    },
+    "need_more_info": {
+      "use_when": "버그 신고인데 재현에 꼭 필요한 정보가 빠졌을 때 (무엇이 필요한지 한 줄로)",
+      "ko": "안녕하세요, 신고해 주셔서 고맙습니다.\n\n문제를 정확히 확인하려면 정보가 조금 더 필요해요: {what_we_need}\n몽독 메뉴의 '문제 신고하기…'로 다시 보내 주시면 버전·화면 정보가 자동으로 함께 와서 더 빨리 확인할 수 있어요.",
+      "en": "Hi, thanks for the report.\n\nTo look into this we need a little more information: {what_we_need}\nSending it again from 'Report a problem…' in the mongdock menu attaches your version and display details automatically."
+    },
+    "feature_request_received": {
+      "use_when": "기능 요청을 받았을 때 (약속은 하지 않음)",
+      "ko": "안녕하세요, 좋은 의견 고맙습니다.\n\n말씀해 주신 '{request}' 의견을 팀에 전달했어요. 반영 여부와 시기는 약속드리기 어렵지만, 앞으로 기능을 정할 때 꼭 참고할게요.",
+      "en": "Hi, thanks for the suggestion.\n\nWe've passed your idea ('{request}') on to the team. We can't promise if or when it will ship, but it will be considered when planning new features."
+    },
+    "known_limitation": {
+      "use_when": "Changelog.json 의 knownIssues 에 있는 알려진 한계일 때 (그 문장을 limitation 에 그대로)",
+      "ko": "안녕하세요, 몽독을 써 주셔서 고맙습니다.\n\n말씀하신 부분은 현재 알려진 한계예요: {limitation}\n윈도우나 다른 앱 쪽 사정으로 지금은 바꾸기 어려운 부분이라 양해 부탁드려요. 방법이 생기면 업데이트로 알려 드릴게요.",
+      "en": "Hi, thanks for using mongdock.\n\nThis is a known limitation right now: {limitation}\nIt depends on Windows or another app, so we can't change it for now. If that changes, we'll let you know in an update."
+    },
+    "sorry_we_will_check": {
+      "use_when": "고객이 화가 났거나 불만이 클 때 — 먼저 이것만 보내고, 원인 정리와 최종 답장 초안은 PM 에 넘김 (해결책·변명은 넣지 않음)",
+      "ko": "안녕하세요, 불편을 드려서 정말 죄송해요.\n\n말씀해 주신 내용({issue})은 담당자가 직접 확인하고 있어요. 하루 안에 다시 연락드릴게요.",
+      "en": "Hi, we're really sorry for the trouble.\n\nSomeone on the team is looking into what you described ({issue}) personally. We'll get back to you within a day."
+    },
+    "refund_how_to": {
+      "use_when": "환불을 요청했을 때 — 스토어 구매는 Microsoft 가 환불을 처리하므로 방법만 안내 (우리가 환불을 약속하지 않음)",
+      "ko": "안녕하세요, 몽독이 기대에 못 미쳐서 죄송해요.\n\nMicrosoft Store 에서 산 앱은 Microsoft 가 환불을 처리해요. 아래에서 요청할 수 있어요.\n- {link}\n- Microsoft 계정 → 주문 기록 → 몽독 → '환불 요청'\n\n괜찮으시다면 어떤 점이 아쉬웠는지 알려 주시면 다음 버전에 꼭 참고할게요.",
+      "en": "Hi, we're sorry mongdock didn't work out for you.\n\nApps bought from the Microsoft Store are refunded by Microsoft. You can request it here:\n- {link}\n- Microsoft account → Order history → mongdock → 'Request a refund'\n\nIf you're willing, we'd love to hear what didn't work for you."
+    }
+  },
+  "footer": {
+    "ko": "몽독 지원\n(이 메일은 몽독 지원팀이 보냈어요. 답장하시면 확인 후 다시 연락드려요.)",
+    "en": "mongdock support\n(Sent by the mongdock support team. Reply to this email and we'll get back to you.)"
+  }
+}
