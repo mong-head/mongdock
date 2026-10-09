@@ -88,12 +88,12 @@ internal static class DockMenus
         try { state = services.Startup.State; }
         catch { state = services.Settings.Current.StartWithWindows ? StartupState.Enabled : StartupState.Disabled; }
         if (state == StartupState.DisabledByUser)
-            return Item("로그인 시 자동 실행 (윈도우 설정에서 켜기…)", () => services.Launcher.OpenFile(StartupAppsSettingsUri));
+            return Item("컴퓨터를 켜면 몽독도 켜기 (윈도우 설정에서 켜기…)", () => services.Launcher.OpenFile(StartupAppsSettingsUri));
         if (state is StartupState.DisabledByPolicy or StartupState.EnabledByPolicy)
-            return Item("로그인 시 자동 실행", () => { }, enabled: false, isChecked: state == StartupState.EnabledByPolicy);
+            return Item("컴퓨터를 켜면 몽독도 켜기", () => { }, enabled: false, isChecked: state == StartupState.EnabledByPolicy);
 
         bool on = state == StartupState.Enabled;
-        return Item("로그인 시 자동 실행", () =>
+        return Item("컴퓨터를 켜면 몽독도 켜기", () =>
         {
             bool next = !on;
             services.Startup.SetEnabled(next);

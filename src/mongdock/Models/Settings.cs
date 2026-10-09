@@ -168,7 +168,13 @@ public sealed class TopBarSettings
     /// <summary>"" 이면 배경 밝기에 따라 검정/흰색 자동.</summary>
     public string Foreground { get; set; } = "";
     public double FontSize { get; set; } = 13;
+    /// <summary>
+    /// 시계 형식. 기본값("ddd tt h:mm")이면 윈도우 시간 형식(12/24시간)을 따르고 <see cref="ShowClockDate"/> 로 날짜·요일을 붙임 (v0.5).
+    /// 다른 값으로 직접 바꿨으면 그 형식 그대로.
+    /// </summary>
     public string ClockFormat { get; set; } = "ddd tt h:mm";
+    /// <summary>시계 앞에 날짜·요일 표시 (예 "10월 9일 (목) 오후 7:50"). 끄면 시각만.</summary>
+    public bool ShowClockDate { get; set; } = true;
     public bool ShowDesktopButtons { get; set; } = true;
     /// <summary>앱 이름 오른쪽에 그 앱의 메뉴(파일·편집·보기…) 표시 (맥 메뉴바처럼).</summary>
     public bool ShowAppMenus { get; set; } = true;

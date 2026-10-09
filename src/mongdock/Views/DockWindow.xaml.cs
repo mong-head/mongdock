@@ -1503,7 +1503,6 @@ public partial class DockWindow : Window
         menu.Items.Add(DockMenus.HideTaskbar(_services));
         menu.Items.Add(new Separator());
         menu.Items.Add(DockMenus.StartWithWindows(_services));
-        menu.Items.Add(DockMenus.OpenSettings(_services));
         menu.Items.Add(DockMenus.Quit());
     }
 

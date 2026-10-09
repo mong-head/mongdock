@@ -25,7 +25,7 @@ namespace Mongdock.Views;
 /// </summary>
 internal sealed partial class SettingsWindow : Window
 {
-    private enum Page { General, Dock, TopBar, Calendar, Search, About, Changelog }
+    private enum Page { General, Dock, TopBar, Notifications, Calendar, Search, About, Changelog }
 
     private const string GitHubUrl = "https://github.com/mong-head/mongdock";
     private const double SidebarWidth = 200;
@@ -244,6 +244,7 @@ internal sealed partial class SettingsWindow : Window
             case Page.General: BuildGeneral(body); break;
             case Page.Dock: BuildDock(body); break;
             case Page.TopBar: BuildTopBar(body); break;
+            case Page.Notifications: BuildNotifications(body); break;
             case Page.Calendar: BuildCalendar(body); break;
             case Page.Search: BuildSearch(body); break;
             case Page.Changelog: BuildChangelog(body); break; // SettingsWindow.Changelog.cs
@@ -272,6 +273,7 @@ internal sealed partial class SettingsWindow : Window
         Page.General => "일반",
         Page.Dock => "독",
         Page.TopBar => "상단바",
+        Page.Notifications => "알림",
         Page.Calendar => "캘린더",
         Page.Search => "검색",
         Page.Changelog => "변경 내역",
@@ -292,6 +294,7 @@ internal sealed partial class SettingsWindow : Window
         panel.Children.Add(SidebarItem(Page.General, "\uE713", Color.FromRgb(0x8E, 0x8E, 0x93)));
         panel.Children.Add(SidebarItem(Page.Dock, "\uE8A9", Color.FromRgb(0x0A, 0x84, 0xFF)));
         panel.Children.Add(SidebarItem(Page.TopBar, "\uE700", Color.FromRgb(0x5E, 0x5C, 0xE6)));
+        panel.Children.Add(SidebarItem(Page.Notifications, "\uEA8F", Color.FromRgb(0xFF, 0x95, 0x00)));
         panel.Children.Add(SidebarItem(Page.Calendar, "\uE787", Color.FromRgb(0xFF, 0x3B, 0x30)));
         panel.Children.Add(SidebarItem(Page.Search, "\uE721", Color.FromRgb(0xFF, 0x9F, 0x0A)));
         panel.Children.Add(SidebarItem(Page.About, "\uE946", Color.FromRgb(0x34, 0xC7, 0x59)));
@@ -360,15 +363,15 @@ internal sealed partial class SettingsWindow : Window
 
         body.Children.Add(Group(
             StartupRow(),
-            Row("윈도우 작업 표시줄 숨기기", "mongdock 이 켜져 있는 동안만 숨깁니다. 일시 정지·종료 시 복원.",
-                Toggle(s.HideWindowsTaskbar, on => Commit(() => _services.Settings.Current.SetHideWindowsTaskbar(on))))));
-
-        body.Children.Add(Group(
-            Row("글꼴", "상단바·메뉴·패널·독 이름표 글꼴", FontDropdown(s.FontFamily))));
-
-        // 가벼운 모드 (ViewModels/PerfMode)
-        body.Children.Add(Group(
-            Row("가벼운 모드", "애니메이션·블러·파도 확대를 끄고 확인 주기를 늘려요. 저사양 PC·원격 접속에 좋아요.",
+            Row("윈도우 작업 표시줄 숨기기", "몽독이 켜져 있는 동안만 숨겨요. 일시 정지하거나 끄면 다시 보여요.",
+                Toggle(s.HideWindowsTaskbar, on => Commit(() => _services.Settings.Current.SetHideWindowsTaskbar(on)))),
+            // 화면 모드: 독·메뉴·패널·이 창의 밝기 (예전 독 → 테마, 같은 설정값)
+            Row("화면 모드", "독·메뉴·패널·이 창의 밝기", Segmented(s.Dock.Theme,
+                new[] { (DockTheme.System, "자동"), (DockTheme.Light, "밝게"), (DockTheme.Dark, "어둡게") },
+                v => Commit(() => _services.Settings.Current.Dock.Theme = v))),
+            Row("글꼴", "상단바·메뉴·패널·독 이름표 글꼴", FontDropdown(s.FontFamily)),
+            // 가벼운 모드 (ViewModels/PerfMode)
+            Row("가벼운 모드", "애니메이션·흐림·파도 확대를 끄고 확인 주기를 늘려요. 저사양 PC·원격 접속에 좋아요.",
                 Toggle(PerfMode.IsOn(s), on => Commit(() => PerfMode.Set(_services.Settings.Current, on), rebuild: true)))));
 
         BuildTransferSection(body); // SettingsWindow.Transfer.cs
@@ -397,64 +400,63 @@ internal sealed partial class SettingsWindow : Window
         var d = _services.Settings.Current.Dock;
         DockSettings D() => _services.Settings.Current.Dock; // 외부 다시 로드로 객체가 바뀌어도 최신 것에 씀
 
-        body.Children.Add(Group(
+        var top = new List<UIElement>
+        {
             Row("독 보이기", null, Toggle(d.Enabled, on => Commit(() => D().Enabled = on))),
             Row("위치", null, Segmented(d.Edge,
                 new[] { (DockEdge.Left, "왼쪽"), (DockEdge.Bottom, "아래"), (DockEdge.Right, "오른쪽"), (DockEdge.Top, "위") },
                 v => Commit(() => D().Edge = v))),
-            Row("모니터", "독을 둘 모니터. 연결이 끊기면 주 모니터에 표시됩니다.", MonitorDropdown(d.Monitor)),
-            Row("동작", null, Segmented(d.Mode,
-                new[] { (DockMode.AutoHide, "자동 숨김"), (DockMode.Overlay, "항상 보이기") },
-                v => Commit(() => D().Mode = v)))));
+        };
+        // 모니터가 2대 이상일 때만 (#21) — 이미 다른 모니터를 골라 뒀으면 계속 보임
+        if (DeviceInfo.HasMultipleMonitors || !string.IsNullOrEmpty(d.Monitor))
+            top.Add(Row("모니터", "독을 둘 모니터. 연결이 끊기면 주 모니터에 보여요.", MonitorDropdown(d.Monitor)));
+        top.Add(Row("독 자동으로 숨기기", "평소엔 숨어 있다가 마우스를 화면 끝에 대면 나타나요.",
+            Toggle(d.Mode == DockMode.AutoHide, on => Commit(() => D().Mode = on ? DockMode.AutoHide : DockMode.Overlay))));
+        top.Add(Row("아이콘 크기", null, ValueSlider(d.IconSize, 24, 96, 1, v => $"{v:0}", v => D().IconSize = v)));
+        top.Add(Row("마우스 올리면 크게", "맨 왼쪽 = 끔",
+            ValueSlider(d.HoverScale, 1.0, 2.5, 0.1, v => v <= 1.001 ? "끔" : $"{v:0.0}배", v => D().HoverScale = v)));
+        top.Add(Row("아이콘 모양", "맥: 둥근 사각형으로 크기·여백을 맞춤 / 원본: 앱 아이콘 그대로", Segmented(d.IconStyle,
+            new[] { (IconStyle.Mac, "맥"), (IconStyle.Original, "원본") },
+            v => Commit(() => D().IconStyle = v))));
+        body.Children.Add(Group(top.ToArray()));
 
-        body.Children.Add(Group(
-            Row("아이콘 크기", null, ValueSlider(d.IconSize, 24, 96, 1, v => $"{v:0}", v => D().IconSize = v)),
-            Row("간격", null, ValueSlider(d.IconSpacing, 0, 20, 1, v => $"{v:0}", v => D().IconSpacing = v)),
-            Row("확대 배율", "1.0 이면 확대하지 않습니다.",
-                ValueSlider(d.HoverScale, 1.0, 2.5, 0.1, v => v <= 1.001 ? "끔" : $"{v:0.0}배", v => D().HoverScale = v)),
-            Row("파도 확대", "커서 주변 아이콘도 거리에 따라 같이 커집니다.",
-                Toggle(d.WaveMagnification, on => Commit(() => D().WaveMagnification = on)))));
-
-        // 독 모양: 유리(블러) = DWM 둥근 모서리 8px 고정 / 단색 반투명 = 모서리 반경 자유
+        // 독 모양: 유리(블러) = DWM 둥근 모서리 8px 고정 / 단색 반투명 = 모서리 둥글기 자유 (세부 설정)
         body.Children.Add(SectionTitle("독 모양"));
         body.Children.Add(Group(
-            RadioRow("유리 (블러, 모서리 8px)", "배경이 흐리게 비치는 반투명 유리.", d.Blur,
+            RadioRow("유리", "배경이 흐리게 비치는 반투명 유리.", d.Blur,
                 () => Commit(() => D().Blur = true, rebuild: true)),
-            RadioRow("단색 반투명 (크게 둥글게)", "블러 없이 반투명 단색. 모서리를 크게 둥글릴 수 있고 원격 접속에서 더 가볍습니다.", !d.Blur,
-                () => Commit(() => D().Blur = false, rebuild: true)),
-            Row("모서리 반경", "블러는 Windows(DWM) 제약으로 모서리가 8px 로 고정돼 단색에서만 바뀝니다.",
-                ValueSlider(d.CornerRadius, 8, 28, 1, v => $"{v:0}px", v => D().CornerRadius = v, enabled: !d.Blur))));
+            RadioRow("단색 반투명", "흐림 없이 반투명 단색. 모서리를 크게 둥글릴 수 있고 원격 접속에서 더 가벼워요.", !d.Blur,
+                () => Commit(() => D().Blur = false, rebuild: true))));
 
-        body.Children.Add(Group(
-            Row("테마", null, Segmented(d.Theme,
-                new[] { (DockTheme.System, "시스템"), (DockTheme.Light, "밝게"), (DockTheme.Dark, "어둡게") },
-                v => Commit(() => D().Theme = v))),
-            Row("아이콘 모양", "맥: 둥근 사각형으로 크기·여백을 맞춤 / 원본: 앱 아이콘 그대로", Segmented(d.IconStyle,
-                new[] { (IconStyle.Mac, "맥"), (IconStyle.Original, "원본") },
-                v => Commit(() => D().IconStyle = v)))));
-
-        body.Children.Add(Group(
-            Row("실행 중 앱 표시", "고정하지 않은 실행 중 앱도 구분선 뒤에 표시합니다.",
-                Toggle(d.ShowRunningApps, on => Commit(() => D().ShowRunningApps = on))),
-            Row("다른 데스크톱 창 표시", "다른 가상 데스크톱의 창도 실행 중 점과 창 선택에 표시합니다.",
-                Toggle(d.ShowWindowsFromAllDesktops, on => Commit(() => D().ShowWindowsFromAllDesktops = on))),
-            Row("창이 여러 개일 때 클릭", null, Segmented(d.MultiWindowClick,
-                new[] { (MultiWindowClick.Picker, "창 선택"), (MultiWindowClick.MostRecent, "최근 창") },
-                v => Commit(() => D().MultiWindowClick = v))),
-            Row("앱 켤 때", "창이 뜰 때까지 아이콘이 튀거나 실행 점이 깜빡입니다. 알림은 튀지 않습니다.", Segmented(d.LaunchAnimation,
-                new[] { (LaunchAnimation.Bounce, "통통 튀기"), (LaunchAnimation.Blink, "점 깜빡이기") },
-                v => Commit(() => D().LaunchAnimation = v)))));
-
-        body.Children.Add(Group(
-            Row("작업 표시줄 고정 앱 가져오기",
-                _taskbarImportResult ?? "윈도우 작업 표시줄에 고정한 앱 중 독에 없는 것을 작업 표시줄 순서대로 끝에 추가합니다.",
-                ActionButton("가져오기", () => Commit(() =>
-                {
-                    var s = _services.Settings.Current;
-                    int n = TaskbarPins.AddMissingTo(s, _services.Settings);
-                    s.TaskbarPinsImported = true;
-                    _taskbarImportResult = n > 0 ? $"{n}개 추가했어요." : "새로 추가할 앱이 없어요.";
-                }, rebuild: true)))));
+        var more = new List<UIElement>
+        {
+            Row("간격", null, ValueSlider(d.IconSpacing, 0, 20, 1, v => $"{v:0}", v => D().IconSpacing = v)),
+            Row("파도 확대", "마우스 주변 아이콘도 거리에 따라 같이 커져요.",
+                Toggle(d.WaveMagnification, on => Commit(() => D().WaveMagnification = on))),
+        };
+        // 모서리 둥글기는 단색일 때만 (유리는 윈도우가 8px 로 고정)
+        if (!d.Blur)
+            more.Add(Row("모서리 둥글기", null, ValueSlider(d.CornerRadius, 8, 28, 1, v => $"{v:0}px", v => D().CornerRadius = v)));
+        more.Add(Row("실행 중 앱도 독에 보이기", "고정하지 않은 실행 중 앱도 구분선 뒤에 보여요.",
+            Toggle(d.ShowRunningApps, on => Commit(() => D().ShowRunningApps = on))));
+        more.Add(Row("다른 데스크톱에 있는 창도 독에 보이기", null,
+            Toggle(d.ShowWindowsFromAllDesktops, on => Commit(() => D().ShowWindowsFromAllDesktops = on))));
+        more.Add(Row("창이 여러 개일 때 클릭", null, Segmented(d.MultiWindowClick,
+            new[] { (MultiWindowClick.Picker, "창 고르기"), (MultiWindowClick.MostRecent, "최근 창") },
+            v => Commit(() => D().MultiWindowClick = v))));
+        more.Add(Row("앱 켤 때", "창이 뜰 때까지 아이콘이 튀거나 실행 점이 깜빡여요.", Segmented(d.LaunchAnimation,
+            new[] { (LaunchAnimation.Bounce, "통통 튀기"), (LaunchAnimation.Blink, "점 깜빡이기") },
+            v => Commit(() => D().LaunchAnimation = v))));
+        more.Add(Row("작업 표시줄 고정 앱 가져오기",
+            _taskbarImportResult ?? "윈도우 작업 표시줄에 고정한 앱 중 독에 없는 것을 끝에 더해요.",
+            ActionButton("가져오기", () => Commit(() =>
+            {
+                var s = _services.Settings.Current;
+                int n = TaskbarPins.AddMissingTo(s, _services.Settings);
+                s.TaskbarPinsImported = true;
+                _taskbarImportResult = n > 0 ? $"{n}개 추가했어요." : "새로 추가할 앱이 없어요.";
+            }, rebuild: true))));
+        AddAdvanced(body, more);
     }
 
     /// <summary>"작업 표시줄 고정 앱 가져오기" 마지막 결과 (설명 줄에 표시).</summary>
@@ -513,58 +515,70 @@ internal sealed partial class SettingsWindow : Window
         var t = _services.Settings.Current.TopBar;
         TopBarSettings T() => _services.Settings.Current.TopBar;
 
-        body.Children.Add(Group(
-            Row("상단바 보이기", null, Toggle(t.Enabled, on => Commit(() => T().Enabled = on))),
-            Row("모든 모니터에 표시", "끄면 주 모니터에만 표시합니다.",
-                Toggle(t.ShowOnAllMonitors, on => Commit(() => T().ShowOnAllMonitors = on))),
-            Row("최대화 창이 상단바를 가리지 않게", "상단바 높이만큼 화면 공간을 비워 둡니다. 끄면 최대화한 창이 상단바 아래까지 덮습니다.",
-                Toggle(t.ReserveSpace, on => Commit(() => T().ReserveSpace = on))),
-            Row("창이 상단바에 가려지지 않게 아래로 내리기", "캡처 도구처럼 화면 맨 위에 뜨거나 상단바 밑으로 끌어 놓은 창을 상단바 바로 아래로 옮깁니다. 위 항목이 켜져 있을 때만 동작합니다.",
-                Toggle(t.KeepWindowsBelowBar, on => Commit(() => T().KeepWindowsBelowBar = on))),
-            Row("높이", null, ValueSlider(t.Height, 20, 40, 1, v => $"{v:0}", v => T().Height = v)),
-            Row("글자 크기", null, ValueSlider(t.FontSize, 11, 16, 0.5, v => $"{v:0.#}", v => T().FontSize = v)),
-            Row("색", null, ColorModeDropdown(t.ColorMode))));
+        var top = new List<UIElement> { Row("상단바 보이기", null, Toggle(t.Enabled, on => Commit(() => T().Enabled = on))) };
+        // 모니터가 2대 이상일 때만 (#21)
+        if (DeviceInfo.HasMultipleMonitors)
+            top.Add(Row("모든 모니터에 보이기", "끄면 주 모니터에만 보여요.", Toggle(t.ShowOnAllMonitors, on => Commit(() => T().ShowOnAllMonitors = on))));
+        top.Add(Row("크기", null, Segmented(TopBarSizes.Of(t),
+            new[] { (TopBarSize.Small, "작게"), (TopBarSize.Normal, "보통"), (TopBarSize.Large, "크게") },
+            v => Commit(() => TopBarSizes.Apply(T(), v)))));
+        top.Add(Row("색", null, ColorModeDropdown(t.ColorMode)));
+        top.Add(Row("시계에 날짜 보이기", "예: 10월 9일 (목). 12·24시간은 윈도우 시간 형식을 따라요.",
+            Toggle(t.ShowClockDate, on => Commit(() => T().ShowClockDate = on))));
+        body.Children.Add(Group(top.ToArray()));
 
-        body.Children.Add(SectionTitle("표시할 항목"));
-        body.Children.Add(Group(
-            Row("로고", "끄면 이 창은 트레이 아이콘이나 독 오른쪽 클릭 메뉴에서 엽니다.",
-                Toggle(t.ShowLogo, on => Commit(() => T().ShowLogo = on))),
-            Row("앱 이름", null, Toggle(t.ShowActiveAppName, on => Commit(() => T().ShowActiveAppName = on))),
-            Row("앱 메뉴", "파일·편집·보기… (맥 메뉴 막대처럼)", Toggle(t.ShowAppMenus, on => Commit(() => T().ShowAppMenus = on))),
-            Row("앱 창 안 메뉴 줄 숨기기 (실험)", "실험: 메모장·그림판 같은 앱의 창 안 메뉴 줄을 숨기고 상단바에서만 보이게 (옛날식 표준 메뉴 앱만 — 윈도우 11 새 메모장·그림판은 해당 없음)",
-                Toggle(t.HideNativeMenuBars, on => Commit(() => T().HideNativeMenuBars = on))),
-            Row("가상 데스크톱 버튼", null, Toggle(t.ShowDesktopButtons, on => Commit(() => T().ShowDesktopButtons = on))),
-            Row("앱 트레이 아이콘", "작업 표시줄 대신 상단바에 다른 앱 트레이 아이콘을 보여 줍니다(작업 표시줄 숨기기를 켜면 자동으로 켜짐).",
-                Toggle(t.ShowTrayIcons, on => Commit(() => T().SetShowTrayIconsByUser(on), rebuild: true))),
-            Row("상단바 트레이 아이콘 최대 개수", "바에 둘 아이콘이 이보다 많으면 순서 뒤쪽부터 ⌃ 안으로 들어가요.",
-                ValueSlider(t.TrayIconsVisibleCount, 1, 20, 1, v => $"{v:0}개", v => T().TrayIconsVisibleCount = (int)Math.Round(v))),
-            Row("단색 트레이 아이콘을 바 글자색으로", "흰색·검은색 한 가지 색 아이콘이 상단바 색과 같아 안 보이지 않게 바 글자색으로 칠합니다(맥처럼). 컬러 아이콘은 그대로 두고, 바와 색이 비슷하면 옅은 판을 깔아요.",
-                Toggle(t.TintMonochromeTrayIcons, on => Commit(() => T().TintMonochromeTrayIcons = on))),
-            Row("상태 아이콘", "Wi-Fi·블루투스·볼륨", Toggle(t.ShowStatusIcons, on => Commit(() => T().ShowStatusIcons = on))),
-            Row("배터리", "노트북에서만 보여요.", Toggle(t.ShowBattery, on => Commit(() => T().ShowBattery = on))),
-            Row("배터리 % 표시", null, Toggle(t.ShowBatteryPercent, on => Commit(() => T().ShowBatteryPercent = on))),
-            Row("카메라·마이크 사용 중 표시", "앱이 카메라를 쓰면 초록 점, 마이크만 쓰면 주황 점을 보여 줘요(맥처럼). 누르면 어떤 앱인지 보여요.",
-                Toggle(t.ShowPrivacyIndicator, on => Commit(() => T().ShowPrivacyIndicator = on))),
-            Row("빠른 버튼", "검색·제어 센터", Toggle(t.ShowQuickButtons, on => Commit(() => T().ShowQuickButtons = on))),
-            Row("한/영", null, Toggle(t.ShowImeToggle, on => Commit(() => T().ShowImeToggle = on))),
-            Row("네트워크 속도", null, Toggle(t.ShowNetworkSpeed, on => Commit(() => T().ShowNetworkSpeed = on)))));
-
-        AddRightOrder(body); // SettingsWindow.TopBarOrder.cs
+        AddTopBarItems(body); // SettingsWindow.TopBarOrder.cs: 표시할 항목 + 순서 (한 목록)
         if (t.ShowTrayIcons) AddTrayArrange(body); // SettingsWindow.Tray.cs
 
-        body.Children.Add(SectionTitle("알림"));
+        AddAdvanced(body, new List<UIElement>
+        {
+            Row("로고", "끄면 이 창은 트레이 아이콘이나 독 오른쪽 클릭 메뉴에서 열어요.",
+                Toggle(t.ShowLogo, on => Commit(() => T().ShowLogo = on))),
+            Row("최대화 창이 상단바를 가리지 않게", "상단바 높이만큼 화면 공간을 비워 둬요. 끄면 최대화한 창이 상단바 아래까지 덮어요.",
+                Toggle(t.ReserveSpace, on => Commit(() => T().ReserveSpace = on, rebuild: true))),
+            Row("창이 상단바에 가려지지 않게 아래로 내리기", "화면 맨 위에 뜨거나 상단바 밑으로 끌어 놓은 창을 상단바 바로 아래로 옮겨요. 위 항목이 켜져 있을 때만.",
+                Locked(Toggle(t.KeepWindowsBelowBar, on => Commit(() => T().KeepWindowsBelowBar = on)), t.ReserveSpace)),
+            Row("상단바 트레이 아이콘 최대 개수", "바에 둘 아이콘이 이보다 많으면 순서 뒤쪽부터 ⌃ 안으로 들어가요.",
+                ValueSlider(t.TrayIconsVisibleCount, 1, 20, 1, v => $"{v:0}개", v => T().TrayIconsVisibleCount = (int)Math.Round(v))),
+            Row("단색 트레이 아이콘을 바 색에 맞추기", "흰 아이콘이 안 보일 때 바 색에 맞춰 칠해요.",
+                Toggle(t.TintMonochromeTrayIcons, on => Commit(() => T().TintMonochromeTrayIcons = on))),
+            Row("앱 창 안 메뉴 줄 숨기기 (실험)", "실험: 메모장·그림판 같은 앱의 창 안 메뉴 줄을 숨기고 상단바에서만 보이게 (옛날식 표준 메뉴 앱만 — 윈도우 11 새 메모장·그림판은 해당 없음)",
+                Toggle(t.HideNativeMenuBars, on => Commit(() => T().HideNativeMenuBars = on))),
+        });
+    }
+
+    /// <summary>다른 옵션에 묶여 지금은 바꿀 수 없으면 회색으로 잠금.</summary>
+    private static FrameworkElement Locked(FrameworkElement control, bool enabled)
+    {
+        control.IsEnabled = enabled;
+        control.Opacity = enabled ? 1 : 0.45;
+        return control;
+    }
+
+    // ───────────────────────── 페이지: 알림 ─────────────────────────
+
+    private void BuildNotifications(Panel body)
+    {
+        var n = _services.Settings.Current.Notifications;
+        NotificationSettings N() => _services.Settings.Current.Notifications;
+        // 알림 표시 하나로: 몽독 배너(배너 켬 + 윈도우 팝업 숨김) / 윈도우 기본(둘 다 끔)
+        bool mongdock = n.ShowNotificationBanners;
+        body.Children.Add(SectionTitle("알림 표시"));
         body.Children.Add(Group(
-            Row("알림 배너", "윈도우 알림이 오면 상단바 아래 오른쪽에 맥처럼 표시합니다.",
-                Toggle(_services.Settings.Current.Notifications.ShowNotificationBanners,
-                    on => Commit(() => _services.Settings.Current.Notifications.ShowNotificationBanners = on))),
-            Row("윈도우 기본 알림 팝업 숨기기", "몽독 배너로 보여 준 알림만 숨깁니다. 알람·전화처럼 직접 눌러야 하는 알림은 그대로 뜹니다. 알림 기록은 그대로 남습니다.",
-                Toggle(_services.Settings.Current.Notifications.HideWindowsToastPopups,
-                    on => Commit(() => _services.Settings.Current.Notifications.HideWindowsToastPopups = on))),
-            Row("알림 소리", "윈도우 알림 소리를 바꿉니다. 모든 앱 알림에 같이 적용되고, 몽독을 꺼도 유지됩니다. 처음 한 번은 다시 로그인한 뒤부터 적용돼요. ‘원래대로’로 되돌릴 수 있어요.",
-                NotificationSoundDropdown()),
-            Row("배터리 부족 알림", "배터리로 쓰는 중에 20%·10%·5% 가 되면 한 번씩 몽독 배너로 알려 줍니다. (알림 배너가 켜져 있어야 보여요)",
-                Toggle(_services.Settings.Current.Notifications.LowBatteryAlerts,
-                    on => Commit(() => _services.Settings.Current.Notifications.LowBatteryAlerts = on)))));
+            RadioRow("몽독 배너", "윈도우 알림을 오른쪽 위 몽독 배너로 보여 줘요. 알람·전화처럼 직접 눌러야 하는 알림은 윈도우 창도 그대로 떠요.", mongdock,
+                () => Commit(() => { N().ShowNotificationBanners = true; N().HideWindowsToastPopups = true; }, rebuild: true)),
+            RadioRow("윈도우 기본", "윈도우 알림 창을 그대로 써요.", !mongdock,
+                () => Commit(() => { N().ShowNotificationBanners = false; N().HideWindowsToastPopups = false; }, rebuild: true))));
+
+        var more = new List<UIElement>
+        {
+            Row("알림 소리", "모든 앱의 알림 소리를 바꿔요. 몽독을 꺼도 유지되고 '원래대로'로 되돌릴 수 있어요.", NotificationSoundDropdown()),
+        };
+        // 배터리 있는 기기만 (#21)
+        if (DeviceInfo.HasBattery)
+            more.Add(Row("배터리 부족 알림", "배터리로 쓰는 중에 20%·10%·5% 가 되면 한 번씩 알려 줘요." + (mongdock ? "" : " (몽독 배너일 때만)"),
+                Toggle(n.LowBatteryAlerts, on => Commit(() => N().LowBatteryAlerts = on))));
+        body.Children.Add(Group(more.ToArray()));
     }
 
     // ───────────────────────── 페이지: 캘린더 ─────────────────────────
@@ -833,7 +847,6 @@ internal sealed partial class SettingsWindow : Window
         body.Children.Add(Group(
             Row("계산기", "수식(예 12*3+4)을 입력하면 맨 위에 결과. Enter 로 복사합니다.",
                 Toggle(s.Calculator, on => Commit(() => S().Calculator = on))),
-            Row("응용 프로그램", null, Toggle(s.Apps, on => Commit(() => S().Apps = on))),
             Row("시스템 설정", "블루투스·디스플레이·소리 같은 윈도우 설정 페이지", Toggle(s.Settings, on => Commit(() => S().Settings = on)))));
 
         // 최근 사용: 빈 검색창에 최근 실행한 앱 (끄면 입력칸만). 기록 지우기는 바로 반영 (설정 저장 없음)
@@ -869,14 +882,10 @@ internal sealed partial class SettingsWindow : Window
         body.Children.Add(Group(fileRows.ToArray()));
 
         body.Children.Add(Group(
-            Row("Windows 검색에서 찾기", "결과 맨 아래에 같은 검색어를 윈도우 검색으로 넘기는 항목",
-                Toggle(s.WindowsSearch, on => Commit(() => S().WindowsSearch = on))),
             Row("웹에서 검색", "결과 맨 아래에 웹 검색 항목", Toggle(s.WebSearch, on => Commit(() => S().WebSearch = on))),
             Row("웹 검색 엔진", null, Segmented(s.WebSearchEngine,
                 new[] { (WebSearchEngine.Google, "Google"), (WebSearchEngine.Naver, "네이버"), (WebSearchEngine.Bing, "Bing") },
-                v => Commit(() => S().WebSearchEngine = v))),
-            Row("카테고리별 최대 개수", null,
-                ValueSlider(s.MaxPerCategory, 3, 10, 1, v => $"{v:0}개", v => S().MaxPerCategory = (int)Math.Round(v)))));
+                v => Commit(() => S().WebSearchEngine = v)))));
 
         // 파일 검색 위치: 각 행 오른쪽 "빼기", 맨 아래 "폴더 추가…" (폴더 고르기 창 — 마우스만으로)
         body.Children.Add(SectionTitle("파일 검색 위치"));
@@ -895,6 +904,15 @@ internal sealed partial class SettingsWindow : Window
             ActionButton("추가", AddSearchFolder)));
         folderRows.Add(Row("색인 옵션", "윈도우 검색이 색인할 위치를 바꿉니다 (제어판).", ActionButton("열기", OpenIndexingOptions)));
         body.Children.Add(Group(folderRows.ToArray()));
+
+        AddAdvanced(body, new List<UIElement>
+        {
+            Row("응용 프로그램", null, Toggle(s.Apps, on => Commit(() => S().Apps = on))),
+            Row("Windows 검색에서 찾기", "결과 맨 아래에 같은 검색어를 윈도우 검색으로 넘기는 항목",
+                Toggle(s.WindowsSearch, on => Commit(() => S().WindowsSearch = on))),
+            Row("카테고리별 최대 개수", null,
+                ValueSlider(s.MaxPerCategory, 3, 10, 1, v => $"{v:0}개", v => S().MaxPerCategory = (int)Math.Round(v))),
+        });
     }
 
     /// <summary>"최근 기록 지우기" 결과 문구 (설명 줄에 표시).</summary>
@@ -1057,7 +1075,7 @@ internal sealed partial class SettingsWindow : Window
             (TopBarColorMode.Transparent, "투명"),
             (TopBarColorMode.Auto, "앱 색에 맞춤"),
             (TopBarColorMode.Blur, "블러"),
-            (TopBarColorMode.Fixed, "고정 색"),
+            (TopBarColorMode.Fixed, "흰색"),
         };
         return Dropdown(options.First(o => o.Item1 == current).Item2, () =>
         {
@@ -1142,7 +1160,7 @@ internal sealed partial class SettingsWindow : Window
     /// </summary>
     private Grid StartupRow()
     {
-        const string title = "로그인 시 자동 실행";
+        const string title = "컴퓨터를 켜면 몽독도 켜기";
         StartupState state;
         try { state = _services.Startup.State; }
         catch { state = _services.Settings.Current.StartWithWindows ? StartupState.Enabled : StartupState.Disabled; }

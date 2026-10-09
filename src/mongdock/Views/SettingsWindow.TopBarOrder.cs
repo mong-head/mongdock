@@ -1,40 +1,74 @@
 using System.Windows;
 using System.Windows.Controls;
 using Mongdock.Models;
+using Mongdock.Services;
 
 namespace Mongdock.Views;
 
 /// <summary>
-/// 설정 → 상단바 → "오른쪽 아이콘 순서": 항목마다 ▲(왼쪽으로)·▼(오른쪽으로) + "기본 순서로". 클릭만으로 (원격 사용 고려).
+/// 설정 → 상단바 → "표시할 항목" (#21: 예전 "표시할 항목" 토글 + "오른쪽 아이콘 순서" 를 한 목록으로).
+/// 왼쪽 항목(앱 이름·메뉴)은 스위치만, 오른쪽 항목은 행마다 스위치 + ▲(왼쪽으로)·▼(오른쪽으로). 클릭만으로 (원격 사용 고려).
 /// 상단바에서 아이콘을 길게 눌러 끌어도 같은 값(TopBar.RightItemsOrder)이 바뀐다 (TopBarWindow.Reorder.cs).
+/// 같은 설정을 쓰는 항목(Wi-Fi·블루투스·소리, 검색·제어 센터)은 스위치가 함께 움직인다.
 /// </summary>
 internal sealed partial class SettingsWindow
 {
-    private void AddRightOrder(Panel body)
+    private void AddTopBarItems(Panel body)
     {
         TopBarSettings T() => _services.Settings.Current.TopBar;
-        body.Children.Add(SectionTitle("오른쪽 아이콘 순서"));
-        var order = TopBarRightOrder.Resolve(T().RightItemsOrder);
-        var rows = new List<UIElement>();
-        for (int i = 0; i < order.Count; i++)
+        var t = T();
+        body.Children.Add(SectionTitle("표시할 항목"));
+        var rows = new List<UIElement>
         {
-            string key = order[i];
-            string? sub = i == 0 ? "맨 왼쪽" : null;
-            if (!IsRightItemShown(T(), key)) sub = sub == null ? "지금은 꺼져 있음" : sub + " · 지금은 꺼져 있음";
-            var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-            buttons.Children.Add(SmallButton("▲", "왼쪽으로", i > 0,
+            // 앱 이름과 앱 메뉴는 한 토글 (#21)
+            Row("앱 이름과 메뉴", "지금 앱 이름과 그 옆 파일·편집·보기… (맥 메뉴 막대처럼)",
+                Toggle(t.ShowActiveAppName && t.ShowAppMenus, on => Commit(() => { T().ShowActiveAppName = on; T().ShowAppMenus = on; }))),
+        };
+
+        bool battery = DeviceInfo.HasBattery, ime = DeviceInfo.ImeToggleUseful;
+        var order = TopBarRightOrder.Resolve(t.RightItemsOrder);
+        // 기기에 없는 항목(배터리·한/영)은 목록에서 뺌 — 순서는 전체 목록 기준으로 움직임
+        var shown = order.Where(k => (k != TopBarRightOrder.Battery || battery) && (k != TopBarRightOrder.Ime || ime)).ToList();
+        for (int i = 0; i < shown.Count; i++)
+        {
+            string key = shown[i];
+            var controls = new StackPanel { Orientation = Orientation.Horizontal };
+            controls.Children.Add(SmallButton("▲", "왼쪽으로", i > 0,
                 () => Commit(() => T().RightItemsOrder = TopBarRightOrder.Nudge(T().RightItemsOrder, key, -1), rebuild: true)));
-            buttons.Children.Add(SmallButton("▼", "오른쪽으로", i < order.Count - 1,
+            controls.Children.Add(SmallButton("▼", "오른쪽으로", i < shown.Count - 1,
                 () => Commit(() => T().RightItemsOrder = TopBarRightOrder.Nudge(T().RightItemsOrder, key, +1), rebuild: true)));
-            rows.Add(Row(TopBarRightOrder.Label(key), sub, buttons));
+            var toggle = Toggle(IsRightItemShown(t, key), on => Commit(() => SetRightItemShown(T(), key, on), rebuild: true));
+            toggle.Margin = new Thickness(10, 0, 0, 0);
+            controls.Children.Add(toggle);
+            rows.Add(Row(ItemLabel(key), ItemNote(key, battery), controls));
         }
         rows.Add(Row("시계", "항상 맨 오른쪽", new Border()));
         var reset = ActionButton("기본 순서로", () => Commit(() => T().RightItemsOrder = new List<string>(), rebuild: true));
-        reset.IsEnabled = !TopBarRightOrder.IsDefault(T().RightItemsOrder);
+        reset.IsEnabled = !TopBarRightOrder.IsDefault(t.RightItemsOrder);
         reset.Opacity = reset.IsEnabled ? 1 : 0.35;
-        rows.Add(Row("기본 순서로 되돌리기", "상단바에서 아이콘을 0.4초쯤 길게 누른 채 좌우로 끌어도 순서를 바꿀 수 있어요. 끄는 중 오른쪽 클릭 = 취소.", reset));
+        rows.Add(Row("순서 되돌리기", "상단바에서 아이콘을 0.4초쯤 길게 누른 채 좌우로 끌어도 순서를 바꿀 수 있어요.", reset));
         body.Children.Add(Group(rows.ToArray()));
     }
+
+    /// <summary>목록에 보일 쉬운 이름 (#21 문구).</summary>
+    private static string ItemLabel(string key) => key switch
+    {
+        TopBarRightOrder.Tray => "다른 앱 아이콘 (카카오톡 등)",
+        TopBarRightOrder.Volume => "소리",
+        TopBarRightOrder.Search => "검색 버튼",
+        TopBarRightOrder.ControlCenter => "제어 센터 버튼",
+        TopBarRightOrder.Ime => "한/영 전환 버튼",
+        _ => TopBarRightOrder.Label(key),
+    };
+
+    private static string? ItemNote(string key, bool battery) => key switch
+    {
+        TopBarRightOrder.Bluetooth or TopBarRightOrder.Wifi or TopBarRightOrder.Volume => "Wi-Fi·블루투스·소리는 함께 켜고 꺼져요",
+        TopBarRightOrder.Search or TopBarRightOrder.ControlCenter => "검색·제어 센터 버튼은 함께 켜고 꺼져요",
+        TopBarRightOrder.Privacy => "앱이 카메라를 쓰면 초록 점, 마이크만 쓰면 주황 점",
+        TopBarRightOrder.Desktops => "누르면 데스크톱 보기·새 데스크톱",
+        _ => null,
+    };
 
     private static bool IsRightItemShown(TopBarSettings t, string key) => key switch
     {
@@ -48,4 +82,19 @@ internal sealed partial class SettingsWindow
         TopBarRightOrder.Privacy => t.ShowPrivacyIndicator,
         _ => true,
     };
+
+    private static void SetRightItemShown(TopBarSettings t, string key, bool on)
+    {
+        switch (key)
+        {
+            case TopBarRightOrder.Desktops: t.ShowDesktopButtons = on; break;
+            case TopBarRightOrder.NetSpeed: t.ShowNetworkSpeed = on; break;
+            case TopBarRightOrder.Tray: t.SetShowTrayIconsByUser(on); break;
+            case TopBarRightOrder.Bluetooth or TopBarRightOrder.Wifi or TopBarRightOrder.Volume: t.ShowStatusIcons = on; break;
+            case TopBarRightOrder.Search or TopBarRightOrder.ControlCenter: t.ShowQuickButtons = on; break;
+            case TopBarRightOrder.Ime: t.ShowImeToggle = on; break;
+            case TopBarRightOrder.Battery: t.ShowBattery = on; break;
+            case TopBarRightOrder.Privacy: t.ShowPrivacyIndicator = on; break;
+        }
+    }
 }

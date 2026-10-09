@@ -122,10 +122,24 @@ public partial class TopBarWindow : Window
     /// 다음 시계 갱신 시점: 초를 보여 주는 형식이면 1초 뒤, 아니면 다음 분 경계 직후 (매초 깨우지 않음).
     /// 형식 판단이 애매한 표준 한 글자 형식("T" 등)은 1초.
     /// </summary>
+    /// <summary>
+    /// 시계 형식: 사용자가 직접 정한 ClockFormat 이 있으면 그것, 아니면 윈도우 시간 형식(12/24시간, 오전/오후 위치)을 따르고
+    /// "날짜 표시"가 켜져 있으면 앞에 "10월 9일 (목)".
+    /// </summary>
+    internal static string ClockFormatOf(TopBarSettings t)
+    {
+        string fmt = t.ClockFormat;
+        if (!string.IsNullOrWhiteSpace(fmt) && fmt != DefaultClockFormat) return fmt;
+        string time;
+        try { time = CultureInfo.CurrentCulture.DateTimeFormat.ShortTimePattern; }
+        catch { time = "tt h:mm"; }
+        if (string.IsNullOrWhiteSpace(time)) time = "tt h:mm";
+        return t.ShowClockDate ? "M월 d일 (ddd) " + time : time;
+    }
+
     private void ScheduleClock()
     {
-        string fmt = _services.Settings.Current.TopBar.ClockFormat;
-        if (string.IsNullOrWhiteSpace(fmt)) fmt = DefaultClockFormat;
+        string fmt = ClockFormatOf(_services.Settings.Current.TopBar);
         bool seconds = fmt.Length <= 1 || fmt.Contains('s') || fmt.Contains('f') || fmt.Contains('F');
         TimeSpan next;
         if (seconds) next = TimeSpan.FromSeconds(1);
@@ -286,7 +300,7 @@ public partial class TopBarWindow : Window
         VolumeButton.Visibility = Vis(s.ShowStatusIcons);
         SearchButton.Visibility = Vis(s.ShowQuickButtons);
         QuickSettingsButton.Visibility = Vis(s.ShowQuickButtons);
-        ImeButton.Visibility = Vis(s.ShowImeToggle);
+        ImeButton.Visibility = Vis(s.ShowImeToggle && DeviceInfo.ImeToggleUseful); // 영어만 쓰는 PC 면 숨김 (#21)
         _imeState = 0; // 배지 색 다시 칠하기
         UpdateRightOrder(); // TopBarWindow.Reorder.cs
 
@@ -604,11 +618,11 @@ public partial class TopBarWindow : Window
 
     private void UpdateClock()
     {
-        string fmt = _services.Settings.Current.TopBar.ClockFormat;
+        string fmt = ClockFormatOf(_services.Settings.Current.TopBar);
         string text;
         try
         {
-            text = DateTime.Now.ToString(string.IsNullOrWhiteSpace(fmt) ? DefaultClockFormat : fmt, Korean);
+            text = DateTime.Now.ToString(fmt, Korean);
         }
         catch (FormatException)
         {
@@ -627,8 +641,7 @@ public partial class TopBarWindow : Window
     /// </summary>
     private void FixClockWidth()
     {
-        string fmt = _services.Settings.Current.TopBar.ClockFormat;
-        if (string.IsNullOrWhiteSpace(fmt)) fmt = DefaultClockFormat;
+        string fmt = ClockFormatOf(_services.Settings.Current.TopBar);
         var typeface = new Typeface(Clock.FontFamily, Clock.FontStyle, Clock.FontWeight, Clock.FontStretch);
         double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         double max = 0;
@@ -944,8 +957,13 @@ public partial class TopBarWindow : Window
         catch (Exception ex) { Log.Error("가상 데스크톱 정보 조회 실패", ex); }
 
         bool known = index > 0 && count > 0;
-        DesktopIndex.Text = known ? $"{index} / {count}" : "";
+        // 데스크톱이 하나뿐이면 ‹ › 없이 "1" 만 (누르면 작업 보기 — 데스크톱 현황·새 데스크톱) (#21)
+        bool single = known && count == 1;
+        DesktopIndex.Text = !known ? "" : single ? "1" : $"{index} / {count}";
         DesktopIndexButton.Visibility = known ? Visibility.Visible : Visibility.Collapsed;
+        DesktopIndexButton.ToolTip = single ? "데스크톱 보기 · 새 데스크톱 추가" : "데스크톱 보기";
+        PrevDesktopButton.Visibility = single ? Visibility.Collapsed : Visibility.Visible;
+        NextDesktopButton.Visibility = single ? Visibility.Collapsed : Visibility.Visible;
         PrevDesktopButton.Opacity = known && index <= 1 ? 0.35 : 1;
         NextDesktopButton.Opacity = known && index >= count ? 0.35 : 1;
     }
@@ -1132,10 +1150,9 @@ public partial class TopBarWindow : Window
             menu.Items.Add(DockMenus.SettingsWindow(_services, $"{AppInfo.Name} 설정…"));
             menu.Items.Add(DockMenus.TopBarColor(_services));
             menu.Items.Add(new Separator());
-            menu.Items.Add(DockMenus.OpenSettings(_services));
             menu.Items.Add(DockMenus.Quit());
         };
-        menu.Items.Add(DockMenus.OpenSettings(_services));
+        menu.Items.Add(DockMenus.Quit()); // 첫 열기 전 자리 (열 때마다 다시 채움)
         return menu;
     }
 
