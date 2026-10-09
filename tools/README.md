@@ -11,7 +11,7 @@ C# 도구는 `dotnet build tools/<이름>/<이름>.csproj` 또는 `dotnet run --
 | [`taskbar-watch`](taskbar-watch/README.md) | 작업 표시줄이 언제 다시 보였고 몇 ms 만에 숨었는지 기록 (#13) | 없음 (이벤트만 읽음) |
 | [`touch-test`](touch-test/README.md) | 터치 없는 PC 에서 손가락 입력(탭·길게 누르기·끌기) 흉내 | **실제 화면에 입력이 들어감** — 먼저 `--dry-run` |
 | [`i18n`](#i18n) | 번역(영어) 키 뽑기·검사, 감싸지 않은 한글 찾기 | 없음 |
-| [`msix`](msix/build-msix.ps1) | 스토어용 MSIX 패키지 만들기 (`-Version 0.6.0`, 시험 서명 `-CertThumbprint`) | 없음 (`dist\msix` 에 파일만) |
+| [`msix`](msix/build-msix.ps1) | 스토어용 MSIX 패키지 만들기 (`-Version 0.6.0`, 기본값 = 파트너 센터 제품 ID). 시험 서명 인증서는 [`test-cert.ps1`](msix/test-cert.ps1) (`-Trust`/`-Remove` 는 UAC) | 없음 (`dist\msix` 에 파일만) |
 | [`make-icon`](make-icon/make-icon.ps1) | 앱 아이콘(.ico)·미리 보기 PNG 만들기 | 없음 |
 | [`support-intake`](support-intake/README.md) | 신고·사용 통계를 받는 Google Apps Script(웹 앱) 코드와 배포 순서, 통계 대시보드 | 없음 (배포는 사용자가 script.google.com 에서) |
 | [`support-mail-mcp`](support-mail-mcp/README.md) | 지원 메일함(Gmail) MCP 서버 — 형식 답장 보내기·초안 | 지원 메일함에서 메일을 보냄 (형식 답장만) |

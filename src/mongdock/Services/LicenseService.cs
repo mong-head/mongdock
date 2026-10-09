@@ -33,8 +33,8 @@ public sealed record LicenseInfo(LicenseState State, int DaysLeft, DateTimeOffse
 /// </summary>
 public sealed class LicenseService : IDisposable
 {
-    /// <summary>파트너 센터의 스토어 ID (예 9NXXXXXXXXXX). 계정(#2)이 생기면 채움 — 비어 있으면 스토어 페이지 링크를 쓰지 않음.</summary>
-    public const string StoreId = "";
+    /// <summary>파트너 센터의 스토어 ID (https://apps.microsoft.com/detail/9NQ3NKW93F3M). 구매 창을 못 띄울 때 스토어 페이지 링크에 씀.</summary>
+    public const string StoreId = "9NQ3NKW93F3M";
 
     private static readonly TimeSpan RecheckInterval = TimeSpan.FromHours(6);
     private readonly string _cachePath = Path.Combine(AppInfo.DataDirectory, "license.json");

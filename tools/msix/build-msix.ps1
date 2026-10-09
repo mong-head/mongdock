@@ -13,13 +13,14 @@
     → Windows Kits\10\bin 순서로 찾는다. 앱 의존성(NuGet 참조)은 추가하지 않는다.
 
   스토어 제출 때는 파트너 센터의 "제품 ID" 화면 값으로 -IdentityName / -Publisher / -PublisherDisplayName 을 넘기고
-  서명 없이 만든다(스토어가 서명). 기본값 CN=mongdock-test 는 이 PC 시험용.
+  서명 없이 만든다(스토어가 서명). 기본값은 파트너 센터 "제품 ID" 값(스토어 ID 9NQ3NKW93F3M, PFN mongdock.mongdock_5hcg2nc2bhbrc).
+  이 PC 시험 설치는 같은 CN 의 자체 서명 인증서로 서명 — tools\msix	est-cert.ps1.
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Version,
-    [string]$IdentityName = 'mongdock',
-    [string]$Publisher = 'CN=mongdock-test',
-    [string]$PublisherDisplayName = 'mong-head',
+    [string]$IdentityName = 'mongdock.mongdock',
+    [string]$Publisher = 'CN=6AB51F71-FBBA-4876-8509-2C6D3952ED98',
+    [string]$PublisherDisplayName = 'mongdock',
     [string]$CertThumbprint = '',
     [string]$SdkBin = ''
 )
