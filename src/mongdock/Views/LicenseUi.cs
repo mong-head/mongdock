@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
+using System.Windows.Threading;
 using Mongdock.Services;
 using Mongdock.ViewModels;
 
@@ -50,22 +51,42 @@ public static class LicenseUi
         if (info.State == LicenseState.Expired && (initial || _lastState != LicenseState.Expired))
         {
             Log.Info("체험 끝남 → 독·상단바 멈춤, 작업 표시줄·알림 원래대로");
-            ShowExpiredCard();
+            // 시작 때는 조금 뒤에 (다른 창이 뜨며 활성화가 바뀌면 카드가 바로 닫히므로)
+            Later(initial ? TimeSpan.FromSeconds(3) : TimeSpan.Zero, ShowExpiredCard);
         }
         else if (info.State == LicenseState.Full && _lastState != LicenseState.Full && !initial)
         {
             Log.Info("정식으로 바뀜 → 다시 켜짐");
         }
         _lastState = info.State;
-        if (info.State == LicenseState.Trial) MaybeShowTrialCard(info);
+        if (info.State == LicenseState.Trial) Later(initial ? TimeSpan.FromSeconds(8) : TimeSpan.Zero, () => MaybeShowTrialCard());
+    }
+
+    /// <summary>delay 뒤 UI 스레드에서. 둘러보기·새 기능 카드가 떠 있으면 30초씩 미룸 (카드끼리 겹치지 않게).</summary>
+    private static void Later(TimeSpan delay, Action show)
+    {
+        var timer = new DispatcherTimer { Interval = delay > TimeSpan.Zero ? delay : TimeSpan.FromMilliseconds(1) };
+        timer.Tick += (_, _) =>
+        {
+            if (CoachMarks.IsShowing)
+            {
+                timer.Interval = TimeSpan.FromSeconds(30);
+                return;
+            }
+            timer.Stop();
+            show();
+        };
+        timer.Start();
     }
 
     // ───────────────────────── 카드 ─────────────────────────
 
     /// <summary>체험 3일·1일 남았을 때 하루 한 번 (번쩍임 없이 확인 카드 하나).</summary>
-    private static async void MaybeShowTrialCard(LicenseInfo info)
+    private static async void MaybeShowTrialCard()
     {
-        if (_services is null || _trialCardOpen || info.DaysLeft is not (3 or 1)) return;
+        if (_services is null || _license is null || _trialCardOpen) return;
+        var info = _license.Current;
+        if (info.State != LicenseState.Trial || info.DaysLeft is not (3 or 1) || AppState.Paused) return;
         var s = _services.Settings.Current;
         string today = DateTime.Now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
         if (s.TrialNoticeDay == today) return;
