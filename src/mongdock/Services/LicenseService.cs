@@ -120,15 +120,23 @@ public sealed class LicenseService : IDisposable
         _checking = true;
         try
         {
+            // 스토어가 서명한 패키지(Store/System)만 스토어 라이선스를 따름. 직접 서명(Developer·Enterprise·None — #9 시험본·개발용)은 정식
+            // (스토어 서명 .msix 를 다른 PC 에 옮겨 깔면 Store 서명 그대로라 여기서 걸러지지 않음 → 아래 라이선스 규칙)
+            if (!StoreSigned)
+            {
+                Log.Info($"라이선스 확인({why}): 직접 서명한 패키지({SignatureKindText}) → 정식 취급 (sideload)");
+                Set(Make(LicenseState.Full, null, "sideload"));
+                return;
+            }
             _store ??= StoreContext.GetDefault();
             var license = await _store.GetAppLicenseAsync();
             if (license is null) throw new InvalidOperationException("라이선스 없음");
-            // 스토어에서 받지 않은 패키지(직접 설치한 시험본·개발용)는 스토어 라이선스가 없어 SkuStoreId 가 비고 IsActive=false 로 옴
-            // → 체험 끝으로 잠그지 않고 정식 취급 (#9 시험·사이드로드). 스토어에서 받은 것은 체험이 끝나도 SkuStoreId 가 있음
+            // 스토어 서명인데 스토어 라이선스가 비어 있음(SkuStoreId 없음) = 스토어 쪽 일시 오류로 봄 → 잠그지 않고 마지막 상태, 없으면 체험 중
             if (string.IsNullOrEmpty(license.SkuStoreId))
             {
-                Log.Info($"라이선스 확인({why}): 스토어 라이선스 없음(직접 설치한 패키지) → 정식 취급, 활성 {license.IsActive}");
-                Set(Make(LicenseState.Full, null, "sideload"));
+                var keep = FromCache() ?? Make(LicenseState.Trial, null, "unknown");
+                Log.Warn($"라이선스 확인({why}): 스토어 서명인데 라이선스 정보가 비어 있음(활성 {license.IsActive}) → 일시 오류로 보고 {Describe(keep)} 유지");
+                Set(keep);
                 return;
             }
             // IsActive=false: 체험이 끝났거나 소유하지 않음. IsTrial=true 이고 활성: 체험 중. 그 밖: 구매함
@@ -229,17 +237,27 @@ public sealed class LicenseService : IDisposable
         _atExpiry.Start();
     }
 
+    /// <summary>패키지 서명 종류가 Store/System 인지 (스토어에서 받은 사본). 패키지가 아니거나 알 수 없으면 false.</summary>
+    private static readonly Lazy<string> SignatureKindLazy = new(() =>
+    {
+        try { return Windows.ApplicationModel.Package.Current.SignatureKind.ToString(); }
+        catch { return "Unknown"; }
+    });
+    private static string SignatureKindText => SignatureKindLazy.Value;
+    private static bool StoreSigned => SignatureKindText is "Store" or "System";
+
+    /// <summary>체험이면 남은 날(올림). 체험인데 만료 시각을 모르면 -1 (화면은 "체험판" 만).</summary>
     private static LicenseInfo Make(LicenseState state, DateTimeOffset? expiration, string source)
     {
         int days = 0;
-        if (state == LicenseState.Trial && expiration is { } exp)
-            days = Math.Max(0, (int)Math.Ceiling((exp - DateTimeOffset.Now).TotalDays));
+        if (state == LicenseState.Trial)
+            days = expiration is { } exp ? Math.Max(0, (int)Math.Ceiling((exp - DateTimeOffset.Now).TotalDays)) : -1;
         return new LicenseInfo(state, days, expiration, source);
     }
 
     private static string Describe(LicenseInfo i) => i.State switch
     {
-        LicenseState.Trial => $"체험 {i.DaysLeft}일 남음 ({i.Source})",
+        LicenseState.Trial => i.DaysLeft < 0 ? $"체험 (남은 날 모름, {i.Source})" : $"체험 {i.DaysLeft}일 남음 ({i.Source})",
         LicenseState.Expired => $"체험 끝남 ({i.Source})",
         _ => $"정식 ({i.Source})",
     };

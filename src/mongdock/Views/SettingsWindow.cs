@@ -1173,7 +1173,7 @@ internal sealed partial class SettingsWindow : Window
         {
             body.Children.Add(SectionTitle(Loc.T("구매")));
             body.Children.Add(Group(
-                Row(lic.State == LicenseState.Trial ? Loc.F($"체험판 · {lic.DaysLeft}일 남음") : Loc.T("체험이 끝났어요"),
+                Row(lic.State == LicenseState.Trial ? (lic.DaysLeft < 0 ? Loc.T("체험판") : Loc.F($"체험판 · {lic.DaysLeft}일 남음")) : Loc.T("체험이 끝났어요"),
                     Loc.T("체험이 끝나면 독과 상단바가 멈춰요. 구매하면 그대로 계속 쓸 수 있어요."),
                     ActionButton(Loc.T("구매하기"), async () =>
                     {
