@@ -33,6 +33,9 @@ DISPLAY_NAME = os.environ.get("MONGDOCK_SUPPORT_NAME", "몽독 지원 (mongdock 
 LOG_PATH = os.environ.get("MONGDOCK_SUPPORT_LOG", r"C:\dev\mongdock-team\support-send-log.jsonl")
 MAX_SENDS_PER_DAY = int(os.environ.get("MONGDOCK_SUPPORT_MAX_PER_DAY", "30"))
 MAX_VAR_LEN = 300
+# 형식 답장에 넣을 수 있는 링크 (그 밖의 주소·도메인 모양 글자는 거부 — 피싱 링크 방지)
+ALLOWED_LINKS = ("https://account.microsoft.com/", "https://apps.microsoft.com/", "https://github.com/mong-head/")
+DOMAIN_LIKE = re.compile(r"(https?://|www\.|\b[\w-]+\.(com|net|org|io|app|dev|kr|co|me|ly|xyz|info|biz|site|link|to|gg)\b)", re.I)
 # 지원 주소: 대표 계정(mongdock@gmail.com)의 +별칭. 이 주소로 온 메일만 보고 답한다 (대표 메일함의 다른 메일은 건드리지 않음).
 SUPPORT_ADDRESS = os.environ.get("MONGDOCK_SUPPORT_ADDRESS", "mongdock+help@gmail.com").strip().lower()
 BODY_PREVIEW = 4000
@@ -152,21 +155,28 @@ def summary(uid: str, msg: email.message.Message) -> dict:
 
 
 def tool_list_messages(args: dict) -> dict:
-    folder = args.get("folder") or "INBOX"
+    folder = "INBOX"  # 받은편지함만 (다른 폴더는 다루지 않음)
     unread = bool(args.get("unread_only", True))
     limit = max(1, min(int(args.get("limit", 20)), 100))
     query = args.get("gmail_query")
     m = imap()
     try:
-        m.select(f'"{folder}"' if " " in folder else folder, readonly=True)
-        raw = f"to:{SUPPORT_ADDRESS}" + (" is:unread" if unread else "") + (f" {query}" if query else "")
-        typ, data = m.uid("search", None, "X-GM-RAW", f'"{raw.replace(chr(34), "")}"')
+        m.select(folder, readonly=True)
+        # 검색식은 지원 주소 조건과 괄호로 묶고, 결과도 머리글로 다시 걸러 +help 밖 메일은 보여 주지 않음
+        q = re.sub(r'["{}()]', " ", str(query or "")).strip()
+        raw = f"to:{SUPPORT_ADDRESS}" + (" is:unread" if unread else "") + (f" ({q})" if q else "")
+        typ, data = m.uid("search", None, "X-GM-RAW", f'"{raw}"')
         uids = (data[0].split() if typ == "OK" and data and data[0] else [])[-limit:]
         out = []
         for u in reversed(uids):
-            typ, d = m.uid("fetch", u, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])")
+            typ, d = m.uid("fetch", u, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE TO CC DELIVERED-TO X-ORIGINAL-TO)])")
             if typ == "OK" and d and isinstance(d[0], tuple):
-                out.append(summary(u.decode(), email.message_from_bytes(d[0][1], policy=email.policy.default)))
+                hm = email.message_from_bytes(d[0][1], policy=email.policy.default)
+                try:
+                    check_support(hm)
+                except RuntimeError:
+                    continue
+                out.append(summary(u.decode(), hm))
         return {"folder": folder, "count": len(out), "messages": out}
     finally:
         m.logout()
@@ -191,6 +201,7 @@ def tool_mark_read(args: dict) -> dict:
     m = imap()
     try:
         m.select("INBOX")
+        fetch(m, uid)  # 지원 주소로 온 메일인지 확인 (아니면 거부)
         m.uid("store", uid, "+FLAGS", "(\\Seen)")
         return {"uid": uid, "seen": True}
     finally:
@@ -209,9 +220,14 @@ def reply_to(msg: email.message.Message) -> str:
     """답장 받을 주소 = 원래 보낸 사람(Reply-To 우선) 한 명. 우리 주소면 거부."""
     own = account()[0].lower()
     own_local = own.split("@")[0]
-    cands = getaddresses([msg.get("Reply-To", "")]) or []
-    cands = [a for _, a in cands if a] or [parseaddr(msg.get("From", ""))[1]]
-    addr = (cands[0] if cands else "").strip()
+    sender = parseaddr(msg.get("From", ""))[1].strip()
+    cands = [a for _, a in (getaddresses([msg.get("Reply-To", "")]) or []) if a]
+    addr = (cands[0] if cands else sender).strip()
+    # Reply-To 가 보낸 사람과 다르면 남이 정한 제3자에게 보내게 될 수 있음 → 앱 신고(우리 주소가 보낸 것)만 허용
+    s_low = sender.lower()
+    from_own = s_low.split("@")[0].split("+")[0] == own_local and s_low.endswith("@" + own.split("@")[1])
+    if cands and addr.lower() != s_low and not from_own:
+        raise RuntimeError("Reply-To 가 보낸 사람과 달라서 형식 답장을 보내지 않아요 — 초안으로 저장하고 PM 에게 넘기세요")
     if not addr or "@" not in addr:
         raise RuntimeError("답장 받을 주소를 찾지 못했어요")
     if addr.lower() == own or addr.lower().split("@")[0].split("+")[0] == own_local and addr.lower().endswith(own.split("@")[1]):
@@ -250,11 +266,42 @@ def render(template_id: str, variables: dict, lang: str) -> str:
         raise RuntimeError(f"이 형식에 없는 값: {', '.join(extra)}")
     for k, v in variables.items():
         v = str(v)
-        if len(v) > MAX_VAR_LEN or "\n\n" in v or "http" in v.lower() and k != "link":
-            raise RuntimeError(f"값 '{k}' 가 너무 길거나 형식에 맞지 않아요 (짧은 한 줄만, 링크는 link 값에만)")
+        if k == "link":
+            if not any(v.startswith(p) for p in ALLOWED_LINKS):
+                raise RuntimeError("link 는 정해진 주소만 쓸 수 있어요: " + ", ".join(ALLOWED_LINKS))
+            continue
+        if len(v) > MAX_VAR_LEN or "\n" in v or DOMAIN_LIKE.search(v):
+            raise RuntimeError(f"값 '{k}' 는 짧은 한 줄만, 주소·링크 없이 써 주세요")
     body = text.format(**{k: str(v).strip() for k, v in variables.items()})
     footer = templates.get("footer", {}).get(lang) or templates.get("footer", {}).get("ko", "")
     return body.rstrip() + ("\n\n" + footer if footer else "")
+
+
+class SendLock:
+    """여러 세션이 동시에 보내도 하루 한도를 넘지 않게 하는 잠금 파일 (최대 30초 기다림)."""
+
+    def __enter__(self):
+        os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+        self.path = LOG_PATH + ".lock"
+        for _ in range(300):
+            try:
+                self.fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                return self
+            except FileExistsError:
+                try:
+                    if time.time() - os.path.getmtime(self.path) > 120:  # 비정상으로 남은 잠금 정리
+                        os.remove(self.path)
+                except OSError:
+                    pass
+                time.sleep(0.1)
+        raise RuntimeError("다른 세션이 답장을 보내는 중이에요. 잠시 뒤 다시 하세요.")
+
+    def __exit__(self, *exc):
+        os.close(self.fd)
+        try:
+            os.remove(self.path)
+        except OSError:
+            pass
 
 
 def sends_today() -> int:
@@ -291,25 +338,33 @@ def tool_preview_template_reply(args: dict) -> dict:
 
 
 def tool_send_template_reply(args: dict) -> dict:
-    if sends_today() >= MAX_SENDS_PER_DAY:
-        raise RuntimeError(f"오늘 보낼 수 있는 답장 수({MAX_SENDS_PER_DAY})를 넘었어요. PM 에게 알리세요.")
     uid = str(args["uid"])
-    m = imap()
-    try:
-        m.select("INBOX")
-        msg = fetch(m, uid)
-        body = render(args["template_id"], args.get("variables", {}), args.get("lang", "ko"))
-        r = build_reply(msg, body)
-        addr, pw = account()
-        with smtplib.SMTP_SSL(SMTP_HOST, 465) as s:
-            s.login(addr, pw)
-            s.send_message(r)
-        m.uid("store", uid, "+FLAGS", "(\\Seen \\Answered)")
-    finally:
-        m.logout()
-    log_send({"day": datetime.now().strftime("%Y-%m-%d"), "at": datetime.now(timezone.utc).isoformat(),
-              "uid": uid, "to": r["To"], "subject": r["Subject"], "template": args["template_id"],
-              "variables": args.get("variables", {})})
+    with SendLock():
+        if sends_today() >= MAX_SENDS_PER_DAY:
+            raise RuntimeError(f"오늘 보낼 수 있는 답장 수({MAX_SENDS_PER_DAY})를 넘었어요. PM 에게 알리세요.")
+        m = imap()
+        try:
+            m.select("INBOX")
+            msg = fetch(m, uid)
+            body = render(args["template_id"], args.get("variables", {}), args.get("lang", "ko"))
+            r = build_reply(msg, body)
+            addr, pw = account()
+            with smtplib.SMTP_SSL(SMTP_HOST, 465) as s:
+                s.login(addr, pw)
+                s.send_message(r)
+            # 보낸 직후 바로 기록 (뒤 단계가 실패해도 한도·감사 기록에서 빠지지 않게)
+            log_send({"day": datetime.now().strftime("%Y-%m-%d"), "at": datetime.now(timezone.utc).isoformat(),
+                      "uid": uid, "to": r["To"], "subject": r["Subject"], "template": args["template_id"],
+                      "variables": args.get("variables", {})})
+            try:
+                m.uid("store", uid, "+FLAGS", "(\\Seen \\Answered)")
+            except Exception:
+                pass
+        finally:
+            try:
+                m.logout()
+            except Exception:
+                pass
     return {"sent": True, "to": r["To"], "subject": r["Subject"], "template": args["template_id"]}
 
 
@@ -344,8 +399,8 @@ def tool_status(args: dict) -> dict:
 
 TOOLS = {
     "status": (tool_status, "지원 메일함 연결 상태와 오늘 보낸 답장 수.", {}),
-    "list_messages": (tool_list_messages, "받은 메일 목록 (기본: 안 읽은 메일). gmail_query 로 Gmail 검색식 사용 가능.",
-                      {"folder": {"type": "string"}, "unread_only": {"type": "boolean"}, "limit": {"type": "integer"},
+    "list_messages": (tool_list_messages, "지원 주소로 온 받은 메일 목록 (기본: 안 읽은 메일). gmail_query 는 지원 주소 메일 안에서의 추가 조건.",
+                      {"unread_only": {"type": "boolean"}, "limit": {"type": "integer"},
                        "gmail_query": {"type": "string"}}),
     "get_message": (tool_get_message, "메일 하나 읽기 (읽음 표시 안 함).", {"uid": {"type": "string"}}),
     "mark_read": (tool_mark_read, "메일을 읽음으로 표시.", {"uid": {"type": "string"}}),
