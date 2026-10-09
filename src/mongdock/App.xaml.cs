@@ -119,7 +119,13 @@ public partial class App : Application
             new CalendarFeedService(settings));
 
         InitializePinsOnce(settings);
-        if (startup is PackagedStartupService packaged && packaged.Adopt(settings.Current)) settings.Save();
+        if (startup is PackagedStartupService packaged)
+        {
+            // 스토어판 새 설치: 설치 프로그램판처럼 로그인 시 자동 실행을 기본으로 켬 (사용자가 윈도우에서 끄면 그대로 둠)
+            bool fresh = settings.CreatedThisRun && !settings.Current.StartWithWindows;
+            if (fresh) settings.Current.StartWithWindows = true;
+            if (packaged.Adopt(settings.Current) || fresh) settings.Save();
+        }
 
         tracker.Start();
         _services.Status.Start();
