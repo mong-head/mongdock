@@ -156,7 +156,7 @@ internal static class Program
                     var s = settings.Current;
                     Check($"{name}: 언어 그대로", s.Language, "en");
                     Check($"{name}: 독 아이콘 크기 그대로", s.Dock.IconSize, 60.0);
-                    Check($"{name}: 핀 2개 그대로", s.Pins.Count, 2);
+                    Check($"{name}: 핀 수 (틀린 핀만 빠짐)", s.Pins.Count, name.StartsWith("배열") ? 1 : 2);
                     Check($"{name}: 첫 핀 이름", s.Pins.Count > 0 ? s.Pins[0].Name : "", "메모장");
                 }
                 Check($"{name}: .bad- 원본 보관", Directory.GetFiles(root, "settings.json.bad-*").Length, 1);
@@ -177,6 +177,18 @@ internal static class Program
             var imported = SettingsService.ParseForImport(cases[3].Json);
             Check("가져오기: 틀린 값 두 개 있어도 핀 유지", imported.Pins.Count, 2);
             Check("숫자로 적은 없는 enum 값(7) → 기본값", imported.TopBar.ColorMode, Mongdock.Models.TopBarColorMode.Auto);
+
+            // 모르는 핀 종류(더 새 몽독의 것)는 그 핀만 건너뜀 — Exe 로 바뀌지 않음
+            var future = SettingsService.ParseForImport("""
+                { "settingsVersion": 5, "pins": [
+                  { "name": "메모장", "kind": "Exe", "target": "notepad.exe" },
+                  { "name": "아침 루틴", "kind": "Routine2", "target": "", "items": [ { "kind": "app" } ] },
+                  { "name": "계산기", "kind": "Exe", "target": "calc.exe" } ] }
+                """);
+            Check("모르는 핀 종류는 그 핀만 빠짐", string.Join(",", future.Pins.Select(p => p.Name)), "메모장,계산기");
+            Check("숫자로 적힌 모르는 핀 종류도 그 핀만 빠짐", string.Join(",", SettingsService.ParseForImport("""
+                { "settingsVersion": 5, "pins": [ { "name": "A", "kind": 9, "target": "x" }, { "name": "B", "kind": "Exe", "target": "b.exe" } ] }
+                """).Pins.Select(p => p.Name)), "B");
 
             // 5: 핀 이름 Finder·Launchpad → 파일 탐색기·앱 모음 (정확히 같은 이름·대상만, 사용자가 바꾼 이름은 그대로)
             var renamed = SettingsService.ParseForImport("""

@@ -331,6 +331,10 @@ public sealed class SettingsService : ISettingsService, IDisposable
             if (ex is not null) throw ex;
         }
         var s = parsed ?? throw new JsonException("settings.json 이 null 입니다.");
+        // 숫자로 적힌 모르는 핀 종류도 그 핀만 빠짐 (기본값 Exe 로 바꾸지 않음)
+        if (s.Pins is { } pins)
+            for (int pi = pins.Count - 1; pi >= 0; pi--)
+                if (pins[pi] is null || !Enum.IsDefined(pins[pi].Kind)) { pins.RemoveAt(pi); fixes.Add($"pins[{pi}]"); }
         FixUndefinedEnums(s, "", fixes); // 숫자로 적은 없는 enum 값(예 "colorMode": 7)은 예외 없이 들어오므로 따로
         // 수동 편집으로 null 이 들어와도 UI 가 죽지 않게 보정.
         s.Dock ??= new DockSettings();
@@ -533,6 +537,10 @@ public sealed class SettingsService : ISettingsService, IDisposable
             else return false;
         }
         if (parts.Count == 0) return false;
+        // 독 핀(pins[n]) 안의 값이 틀리면 그 값만 지우지 않고 핀 하나를 통째로 건너뜀 —
+        // 모르는 종류(kind, 예: 더 새 몽독의 루틴·폴더)가 기본값 Exe 로 바뀌어 엉뚱한 핀이 되지 않게
+        if (parts.Count > 2 && parts[0] is string top && top.Equals("pins", StringComparison.OrdinalIgnoreCase) && parts[1] is int)
+            parts.RemoveRange(2, parts.Count - 2);
         JsonNode? node = root;
         for (int k = 0; k < parts.Count - 1; k++)
         {
