@@ -35,20 +35,35 @@ Say "패키지: $(if (Get-AppxPackage -Name 'mongdock.mongdock') { '남아 있�
 # 2.5) run-9-fresh 로 옆에 옮겨 둔 원래 데이터 폴더가 있으면: 시험으로 생긴 폴더는 보관, 원래 폴더를 제자리로
 $aside = Join-Path $out 'fresh-aside'
 $data = Join-Path $env:APPDATA 'mongdock'
+function FolderStat($p) {
+    $f = @(Get-ChildItem $p -Recurse -File -Force -ErrorAction SilentlyContinue)
+    "파일 $($f.Count)개, $([math]::Round((($f | Measure-Object Length -Sum).Sum) / 1KB)) KB"
+}
+$restoredFolder = $true
 if (Test-Path (Join-Path $aside 'mongdock')) {
-    if (Test-Path $data) {
-        $used = Join-Path $out ("fresh-used-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
-        Move-Item $data $used
-        Say "처음 상태 시험 폴더 보관: $used"
+    # 사용자 데이터 폴더 통째 — 절대 지우지 않음. 실패하면 fresh-aside 를 그대로 두고 멈춤 (손으로 되돌릴 수 있게)
+    try {
+        Say "옮겨 둔 원래 폴더: $(FolderStat (Join-Path $aside 'mongdock'))"
+        if (Test-Path $data) {
+            $used = Join-Path $out ("fresh-used-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+            Move-Item $data $used -ErrorAction Stop
+            Say "처음 상태 시험 폴더 보관: $used ($(FolderStat $used))"
+        }
+        Move-Item (Join-Path $aside 'mongdock') $data -ErrorAction Stop
+        Say "원래 데이터 폴더 제자리로 돌림: $data ($(FolderStat $data))"
+        Remove-Item $aside -ErrorAction SilentlyContinue # 이제 빈 폴더만 (Recurse 없음)
     }
-    Move-Item (Join-Path $aside 'mongdock') $data
-    Remove-Item $aside -Recurse -Force -ErrorAction SilentlyContinue
-    Say "원래 데이터 폴더 제자리로: $data"
+    catch {
+        $restoredFolder = $false
+        Say "!! 원래 폴더를 제자리로 못 돌림: $($_.Exception.Message)"
+        Say "!! 원래 데이터는 그대로 $aside\mongdock 에 있음 — 몽독을 끈 채로 그 폴더를 $data 로 옮기면 됨. 설정 복원·몽독 재실행은 건너뜀"
+    }
 } elseif (Test-Path (Join-Path $aside 'was-empty.txt')) {
-    if (Test-Path $data) { Move-Item $data (Join-Path $out ("fresh-used-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))) }
-    Remove-Item $aside -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path $data) { Move-Item $data (Join-Path $out ("fresh-used-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))) -ErrorAction SilentlyContinue }
+    Remove-Item (Join-Path $aside 'was-empty.txt'), $aside -ErrorAction SilentlyContinue
     Say '원래 데이터 폴더가 없었음 → 시험 폴더만 보관'
 }
+if (-not $restoredFolder) { return }
 
 # 3) 설정 되돌리기 (스토어판 첫 실행이 StartWithWindows·시작 질문을 저장하고, QA 중 바꾼 설정도 있으므로)
 if (Test-Path $backup) {
