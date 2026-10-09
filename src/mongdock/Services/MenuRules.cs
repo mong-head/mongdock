@@ -224,7 +224,7 @@ internal static class MenuRules
             foreach (var m in menusEl.EnumerateArray())
             {
                 if (m.ValueKind != JsonValueKind.Object) throw new RuleException($"{id}: 메뉴가 객체가 아님");
-                string title = Text(m, "title", id);
+                string title = Display(m, "title", id);
                 if (title.StartsWith('@')) throw new RuleException($"{id}: 메뉴 제목 '{title}' 은 쓸 수 없음 (앱 이름 메뉴는 appMenu)");
                 if (!m.TryGetProperty("items", out var itemsEl)) throw new RuleException($"{id}: '{title}' items 없음");
                 menus.Add(new AppMenuDef { Title = title, Items = ParseItems(itemsEl, id, depth: 0, budget) });
@@ -276,7 +276,7 @@ internal static class MenuRules
                 continue;
             }
 
-            string text = Text(it, "text", id);
+            string text = Display(it, "text", id);
             if (text == "-") throw new RuleException($"{id}: 구분선은 \"-\" 또는 separator 로");
             bool hasKeys = it.TryGetProperty("keys", out var keysEl);
             bool hasAction = it.TryGetProperty("action", out var actionEl);
@@ -365,6 +365,18 @@ internal static class MenuRules
             if (char.IsControl(c) || c is >= '‪' and <= '‮' or >= '⁦' and <= '⁩')
                 throw new RuleException($"{id}: {name} 에 제어 문자");
         return s;
+    }
+
+    /// <summary>
+    /// 화면에 보일 글자: 영어면 "{name}_en"(선택 필드), 없거나 잘못됐으면 한국어 원문. 한국어 원문은 늘 필수·검사.
+    /// 옛 몽독은 _en 을 모르는 속성으로 무시하므로 schema 는 그대로.
+    /// </summary>
+    private static string Display(JsonElement el, string name, string id)
+    {
+        string ko = Text(el, name, id);
+        if (!Loc.IsEnglish || !el.TryGetProperty(name + "_en", out _)) return ko;
+        try { return Text(el, name + "_en", id); }
+        catch (RuleException ex) { Log.Warn($"앱 메뉴 규칙 영어 글자 무시: {ex.Message}"); return ko; }
     }
 
     private static string Short(string s) => s.Length <= 40 ? s : s[..40] + "…";

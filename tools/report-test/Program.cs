@@ -23,6 +23,7 @@ internal static class Program
         _english = args.Contains("--en"); // 영어 화면으로 렌더링 (App 생성자가 언어를 다시 정하므로 렌더링 때 다시 적용)
         if (_english) Mongdock.Loc.Init("en");
         RedactionTests();
+        MenuRuleLanguageTests();
         Console.WriteLine(_failed == 0 ? "가리기 시험: 모두 통과" : $"가리기 시험: {_failed}개 실패");
 
         // 이 PC 의 실제 로그를 가린 결과 (보내지 않음 — 눈으로 확인용)
@@ -100,6 +101,24 @@ internal static class Program
         Check("GUID", L("트레이 아이콘 배치: ba82e2dc-f405-47ad-b032-cf0faa0e3933 → ⌃"), "트레이 아이콘 배치: <번호> → ⌃");
         Check("중괄호 GUID", R("{6CDEC4D3-9697-40DF-B6C2-96E9ED842C0C}"), "<번호>");
         Check("시각·pid·짧은 숫자는 그대로", R("2026-10-09 18:58:32.924 pid 12596 0x1017E 1920×1080"), "2026-10-09 18:58:32.924 pid 12596 0x1017E 1920×1080");
+    }
+
+    // 앱 메뉴 규칙 title_en·text_en: 영어면 영어, 한국어면 원문 (MenuRules 는 internal 이라 리플렉션)
+    private static void MenuRuleLanguageTests()
+    {
+        var rules = typeof(Mongdock.App).Assembly.GetType("Mongdock.Services.MenuRules")!;
+        string First(string lang)
+        {
+            Mongdock.Loc.Init(lang);
+            object set = rules.GetMethod("LoadEmbedded")!.Invoke(null, null)!;
+            var apps = (System.Collections.IEnumerable)set.GetType().GetProperty("Apps")!.GetValue(set)!;
+            object chrome = apps.Cast<object>().First();
+            var menus = (List<AppMenuDef>)chrome.GetType().GetProperty("Menus")!.GetValue(chrome)!;
+            return $"{apps.Cast<object>().Count()} {menus[0].Title} {menus[0].Items[0].Text}";
+        }
+        Check("앱 메뉴 한국어", First("ko"), "8 파일 새 탭");
+        Check("앱 메뉴 영어", First("en"), "8 File New Tab");
+        Mongdock.Loc.Init(_english ? "en" : "ko");
     }
 
     private static void Check(string name, string actual, string expected)

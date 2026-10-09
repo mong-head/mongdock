@@ -4,70 +4,70 @@
     "schema: 형식 버전 (지금 1 — 바꾸면 그 schema 를 모르는 몽독은 파일 전체를 무시). revision: 규칙을 고칠 때마다 1씩 올리는 정수.",
     "apps: 위에서부터 처음 맞는 규칙 하나만 쓴다. id: 로그용 이름(영문·숫자·_.-).",
     "match.exe: exe 파일 이름 목록(대소문자 무시). match.aumid: 스토어 앱 AUMID 목록. match.windowClass(선택): 있으면 창 클래스도 이 중 하나여야 함.",
-    "appMenu: 앱 이름(굵게) 메뉴 맨 위에 붙는 항목. menus: 상단바 메뉴 제목(title)과 항목(items).",
+    "appMenu: 앱 이름(굵게) 메뉴 맨 위에 붙는 항목. menus: 상단바 메뉴 제목(title)과 항목(items). title_en·text_en(선택): 몽독이 영어일 때 보이는 글자 (없으면 한국어 그대로, 옛 몽독은 무시).",
     "항목: { \"text\": \"새 탭\", \"keys\": \"Ctrl+T\" } / 연속 입력 { \"text\": \"폴더 열기…\", \"keys\": [\"Ctrl+K\", \"Ctrl+O\"] } / 구분선 \"-\" (또는 { \"separator\": true }) / 하위 메뉴 { \"text\": \"...\", \"items\": [...] } (한 단계까지) / 창 동작 { \"text\": \"창 닫기\", \"action\": \"close\" } (close·minimize·maximize·restore 만).",
     "키 이름: A~Z, 0~9, F1~F24, Left/Right/Up/Down, Tab, Enter, Esc, Space, Backspace, Delete, Insert, Home, End, PageUp, PageDown, NumPad0~9, = - , . / ; ` [ \\ ] ' 와 수식키 Ctrl/Shift/Alt. Win 조합·Alt+Tab·Ctrl+Esc·Ctrl+Shift+Esc·Ctrl+Alt+Delete·Shift+Delete(영구 삭제)·Alt+F4(창 닫기는 action \"close\") 는 거부.",
     "프로그램 실행·URL 열기 같은 동작은 없다. 잘못된 앱 항목은 그 항목만 무시된다. 자세한 설명은 README 의 '앱 메뉴 규칙'."
   ],
   "schema": 1,
-  "revision": 2,
+  "revision": 3,
   "apps": [
     {
       "id": "chrome",
       "match": { "exe": ["chrome.exe", "whale.exe"] },
       "menus": [
-        { "title": "파일", "items": [
-          { "text": "새 탭", "keys": "Ctrl+T" },
-          { "text": "새 창", "keys": "Ctrl+N" },
-          { "text": "새 시크릿 창", "keys": "Ctrl+Shift+N" },
-          { "text": "닫은 탭 다시 열기", "keys": "Ctrl+Shift+T" },
+        { "title": "파일", "title_en": "File", "items": [
+          { "text": "새 탭", "text_en": "New Tab", "keys": "Ctrl+T" },
+          { "text": "새 창", "text_en": "New Window", "keys": "Ctrl+N" },
+          { "text": "새 시크릿 창", "text_en": "New Incognito Window", "keys": "Ctrl+Shift+N" },
+          { "text": "닫은 탭 다시 열기", "text_en": "Reopen Closed Tab", "keys": "Ctrl+Shift+T" },
           "-",
-          { "text": "탭 닫기", "keys": "Ctrl+W" },
-          { "text": "창 닫기", "keys": "Ctrl+Shift+W" },
+          { "text": "탭 닫기", "text_en": "Close Tab", "keys": "Ctrl+W" },
+          { "text": "창 닫기", "text_en": "Close Window", "keys": "Ctrl+Shift+W" },
           "-",
-          { "text": "인쇄…", "keys": "Ctrl+P" }
+          { "text": "인쇄…", "text_en": "Print…", "keys": "Ctrl+P" }
         ] },
-        { "title": "편집", "items": [
-          { "text": "실행 취소", "keys": "Ctrl+Z" },
-          { "text": "다시 실행", "keys": "Ctrl+Y" },
+        { "title": "편집", "title_en": "Edit", "items": [
+          { "text": "실행 취소", "text_en": "Undo", "keys": "Ctrl+Z" },
+          { "text": "다시 실행", "text_en": "Redo", "keys": "Ctrl+Y" },
           "-",
-          { "text": "잘라내기", "keys": "Ctrl+X" },
-          { "text": "복사", "keys": "Ctrl+C" },
-          { "text": "붙여넣기", "keys": "Ctrl+V" },
-          { "text": "모두 선택", "keys": "Ctrl+A" },
+          { "text": "잘라내기", "text_en": "Cut", "keys": "Ctrl+X" },
+          { "text": "복사", "text_en": "Copy", "keys": "Ctrl+C" },
+          { "text": "붙여넣기", "text_en": "Paste", "keys": "Ctrl+V" },
+          { "text": "모두 선택", "text_en": "Select All", "keys": "Ctrl+A" },
           "-",
-          { "text": "찾기…", "keys": "Ctrl+F" }
+          { "text": "찾기…", "text_en": "Find…", "keys": "Ctrl+F" }
         ] },
-        { "title": "보기", "items": [
-          { "text": "새로고침", "keys": "Ctrl+R" },
-          { "text": "강력 새로고침", "keys": "Ctrl+Shift+R" },
+        { "title": "보기", "title_en": "View", "items": [
+          { "text": "새로고침", "text_en": "Reload", "keys": "Ctrl+R" },
+          { "text": "강력 새로고침", "text_en": "Hard Reload", "keys": "Ctrl+Shift+R" },
           "-",
-          { "text": "확대", "keys": "Ctrl+=" },
-          { "text": "축소", "keys": "Ctrl+-" },
-          { "text": "실제 크기", "keys": "Ctrl+0" },
+          { "text": "확대", "text_en": "Zoom In", "keys": "Ctrl+=" },
+          { "text": "축소", "text_en": "Zoom Out", "keys": "Ctrl+-" },
+          { "text": "실제 크기", "text_en": "Actual Size", "keys": "Ctrl+0" },
           "-",
-          { "text": "전체 화면", "keys": "F11" },
-          { "text": "개발자 도구", "keys": "F12" }
+          { "text": "전체 화면", "text_en": "Full Screen", "keys": "F11" },
+          { "text": "개발자 도구", "text_en": "Developer Tools", "keys": "F12" }
         ] },
-        { "title": "방문 기록", "items": [
-          { "text": "뒤로", "keys": "Alt+Left" },
-          { "text": "앞으로", "keys": "Alt+Right" },
+        { "title": "방문 기록", "title_en": "History", "items": [
+          { "text": "뒤로", "text_en": "Back", "keys": "Alt+Left" },
+          { "text": "앞으로", "text_en": "Forward", "keys": "Alt+Right" },
           "-",
-          { "text": "방문 기록 보기", "keys": "Ctrl+H" }
+          { "text": "방문 기록 보기", "text_en": "Show Full History", "keys": "Ctrl+H" }
         ] },
-        { "title": "북마크", "items": [
-          { "text": "이 페이지 북마크", "keys": "Ctrl+D" },
-          { "text": "북마크바 표시", "keys": "Ctrl+Shift+B" },
-          { "text": "북마크 관리자", "keys": "Ctrl+Shift+O" }
+        { "title": "북마크", "title_en": "Bookmarks", "items": [
+          { "text": "이 페이지 북마크", "text_en": "Bookmark This Page", "keys": "Ctrl+D" },
+          { "text": "북마크바 표시", "text_en": "Show Bookmarks Bar", "keys": "Ctrl+Shift+B" },
+          { "text": "북마크 관리자", "text_en": "Bookmark Manager", "keys": "Ctrl+Shift+O" }
         ] },
-        { "title": "탭", "items": [
-          { "text": "다음 탭", "keys": "Ctrl+Tab" },
-          { "text": "이전 탭", "keys": "Ctrl+Shift+Tab" },
+        { "title": "탭", "title_en": "Tab", "items": [
+          { "text": "다음 탭", "text_en": "Next Tab", "keys": "Ctrl+Tab" },
+          { "text": "이전 탭", "text_en": "Previous Tab", "keys": "Ctrl+Shift+Tab" },
           "-",
-          { "text": "주소창으로 이동", "keys": "Ctrl+L" }
+          { "text": "주소창으로 이동", "text_en": "Go to Address Bar", "keys": "Ctrl+L" }
         ] },
-        { "title": "다운로드", "items": [
-          { "text": "다운로드", "keys": "Ctrl+J" }
+        { "title": "다운로드", "title_en": "Downloads", "items": [
+          { "text": "다운로드", "text_en": "Downloads", "keys": "Ctrl+J" }
         ] }
       ]
     },
@@ -75,58 +75,58 @@
       "id": "edge",
       "match": { "exe": ["msedge.exe"] },
       "menus": [
-        { "title": "파일", "items": [
-          { "text": "새 탭", "keys": "Ctrl+T" },
-          { "text": "새 창", "keys": "Ctrl+N" },
-          { "text": "새 InPrivate 창", "keys": "Ctrl+Shift+N" },
-          { "text": "닫은 탭 다시 열기", "keys": "Ctrl+Shift+T" },
+        { "title": "파일", "title_en": "File", "items": [
+          { "text": "새 탭", "text_en": "New Tab", "keys": "Ctrl+T" },
+          { "text": "새 창", "text_en": "New Window", "keys": "Ctrl+N" },
+          { "text": "새 InPrivate 창", "text_en": "New InPrivate Window", "keys": "Ctrl+Shift+N" },
+          { "text": "닫은 탭 다시 열기", "text_en": "Reopen Closed Tab", "keys": "Ctrl+Shift+T" },
           "-",
-          { "text": "탭 닫기", "keys": "Ctrl+W" },
-          { "text": "창 닫기", "keys": "Ctrl+Shift+W" },
+          { "text": "탭 닫기", "text_en": "Close Tab", "keys": "Ctrl+W" },
+          { "text": "창 닫기", "text_en": "Close Window", "keys": "Ctrl+Shift+W" },
           "-",
-          { "text": "인쇄…", "keys": "Ctrl+P" }
+          { "text": "인쇄…", "text_en": "Print…", "keys": "Ctrl+P" }
         ] },
-        { "title": "편집", "items": [
-          { "text": "실행 취소", "keys": "Ctrl+Z" },
-          { "text": "다시 실행", "keys": "Ctrl+Y" },
+        { "title": "편집", "title_en": "Edit", "items": [
+          { "text": "실행 취소", "text_en": "Undo", "keys": "Ctrl+Z" },
+          { "text": "다시 실행", "text_en": "Redo", "keys": "Ctrl+Y" },
           "-",
-          { "text": "잘라내기", "keys": "Ctrl+X" },
-          { "text": "복사", "keys": "Ctrl+C" },
-          { "text": "붙여넣기", "keys": "Ctrl+V" },
-          { "text": "모두 선택", "keys": "Ctrl+A" },
+          { "text": "잘라내기", "text_en": "Cut", "keys": "Ctrl+X" },
+          { "text": "복사", "text_en": "Copy", "keys": "Ctrl+C" },
+          { "text": "붙여넣기", "text_en": "Paste", "keys": "Ctrl+V" },
+          { "text": "모두 선택", "text_en": "Select All", "keys": "Ctrl+A" },
           "-",
-          { "text": "찾기…", "keys": "Ctrl+F" }
+          { "text": "찾기…", "text_en": "Find…", "keys": "Ctrl+F" }
         ] },
-        { "title": "보기", "items": [
-          { "text": "새로고침", "keys": "Ctrl+R" },
-          { "text": "강력 새로고침", "keys": "Ctrl+Shift+R" },
+        { "title": "보기", "title_en": "View", "items": [
+          { "text": "새로고침", "text_en": "Reload", "keys": "Ctrl+R" },
+          { "text": "강력 새로고침", "text_en": "Hard Reload", "keys": "Ctrl+Shift+R" },
           "-",
-          { "text": "확대", "keys": "Ctrl+=" },
-          { "text": "축소", "keys": "Ctrl+-" },
-          { "text": "실제 크기", "keys": "Ctrl+0" },
+          { "text": "확대", "text_en": "Zoom In", "keys": "Ctrl+=" },
+          { "text": "축소", "text_en": "Zoom Out", "keys": "Ctrl+-" },
+          { "text": "실제 크기", "text_en": "Actual Size", "keys": "Ctrl+0" },
           "-",
-          { "text": "전체 화면", "keys": "F11" },
-          { "text": "개발자 도구", "keys": "F12" }
+          { "text": "전체 화면", "text_en": "Full Screen", "keys": "F11" },
+          { "text": "개발자 도구", "text_en": "Developer Tools", "keys": "F12" }
         ] },
-        { "title": "방문 기록", "items": [
-          { "text": "뒤로", "keys": "Alt+Left" },
-          { "text": "앞으로", "keys": "Alt+Right" },
+        { "title": "방문 기록", "title_en": "History", "items": [
+          { "text": "뒤로", "text_en": "Back", "keys": "Alt+Left" },
+          { "text": "앞으로", "text_en": "Forward", "keys": "Alt+Right" },
           "-",
-          { "text": "방문 기록 보기", "keys": "Ctrl+H" }
+          { "text": "방문 기록 보기", "text_en": "Show Full History", "keys": "Ctrl+H" }
         ] },
-        { "title": "북마크", "items": [
-          { "text": "이 페이지 북마크", "keys": "Ctrl+D" },
-          { "text": "북마크바 표시", "keys": "Ctrl+Shift+B" },
-          { "text": "북마크 관리자", "keys": "Ctrl+Shift+O" }
+        { "title": "북마크", "title_en": "Bookmarks", "items": [
+          { "text": "이 페이지 북마크", "text_en": "Bookmark This Page", "keys": "Ctrl+D" },
+          { "text": "북마크바 표시", "text_en": "Show Bookmarks Bar", "keys": "Ctrl+Shift+B" },
+          { "text": "북마크 관리자", "text_en": "Bookmark Manager", "keys": "Ctrl+Shift+O" }
         ] },
-        { "title": "탭", "items": [
-          { "text": "다음 탭", "keys": "Ctrl+Tab" },
-          { "text": "이전 탭", "keys": "Ctrl+Shift+Tab" },
+        { "title": "탭", "title_en": "Tab", "items": [
+          { "text": "다음 탭", "text_en": "Next Tab", "keys": "Ctrl+Tab" },
+          { "text": "이전 탭", "text_en": "Previous Tab", "keys": "Ctrl+Shift+Tab" },
           "-",
-          { "text": "주소창으로 이동", "keys": "Ctrl+L" }
+          { "text": "주소창으로 이동", "text_en": "Go to Address Bar", "keys": "Ctrl+L" }
         ] },
-        { "title": "다운로드", "items": [
-          { "text": "다운로드", "keys": "Ctrl+J" }
+        { "title": "다운로드", "title_en": "Downloads", "items": [
+          { "text": "다운로드", "text_en": "Downloads", "keys": "Ctrl+J" }
         ] }
       ]
     },
@@ -134,58 +134,58 @@
       "id": "firefox",
       "match": { "exe": ["firefox.exe"] },
       "menus": [
-        { "title": "파일", "items": [
-          { "text": "새 탭", "keys": "Ctrl+T" },
-          { "text": "새 창", "keys": "Ctrl+N" },
-          { "text": "새 사생활 보호 창", "keys": "Ctrl+Shift+P" },
-          { "text": "닫은 탭 다시 열기", "keys": "Ctrl+Shift+T" },
+        { "title": "파일", "title_en": "File", "items": [
+          { "text": "새 탭", "text_en": "New Tab", "keys": "Ctrl+T" },
+          { "text": "새 창", "text_en": "New Window", "keys": "Ctrl+N" },
+          { "text": "새 사생활 보호 창", "text_en": "New Private Window", "keys": "Ctrl+Shift+P" },
+          { "text": "닫은 탭 다시 열기", "text_en": "Reopen Closed Tab", "keys": "Ctrl+Shift+T" },
           "-",
-          { "text": "탭 닫기", "keys": "Ctrl+W" },
-          { "text": "창 닫기", "keys": "Ctrl+Shift+W" },
+          { "text": "탭 닫기", "text_en": "Close Tab", "keys": "Ctrl+W" },
+          { "text": "창 닫기", "text_en": "Close Window", "keys": "Ctrl+Shift+W" },
           "-",
-          { "text": "인쇄…", "keys": "Ctrl+P" }
+          { "text": "인쇄…", "text_en": "Print…", "keys": "Ctrl+P" }
         ] },
-        { "title": "편집", "items": [
-          { "text": "실행 취소", "keys": "Ctrl+Z" },
-          { "text": "다시 실행", "keys": "Ctrl+Shift+Z" },
+        { "title": "편집", "title_en": "Edit", "items": [
+          { "text": "실행 취소", "text_en": "Undo", "keys": "Ctrl+Z" },
+          { "text": "다시 실행", "text_en": "Redo", "keys": "Ctrl+Shift+Z" },
           "-",
-          { "text": "잘라내기", "keys": "Ctrl+X" },
-          { "text": "복사", "keys": "Ctrl+C" },
-          { "text": "붙여넣기", "keys": "Ctrl+V" },
-          { "text": "모두 선택", "keys": "Ctrl+A" },
+          { "text": "잘라내기", "text_en": "Cut", "keys": "Ctrl+X" },
+          { "text": "복사", "text_en": "Copy", "keys": "Ctrl+C" },
+          { "text": "붙여넣기", "text_en": "Paste", "keys": "Ctrl+V" },
+          { "text": "모두 선택", "text_en": "Select All", "keys": "Ctrl+A" },
           "-",
-          { "text": "찾기…", "keys": "Ctrl+F" }
+          { "text": "찾기…", "text_en": "Find…", "keys": "Ctrl+F" }
         ] },
-        { "title": "보기", "items": [
-          { "text": "새로고침", "keys": "Ctrl+R" },
-          { "text": "강력 새로고침", "keys": "Ctrl+Shift+R" },
+        { "title": "보기", "title_en": "View", "items": [
+          { "text": "새로고침", "text_en": "Reload", "keys": "Ctrl+R" },
+          { "text": "강력 새로고침", "text_en": "Hard Reload", "keys": "Ctrl+Shift+R" },
           "-",
-          { "text": "확대", "keys": "Ctrl+=" },
-          { "text": "축소", "keys": "Ctrl+-" },
-          { "text": "실제 크기", "keys": "Ctrl+0" },
+          { "text": "확대", "text_en": "Zoom In", "keys": "Ctrl+=" },
+          { "text": "축소", "text_en": "Zoom Out", "keys": "Ctrl+-" },
+          { "text": "실제 크기", "text_en": "Actual Size", "keys": "Ctrl+0" },
           "-",
-          { "text": "전체 화면", "keys": "F11" },
-          { "text": "개발자 도구", "keys": "F12" }
+          { "text": "전체 화면", "text_en": "Full Screen", "keys": "F11" },
+          { "text": "개발자 도구", "text_en": "Developer Tools", "keys": "F12" }
         ] },
-        { "title": "방문 기록", "items": [
-          { "text": "뒤로", "keys": "Alt+Left" },
-          { "text": "앞으로", "keys": "Alt+Right" },
+        { "title": "방문 기록", "title_en": "History", "items": [
+          { "text": "뒤로", "text_en": "Back", "keys": "Alt+Left" },
+          { "text": "앞으로", "text_en": "Forward", "keys": "Alt+Right" },
           "-",
-          { "text": "방문 기록 보기", "keys": "Ctrl+H" }
+          { "text": "방문 기록 보기", "text_en": "Show Full History", "keys": "Ctrl+H" }
         ] },
-        { "title": "북마크", "items": [
-          { "text": "이 페이지 북마크", "keys": "Ctrl+D" },
-          { "text": "북마크 도구 모음 표시", "keys": "Ctrl+Shift+B" },
-          { "text": "북마크 관리", "keys": "Ctrl+Shift+O" }
+        { "title": "북마크", "title_en": "Bookmarks", "items": [
+          { "text": "이 페이지 북마크", "text_en": "Bookmark This Page", "keys": "Ctrl+D" },
+          { "text": "북마크 도구 모음 표시", "text_en": "Show Bookmarks Toolbar", "keys": "Ctrl+Shift+B" },
+          { "text": "북마크 관리", "text_en": "Manage Bookmarks", "keys": "Ctrl+Shift+O" }
         ] },
-        { "title": "탭", "items": [
-          { "text": "다음 탭", "keys": "Ctrl+Tab" },
-          { "text": "이전 탭", "keys": "Ctrl+Shift+Tab" },
+        { "title": "탭", "title_en": "Tab", "items": [
+          { "text": "다음 탭", "text_en": "Next Tab", "keys": "Ctrl+Tab" },
+          { "text": "이전 탭", "text_en": "Previous Tab", "keys": "Ctrl+Shift+Tab" },
           "-",
-          { "text": "주소창으로 이동", "keys": "Ctrl+L" }
+          { "text": "주소창으로 이동", "text_en": "Go to Address Bar", "keys": "Ctrl+L" }
         ] },
-        { "title": "다운로드", "items": [
-          { "text": "다운로드", "keys": "Ctrl+Shift+Y" }
+        { "title": "다운로드", "title_en": "Downloads", "items": [
+          { "text": "다운로드", "text_en": "Downloads", "keys": "Ctrl+Shift+Y" }
         ] }
       ]
     },
@@ -193,42 +193,42 @@
       "id": "explorer",
       "match": { "exe": ["explorer.exe"], "windowClass": ["CabinetWClass"] },
       "menus": [
-        { "title": "파일", "items": [
-          { "text": "새 창", "keys": "Ctrl+N" },
-          { "text": "새 탭", "keys": "Ctrl+T" },
-          { "text": "새 폴더", "keys": "Ctrl+Shift+N" },
+        { "title": "파일", "title_en": "File", "items": [
+          { "text": "새 창", "text_en": "New Window", "keys": "Ctrl+N" },
+          { "text": "새 탭", "text_en": "New Tab", "keys": "Ctrl+T" },
+          { "text": "새 폴더", "text_en": "New Folder", "keys": "Ctrl+Shift+N" },
           "-",
-          { "text": "속성", "keys": "Alt+Enter" },
+          { "text": "속성", "text_en": "Properties", "keys": "Alt+Enter" },
           "-",
-          { "text": "탭 닫기", "keys": "Ctrl+W" }
+          { "text": "탭 닫기", "text_en": "Close Tab", "keys": "Ctrl+W" }
         ] },
-        { "title": "편집", "items": [
-          { "text": "실행 취소", "keys": "Ctrl+Z" },
-          { "text": "다시 실행", "keys": "Ctrl+Y" },
+        { "title": "편집", "title_en": "Edit", "items": [
+          { "text": "실행 취소", "text_en": "Undo", "keys": "Ctrl+Z" },
+          { "text": "다시 실행", "text_en": "Redo", "keys": "Ctrl+Y" },
           "-",
-          { "text": "잘라내기", "keys": "Ctrl+X" },
-          { "text": "복사", "keys": "Ctrl+C" },
-          { "text": "붙여넣기", "keys": "Ctrl+V" },
-          { "text": "모두 선택", "keys": "Ctrl+A" },
+          { "text": "잘라내기", "text_en": "Cut", "keys": "Ctrl+X" },
+          { "text": "복사", "text_en": "Copy", "keys": "Ctrl+C" },
+          { "text": "붙여넣기", "text_en": "Paste", "keys": "Ctrl+V" },
+          { "text": "모두 선택", "text_en": "Select All", "keys": "Ctrl+A" },
           "-",
-          { "text": "이름 바꾸기", "keys": "F2" },
-          { "text": "삭제", "keys": "Delete" }
+          { "text": "이름 바꾸기", "text_en": "Rename", "keys": "F2" },
+          { "text": "삭제", "text_en": "Delete", "keys": "Delete" }
         ] },
-        { "title": "보기", "items": [
-          { "text": "새로 고침", "keys": "F5" },
+        { "title": "보기", "title_en": "View", "items": [
+          { "text": "새로 고침", "text_en": "Refresh", "keys": "F5" },
           "-",
-          { "text": "미리 보기 창", "keys": "Alt+P" },
-          { "text": "세부 정보 창", "keys": "Alt+Shift+P" },
+          { "text": "미리 보기 창", "text_en": "Preview Pane", "keys": "Alt+P" },
+          { "text": "세부 정보 창", "text_en": "Details Pane", "keys": "Alt+Shift+P" },
           "-",
-          { "text": "전체 화면", "keys": "F11" }
+          { "text": "전체 화면", "text_en": "Full Screen", "keys": "F11" }
         ] },
-        { "title": "이동", "items": [
-          { "text": "뒤로", "keys": "Alt+Left" },
-          { "text": "앞으로", "keys": "Alt+Right" },
-          { "text": "상위 폴더", "keys": "Alt+Up" },
+        { "title": "이동", "title_en": "Go", "items": [
+          { "text": "뒤로", "text_en": "Back", "keys": "Alt+Left" },
+          { "text": "앞으로", "text_en": "Forward", "keys": "Alt+Right" },
+          { "text": "상위 폴더", "text_en": "Up One Level", "keys": "Alt+Up" },
           "-",
-          { "text": "주소 표시줄", "keys": "Alt+D" },
-          { "text": "검색", "keys": "Ctrl+E" }
+          { "text": "주소 표시줄", "text_en": "Address Bar", "keys": "Alt+D" },
+          { "text": "검색", "text_en": "Search", "keys": "Ctrl+E" }
         ] }
       ]
     },
@@ -236,29 +236,29 @@
       "id": "notion",
       "match": { "exe": ["notion.exe"] },
       "menus": [
-        { "title": "파일", "items": [
-          { "text": "새 페이지", "keys": "Ctrl+N" },
-          { "text": "새 창", "keys": "Ctrl+Shift+N" },
+        { "title": "파일", "title_en": "File", "items": [
+          { "text": "새 페이지", "text_en": "New Page", "keys": "Ctrl+N" },
+          { "text": "새 창", "text_en": "New Window", "keys": "Ctrl+Shift+N" },
           "-",
-          { "text": "검색", "keys": "Ctrl+P" }
+          { "text": "검색", "text_en": "Search", "keys": "Ctrl+P" }
         ] },
-        { "title": "편집", "items": [
-          { "text": "실행 취소", "keys": "Ctrl+Z" },
-          { "text": "다시 실행", "keys": "Ctrl+Y" },
+        { "title": "편집", "title_en": "Edit", "items": [
+          { "text": "실행 취소", "text_en": "Undo", "keys": "Ctrl+Z" },
+          { "text": "다시 실행", "text_en": "Redo", "keys": "Ctrl+Y" },
           "-",
-          { "text": "잘라내기", "keys": "Ctrl+X" },
-          { "text": "복사", "keys": "Ctrl+C" },
-          { "text": "붙여넣기", "keys": "Ctrl+V" },
-          { "text": "모두 선택", "keys": "Ctrl+A" },
+          { "text": "잘라내기", "text_en": "Cut", "keys": "Ctrl+X" },
+          { "text": "복사", "text_en": "Copy", "keys": "Ctrl+C" },
+          { "text": "붙여넣기", "text_en": "Paste", "keys": "Ctrl+V" },
+          { "text": "모두 선택", "text_en": "Select All", "keys": "Ctrl+A" },
           "-",
-          { "text": "찾기", "keys": "Ctrl+F" }
+          { "text": "찾기", "text_en": "Find", "keys": "Ctrl+F" }
         ] },
-        { "title": "보기", "items": [
-          { "text": "확대", "keys": "Ctrl+=" },
-          { "text": "축소", "keys": "Ctrl+-" },
-          { "text": "실제 크기", "keys": "Ctrl+0" },
+        { "title": "보기", "title_en": "View", "items": [
+          { "text": "확대", "text_en": "Zoom In", "keys": "Ctrl+=" },
+          { "text": "축소", "text_en": "Zoom Out", "keys": "Ctrl+-" },
+          { "text": "실제 크기", "text_en": "Actual Size", "keys": "Ctrl+0" },
           "-",
-          { "text": "새로고침", "keys": "Ctrl+R" }
+          { "text": "새로고침", "text_en": "Reload", "keys": "Ctrl+R" }
         ] }
       ]
     },
@@ -266,125 +266,125 @@
       "id": "vscode",
       "match": { "exe": ["code.exe", "code - insiders.exe", "cursor.exe"] },
       "appMenu": [
-        { "text": "설정…", "keys": "Ctrl+," },
-        { "text": "바로 가기 키", "keys": ["Ctrl+K", "Ctrl+S"] }
+        { "text": "설정…", "text_en": "Settings…", "keys": "Ctrl+," },
+        { "text": "바로 가기 키", "text_en": "Keyboard Shortcuts", "keys": ["Ctrl+K", "Ctrl+S"] }
       ],
       "menus": [
-        { "title": "파일", "items": [
-          { "text": "새 텍스트 파일", "keys": "Ctrl+N" },
-          { "text": "새 창", "keys": "Ctrl+Shift+N" },
+        { "title": "파일", "title_en": "File", "items": [
+          { "text": "새 텍스트 파일", "text_en": "New Text File", "keys": "Ctrl+N" },
+          { "text": "새 창", "text_en": "New Window", "keys": "Ctrl+Shift+N" },
           "-",
-          { "text": "파일 열기…", "keys": "Ctrl+O" },
-          { "text": "폴더 열기…", "keys": ["Ctrl+K", "Ctrl+O"] },
+          { "text": "파일 열기…", "text_en": "Open File…", "keys": "Ctrl+O" },
+          { "text": "폴더 열기…", "text_en": "Open Folder…", "keys": ["Ctrl+K", "Ctrl+O"] },
           "-",
-          { "text": "저장", "keys": "Ctrl+S" },
-          { "text": "다른 이름으로 저장…", "keys": "Ctrl+Shift+S" },
-          { "text": "모두 저장", "keys": ["Ctrl+K", "S"] },
+          { "text": "저장", "text_en": "Save", "keys": "Ctrl+S" },
+          { "text": "다른 이름으로 저장…", "text_en": "Save As…", "keys": "Ctrl+Shift+S" },
+          { "text": "모두 저장", "text_en": "Save All", "keys": ["Ctrl+K", "S"] },
           "-",
-          { "text": "닫은 편집기 다시 열기", "keys": "Ctrl+Shift+T" },
+          { "text": "닫은 편집기 다시 열기", "text_en": "Reopen Closed Editor", "keys": "Ctrl+Shift+T" },
           "-",
-          { "text": "편집기 닫기", "keys": "Ctrl+F4" },
-          { "text": "폴더 닫기", "keys": ["Ctrl+K", "F"] },
-          { "text": "창 닫기", "action": "close" }
+          { "text": "편집기 닫기", "text_en": "Close Editor", "keys": "Ctrl+F4" },
+          { "text": "폴더 닫기", "text_en": "Close Folder", "keys": ["Ctrl+K", "F"] },
+          { "text": "창 닫기", "text_en": "Close Window", "action": "close" }
         ] },
-        { "title": "편집", "items": [
-          { "text": "실행 취소", "keys": "Ctrl+Z" },
-          { "text": "다시 실행", "keys": "Ctrl+Y" },
+        { "title": "편집", "title_en": "Edit", "items": [
+          { "text": "실행 취소", "text_en": "Undo", "keys": "Ctrl+Z" },
+          { "text": "다시 실행", "text_en": "Redo", "keys": "Ctrl+Y" },
           "-",
-          { "text": "잘라내기", "keys": "Ctrl+X" },
-          { "text": "복사", "keys": "Ctrl+C" },
-          { "text": "붙여넣기", "keys": "Ctrl+V" },
+          { "text": "잘라내기", "text_en": "Cut", "keys": "Ctrl+X" },
+          { "text": "복사", "text_en": "Copy", "keys": "Ctrl+C" },
+          { "text": "붙여넣기", "text_en": "Paste", "keys": "Ctrl+V" },
           "-",
-          { "text": "찾기", "keys": "Ctrl+F" },
-          { "text": "바꾸기", "keys": "Ctrl+H" },
+          { "text": "찾기", "text_en": "Find", "keys": "Ctrl+F" },
+          { "text": "바꾸기", "text_en": "Replace", "keys": "Ctrl+H" },
           "-",
-          { "text": "파일에서 찾기", "keys": "Ctrl+Shift+F" },
-          { "text": "파일에서 바꾸기", "keys": "Ctrl+Shift+H" },
+          { "text": "파일에서 찾기", "text_en": "Find in Files", "keys": "Ctrl+Shift+F" },
+          { "text": "파일에서 바꾸기", "text_en": "Replace in Files", "keys": "Ctrl+Shift+H" },
           "-",
-          { "text": "줄 주석 설정/해제", "keys": "Ctrl+/" },
-          { "text": "블록 주석 설정/해제", "keys": "Shift+Alt+A" }
+          { "text": "줄 주석 설정/해제", "text_en": "Toggle Line Comment", "keys": "Ctrl+/" },
+          { "text": "블록 주석 설정/해제", "text_en": "Toggle Block Comment", "keys": "Shift+Alt+A" }
         ] },
-        { "title": "선택", "items": [
-          { "text": "모두 선택", "keys": "Ctrl+A" },
-          { "text": "선택 영역 확장", "keys": "Shift+Alt+Right" },
-          { "text": "선택 영역 축소", "keys": "Shift+Alt+Left" },
+        { "title": "선택", "title_en": "Selection", "items": [
+          { "text": "모두 선택", "text_en": "Select All", "keys": "Ctrl+A" },
+          { "text": "선택 영역 확장", "text_en": "Expand Selection", "keys": "Shift+Alt+Right" },
+          { "text": "선택 영역 축소", "text_en": "Shrink Selection", "keys": "Shift+Alt+Left" },
           "-",
-          { "text": "위에 줄 복사", "keys": "Shift+Alt+Up" },
-          { "text": "아래에 줄 복사", "keys": "Shift+Alt+Down" },
-          { "text": "줄 위로 이동", "keys": "Alt+Up" },
-          { "text": "줄 아래로 이동", "keys": "Alt+Down" },
+          { "text": "위에 줄 복사", "text_en": "Copy Line Up", "keys": "Shift+Alt+Up" },
+          { "text": "아래에 줄 복사", "text_en": "Copy Line Down", "keys": "Shift+Alt+Down" },
+          { "text": "줄 위로 이동", "text_en": "Move Line Up", "keys": "Alt+Up" },
+          { "text": "줄 아래로 이동", "text_en": "Move Line Down", "keys": "Alt+Down" },
           "-",
-          { "text": "위에 커서 추가", "keys": "Ctrl+Alt+Up" },
-          { "text": "아래에 커서 추가", "keys": "Ctrl+Alt+Down" },
-          { "text": "줄 끝에 커서 추가", "keys": "Shift+Alt+I" },
-          { "text": "다음 항목 추가", "keys": "Ctrl+D" },
-          { "text": "모든 항목 선택", "keys": "Ctrl+Shift+L" }
+          { "text": "위에 커서 추가", "text_en": "Add Cursor Above", "keys": "Ctrl+Alt+Up" },
+          { "text": "아래에 커서 추가", "text_en": "Add Cursor Below", "keys": "Ctrl+Alt+Down" },
+          { "text": "줄 끝에 커서 추가", "text_en": "Add Cursors to Line Ends", "keys": "Shift+Alt+I" },
+          { "text": "다음 항목 추가", "text_en": "Add Next Occurrence", "keys": "Ctrl+D" },
+          { "text": "모든 항목 선택", "text_en": "Select All Occurrences", "keys": "Ctrl+Shift+L" }
         ] },
-        { "title": "보기", "items": [
-          { "text": "명령 팔레트…", "keys": "Ctrl+Shift+P" },
+        { "title": "보기", "title_en": "View", "items": [
+          { "text": "명령 팔레트…", "text_en": "Command Palette…", "keys": "Ctrl+Shift+P" },
           "-",
-          { "text": "탐색기", "keys": "Ctrl+Shift+E" },
-          { "text": "검색", "keys": "Ctrl+Shift+F" },
-          { "text": "소스 제어", "keys": "Ctrl+Shift+G" },
-          { "text": "실행 및 디버그", "keys": "Ctrl+Shift+D" },
-          { "text": "확장", "keys": "Ctrl+Shift+X" },
+          { "text": "탐색기", "text_en": "Explorer", "keys": "Ctrl+Shift+E" },
+          { "text": "검색", "text_en": "Search", "keys": "Ctrl+Shift+F" },
+          { "text": "소스 제어", "text_en": "Source Control", "keys": "Ctrl+Shift+G" },
+          { "text": "실행 및 디버그", "text_en": "Run and Debug", "keys": "Ctrl+Shift+D" },
+          { "text": "확장", "text_en": "Extensions", "keys": "Ctrl+Shift+X" },
           "-",
-          { "text": "문제", "keys": "Ctrl+Shift+M" },
-          { "text": "출력", "keys": "Ctrl+Shift+U" },
-          { "text": "디버그 콘솔", "keys": "Ctrl+Shift+Y" },
-          { "text": "터미널", "keys": "Ctrl+`" },
+          { "text": "문제", "text_en": "Problems", "keys": "Ctrl+Shift+M" },
+          { "text": "출력", "text_en": "Output", "keys": "Ctrl+Shift+U" },
+          { "text": "디버그 콘솔", "text_en": "Debug Console", "keys": "Ctrl+Shift+Y" },
+          { "text": "터미널", "text_en": "Terminal", "keys": "Ctrl+`" },
           "-",
-          { "text": "기본 사이드바 표시", "keys": "Ctrl+B" },
-          { "text": "패널 표시", "keys": "Ctrl+J" },
+          { "text": "기본 사이드바 표시", "text_en": "Primary Side Bar", "keys": "Ctrl+B" },
+          { "text": "패널 표시", "text_en": "Panel", "keys": "Ctrl+J" },
           "-",
-          { "text": "자동 줄 바꿈", "keys": "Alt+Z" },
-          { "text": "전체 화면", "keys": "F11" },
-          { "text": "Zen 모드", "keys": ["Ctrl+K", "Z"] },
+          { "text": "자동 줄 바꿈", "text_en": "Word Wrap", "keys": "Alt+Z" },
+          { "text": "전체 화면", "text_en": "Full Screen", "keys": "F11" },
+          { "text": "Zen 모드", "text_en": "Zen Mode", "keys": ["Ctrl+K", "Z"] },
           "-",
-          { "text": "확대/축소", "items": [
-            { "text": "확대", "keys": "Ctrl+=" },
-            { "text": "축소", "keys": "Ctrl+-" },
-            { "text": "확대/축소 다시 설정", "keys": "Ctrl+NumPad0" }
+          { "text": "확대/축소", "text_en": "Appearance Zoom", "items": [
+            { "text": "확대", "text_en": "Zoom In", "keys": "Ctrl+=" },
+            { "text": "축소", "text_en": "Zoom Out", "keys": "Ctrl+-" },
+            { "text": "확대/축소 다시 설정", "text_en": "Reset Zoom", "keys": "Ctrl+NumPad0" }
           ] }
         ] },
-        { "title": "이동", "items": [
-          { "text": "뒤로", "keys": "Alt+Left" },
-          { "text": "앞으로", "keys": "Alt+Right" },
+        { "title": "이동", "title_en": "Go", "items": [
+          { "text": "뒤로", "text_en": "Back", "keys": "Alt+Left" },
+          { "text": "앞으로", "text_en": "Forward", "keys": "Alt+Right" },
           "-",
-          { "text": "파일로 이동…", "keys": "Ctrl+P" },
-          { "text": "작업 영역의 기호로 이동…", "keys": "Ctrl+T" },
-          { "text": "기호로 이동…", "keys": "Ctrl+Shift+O" },
-          { "text": "줄로 이동…", "keys": "Ctrl+G" },
-          { "text": "대괄호로 이동", "keys": "Ctrl+Shift+\\" },
+          { "text": "파일로 이동…", "text_en": "Go to File…", "keys": "Ctrl+P" },
+          { "text": "작업 영역의 기호로 이동…", "text_en": "Go to Symbol in Workspace…", "keys": "Ctrl+T" },
+          { "text": "기호로 이동…", "text_en": "Go to Symbol in Editor…", "keys": "Ctrl+Shift+O" },
+          { "text": "줄로 이동…", "text_en": "Go to Line…", "keys": "Ctrl+G" },
+          { "text": "대괄호로 이동", "text_en": "Go to Bracket", "keys": "Ctrl+Shift+\\" },
           "-",
-          { "text": "정의로 이동", "keys": "F12" },
-          { "text": "구현으로 이동", "keys": "Ctrl+F12" },
-          { "text": "참조로 이동", "keys": "Shift+F12" },
+          { "text": "정의로 이동", "text_en": "Go to Definition", "keys": "F12" },
+          { "text": "구현으로 이동", "text_en": "Go to Implementations", "keys": "Ctrl+F12" },
+          { "text": "참조로 이동", "text_en": "Go to References", "keys": "Shift+F12" },
           "-",
-          { "text": "다음 문제", "keys": "F8" },
-          { "text": "이전 문제", "keys": "Shift+F8" }
+          { "text": "다음 문제", "text_en": "Next Problem", "keys": "F8" },
+          { "text": "이전 문제", "text_en": "Previous Problem", "keys": "Shift+F8" }
         ] },
-        { "title": "실행", "items": [
-          { "text": "디버깅 시작", "keys": "F5" },
-          { "text": "디버깅 없이 실행", "keys": "Ctrl+F5" },
-          { "text": "디버깅 중지", "keys": "Shift+F5" },
-          { "text": "디버깅 다시 시작", "keys": "Ctrl+Shift+F5" },
+        { "title": "실행", "title_en": "Run", "items": [
+          { "text": "디버깅 시작", "text_en": "Start Debugging", "keys": "F5" },
+          { "text": "디버깅 없이 실행", "text_en": "Run Without Debugging", "keys": "Ctrl+F5" },
+          { "text": "디버깅 중지", "text_en": "Stop Debugging", "keys": "Shift+F5" },
+          { "text": "디버깅 다시 시작", "text_en": "Restart Debugging", "keys": "Ctrl+Shift+F5" },
           "-",
-          { "text": "프로시저 단위 실행", "keys": "F10" },
-          { "text": "한 단계씩 코드 실행", "keys": "F11" },
-          { "text": "프로시저 나가기", "keys": "Shift+F11" },
+          { "text": "프로시저 단위 실행", "text_en": "Step Over", "keys": "F10" },
+          { "text": "한 단계씩 코드 실행", "text_en": "Step Into", "keys": "F11" },
+          { "text": "프로시저 나가기", "text_en": "Step Out", "keys": "Shift+F11" },
           "-",
-          { "text": "중단점 설정/해제", "keys": "F9" }
+          { "text": "중단점 설정/해제", "text_en": "Toggle Breakpoint", "keys": "F9" }
         ] },
-        { "title": "터미널", "items": [
-          { "text": "새 터미널", "keys": "Ctrl+Shift+`" },
-          { "text": "터미널 분할", "keys": "Ctrl+Shift+5" },
+        { "title": "터미널", "title_en": "Terminal", "items": [
+          { "text": "새 터미널", "text_en": "New Terminal", "keys": "Ctrl+Shift+`" },
+          { "text": "터미널 분할", "text_en": "Split Terminal", "keys": "Ctrl+Shift+5" },
           "-",
-          { "text": "빌드 작업 실행…", "keys": "Ctrl+Shift+B" }
+          { "text": "빌드 작업 실행…", "text_en": "Run Build Task…", "keys": "Ctrl+Shift+B" }
         ] },
-        { "title": "도움말", "items": [
-          { "text": "명령 팔레트", "keys": "Ctrl+Shift+P" },
-          { "text": "키보드 단축키 참조", "keys": ["Ctrl+K", "Ctrl+R"] }
+        { "title": "도움말", "title_en": "Help", "items": [
+          { "text": "명령 팔레트", "text_en": "Command Palette", "keys": "Ctrl+Shift+P" },
+          { "text": "키보드 단축키 참조", "text_en": "Keyboard Shortcuts Reference", "keys": ["Ctrl+K", "Ctrl+R"] }
         ] }
       ]
     },
@@ -392,34 +392,34 @@
       "id": "kakaotalk",
       "match": { "exe": ["kakaotalk.exe"] },
       "appMenu": [
-        { "text": "잠금 모드", "keys": "Ctrl+L" },
-        { "text": "로그아웃", "keys": "Alt+N" }
+        { "text": "잠금 모드", "text_en": "Lock Mode", "keys": "Ctrl+L" },
+        { "text": "로그아웃", "text_en": "Sign Out", "keys": "Alt+N" }
       ],
       "menus": [
-        { "title": "파일", "items": [
-          { "text": "새로운 채팅", "keys": "Ctrl+N" },
-          { "text": "친구 추가", "keys": "Ctrl+A" },
+        { "title": "파일", "title_en": "File", "items": [
+          { "text": "새로운 채팅", "text_en": "New Chat", "keys": "Ctrl+N" },
+          { "text": "친구 추가", "text_en": "Add Friend", "keys": "Ctrl+A" },
           "-",
-          { "text": "메인 창 열기", "keys": "Ctrl+Shift+M" },
-          { "text": "톡캘린더 열기", "keys": "Ctrl+D" },
-          { "text": "서랍 > 파일", "keys": "Ctrl+J" },
+          { "text": "메인 창 열기", "text_en": "Open Main Window", "keys": "Ctrl+Shift+M" },
+          { "text": "톡캘린더 열기", "text_en": "Open Talk Calendar", "keys": "Ctrl+D" },
+          { "text": "서랍 > 파일", "text_en": "Drawer > Files", "keys": "Ctrl+J" },
           "-",
-          { "text": "모든 창 닫기", "keys": "Ctrl+Shift+W" }
+          { "text": "모든 창 닫기", "text_en": "Close All Windows", "keys": "Ctrl+Shift+W" }
         ] },
-        { "title": "채팅방", "items": [
-          { "text": "초대하기", "keys": "Ctrl+I" },
-          { "text": "파일 보내기", "keys": "Ctrl+T" },
-          { "text": "이모티콘", "keys": "Ctrl+E" },
-          { "text": "캡처하기", "keys": "Ctrl+Shift+C" },
+        { "title": "채팅방", "title_en": "Chatroom", "items": [
+          { "text": "초대하기", "text_en": "Invite", "keys": "Ctrl+I" },
+          { "text": "파일 보내기", "text_en": "Send File", "keys": "Ctrl+T" },
+          { "text": "이모티콘", "text_en": "Emoticons", "keys": "Ctrl+E" },
+          { "text": "캡처하기", "text_en": "Capture", "keys": "Ctrl+Shift+C" },
           "-",
-          { "text": "대화 내용 내보내기", "keys": "Ctrl+S" },
-          { "text": "알림 끄기/켜기", "keys": "Ctrl+Shift+B" },
-          { "text": "카나나 검색 열기", "keys": "Ctrl+K" },
+          { "text": "대화 내용 내보내기", "text_en": "Export Chat", "keys": "Ctrl+S" },
+          { "text": "알림 끄기/켜기", "text_en": "Notifications Off/On", "keys": "Ctrl+Shift+B" },
+          { "text": "카나나 검색 열기", "text_en": "Open Kanana Search", "keys": "Ctrl+K" },
           "-",
-          { "text": "이전 채팅방", "keys": "Ctrl+PageUp" },
-          { "text": "다음 채팅방", "keys": "Ctrl+PageDown" },
+          { "text": "이전 채팅방", "text_en": "Previous Chatroom", "keys": "Ctrl+PageUp" },
+          { "text": "다음 채팅방", "text_en": "Next Chatroom", "keys": "Ctrl+PageDown" },
           "-",
-          { "text": "채팅방 닫기", "keys": "Esc" }
+          { "text": "채팅방 닫기", "text_en": "Close Chatroom", "keys": "Esc" }
         ] }
       ]
     },
@@ -427,46 +427,46 @@
       "id": "discord",
       "match": { "exe": ["discord.exe", "discordptb.exe", "discordcanary.exe"] },
       "appMenu": [
-        { "text": "사용자 설정…", "keys": "Ctrl+," },
-        { "text": "키보드 단축키", "keys": "Ctrl+/" }
+        { "text": "사용자 설정…", "text_en": "User Settings…", "keys": "Ctrl+," },
+        { "text": "키보드 단축키", "text_en": "Keyboard Shortcuts", "keys": "Ctrl+/" }
       ],
       "menus": [
-        { "title": "서버", "items": [
-          { "text": "빠른 전환…", "keys": "Ctrl+K" },
-          { "text": "서버 만들기/참가", "keys": "Ctrl+Shift+N" },
+        { "title": "서버", "title_en": "Server", "items": [
+          { "text": "빠른 전환…", "text_en": "Quick Switcher…", "keys": "Ctrl+K" },
+          { "text": "서버 만들기/참가", "text_en": "Create or Join a Server", "keys": "Ctrl+Shift+N" },
           "-",
-          { "text": "이전 서버", "keys": "Ctrl+Alt+Left" },
-          { "text": "다음 서버", "keys": "Ctrl+Alt+Right" },
-          { "text": "이전 채널", "keys": "Alt+Up" },
-          { "text": "다음 채널", "keys": "Alt+Down" },
-          { "text": "뒤로", "keys": "Alt+Left" }
+          { "text": "이전 서버", "text_en": "Previous Server", "keys": "Ctrl+Alt+Left" },
+          { "text": "다음 서버", "text_en": "Next Server", "keys": "Ctrl+Alt+Right" },
+          { "text": "이전 채널", "text_en": "Previous Channel", "keys": "Alt+Up" },
+          { "text": "다음 채널", "text_en": "Next Channel", "keys": "Alt+Down" },
+          { "text": "뒤로", "text_en": "Back", "keys": "Alt+Left" }
         ] },
-        { "title": "편집", "items": [
-          { "text": "실행 취소", "keys": "Ctrl+Z" },
+        { "title": "편집", "title_en": "Edit", "items": [
+          { "text": "실행 취소", "text_en": "Undo", "keys": "Ctrl+Z" },
           "-",
-          { "text": "잘라내기", "keys": "Ctrl+X" },
-          { "text": "복사", "keys": "Ctrl+C" },
-          { "text": "붙여넣기", "keys": "Ctrl+V" },
-          { "text": "모두 선택", "keys": "Ctrl+A" },
+          { "text": "잘라내기", "text_en": "Cut", "keys": "Ctrl+X" },
+          { "text": "복사", "text_en": "Copy", "keys": "Ctrl+C" },
+          { "text": "붙여넣기", "text_en": "Paste", "keys": "Ctrl+V" },
+          { "text": "모두 선택", "text_en": "Select All", "keys": "Ctrl+A" },
           "-",
-          { "text": "채널에서 검색", "keys": "Ctrl+F" },
-          { "text": "모든 채널에서 검색", "keys": "Ctrl+Shift+F" }
+          { "text": "채널에서 검색", "text_en": "Search Channel", "keys": "Ctrl+F" },
+          { "text": "모든 채널에서 검색", "text_en": "Search All Channels", "keys": "Ctrl+Shift+F" }
         ] },
-        { "title": "메시지", "items": [
-          { "text": "이모지", "keys": "Ctrl+E" },
+        { "title": "메시지", "title_en": "Message", "items": [
+          { "text": "이모지", "text_en": "Emoji", "keys": "Ctrl+E" },
           { "text": "GIF", "keys": "Ctrl+G" },
-          { "text": "파일 업로드", "keys": "Ctrl+Shift+U" },
+          { "text": "파일 업로드", "text_en": "Upload File", "keys": "Ctrl+Shift+U" },
           "-",
-          { "text": "고정 메시지", "keys": "Ctrl+P" },
-          { "text": "멤버 목록", "keys": "Ctrl+U" }
+          { "text": "고정 메시지", "text_en": "Pinned Messages", "keys": "Ctrl+P" },
+          { "text": "멤버 목록", "text_en": "Member List", "keys": "Ctrl+U" }
         ] },
-        { "title": "음성", "items": [
-          { "text": "마이크 음소거/해제", "keys": "Ctrl+Shift+M" },
-          { "text": "헤드셋 음소거/해제", "keys": "Ctrl+Shift+D" }
+        { "title": "음성", "title_en": "Voice", "items": [
+          { "text": "마이크 음소거/해제", "text_en": "Toggle Mute", "keys": "Ctrl+Shift+M" },
+          { "text": "헤드셋 음소거/해제", "text_en": "Toggle Deafen", "keys": "Ctrl+Shift+D" }
         ] },
-        { "title": "도움말", "items": [
-          { "text": "도움말", "keys": "Ctrl+Shift+H" },
-          { "text": "키보드 단축키", "keys": "Ctrl+/" }
+        { "title": "도움말", "title_en": "Help", "items": [
+          { "text": "도움말", "text_en": "Help", "keys": "Ctrl+Shift+H" },
+          { "text": "키보드 단축키", "text_en": "Keyboard Shortcuts", "keys": "Ctrl+/" }
         ] }
       ]
     }
