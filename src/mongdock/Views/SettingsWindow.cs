@@ -1175,7 +1175,11 @@ internal sealed partial class SettingsWindow : Window
             body.Children.Add(Group(
                 Row(lic.State == LicenseState.Trial ? Loc.F($"체험판 · {lic.DaysLeft}일 남음") : Loc.T("체험이 끝났어요"),
                     Loc.T("체험이 끝나면 독과 상단바가 멈춰요. 구매하면 그대로 계속 쓸 수 있어요."),
-                    ActionButton(Loc.T("구매하기"), () => _ = LicenseUi.PurchaseAsync()))));
+                    ActionButton(Loc.T("구매하기"), async () =>
+                    {
+                        await LicenseUi.PurchaseAsync();
+                        Commit(() => { }, rebuild: true); // 정식이 되면 이 구역이 바로 사라지게 (QA)
+                    }))));
         }
 
         body.Children.Add(SectionTitle(Loc.T("도움")));

@@ -22,6 +22,7 @@ internal static class Program
         // 설정 옮기기 시험은 별도 실행: 데이터 폴더를 임시 폴더로 (AppInfo 를 건드리기 전에)
         if (args.Contains("--transfer")) return TransferTests();
         if (args.Contains("--pins")) return PinsPreview();
+        if (args.Contains("--repair")) return RepairTests();
 
         Check("패키지 아님", AppInfo.IsPackaged, false);
         Check("설치 방식", AppInfo.InstallKind, "zip·개발 빌드");
@@ -117,6 +118,83 @@ internal static class Program
         public void RefreshAll() { }
         public void Start() { }
         public void Stop() { }
+    }
+
+    /// <summary>
+    /// settings.json 너그러운 읽기: 값 하나가 틀리면 그 항목만 기본값, 나머지(언어·독·핀)는 그대로 + .bad- 원본 보관.
+    /// 파일이 잘렸으면 지금처럼 .corrupt- 백업 후 기본값. 임시 폴더에서만.
+    /// </summary>
+    private static int RepairTests()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "mongdock-repair-test-" + Guid.NewGuid().ToString("N"));
+        Environment.SetEnvironmentVariable("MONGDOCK_DATA_DIR", root);
+        Directory.CreateDirectory(root);
+        string path = Path.Combine(root, "settings.json");
+        const string good = """
+            {
+              "settingsVersion": 4, "language": "en", "lastRunVersion": "0.5.0", "lastSeenVersion": "0.5.0",
+              "dock": { "iconSize": 60, "mode": "Overlay" },
+              "topBar": { "height": 30, "colorMode": "Fixed" },
+              "pins": [ { "name": "메모장", "kind": "Exe", "target": "notepad.exe" }, { "name": "계산기", "kind": "Exe", "target": "calc.exe" } ]
+            }
+            """;
+        (string Name, string Json)[] cases =
+        {
+            ("enum 오타", good.Replace("\"colorMode\": \"Fixed\"", "\"colorMode\": \"Dark\"")),
+            ("숫자 자리에 글자", good.Replace("\"height\": 30", "\"height\": \"tall\"")),
+            ("배열 원소의 enum 오타", good.Replace("{ \"name\": \"계산기\", \"kind\": \"Exe\"", "{ \"name\": \"계산기\", \"kind\": \"Weird\"")),
+            ("두 군데 틀림", good.Replace("\"colorMode\": \"Fixed\"", "\"colorMode\": 7").Replace("\"mode\": \"Overlay\"", "\"mode\": \"Floating\"")),
+        };
+        try
+        {
+            foreach (var (name, json) in cases)
+            {
+                foreach (var f in Directory.GetFiles(root)) File.Delete(f);
+                File.WriteAllText(path, json);
+                using (var settings = new SettingsService())
+                {
+                    var s = settings.Current;
+                    Check($"{name}: 언어 그대로", s.Language, "en");
+                    Check($"{name}: 독 아이콘 크기 그대로", s.Dock.IconSize, 60.0);
+                    Check($"{name}: 핀 2개 그대로", s.Pins.Count, 2);
+                    Check($"{name}: 첫 핀 이름", s.Pins.Count > 0 ? s.Pins[0].Name : "", "메모장");
+                }
+                Check($"{name}: .bad- 원본 보관", Directory.GetFiles(root, "settings.json.bad-*").Length, 1);
+                Check($"{name}: 고친 파일은 다시 읽힘", SettingsService.ParseForImport(File.ReadAllText(path)).Language, "en");
+            }
+
+            // 틀린 값의 그 항목만 기본값인지
+            foreach (var f in Directory.GetFiles(root)) File.Delete(f);
+            File.WriteAllText(path, cases[0].Json);
+            using (var settings = new SettingsService())
+                Check("enum 오타 → 그 항목만 기본값(Auto)", settings.Current.TopBar.ColorMode, Mongdock.Models.TopBarColorMode.Auto);
+            foreach (var f in Directory.GetFiles(root)) File.Delete(f);
+            File.WriteAllText(path, cases[1].Json);
+            using (var settings = new SettingsService())
+                Check("글자 높이 → 기본값 26", settings.Current.TopBar.Height, 26.0);
+
+            // 가져오기도 같은 읽기
+            var imported = SettingsService.ParseForImport(cases[3].Json);
+            Check("가져오기: 틀린 값 두 개 있어도 핀 유지", imported.Pins.Count, 2);
+            Check("숫자로 적은 없는 enum 값(7) → 기본값", imported.TopBar.ColorMode, Mongdock.Models.TopBarColorMode.Auto);
+
+            // 잘린 JSON → 전체 손상 → .corrupt- 백업 + 기본값
+            foreach (var f in Directory.GetFiles(root)) File.Delete(f);
+            File.WriteAllText(path, good[..(good.Length / 2)]);
+            using (var settings = new SettingsService())
+                Check("잘린 JSON → 기본값(언어 자동)", settings.Current.Language, "");
+            Check("잘린 JSON → .corrupt- 백업", Directory.GetFiles(root, "settings.json.corrupt-*").Length, 1);
+            bool threw = false;
+            try { SettingsService.ParseForImport(good[..(good.Length / 2)]); }
+            catch (System.Text.Json.JsonException) { threw = true; }
+            Check("잘린 JSON 가져오기 → 거절", threw, true);
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
+        Console.WriteLine(_failed == 0 ? "설정 읽기 복구 시험: 모두 통과" : $"설정 읽기 복구 시험: {_failed}개 실패");
+        return _failed == 0 ? 0 : 1;
     }
 
     private static int TransferTests()

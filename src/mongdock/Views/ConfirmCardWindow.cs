@@ -163,14 +163,21 @@ internal sealed class ConfirmCardWindow : Window
     /// <summary>
     /// 확인 카드를 띄우고 결과를 기다림: 확인 = true, [취소 버튼] = false, 바깥 클릭·다른 창 활성화 = null (고르지 않음 — 나중에 다시 물을 수 있음).
     /// </summary>
-    public static Task<bool?> AskChoiceAsync(AppServices services, string title, string message, string confirmText, string cancelText)
+    public static Task<bool?> AskChoiceAsync(AppServices services, string title, string message, string confirmText, string cancelText, string? tag = null)
     {
         var tcs = new TaskCompletionSource<bool?>();
         var p = UiTheme.Palette(services.Settings.Current);
-        var card = new ConfirmCardWindow(services, p, title, message, confirmText, () => tcs.TrySetResult(true), cancelText);
+        var card = new ConfirmCardWindow(services, p, title, message, confirmText, () => tcs.TrySetResult(true), cancelText) { Tag = tag };
         card._onCancel = () => tcs.TrySetResult(card._cancelClicked ? false : null);
         card.Show();
         return tcs.Task;
+    }
+
+    /// <summary>tag 를 붙여 띄운 카드를 모두 닫음 (고르지 않음으로 끝남). 예: 체험이 끝나면 "N일 남았어요" 카드를 치움.</summary>
+    public static void CloseTagged(string tag)
+    {
+        foreach (var w in Application.Current.Windows.OfType<ConfirmCardWindow>().Where(w => Equals(w.Tag, tag)).ToList())
+            w.Close();
     }
 
     /// <summary>확인 · 취소 버튼 · 아래 작은 버튼(extraText) · 고르지 않고 닫힘.</summary>

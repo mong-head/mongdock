@@ -22,6 +22,7 @@ public static class LicenseUi
     private static bool _expiredCardOpen;
     private static bool _trialCardOpen;
     private static LicenseState _lastState;
+    private const string TrialCardTag = "license-trial";
 
     public static LicenseService? Service => _license;
 
@@ -98,7 +99,7 @@ public static class LicenseUi
             bool? buy = await ConfirmCardWindow.AskChoiceAsync(_services,
                 Loc.F($"체험이 {info.DaysLeft}일 남았어요"),
                 Loc.T("체험이 끝나면 독과 상단바가 멈춰요. 지금 구매하면 그대로 계속 쓸 수 있어요."),
-                Loc.T("구매하기"), Loc.T("나중에"));
+                Loc.T("구매하기"), Loc.T("나중에"), TrialCardTag);
             if (buy == true) await PurchaseAsync();
         }
         finally
@@ -111,13 +112,14 @@ public static class LicenseUi
     public static async void ShowExpiredCard()
     {
         if (_services is null || _expiredCardOpen || !AppState.Locked) return;
+        ConfirmCardWindow.CloseTagged(TrialCardTag); // 실행 중에 만료되면 "N일 남았어요" 카드가 겹쳐 남지 않게 (QA)
         _expiredCardOpen = true;
         try
         {
             bool? choice = await ConfirmCardWindow.AskChoiceAsync(_services,
                 Loc.T("체험이 끝났어요"),
                 Loc.T("몽독을 계속 쓰려면 구매해 주세요. 작업 표시줄과 알림은 원래대로 돌려 두었어요. 트레이 아이콘을 누르면 이 창을 다시 열 수 있어요."),
-                Loc.T("구매하기"), Loc.T("종료"));
+                Loc.T("구매하기"), Loc.T("몽독 종료")); // "종료" 는 영어 사전에서 Shut Down — PC 끄기로 읽혀서 따로 (QA)
             if (choice == true) await PurchaseAsync();
             else if (choice == false)
             {

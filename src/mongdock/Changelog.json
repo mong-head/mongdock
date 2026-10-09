@@ -483,7 +483,7 @@
             "title": "검색이 넓어졌어요",
             "title_en": "Search does more now",
             "body": "{hotkey} 앱·파일·윈도우 설정·계산기까지 찾아요.",
-            "body_en": "{hotkey} Find apps, files, and Windows settings, or do quick math.",
+            "body_en": "{hotkey} find apps, files, and Windows settings, or do quick math.",
             "condition": "spotlight"
           }
         },

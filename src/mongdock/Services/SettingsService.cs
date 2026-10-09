@@ -2,6 +2,7 @@ using System.IO;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Windows;
 using Mongdock.Models;
 
@@ -105,9 +106,15 @@ public sealed class SettingsService : ISettingsService, IDisposable
             string text = ReadAllTextShared(SettingsPath);
             // 새 버전 첫 실행이면 이관·저장 전에 원본 백업 (Services/UpdateBackup)
             UpdateBackup.BeforeLoad(Path.GetDirectoryName(SettingsPath)!, text);
-            var s = Deserialize(text);
+            var s = Deserialize(text, out string repaired, out var fixes);
             _lastText = text;
-            bool changed = Migrate(text, s);
+            bool changed = Migrate(repaired, s);
+            if (fixes.Count > 0)
+            {
+                // 값 몇 개만 틀림 → 그 항목만 기본값, 나머지는 살림. 원본은 .bad-시각 으로 보관하고 고친 내용을 저장
+                KeepBadOriginal(text, fixes);
+                changed = true;
+            }
             if (s.LastRunVersion != WhatsNew.CurrentText)
             {
                 s.LastRunVersion = WhatsNew.CurrentText;
@@ -266,10 +273,38 @@ public sealed class SettingsService : ISettingsService, IDisposable
         return false;
     }
 
-    private static Settings Deserialize(string text)
+    /// <summary>
+    /// 너그러운 읽기: 값 하나가 틀려(모르는 enum 이름, 숫자 자리에 글자, 타입 다름) 전체 읽기가 실패하면
+    /// 예외가 가리키는 그 속성만 지우고(→ 그 항목은 기본값) 다시 읽는다. 지운 경로는 fixes 로, 고친 JSON 은 repaired 로.
+    /// JSON 자체가 깨졌거나(잘림·문법 오류) 최상위가 객체가 아니면 예외 → 호출한 쪽이 지금처럼 백업 후 기본값.
+    /// </summary>
+    internal static Settings Deserialize(string text, out string repaired, out List<string> fixes)
     {
-        var s = JsonSerializer.Deserialize<Settings>(text, JsonOptions)
-                ?? throw new JsonException("settings.json 이 null 입니다.");
+        fixes = new List<string>();
+        repaired = text;
+        Settings? parsed = null;
+        try
+        {
+            parsed = JsonSerializer.Deserialize<Settings>(text, JsonOptions);
+        }
+        catch (JsonException first)
+        {
+            // 문법 오류(잘린 파일 등)면 JsonNode.Parse 가 던짐 → 파일 전체 손상으로
+            if (JsonNode.Parse(text, documentOptions: new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip })
+                is not JsonObject root) throw;
+            JsonException? ex = first;
+            for (int i = 0; i < 100 && ex is not null; i++)
+            {
+                if (ex.Path is not { Length: > 1 } path || !RemoveAt(root, path)) throw ex;
+                fixes.Add(path[2..]); // "$." 떼고
+                repaired = root.ToJsonString();
+                try { parsed = JsonSerializer.Deserialize<Settings>(repaired, JsonOptions); ex = null; }
+                catch (JsonException next) { ex = next; }
+            }
+            if (ex is not null) throw ex;
+        }
+        var s = parsed ?? throw new JsonException("settings.json 이 null 입니다.");
+        FixUndefinedEnums(s, "", fixes); // 숫자로 적은 없는 enum 값(예 "colorMode": 7)은 예외 없이 들어오므로 따로
         // 수동 편집으로 null 이 들어와도 UI 가 죽지 않게 보정.
         s.Dock ??= new DockSettings();
         s.TopBar ??= new TopBarSettings();
@@ -405,7 +440,8 @@ public sealed class SettingsService : ISettingsService, IDisposable
 
             try
             {
-                loaded = Deserialize(text);
+                loaded = Deserialize(text, out _, out var fixes);
+                if (fixes.Count > 0) Log.Warn($"외부에서 편집된 settings.json 에 잘못된 값 {fixes.Count}개 → 그 항목만 기본값: {string.Join(", ", fixes)} (파일은 그대로)");
                 // 직접 편집으로 삭제된 "공간 차지"를 고른 경우 → 항상 보이기 (저장은 하지 않음 — 파일은 사용자 것)
                 if (loaded.Dock.Mode == DockMode.Reserve) loaded.Dock.Mode = DockMode.Overlay;
             }
@@ -427,6 +463,114 @@ public sealed class SettingsService : ISettingsService, IDisposable
         });
     }
 
+    /// <summary>값만 틀린 원본을 settings.json.bad-시각 으로 보관 (고친 내용으로 덮기 전에).</summary>
+    private void KeepBadOriginal(string text, List<string> fixes)
+    {
+        string bad = SettingsPath + ".bad-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+        try { File.WriteAllText(bad, text); }
+        catch (Exception ex) { Log.Warn($"잘못된 값 원본 보관 실패: {ex.Message}"); }
+        Log.Warn($"settings.json 잘못된 값 {fixes.Count}개 → 그 항목만 기본값, 나머지는 그대로: {string.Join(", ", fixes)} (원본 {Path.GetFileName(bad)})");
+    }
+
+    /// <summary>
+    /// System.Text.Json 예외 경로("$.topBar.colorMode", "$.pins[3].kind", "$.appMenus['a.exe'][0].title")가 가리키는 값을 지움.
+    /// 배열 원소 자체가 틀렸으면 그 원소를 지움. 못 찾으면 false.
+    /// </summary>
+    private static bool RemoveAt(JsonObject root, string path)
+    {
+        var parts = new List<object>(); // string = 속성, int = 배열 위치
+        int i = 1; // "$" 다음
+        while (i < path.Length)
+        {
+            if (path[i] == '.')
+            {
+                int end = i + 1;
+                while (end < path.Length && path[end] != '.' && path[end] != '[') end++;
+                parts.Add(path[(i + 1)..end]);
+                i = end;
+            }
+            else if (path[i] == '[' && i + 1 < path.Length && path[i + 1] == '\'')
+            {
+                int end = path.IndexOf("']", i + 2, StringComparison.Ordinal);
+                if (end < 0) return false;
+                parts.Add(path[(i + 2)..end]);
+                i = end + 2;
+            }
+            else if (path[i] == '[')
+            {
+                int end = path.IndexOf(']', i);
+                if (end < 0 || !int.TryParse(path[(i + 1)..end], out int n)) return false;
+                parts.Add(n);
+                i = end + 1;
+            }
+            else return false;
+        }
+        if (parts.Count == 0) return false;
+        JsonNode? node = root;
+        for (int k = 0; k < parts.Count - 1; k++)
+        {
+            node = parts[k] switch
+            {
+                string name when node is JsonObject o => FindProperty(o, name),
+                int idx when node is JsonArray a && idx < a.Count => a[idx],
+                _ => null,
+            };
+            if (node is null) return false;
+        }
+        switch (parts[^1])
+        {
+            case string name when node is JsonObject o:
+                string? key = o.Select(kv => kv.Key).FirstOrDefault(k => string.Equals(k, name, StringComparison.OrdinalIgnoreCase));
+                return key is not null && o.Remove(key);
+            case int idx when node is JsonArray a && idx < a.Count:
+                a.RemoveAt(idx);
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// 설정 객체(Models 의 클래스·그 리스트)를 돌며 정의되지 않은 enum 값을 그 클래스의 기본값으로 (새 인스턴스의 값).
+    /// [Flags] enum 은 건너뜀.
+    /// </summary>
+    private static void FixUndefinedEnums(object obj, string prefix, List<string> fixes, int depth = 0)
+    {
+        if (depth > 6) return;
+        var type = obj.GetType();
+        object? defaults = null;
+        foreach (var p in type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+        {
+            if (!p.CanRead || p.GetIndexParameters().Length > 0) continue;
+            var pt = p.PropertyType;
+            if (pt.IsEnum && p.CanWrite && !pt.IsDefined(typeof(FlagsAttribute), false))
+            {
+                object? v = p.GetValue(obj);
+                if (v is not null && !Enum.IsDefined(pt, v))
+                {
+                    try { defaults ??= Activator.CreateInstance(type); } catch { /* 기본 생성자 없음 → enum 기본값 */ }
+                    p.SetValue(obj, defaults is null ? Activator.CreateInstance(pt) : p.GetValue(defaults));
+                    fixes.Add(prefix + JsonNamingPolicy.CamelCase.ConvertName(p.Name));
+                }
+            }
+            else if (pt.Namespace == typeof(Settings).Namespace && pt.IsClass && p.GetValue(obj) is { } child)
+            {
+                FixUndefinedEnums(child, prefix + JsonNamingPolicy.CamelCase.ConvertName(p.Name) + ".", fixes, depth + 1);
+            }
+            else if (pt.IsGenericType && pt.GetGenericTypeDefinition() == typeof(List<>)
+                     && pt.GetGenericArguments()[0] is { IsClass: true } et && et.Namespace == typeof(Settings).Namespace
+                     && p.GetValue(obj) is System.Collections.IList list)
+            {
+                for (int i = 0; i < list.Count; i++)
+                    if (list[i] is { } item)
+                        FixUndefinedEnums(item, $"{prefix}{JsonNamingPolicy.CamelCase.ConvertName(p.Name)}[{i}].", fixes, depth + 1);
+            }
+        }
+    }
+
+    private static JsonNode? FindProperty(JsonObject o, string name) =>
+        o.FirstOrDefault(kv => string.Equals(kv.Key, name, StringComparison.OrdinalIgnoreCase)).Value;
+
     // ───────────────────────── 설정 옮기기 (Services/SettingsTransfer) ─────────────────────────
 
     /// <summary>내보내기용 지금 설정 JSON (저장 파일과 같은 형식).</summary>
@@ -438,8 +582,9 @@ public sealed class SettingsService : ISettingsService, IDisposable
     /// <summary>가져온 settings.json 을 읽고 이관까지 거침 (지금 설정은 바꾸지 않음). 손상이면 예외.</summary>
     public static Settings ParseForImport(string json)
     {
-        var s = Deserialize(json);
-        Migrate(json, s);
+        var s = Deserialize(json, out string repaired, out var fixes);
+        if (fixes.Count > 0) Log.Warn($"가져온 설정에 잘못된 값 {fixes.Count}개 → 그 항목만 기본값: {string.Join(", ", fixes)}");
+        Migrate(repaired, s);
         return s;
     }
 
