@@ -81,11 +81,12 @@ public static class AppInfo
             }
 
             using var run = Registry.CurrentUser.OpenSubKey(RunKey, writable: true);
-            if (run?.GetValue(LegacyName) is string)
+            if (run?.GetValue(LegacyName) is string legacy)
             {
                 run.DeleteValue(LegacyName, throwOnMissingValue: false);
-                // 스토어 패키지는 Run 키 대신 StartupTask (App 시작 때 PackagedStartupService.Adopt 가 이어받음)
-                if (!IsPackaged) run.SetValue(Name, $"\"{Environment.ProcessPath}\"");
+                // 스토어 패키지는 Run 키 대신 StartupTask: 옛 값을 새 이름으로만 옮겨 두면 App 시작 때
+                // PackagedStartupService.Adopt 가 그것을 지우고 자동 실행 의사(StartWithWindows)로 이어받는다
+                run.SetValue(Name, IsPackaged ? legacy : $"\"{Environment.ProcessPath}\"");
                 note = (note is null ? "" : note + ", ") + "시작 프로그램 등록을 새 이름으로 변경";
             }
         }

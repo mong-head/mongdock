@@ -49,6 +49,9 @@ public sealed class ReportWindow : Window
     private readonly StackPanel _done;
     private readonly List<(Button Button, ReportKind Kind)> _kindButtons = new();
 
+    /// <summary>창이 열려 있는지 (열려 있으면 Open 의 prefill 은 무시됨).</summary>
+    public static bool IsOpen => _instance is not null;
+
     /// <summary>미리 채울 내용 (오류 자동 신고 — Views/CrashPrompt). ErrorInfo 는 원문, 여기서 가린 뒤 진단 정보 맨 앞에 붙임.</summary>
     public sealed record Prefill(ReportKind Kind, string Title, string Message, string? ErrorInfo);
 

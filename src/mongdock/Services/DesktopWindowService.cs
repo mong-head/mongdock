@@ -1334,8 +1334,8 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     private readonly Queue<long> _taskbarShowTimes = new();
     private long _taskbarHookBackoffUntil;
     private int _taskbarShowLogs;
-    private long _lastForegroundAt;
-    private string _lastForeground = "";
+    private int _taskbarHookFailures;
+    private long _taskbarHookRetryAt;
 
     /// <summary>1초 타이머(UI 스레드): 숨기는 중이면 explorer 의 표시 이벤트 훅을 걸고(explorer 재시작이면 새 pid 로), 아니면 뗌.</summary>
     private void SyncTaskbarShowHook()
@@ -1349,30 +1349,29 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         if (tray == IntPtr.Zero) return;
         User32.GetWindowThreadProcessId(tray, out uint pid);
         if (pid == 0 || (pid == _taskbarHookPid && _taskbarShowHook != IntPtr.Zero)) return;
+        if (Environment.TickCount64 < _taskbarHookRetryAt) return;
         UnhookTaskbarShow();
         _taskbarShowProc ??= OnTaskbarWinEvent;
-        // 포그라운드 변화(전역)는 "무엇이 작업 표시줄을 다시 띄웠나" 진단용 — 직전 포그라운드만 기억
         _taskbarShowHook = WinEventApi.SetWinEventHook(WinEventApi.EVENT_OBJECT_SHOW, WinEventApi.EVENT_OBJECT_SHOW,
             IntPtr.Zero, _taskbarShowProc, pid, 0, WinEventApi.WINEVENT_OUTOFCONTEXT);
-        _foregroundHook = WinEventApi.SetWinEventHook(WinEventApi.EVENT_SYSTEM_FOREGROUND, WinEventApi.EVENT_SYSTEM_FOREGROUND,
-            IntPtr.Zero, _taskbarShowProc, 0, 0, WinEventApi.WINEVENT_OUTOFCONTEXT | WinEventApi.WINEVENT_SKIPOWNPROCESS);
         if (_taskbarShowHook == IntPtr.Zero)
         {
-            Log.Warn($"작업 표시줄 표시 훅 실패 (오류 {Marshal.GetLastWin32Error()}) → 2초 확인만");
+            // 실패하면 2초 확인만으로 버티고, 다시 거는 건 점점 드물게 (10초·20초·… 최대 5분), 로그는 3번까지
+            _taskbarHookFailures++;
+            _taskbarHookRetryAt = Environment.TickCount64 + Math.Min(300_000, 10_000L * _taskbarHookFailures);
+            if (_taskbarHookFailures <= 3)
+                Log.Warn($"작업 표시줄 표시 훅 실패 (오류 {Marshal.GetLastWin32Error()}, {_taskbarHookFailures}번째) → 2초 확인만");
             return;
         }
+        _taskbarHookFailures = 0;
         _taskbarHookPid = pid;
         Log.Info($"작업 표시줄 표시 훅 (explorer pid {pid})");
     }
 
-    private IntPtr _foregroundHook;
-
     private void UnhookTaskbarShow()
     {
         if (_taskbarShowHook != IntPtr.Zero) WinEventApi.UnhookWinEvent(_taskbarShowHook);
-        if (_foregroundHook != IntPtr.Zero) WinEventApi.UnhookWinEvent(_foregroundHook);
         _taskbarShowHook = IntPtr.Zero;
-        _foregroundHook = IntPtr.Zero;
         _taskbarHookPid = 0;
     }
 
@@ -1381,12 +1380,6 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         try
         {
             if (idObject != WinEventApi.OBJID_WINDOW || idChild != WinEventApi.CHILDID_SELF || hwnd == IntPtr.Zero) return;
-            if (eventType == WinEventApi.EVENT_SYSTEM_FOREGROUND)
-            {
-                _lastForegroundAt = Environment.TickCount64;
-                _lastForeground = ProcessAndClass(hwnd);
-                return;
-            }
             if (!_taskbarHidden) return;
             string cls = User32.GetClassNameOf(hwnd);
             if (cls is not ("Shell_TrayWnd" or "Shell_SecondaryTrayWnd")) return;
@@ -1404,16 +1397,9 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
             }
 
             User32.ShowWindowAsync(hwnd, User32.SW_HIDE);
-            if (++_taskbarShowLogs <= 40)
-            {
-                DesktopApi.GetCursorPos(out var c);
-                string fgAgo = _lastForegroundAt == 0 ? "-" : $"{now - _lastForegroundAt}ms 전 {_lastForeground}";
-                long fwdAgo = TrayIconService.LastForwardTick == 0 ? -1 : now - TrayIconService.LastForwardTick;
-                string fwd = fwdAgo < 0 ? "-" : $"{fwdAgo}ms 전 0x{TrayIconService.LastForwardMsg:X}" +
-                    (TrayIconService.LastForwardSender != IntPtr.Zero ? $" data={TrayIconService.LastForwardData} {ProcessAndClass(TrayIconService.LastForwardSender)}" : "");
-                Log.Info($"작업 표시줄이 다시 보여 바로 숨김 ({cls}) 마우스=({c.X},{c.Y}) 포그라운드={ProcessAndClass(User32.GetForegroundWindow())} " +
-                    $"직전 포그라운드 변화={fgAgo} 직전 트레이 전달={fwd} 전달 직후 숨김 누계={TrayIconService.ForwardRehides}");
-            }
+            // 진단 로그는 처음 몇 번만 (원인 조사는 #13 에서 끝남 — 이후 이상하면 tools/taskbar-watch 로)
+            if (++_taskbarShowLogs <= 5)
+                Log.Info($"작업 표시줄이 다시 보여 바로 숨김 ({cls}, 포그라운드 {ProcessAndClass(User32.GetForegroundWindow())})");
         }
         catch (Exception e)
         {

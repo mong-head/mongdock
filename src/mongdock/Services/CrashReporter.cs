@@ -19,6 +19,8 @@ public static class CrashReporter
     private static readonly string ErrorPath = Path.Combine(Dir, "last-error.json");
     private static readonly string AskedPath = Path.Combine(Dir, "crash-asked.json");
     private static readonly object Gate = new();
+    private static string? _lastRecordedSignature;
+    private static long _lastRecordedAt;
 
     public sealed record ErrorRecord(string Kind, string Type, string Message, string Stack, DateTime Time, string Version)
     {
@@ -50,6 +52,13 @@ public static class CrashReporter
                 int pid = doc.RootElement.TryGetProperty("pid", out var p) ? p.GetInt32() : 0;
                 if (doc.RootElement.TryGetProperty("started", out var s) && s.TryGetDateTime(out var st)) started = st;
                 crashed = !IsSameProcessAlive(pid, started);
+                // 지난 세션이 이번 부팅 전에 시작됐으면 재부팅·정전·윈도우 업데이트로 끝난 것 → 몽독 탓이 아님
+                DateTime bootTime = DateTime.Now - TimeSpan.FromMilliseconds(Environment.TickCount64);
+                if (crashed && started is DateTime s0 && s0 < bootTime)
+                {
+                    crashed = false;
+                    Log.Info($"지난 실행은 재부팅 전 세션 (시작 {s0:yyyy-MM-dd HH:mm:ss}, 부팅 {bootTime:yyyy-MM-dd HH:mm:ss}) → 비정상 종료로 보지 않음");
+                }
             }
             ErrorRecord? error = ReadError();
             if (crashed || error is not null) pending = new Pending(crashed, started, error);
@@ -81,6 +90,11 @@ public static class CrashReporter
             var rec = new ErrorRecord(kind, ex.GetType().FullName ?? ex.GetType().Name, ex.Message, ex.ToString(), DateTime.Now, ReportService.AppVersion());
             lock (Gate)
             {
+                // 같은 오류가 되풀이되면(예: 매번 그리는 중 예외) 10초에 한 번만 파일에 씀
+                long now = Environment.TickCount64;
+                if (rec.Signature == _lastRecordedSignature && now - _lastRecordedAt < 10_000) return;
+                _lastRecordedSignature = rec.Signature;
+                _lastRecordedAt = now;
                 Directory.CreateDirectory(Dir);
                 AtomicFile.WriteAllText(ErrorPath, JsonSerializer.Serialize(rec));
             }
