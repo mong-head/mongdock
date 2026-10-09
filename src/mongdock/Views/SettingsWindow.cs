@@ -1114,6 +1114,11 @@ internal sealed partial class SettingsWindow : Window
         body.Children.Add(Group(
             Row("처음 사용 둘러보기", "처음 설치했을 때의 기능 둘러보기를 상단바·독 위에서 다시 봐요.",
                 ActionButton("둘러보기 ▶", () => PlayCoach(CoachMarks.BuildTourPages, isTour: true)))));
+
+        body.Children.Add(SectionTitle("제거"));
+        body.Children.Add(Group(
+            Row("몽독 제거하기", "작업 표시줄·자동 숨김·알림 소리를 원래대로 돌리고 몽독을 끈 뒤, 윈도우의 앱 제거 화면을 열어요.",
+                ActionButton("몽독 제거하기…", () => _ = UninstallFlow.RunAsync(_services)))));
     }
 
     /// <summary>어셈블리 정보 버전 ("+커밋" 꼬리 제거). 없으면 어셈블리 버전.</summary>
