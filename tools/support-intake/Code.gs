@@ -4,7 +4,7 @@
  * mongdock@gmail.com 계정에서 배포: 실행 = 나, 액세스 = 모든 사용자. 앱에는 비밀번호가 들어가지 않는다.
  *
  * 요청 본문 (application/json):
- * { "token": "...", "clientId": "PC별 무작위 id", "kind": "bug|question|idea",
+ * { "token": "...", "clientId": "신고마다 새 무작위 번호 (PC 를 잇지 않음)", "kind": "bug|question|idea",
  *   "message": "사용자가 쓴 내용", "contact": "답장 받을 이메일(선택)",
  *   "appVersion": "0.4.2", "lang": "ko|en", "diagnostics": "개인정보를 가린 진단 정보" }
  */
@@ -34,7 +34,7 @@ function doPost(e) {
     if (contact && !/^[^\s@<>()"',;]+@[^\s@<>()"',;]+\.[^\s@<>()"',;]+$/.test(contact)) contact = '';
     contact = contact.substring(0, 254);
 
-    // 하루 한도 (PC별, 전체)
+    // 하루 한도 (번호별 — 앱이 신고마다 새 번호라 사실상 전체 한도만 의미, 앱도 하루 한도를 따로 셈)
     var cache = CacheService.getScriptCache();
     var day = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyyMMdd');
     var lock = LockService.getScriptLock();
@@ -56,7 +56,7 @@ function doPost(e) {
       '종류: ' + kind + '\n' +
       '버전: ' + version + '\n' +
       '답장 받을 주소: ' + (contact || '(없음 — 답장하지 않음)') + '\n' +
-      'PC id: ' + clientId + '\n' +
+      '신고 번호: ' + clientId + '\n' +
       '언어: ' + String(body.lang || 'ko').substring(0, 5) + '\n' +
       '\n── 내용 ──\n' + message + '\n' +
       '\n── 진단 정보 (앱이 개인정보를 가린 뒤 보냄) ──\n' + (diag || '(없음)') + '\n';

@@ -15,7 +15,7 @@
 코드를 고친 뒤에는 **배포 → 배포 관리 → 수정(연필) → 버전: 새 버전 → 배포** 로 같은 URL 을 유지한다.
 
 ## 동작
-- 앱이 보내는 JSON: `token`, `clientId`(PC별 무작위), `kind`(bug/question/idea), `message`, `contact`(선택), `appVersion`, `lang`, `diagnostics`(앱이 개인정보를 가린 뒤).
+- 앱이 보내는 JSON: `token`, `clientId`(신고마다 새 무작위 번호 — 메일에는 "신고 번호", PC 를 잇지 않음), `kind`(bug/question/idea), `message`, `contact`(선택), `appVersion`, `lang`, `diagnostics`(앱이 개인정보를 가린 뒤).
 - 하루 한도: PC 당 5건, 전체 80건(Gmail 일반 계정 Apps Script 발송 한도 100통 안쪽). 넘으면 429.
 - 답장 주소를 적은 신고만 `Reply-To` 가 붙어서, 지원 MCP 의 형식 답장이 그 사람에게 간다. 안 적었으면 답장하지 않는다(지원 MCP 가 자기 주소로는 답장을 거부).
 - `token` 은 비밀이 아니다(앱에 들어 있음). 아무나 막 보내는 걸 조금 거르는 용도이고, 실제 보호는 하루 한도다.
