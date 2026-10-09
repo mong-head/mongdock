@@ -103,6 +103,7 @@ public static class ReportService
         sb.AppendLine($"상단바: {(t.Enabled ? "켜짐" : "꺼짐")}, 높이 {t.Height:0}, 색 {t.ColorMode}, 모든 모니터 {OnOff(t.ShowOnAllMonitors)}, 앱 메뉴 {OnOff(t.ShowAppMenus)}, 원래 메뉴 막대 숨김 {OnOff(t.HideNativeMenuBars)}, 트레이 {OnOff(t.ShowTrayIcons)}, 검색 {t.SearchMode}, 자리 확보 {OnOff(t.ReserveSpace)}");
         var n = s.Notifications;
         sb.AppendLine($"알림: 배너 {OnOff(n.ShowNotificationBanners)}, 윈도우 알림 숨기기 {OnOff(n.HideWindowsToastPopups)}, 배터리 부족 알림 {OnOff(n.LowBatteryAlerts)}, 알림 소리 {(string.IsNullOrEmpty(n.Sound) ? "기본" : "바꿈")}");
+        sb.AppendLine($"백업: {(UpdateBackup.LatestLabel(AppInfo.DataDirectory) is { } bak ? $"있음({bak})" : "없음")}");
         sb.AppendLine($"기타: 작업 표시줄 숨기기 {OnOff(s.HideWindowsTaskbar)}, 성능 모드 {OnOff(s.PerformanceMode)}, 시작 시 실행 {OnOff(s.StartWithWindows)}, 업데이트 확인 {OnOff(s.CheckForUpdates)}, 글꼴 {(s.FontFamily == "Pretendard" ? "기본" : "바꿈")}");
 
         return ReportRedactor.Redact(sb.ToString(), ctx);
