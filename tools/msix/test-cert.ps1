@@ -22,7 +22,7 @@ $ErrorActionPreference = 'Stop'
 
 if ($Remove) {
     $thumbs = @(Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -eq $Subject -and $_.FriendlyName -like '*delete after test*' } | ForEach-Object { $_.Thumbprint })
-    foreach ($t in $thumbs) { Remove-Item "Cert:\CurrentUser\My\$t" }
+    foreach ($t in $thumbs) { Remove-Item "Cert:\CurrentUser\My\$t" -DeleteKey } # 개인 키 파일까지
     if ($thumbs.Count -gt 0) {
         $list = ($thumbs | ForEach-Object { "'$_'" }) -join ','
         Start-Process powershell.exe -Verb RunAs -Wait -ArgumentList "-NoProfile -Command foreach (`$t in @($list)) { Remove-Item Cert:\LocalMachine\TrustedPeople\`$t -ErrorAction SilentlyContinue }"
@@ -31,7 +31,7 @@ if ($Remove) {
     return
 }
 
-$cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -eq $Subject -and $_.NotAfter -gt (Get-Date) } | Select-Object -First 1
+$cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -eq $Subject -and $_.FriendlyName -like '*delete after test*' -and $_.NotAfter -gt (Get-Date) } | Select-Object -First 1
 if (-not $cert) {
     $cert = New-SelfSignedCertificate -Type Custom -Subject $Subject -KeyUsage DigitalSignature `
         -FriendlyName 'mongdock MSIX test (delete after test)' -CertStoreLocation Cert:\CurrentUser\My `
