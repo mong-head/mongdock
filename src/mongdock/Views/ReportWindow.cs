@@ -49,8 +49,11 @@ public sealed class ReportWindow : Window
     private readonly StackPanel _done;
     private readonly List<(Button Button, ReportKind Kind)> _kindButtons = new();
 
-    /// <summary>창 열기. 이미 열려 있으면 앞으로.</summary>
-    public static void Open(AppServices services)
+    /// <summary>미리 채울 내용 (오류 자동 신고 — Views/CrashPrompt). ErrorInfo 는 원문, 여기서 가린 뒤 진단 정보 맨 앞에 붙임.</summary>
+    public sealed record Prefill(ReportKind Kind, string Title, string Message, string? ErrorInfo);
+
+    /// <summary>창 열기. 이미 열려 있으면 앞으로 (prefill 은 새로 열 때만).</summary>
+    public static void Open(AppServices services, Prefill? prefill = null)
     {
         try
         {
@@ -64,7 +67,14 @@ public sealed class ReportWindow : Window
             var ctx = ReportRedactor.Context.Current(services.Windows.Windows.Select(x => x.Title));
             // 설정 요약은 지금 UI 스레드에서 (설정 객체는 UI 스레드에서 바뀜), 로그 읽기·가리기만 UI 밖에서
             string head = ReportService.BuildSystemInfo(settings, Monitors.GetAll(), TouchSupport.HasTouch, ctx);
+            if (prefill?.ErrorInfo is { Length: > 0 } error)
+            {
+                // 예외 메시지·스택에도 경로·창 제목이 들어갈 수 있어 로그와 똑같이 줄마다 가림
+                string redacted = string.Join("\n", error.Replace("\r\n", "\n").Split('\n').Select(l => ReportRedactor.RedactLog(l, ctx)));
+                head = redacted.TrimEnd() + "\n\n" + head;
+            }
             var win = new ReportWindow(settings, () => ReportService.EnsureClientId(services.Settings));
+            if (prefill is not null) win.SetPreviewState(prefill.Kind, prefill.Title, prefill.Message, "", detailsOpen: false);
             _instance = win;
             win.Show();
             win.Activate();

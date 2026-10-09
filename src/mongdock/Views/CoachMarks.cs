@@ -67,6 +67,9 @@ internal static class CoachMarks
     private static DispatcherTimer? _startupTimer;
     private static CoachSession? _session;
 
+    /// <summary>코치마크(둘러보기·새 기능)가 떠 있는지 — 다른 안내 카드가 겹치지 않게 (CrashPrompt).</summary>
+    internal static bool IsShowing => _session is not null;
+
     /// <summary>
     /// App 이 독·상단바를 만든 뒤 한 번. resolve = 앵커 → 화면 사각형(모니터 기준 DIP) + 모니터 (안 보이면 null).
     /// popupOpen = 상단바 패널·메뉴가 열려 있는지 (앵커를 눌러 연 것이 닫히면 말풍선을 다시 보여 주려고).

@@ -21,8 +21,11 @@ internal sealed class ConfirmCardWindow : Window
     private Action? _onCancel;
     /// <summary>[취소] 버튼으로 닫힘 (바깥 클릭·다른 창 활성화와 구분).</summary>
     private bool _cancelClicked;
+    /// <summary>아래 작은 글자 버튼(예: "다시 묻지 않기")으로 닫힘.</summary>
+    private bool _extraClicked;
 
-    public ConfirmCardWindow(AppServices services, UiPalette p, string title, string message, string confirmText, Action onConfirm, string cancelText = "취소")
+    public ConfirmCardWindow(AppServices services, UiPalette p, string title, string message, string confirmText, Action onConfirm,
+        string cancelText = "취소", string? extraText = null)
     {
         _onConfirm = onConfirm;
         WindowStyle = WindowStyle.None;
@@ -86,6 +89,25 @@ internal sealed class ConfirmCardWindow : Window
         buttons.Children.Add(cancel);
         buttons.Children.Add(ok);
         body.Children.Add(buttons);
+        if (extraText is not null)
+        {
+            var extra = new Button
+            {
+                Style = (Style)Application.Current.FindResource("CardLinkButton"),
+                Content = new TextBlock { Text = extraText, FontSize = 12, Foreground = p.SubText },
+                Foreground = p.Text,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 8, 0, -6),
+            };
+            extra.Click += (_, _) =>
+            {
+                Log.Info($"확인 카드 '{title}': {extraText}");
+                _extraClicked = true;
+                Close();
+            };
+            body.Children.Add(extra);
+        }
 
         _card = new Border
         {
@@ -146,6 +168,20 @@ internal sealed class ConfirmCardWindow : Window
         var p = UiTheme.Palette(services.Settings.Current);
         var card = new ConfirmCardWindow(services, p, title, message, confirmText, () => tcs.TrySetResult(true), cancelText);
         card._onCancel = () => tcs.TrySetResult(card._cancelClicked ? false : null);
+        card.Show();
+        return tcs.Task;
+    }
+
+    /// <summary>확인 · 취소 버튼 · 아래 작은 버튼(extraText) · 고르지 않고 닫힘.</summary>
+    public enum Choice { Confirm, Cancel, Extra, Dismissed }
+
+    /// <summary>버튼 둘 + 아래 작은 글자 버튼 하나("다시 묻지 않기" 등)인 카드.</summary>
+    public static Task<Choice> AskWithExtraAsync(AppServices services, string title, string message, string confirmText, string cancelText, string extraText)
+    {
+        var tcs = new TaskCompletionSource<Choice>();
+        var p = UiTheme.Palette(services.Settings.Current);
+        var card = new ConfirmCardWindow(services, p, title, message, confirmText, () => tcs.TrySetResult(Choice.Confirm), cancelText, extraText);
+        card._onCancel = () => tcs.TrySetResult(card._extraClicked ? Choice.Extra : card._cancelClicked ? Choice.Cancel : Choice.Dismissed);
         card.Show();
         return tcs.Task;
     }

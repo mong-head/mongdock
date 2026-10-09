@@ -17,6 +17,10 @@ public partial class App : Application
     /// <summary>모니터 장치 이름 → 그 모니터의 상단바 (ShowOnAllMonitors 면 모든 모니터, 아니면 주 모니터만).</summary>
     private readonly Dictionary<string, TopBarWindow> _topBars = new(StringComparer.OrdinalIgnoreCase);
     private bool _exiting;
+    /// <summary>이 프로세스가 세션 표시(CrashReporter)를 썼는지 — --exit·두 번째 실행처럼 곧 끝나는 프로세스가 지우지 않게.</summary>
+    private bool _sessionStarted;
+    /// <summary>지난 실행의 비정상 종료·오류 (다음 실행 때 물어봄, Views/CrashPrompt).</summary>
+    private CrashReporter.Pending? _crashPending;
     private TrayController? _tray;
     private SpotlightHotkeyController? _spotlightHotkey;
     private IDisposable? _banners;
@@ -76,6 +80,9 @@ public partial class App : Application
             Shutdown();
             return;
         }
+        // 오류 자동 신고: 지난 실행이 정상 종료됐는지 보고 이번 세션 표시를 씀 (가능한 한 일찍)
+        _crashPending = CrashReporter.BeginSession();
+        _sessionStarted = true;
         _resumeEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ResumeEventName);
         _resumeWait = ThreadPool.RegisterWaitForSingleObject(_resumeEvent,
             (_, _) => Dispatcher.BeginInvoke(ResumeFromSecondLaunch), null, Timeout.Infinite, executeOnlyOnce: false);
@@ -89,10 +96,14 @@ public partial class App : Application
 
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
             Log.Error("처리되지 않은 예외", args.ExceptionObject as Exception);
+            CrashReporter.Record("다른 스레드(종료)", args.ExceptionObject as Exception);
+        };
         TaskScheduler.UnobservedTaskException += (_, args) =>
         {
             Log.Error("관찰되지 않은 작업 예외", args.Exception);
+            CrashReporter.Record("작업(Task)", args.Exception);
             args.SetObserved();
         };
 
@@ -157,6 +168,9 @@ public partial class App : Application
         // 버전 업데이트 후 "새로운 기능" / 첫 설치 둘러보기 (독·상단바가 자리 잡은 뒤)
         CoachMarks.Init(_services, ResolveCoachAnchor,
             () => !_exiting && _topBars.TryGetValue("", out var bar) && bar.CoachPopupOpen());
+        // 지난 실행이 갑자기 꺼졌거나 오류가 있었으면 조용한 때에 "문제를 보낼까요?" (Views/CrashPrompt)
+        CrashPrompt.Schedule(_services, _crashPending);
+        CrashReporter.ScheduleTestCrash(Dispatcher); // MONGDOCK_TEST_CRASH 가 있을 때만 (개발 시험)
         // --tour: 첫 설치 둘러보기를 지금 설정 그대로 다시 보기 (확인·시연용)
         bool tour = Environment.GetCommandLineArgs().Any(a => string.Equals(a, "--tour", StringComparison.OrdinalIgnoreCase));
         CoachMarks.ScheduleStartup(settings.CreatedThisRun, forceTour: tour);
@@ -316,6 +330,7 @@ public partial class App : Application
     {
         // 독이 예외 하나로 사라지면 AppBar 영역만 남으므로, 기록하고 계속 실행한다.
         Log.Error("UI 스레드 예외", e.Exception);
+        CrashReporter.Record("UI 스레드", e.Exception);
         e.Handled = true;
     }
 
@@ -374,6 +389,7 @@ public partial class App : Application
         _exitWait?.Unregister(null);
         _exitEvent?.Dispose();
         _singleInstance?.Dispose();
+        if (_sessionStarted) CrashReporter.EndSession(); // 정상 종료 표시 (못 지우고 끝나면 다음 실행이 비정상 종료로 봄)
         base.OnExit(e);
     }
 }
