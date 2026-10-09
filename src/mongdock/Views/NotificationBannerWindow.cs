@@ -220,7 +220,9 @@ internal sealed class NotificationBannerWindow : Window
         if (asks)
         {
             // 카드 아래 버튼 줄 (오른쪽 정렬, 같은 폭)
-            card.Child = WrapWithButtons(card.Child, buttons!, entry);
+            var inner = card.Child;
+            card.Child = null; // 다른 패널에 넣기 전에 카드에서 떼어 냄 (논리 부모는 하나뿐)
+            card.Child = WrapWithButtons(inner, buttons!, entry);
         }
         shadowed.Children.Add(card);
         host.Children.Add(shadowed);
