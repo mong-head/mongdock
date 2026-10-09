@@ -99,6 +99,8 @@ public partial class App : Application
         var settings = new SettingsService();
         var tracker = new WindowTracker();
         var launcher = new AppLauncher(tracker);
+        // 스토어판은 시작 앱(StartupTask), 일반판은 Run 키
+        IStartupService startup = AppInfo.IsPackaged ? new PackagedStartupService() : new StartupService();
         _services = new AppServices(
             settings,
             tracker,
@@ -111,12 +113,13 @@ public partial class App : Application
             new StatusService(),
             new MediaService(),
             new AppMenuService(settings),
-            new StartupService(),
+            startup,
             new NotificationService(tracker, launcher),
             new TrayIconService(),
             new CalendarFeedService(settings));
 
         InitializePinsOnce(settings);
+        if (startup is PackagedStartupService packaged && packaged.Adopt(settings.Current)) settings.Save();
 
         tracker.Start();
         _services.Status.Start();
@@ -127,15 +130,16 @@ public partial class App : Application
         // 상단바 창들보다 먼저 구독 → 모니터가 분리되면 그 상단바가 이벤트를 처리하기 전에 닫힘
         _services.DesktopWindows.DisplayChanged += OnDisplayChanged;
         _services.Settings.SettingsChanged += OnSettingsChanged;
-        // 새 버전 확인 (상단바 로고 배지가 UpdateService.Instance 를 쓰므로 상단바보다 먼저)
-        _updates = new UpdateService(settings, () => AppState.Paused);
+        // 새 버전 확인 (상단바 로고 배지가 UpdateService.Instance 를 쓰므로 상단바보다 먼저).
+        // 스토어판은 스토어가 업데이트 → 만들지 않음 (Instance 가 null 이면 배지·메뉴 항목·정보 페이지 업데이트 영역이 모두 숨음)
+        if (!AppInfo.IsPackaged) _updates = new UpdateService(settings, () => AppState.Paused);
         SyncTopBars();
         _tray = new TrayController(_services);
         _spotlightHotkey = new SpotlightHotkeyController(_services);
         _banners = NotificationBannerWindow.Attach(_services);
-        _updateUi = UpdateUi.Attach(_services, _updates);
+        if (_updates is not null) _updateUi = UpdateUi.Attach(_services, _updates);
         _lowBattery = LowBatteryBanner.Attach(_services); // 배터리 20·10·5% 알림 (배너 호스트 다음)
-        _updates.Start(); // 1분 뒤 첫 확인, 이후 12시간마다
+        _updates?.Start(); // 1분 뒤 첫 확인, 이후 12시간마다
         _services.Notifications.Start();
         _toastSuppressor = new NativeToastSuppressor(_services.Notifications as NotificationService);
         AppState.Changed += OnPausedChanged;

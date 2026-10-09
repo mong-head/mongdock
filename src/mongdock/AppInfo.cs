@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using Microsoft.Win32;
 using Mongdock.Services;
 
@@ -11,6 +12,43 @@ public static class AppInfo
 
     private const string LegacyName = "MyDock";
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+
+    /// <summary>
+    /// MS 스토어(MSIX) 패키지로 실행 중인지 (GetCurrentPackageFullName 이 패키지 이름을 돌려줌).
+    /// 패키지면 시작 시 실행 = StartupTask(Services/PackagedStartupService), 자체 업데이트 없음(스토어가 업데이트).
+    /// </summary>
+    public static bool IsPackaged { get; } = DetectPackage();
+
+    private const int ERROR_INSUFFICIENT_BUFFER = 122;
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern int GetCurrentPackageFullName(ref uint packageFullNameLength, char[]? packageFullName);
+
+    private static bool DetectPackage()
+    {
+        try
+        {
+            uint length = 0;
+            int result = GetCurrentPackageFullName(ref length, null);
+            return result == ERROR_INSUFFICIENT_BUFFER || result == 0; // 패키지 없음 = APPMODEL_ERROR_NO_PACKAGE(15700)
+        }
+        catch (Exception)
+        {
+            return false; // API 없음 (Windows 8 미만)
+        }
+    }
+
+    /// <summary>설치 방식 (경로 없이 — 신고 진단용).</summary>
+    public static string InstallKind
+    {
+        get
+        {
+            if (IsPackaged) return "스토어 패키지";
+            string inno = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", Name);
+            return Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory).Equals(inno, StringComparison.OrdinalIgnoreCase)
+                ? "설치 프로그램" : "zip·개발 빌드";
+        }
+    }
 
     public static string DataDirectory { get; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), Name);
@@ -46,7 +84,8 @@ public static class AppInfo
             if (run?.GetValue(LegacyName) is string)
             {
                 run.DeleteValue(LegacyName, throwOnMissingValue: false);
-                run.SetValue(Name, $"\"{Environment.ProcessPath}\"");
+                // 스토어 패키지는 Run 키 대신 StartupTask (App 시작 때 PackagedStartupService.Adopt 가 이어받음)
+                if (!IsPackaged) run.SetValue(Name, $"\"{Environment.ProcessPath}\"");
                 note = (note is null ? "" : note + ", ") + "시작 프로그램 등록을 새 이름으로 변경";
             }
         }

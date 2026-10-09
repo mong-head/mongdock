@@ -133,6 +133,7 @@ internal sealed partial class SettingsWindow : Window
         _services.Settings.SettingsChanged += OnSettingsChanged;
         _services.Calendars.Changed += OnCalendarsChanged;
         _services.TrayIcons.Changed += OnTrayIconsChanged; // SettingsWindow.Tray.cs
+        _services.Startup.Changed += OnStartupChanged;
         SystemTheme.Changed += OnSystemThemeChanged;
         Closed += (_, _) =>
         {
@@ -141,6 +142,7 @@ internal sealed partial class SettingsWindow : Window
             _sliderTimer.Stop();
             _services.Settings.SettingsChanged -= OnSettingsChanged;
             _services.Calendars.Changed -= OnCalendarsChanged;
+            _services.Startup.Changed -= OnStartupChanged;
             StopTrayRefresh();
             StopFullscreenWait(); // SettingsWindow.Changelog.cs
             _relativeTimer?.Stop();
@@ -186,6 +188,10 @@ internal sealed partial class SettingsWindow : Window
     {
         if (_page == Page.Calendar && !_sliderDragging) QueueRebuild();
     }
+
+    /// <summary>시작 앱 등록이 (비동기로) 끝남 → 일반 페이지면 실제 상태로 다시 그림.</summary>
+    private void OnStartupChanged(object? sender, EventArgs e)
+        => Dispatcher.BeginInvoke(() => { if (_page == Page.General && !_closed) QueueRebuild(); });
 
     private void OnSystemThemeChanged(object? sender, EventArgs e)
         => Dispatcher.BeginInvoke(() => { if (IsLoaded) QueueRebuild(); });
@@ -351,18 +357,9 @@ internal sealed partial class SettingsWindow : Window
     private void BuildGeneral(Panel body)
     {
         var s = _services.Settings.Current;
-        bool startup;
-        try { startup = _services.Startup.IsEnabled; }
-        catch { startup = s.StartWithWindows; }
 
         body.Children.Add(Group(
-            Row("로그인 시 자동 실행", "Windows 에 로그인하면 mongdock 을 바로 켭니다.",
-                Toggle(startup, on => Commit(() =>
-                {
-                    // 트레이·독 메뉴(DockMenus.StartWithWindows)와 같은 처리: 레지스트리 등록 + 설정 저장
-                    _services.Startup.SetEnabled(on);
-                    _services.Settings.Current.StartWithWindows = on;
-                }))),
+            StartupRow(),
             Row("윈도우 작업 표시줄 숨기기", "mongdock 이 켜져 있는 동안만 숨깁니다. 일시 정지·종료 시 복원.",
                 Toggle(s.HideWindowsTaskbar, on => Commit(() => _services.Settings.Current.SetHideWindowsTaskbar(on))))));
 
@@ -1097,7 +1094,7 @@ internal sealed partial class SettingsWindow : Window
         head.Children.Add(AboutCoachLinks()); // SettingsWindow.Changelog.cs: 이 버전 둘러보기 ▶ · 변경 내역 보기 ›
         body.Children.Add(head);
 
-        BuildUpdateSection(body); // SettingsWindow.Update.cs
+        if (!AppInfo.IsPackaged) BuildUpdateSection(body); // SettingsWindow.Update.cs (스토어판은 스토어가 업데이트)
         body.Children.Add(SectionTitle("정보"));
 
         string folder = Path.GetDirectoryName(_services.Settings.SettingsPath) ?? AppInfo.DataDirectory;
@@ -1130,6 +1127,39 @@ internal sealed partial class SettingsWindow : Window
             return plus > 0 ? info[..plus] : info;
         }
         return asm.GetName().Version?.ToString(3) ?? "?";
+    }
+
+    /// <summary>
+    /// "로그인 시 자동 실행" 행. 토글 = 실제 등록 상태(일반판 Run 키 / 스토어판 StartupTask).
+    /// 스토어판에서 사용자가 윈도우 설정에서 껐거나(DisabledByUser) 회사 정책이면 앱이 바꿀 수 없음 → 토글 잠그고 안내(+ 시작 앱 설정 열기).
+    /// </summary>
+    private Grid StartupRow()
+    {
+        const string title = "로그인 시 자동 실행";
+        StartupState state;
+        try { state = _services.Startup.State; }
+        catch { state = _services.Settings.Current.StartWithWindows ? StartupState.Enabled : StartupState.Disabled; }
+
+        switch (state)
+        {
+            case StartupState.DisabledByUser:
+                return Row(title, "윈도우 설정 → 앱 → 시작 프로그램에서 꺼 두었어요. 거기서 mongdock 을 켜 주세요.",
+                    ActionButton("시작 앱 설정 열기", () => _services.Launcher.OpenFile(DockMenus.StartupAppsSettingsUri)));
+            case StartupState.DisabledByPolicy:
+            case StartupState.EnabledByPolicy:
+                var locked = Toggle(state == StartupState.EnabledByPolicy, _ => { });
+                locked.IsEnabled = false;
+                locked.Opacity = 0.45;
+                return Row(title, "회사(조직) 정책으로 정해져 있어 바꿀 수 없어요.", locked);
+            default:
+                return Row(title, "Windows 에 로그인하면 mongdock 을 바로 켭니다.",
+                    Toggle(state == StartupState.Enabled, on => Commit(() =>
+                    {
+                        // 트레이·독 메뉴(DockMenus.StartWithWindows)와 같은 처리: 등록 + 설정 저장
+                        _services.Startup.SetEnabled(on);
+                        _services.Settings.Current.StartWithWindows = on;
+                    })));
+        }
     }
 
     // ───────────────────────── 컨트롤 도우미 ─────────────────────────

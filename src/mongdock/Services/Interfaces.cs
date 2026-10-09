@@ -327,10 +327,32 @@ public interface IImeService
     void ToggleHangul();
 }
 
+/// <summary>로그인 시 자동 실행 상태. 스토어 패키지(StartupTask)만 사용자·정책이 끈 상태가 따로 있다.</summary>
+public enum StartupState
+{
+    Disabled,
+    Enabled,
+    /// <summary>사용자가 윈도우 설정 → 시작 앱(또는 작업 관리자)에서 끔. 앱이 다시 켤 수 없음 → 그 화면으로 안내.</summary>
+    DisabledByUser,
+    /// <summary>회사 정책으로 꺼짐 (바꿀 수 없음).</summary>
+    DisabledByPolicy,
+    /// <summary>회사 정책으로 켜짐 (끌 수 없음).</summary>
+    EnabledByPolicy,
+}
+
+/// <summary>
+/// 로그인 시 자동 실행. 일반판 = HKCU Run 키(Services/StartupService), 스토어판 = StartupTask(Services/PackagedStartupService).
+/// </summary>
 public interface IStartupService
 {
     bool IsEnabled { get; }
+    StartupState State { get; }
+    /// <summary>앱이 켜고 끌 수 있는 상태인지 (사용자·정책이 정한 상태면 false — 윈도우 설정에서 바꿔야 함).</summary>
+    bool CanChange { get; }
+    /// <summary>켜기/끄기. 스토어판은 비동기로 끝나고 <see cref="Changed"/> 를 올림 (일반판은 바로 끝나고 Changed 도 올림).</summary>
     void SetEnabled(bool enabled);
+    /// <summary>상태가 바뀜. UI 스레드가 아닐 수 있음.</summary>
+    event EventHandler? Changed;
 }
 
 /// <summary>

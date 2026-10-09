@@ -75,12 +75,24 @@ internal static class DockMenus
             top.ColorMode, v => Update(services, () => services.Settings.Current.TopBar.ColorMode = v));
     }
 
-    /// <summary>"로그인 시 자동 실행" (체크 = 실제 시작 프로그램 등록 상태). 등록/해제 + 설정 저장.</summary>
+    /// <summary>윈도우 설정 → 앱 → 시작 프로그램 (스토어판에서 사용자가 끈 시작 앱은 여기서만 다시 켤 수 있음).</summary>
+    public const string StartupAppsSettingsUri = "ms-settings:startupapps";
+
+    /// <summary>
+    /// "로그인 시 자동 실행" (체크 = 실제 등록 상태). 등록/해제 + 설정 저장.
+    /// 스토어판에서 사용자가 윈도우 설정에서 껐으면 앱이 켤 수 없음 → 시작 앱 설정을 여는 항목, 정책이면 회색.
+    /// </summary>
     public static MenuItem StartWithWindows(AppServices services)
     {
-        bool on;
-        try { on = services.Startup.IsEnabled; }
-        catch { on = services.Settings.Current.StartWithWindows; }
+        StartupState state;
+        try { state = services.Startup.State; }
+        catch { state = services.Settings.Current.StartWithWindows ? StartupState.Enabled : StartupState.Disabled; }
+        if (state == StartupState.DisabledByUser)
+            return Item("로그인 시 자동 실행 (윈도우 설정에서 켜기…)", () => services.Launcher.OpenFile(StartupAppsSettingsUri));
+        if (state is StartupState.DisabledByPolicy or StartupState.EnabledByPolicy)
+            return Item("로그인 시 자동 실행", () => { }, enabled: false, isChecked: state == StartupState.EnabledByPolicy);
+
+        bool on = state == StartupState.Enabled;
         return Item("로그인 시 자동 실행", () =>
         {
             bool next = !on;

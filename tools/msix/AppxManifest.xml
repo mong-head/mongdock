@@ -4,7 +4,8 @@
   - runFullTrust: 일반 Win32 데스크톱 앱(WPF)으로 실행.
   - unvirtualizedResources + desktop6:*WriteVirtualization=disabled: %APPDATA%·HKCU 쓰기를 패키지 전용 공간으로 돌리지 않는다.
     (몽독은 %APPDATA%\mongdock 설정, 야간 모드·알림 소리 같은 실제 윈도우 설정을 써야 한다.)
-  - 실행 별칭 mongdock.exe: 명령줄(종료 옵션 등)·시작 시 실행에서 쓴다. (XML 주석 안에는 하이픈 두 개를 쓸 수 없음)
+  - 실행 별칭 mongdock.exe: 명령줄(종료 옵션 등)에서 쓴다. (XML 주석 안에는 하이픈 두 개를 쓸 수 없음)
+  - 시작 앱(StartupTask) mongdockStartup: 처음엔 꺼짐. 앱이 사용자 설정(로그인 시 자동 실행)을 보고 켬 (Services/PackagedStartupService).
 -->
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
@@ -49,6 +50,9 @@
             <desktop:ExecutionAlias Alias="mongdock.exe" />
           </uap3:AppExecutionAlias>
         </uap3:Extension>
+        <desktop:Extension Category="windows.startupTask" Executable="mongdock.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="mongdockStartup" Enabled="false" DisplayName="mongdock" />
+        </desktop:Extension>
       </Extensions>
     </Application>
   </Applications>

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 시작 시 실행·설치 방식 판별 시험 (일반판 Run 키 퇴행, 패키지 아닐 때 스토어판 서비스가 안전한지).
+       앱 코드를 참조만 함 — mongdock.sln 에 넣지 않음. 외부 NuGet 없음. 사용법은 README.md -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <AssemblyName>startup-test</AssemblyName>
+    <RootNamespace>StartupTest</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\mongdock\mongdock.csproj" />
+  </ItemGroup>
+
+</Project>

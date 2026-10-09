@@ -82,7 +82,7 @@ public static class ReportService
     public static string BuildSystemInfo(Settings s, IEnumerable<MonitorInfo> monitors, bool hasTouch, ReportRedactor.Context ctx)
     {
         var sb = new StringBuilder();
-        sb.AppendLine($"앱: mongdock {AppVersion()} ({InstallKind()})");
+        sb.AppendLine($"앱: mongdock {AppVersion()} ({AppInfo.InstallKind})");
         sb.AppendLine($"윈도우: {WindowsVersion()}");
         sb.AppendLine($"언어: {CultureInfo.CurrentUICulture.Name}");
 
@@ -124,16 +124,6 @@ public static class ReportService
     }
 
     private static string OnOff(bool on) => on ? "켬" : "끔";
-
-    /// <summary>설치 방식 (경로는 보내지 않음).</summary>
-    private static string InstallKind()
-    {
-        string dir = AppContext.BaseDirectory;
-        if (dir.Contains(@"\WindowsApps\", StringComparison.OrdinalIgnoreCase)) return "스토어 패키지";
-        string inno = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", AppInfo.Name);
-        if (Path.TrimEndingDirectorySeparator(dir).Equals(inno, StringComparison.OrdinalIgnoreCase)) return "설치 프로그램";
-        return "zip·개발 빌드";
-    }
 
     /// <summary>예 "Windows 11 Home 24H2 (26200.6584)". ProductName 은 11 에서도 "Windows 10" 이라 빌드 번호로 고침.</summary>
     private static string WindowsVersion()
