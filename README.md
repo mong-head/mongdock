@@ -118,7 +118,7 @@ zip 은 self-contained 단일 파일(`dist\mongdock-portable`), setup 은 framew
 - **순서 바꾸기**: 아이콘(과 구분선)을 끌어서 옮긴다. 실행 중인 앱 아이콘을 고정 영역으로 끌어 놓으면 그 자리에 고정
 - **제거**: 고정 아이콘을 독 밖으로 끌어내 "제거" 가 보일 때 놓는다. 끄는 중 오른쪽 클릭(또는 Esc)이면 취소
 - **파일로 고정**: 탐색기·바탕화면의 앱(.exe), 바로 가기(.lnk), 인터넷 바로 가기(.url), 폴더를 독에 끌어 놓으면 그 자리에 고정
-- 동작: **항상 보이기(공간 차지)**(기본) / 자동 숨김(가장자리에 마우스를 대면 나타남) / 항상 표시(창 위에 겹침)
+- 동작: **자동 숨김**(기본, 독 쪽 화면 끝에 마우스를 대면 나타남) / 항상 보이기(창 위에 겹침). 예전 "공간 차지"는 v0.5 에서 없어졌고, 쓰던 설정은 항상 보이기로 바뀐다
 - 반투명 블러 배경, 라이트 / 다크 / 시스템 테마, 맥처럼 주변 아이콘이 함께 커지는 확대
 - 모든 아이콘을 macOS 규격(같은 크기·여백·둥근 사각형·그림자)으로 맞춤. 윈도우 앱은 흰 판 위에 표시
 - 알림은 바운스 없이 작은 빨간 점
@@ -172,7 +172,7 @@ zip 으로 썼다면:
 
 | 항목 | 예 |
 |---|---|
-| 독 위치·동작·크기·테마 | `dock.edge` (기본 `Bottom`), `dock.mode` (기본 `Reserve` = 항상 보이고 공간 차지), `dock.iconSize`, `dock.hoverScale`, `dock.theme`, `dock.launchAnimation` (앱 켤 때: 기본 `Bounce`, `Blink`) |
+| 독 위치·동작·크기·테마 | `dock.edge` (기본 `Bottom`), `dock.mode` (기본 `AutoHide` = 자동 숨김, `Overlay` = 항상 보이기), `dock.iconSize`, `dock.hoverScale`, `dock.theme`, `dock.launchAnimation` (앱 켤 때: 기본 `Bounce`, `Blink`) |
 | 독 모니터 | `dock.monitor` — 장치 이름(예 `"\\\\.\\DISPLAY2"`), `""` 이면 주 모니터 |
 | 상단바 크기 | `topBar.height` (기본 26), `topBar.fontSize` (기본 13) |
 | 상단바 색·표시 항목 | `topBar.colorMode` (`Auto`(기본, 앱 색에 맞춤)/`Fixed`/`Transparent`/`Blur`), `topBar.background`, `topBar.showAppMenus` … |

@@ -71,12 +71,19 @@ public static class WhatsNew
         _ => null,
     };
 
+    /// <summary>둘러보기의 "독은 평소엔 숨어 있어요" 단계 (이 단계부터 독 고정을 풂).</summary>
+    public const string DockHideKey = "dockhide";
+
     /// <summary>첫 설치 둘러보기 — 현재 버전의 주요 기능 전부. 마지막 단계(settings)는 항상 마지막 카드.</summary>
     public static readonly IReadOnlyList<CoachStep> Tour =
     [
         new("", "dock", "여기가 독이에요",
             "자주 쓰는 앱은 오른쪽 클릭 → 독에 고정, 끌어서 순서를 바꿀 수 있어요.",
             CoachAnchor.Dock, s => s.Dock.Enabled),
+        // 자동 숨김(새 설치 기본값)일 때만: 이 카드가 보이는 동안 독이 실제로 한 번 숨는다 (CoachSession — DockState 고정 해제)
+        new("", DockHideKey, "독은 평소엔 숨어 있어요",
+            "마우스를 {dockedge} 끝에 대면 나타나요. 필요할 때만 꺼내 쓰면 화면을 넓게 쓸 수 있어요.",
+            CoachAnchor.Center, s => s.Dock.Enabled && s.Dock.Mode == DockMode.AutoHide),
         new("", "logo", "로고 메뉴",
             "몽독 설정·이 PC 정보·잠자기·다시 시작은 여기서 해요.",
             CoachAnchor.Logo, s => TopBarOn(s) && s.TopBar.ShowLogo),

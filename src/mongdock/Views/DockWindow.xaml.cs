@@ -16,7 +16,7 @@ namespace Mongdock.Views;
 /// 맥 스타일 독.
 /// - 이 창(투명 레이어드)은 아이콘·점·테두리·확대만 그리고, 크기는 "패널 + 확대 여유"뿐이다.
 /// - 블러 배경은 패널과 같은 위치·크기의 <see cref="DockBackdropWindow"/> (이 창의 owner → 항상 바로 아래).
-/// - 모드: AutoHide(가장자리에 커서가 닿으면 슬라이드 인) / Overlay(항상 보임) / Reserve(기본 두께만 공간 예약).
+/// - 모드: AutoHide(가장자리에 커서가 닿으면 슬라이드 인) / Overlay(항상 보임) 
 /// 포커스를 뺏지 않는다(MakeOverlay = WS_EX_NOACTIVATE).
 /// </summary>
 public partial class DockWindow : Window
@@ -48,10 +48,6 @@ public partial class DockWindow : Window
     private Rect _screen = new(0, 0, 1920, 1080);
     private Rect _shownRect;           // 보일 때의 이 창 위치 (DIP)
     private double _baseLength;        // 확대 전 패널 길이
-    private IEdgeReservation? _reservation;
-    private DockEdge _reservedEdge;
-    private double _reservedThickness;
-    private string _reservedMonitor = "";
 
     // 자동 숨김 / 슬라이드
     private readonly DispatcherTimer _pollTimer;
@@ -128,6 +124,7 @@ public partial class DockWindow : Window
         _services.DesktopWindows.FullscreenAppChanged += OnFullscreenChanged;
         SystemTheme.Changed += OnSystemThemeChanged;
         AppState.Changed += OnSettingsChanged; // 일시 정지/해제
+        DockState.CoachPinChanged += OnCoachPinChanged;
         _subscribed = true;
 
         ApplyAll();
@@ -149,9 +146,9 @@ public partial class DockWindow : Window
             _services.DesktopWindows.FullscreenAppChanged -= OnFullscreenChanged;
             SystemTheme.Changed -= OnSystemThemeChanged;
             AppState.Changed -= OnSettingsChanged;
+            DockState.CoachPinChanged -= OnCoachPinChanged;
             _subscribed = false;
         }
-        ReleaseReservation();
         DockState.VisiblePanel = Rect.Empty;
         _label?.Close();
         _ghost?.Close();
@@ -282,7 +279,6 @@ public partial class DockWindow : Window
         Root.Background = null;
         ApplyLayout();
         RefreshItems(rebuildViews: true, place: false);
-        UpdateReservation();
         Place();
         if (!DockActive)
         {
@@ -299,7 +295,7 @@ public partial class DockWindow : Window
 
     private bool _inactive;
 
-    /// <summary>독 끄기/일시 정지: 창 숨김, 예약 해제(UpdateReservation 에서), 폴링 정지, 열린 메뉴·패널 닫기.</summary>
+    /// <summary>독 끄기/일시 정지: 창 숨김, 폴링 정지, 열린 메뉴·패널 닫기.</summary>
     private void Deactivate()
     {
         _inactive = true;
@@ -363,76 +359,15 @@ public partial class DockWindow : Window
         _label?.SetColors(l.LabelBackground, l.LabelForeground, l.LabelBorder);
     }
 
-    // ───────────────────────── 공간 예약 / 위치 ─────────────────────────
-
-    private void UpdateReservation()
-    {
-        var l = _layout;
-        bool want = l.Mode == DockMode.Reserve && DockActive;
-        double t = l.ReserveThickness;
-        // 설정의 모니터 이름 그대로 넘김 — 분리되면 백엔드가 주 모니터에 두고, 다시 연결되면 스스로 복귀
-        string monitor = _services.Settings.Current.Dock.Monitor ?? "";
-        if (_reservation != null && (!want || _reservedEdge != l.Edge || Math.Abs(_reservedThickness - t) > 0.5
-                                     || !string.Equals(_reservedMonitor, monitor, StringComparison.OrdinalIgnoreCase)))
-            ReleaseReservation();
-
-        if (want && _reservation == null)
-        {
-            try
-            {
-                _reservation = _services.DesktopWindows.ReserveEdge(l.Edge, t, monitor);
-                _reservation.BoundsChanged += OnReservationBoundsChanged;
-                _reservedEdge = l.Edge;
-                _reservedThickness = t;
-                _reservedMonitor = monitor;
-            }
-            catch (Exception ex)
-            {
-                Log.Error("독 공간 예약 실패", ex);
-                _reservation = null;
-            }
-        }
-    }
-
-    private void ReleaseReservation()
-    {
-        if (_reservation == null) return;
-        _reservation.BoundsChanged -= OnReservationBoundsChanged;
-        try { _reservation.Dispose(); }
-        catch (Exception ex) { Log.Error("독 공간 예약 해제 실패", ex); }
-        _reservation = null;
-    }
-
-    private void OnReservationBoundsChanged(object? sender, EventArgs e) => Place();
+    // ───────────────────────── 위치 ─────────────────────────
 
     /// <summary>
-    /// 가장자리 기준선과 독 방향 범위. Reserve 는 예약 영역, 그 외는 작업 영역(상단바 아래).
-    /// forGhost 면 드래그 미리보기용(예약 영역이 없는 가장자리일 수 있으므로 작업 영역 + 자기 예약분).
+    /// 가장자리 기준선과 독 방향 범위: 작업 영역(상단바 아래). 독은 공간을 예약하지 않는다 (#17: "공간 차지" 모드 삭제).
+    /// forGhost 는 드래그 미리보기용 (지금은 같은 영역).
     /// </summary>
     private void GetFrame(DockEdge edge, bool forGhost, out double edgeLine, out double alongStart, out double alongEnd)
     {
-        Rect a;
-        var res = _reservation?.Bounds ?? Rect.Empty;
-        if (!forGhost && _layout.Mode == DockMode.Reserve && !res.IsEmpty && res.Width > 0 && res.Height > 0)
-        {
-            a = res;
-        }
-        else
-        {
-            a = GetPlacementArea();
-            if (forGhost && _reservation != null)
-            {
-                // 작업 영역에서 빠져 있는 독 자신의 예약 공간을 되돌림
-                double t = _reservedThickness;
-                a = _reservedEdge switch
-                {
-                    DockEdge.Left => new Rect(a.Left - t, a.Top, a.Width + t, a.Height),
-                    DockEdge.Right => new Rect(a.Left, a.Top, a.Width + t, a.Height),
-                    DockEdge.Top => new Rect(a.Left, a.Top - t, a.Width, a.Height + t),
-                    _ => new Rect(a.Left, a.Top, a.Width, a.Height + t),
-                };
-            }
-        }
+        Rect a = GetPlacementArea();
 
         edgeLine = edge switch
         {
@@ -624,9 +559,33 @@ public partial class DockWindow : Window
         }
     }
 
+    /// <summary>
+    /// 둘러보기 고정: 켜지면 자동 숨김 독을 바로(애니메이션 없이 — 말풍선이 곧바로 독을 가리켜야 함) 보이게,
+    /// 풀리면 커서가 독 위가 아니면 평소처럼 미끄러져 숨음 (둘러보기의 "독은 평소엔 숨어 있어요" 카드에서 한 번 보여 줌).
+    /// </summary>
+    private void OnCoachPinChanged()
+    {
+        if (_closed || _fullscreen || !DockActive || _layout.Mode != DockMode.AutoHide) return;
+        if (DockState.CoachPinned)
+        {
+            SetHidden(false, animate: false);
+            _lastInsideTicks = Environment.TickCount64;
+        }
+        else
+        {
+            _lastInsideTicks = 0; // 다음 폴링에서 커서가 독 밖이면 지연 없이 숨김
+        }
+    }
+
     private void OnPoll(object? sender, EventArgs e)
     {
         if (_closed || _fullscreen || _layout.Mode != DockMode.AutoHide) return;
+        if (DockState.CoachPinned)
+        {
+            if (_hideTo >= 1) SetHidden(false, animate: false);
+            _lastInsideTicks = Environment.TickCount64;
+            return;
+        }
         bool menuOpen = PanelBorder.ContextMenu?.IsOpen == true;
         if (_dragArmed || AnyItemDrag || menuOpen || _dialogOpen || _picker != null)
         {

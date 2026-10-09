@@ -44,9 +44,6 @@ public sealed class DockLayout
     /// <summary>패널의 가장자리 방향 두께 (아이콘 + 패딩*2 + 테두리).</summary>
     public double PanelCross => IconSize + Padding * 2 + 2;
 
-    /// <summary>Reserve 모드에서 예약할 두께 (확대 여유 제외).</summary>
-    public double ReserveThickness => Math.Ceiling(PanelCross + EdgeMargin);
-
     /// <summary>아이콘 창 두께: 패널 + 확대로 튀어나오는 부분 + 여유.</summary>
     public double WindowThickness => Math.Ceiling(EdgeMargin + PanelCross + IconSize * (HoverScale - 1) + 8);
 

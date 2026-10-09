@@ -23,6 +23,8 @@ internal sealed class CoachPage
     public string LinkText { get; init; } = "변경 내역 보기 ›";
     /// <summary>본문 아래 강조색 한 줄 (예 "시계를 눌러 보세요") — 앵커를 직접 눌러 보라는 안내.</summary>
     public string? Hint { get; init; }
+    /// <summary>이 단계부터 둘러보기의 독 고정을 풂 (자동 숨김 독이 실제로 숨는 것을 보여 줌).</summary>
+    public bool ReleaseDockPin { get; init; }
 }
 
 /// <summary>둘러보기가 끝난 이유 (설정 창이 다시 나타날 때 포커스를 가져갈지 정하는 데 씀).</summary>
@@ -260,14 +262,30 @@ internal static class CoachMarks
 
     // ───────────────────────── 카드 만들기 ─────────────────────────
 
-    private static bool AnchorVisible(CoachAnchor a) => a == CoachAnchor.Center || _resolve?.Invoke(a) is not null;
+    private static bool AnchorVisible(CoachAnchor a)
+    {
+        if (a == CoachAnchor.Center) return true;
+        // 자동 숨김 독은 지금 숨어 있어도 둘러보기가 고정해 보이게 하므로 보이는 것으로 봄 (CoachSession)
+        if (a == CoachAnchor.Dock && _services?.Settings.Current.Dock is { Enabled: true, Mode: DockMode.AutoHide } && !AppState.Paused) return true;
+        return _resolve?.Invoke(a) is not null;
+    }
 
     private static CoachPage ToPage(CoachStep step, Settings s) => new()
     {
         Title = step.Title,
-        Body = step.Body.Replace("{hotkey}", HotkeyPhrase(s)),
+        Body = step.Body.Replace("{hotkey}", HotkeyPhrase(s)).Replace("{dockedge}", DockEdgePhrase(s)),
         Anchor = step.Anchor,
+        ReleaseDockPin = step.Key == WhatsNew.DockHideKey,
         Hint = step.Title.Contains("눌러 보세요") || step.Body.Contains("눌러 보세요") ? null : PressHint(step.Anchor),
+    };
+
+    /// <summary>독 위치 쪽 화면 가장자리 ("화면 아래" / "화면 왼쪽" …).</summary>
+    private static string DockEdgePhrase(Settings s) => s.Dock.Edge switch
+    {
+        DockEdge.Left => "화면 왼쪽",
+        DockEdge.Right => "화면 오른쪽",
+        DockEdge.Top => "화면 위",
+        _ => "화면 아래",
     };
 
     /// <summary>앵커를 직접 눌러 보라는 짧은 안내 (상단바 요소만 — 독은 누르면 앱이 열려서 안내하지 않음).</summary>
@@ -597,6 +615,8 @@ internal sealed class CoachSession
             if (_index >= _pages.Count - 1) Close(markSeen: true, CoachEndReason.Completed);
         };
         _index = 0;
+        // 독을 가리키는 단계가 있으면 자동 숨김 독을 보이게 고정 (설정값은 그대로, Close 에서 반드시 풂)
+        if (_pages.Any(p => p.Anchor == CoachAnchor.Dock)) DockState.SetCoachPinned(true);
         ShowCurrent(animate: true);
     }
 
@@ -649,6 +669,7 @@ internal sealed class CoachSession
         }
 
         var current = _pages[_index];
+        if (current.ReleaseDockPin) DockState.SetCoachPinned(false);
         _ring?.Close();
         _ring = null;
         if (anchor is { } a)
@@ -760,6 +781,7 @@ internal sealed class CoachSession
     {
         if (_closed) return;
         _closed = true;
+        DockState.SetCoachPinned(false);
         _keepOnTop.Stop();
         _services.Windows.WindowActivated -= OnWindowActivated;
         _reposition.Stop();

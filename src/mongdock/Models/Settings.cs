@@ -12,7 +12,10 @@ public enum DockMode
     AutoHide,
     /// <summary>항상 보이고 창 위에 겹침. 공간 차지 없음.</summary>
     Overlay,
-    /// <summary>AppBar 로 독의 기본 두께만큼 공간 예약 (확대된 아이콘은 창 위로 겹쳐 그림).</summary>
+    /// <summary>
+    /// 옛 "공간 차지"(AppBar 로 독 두께만큼 예약). v0.5 에서 삭제 — 옛 settings.json 을 읽으려고 값만 남김,
+    /// 읽으면 SettingsService.Migrate 가 Overlay(항상 보이기)로 바꾼다.
+    /// </summary>
     Reserve,
 }
 
@@ -124,7 +127,8 @@ public sealed class DockSettings
     /// <summary>다른 가상 데스크톱의 창도 독에 표시(실행 중 점, 창 선택에 "데스크톱 N").</summary>
     public bool ShowWindowsFromAllDesktops { get; set; } = true;
     public DockEdge Edge { get; set; } = DockEdge.Bottom;
-    public DockMode Mode { get; set; } = DockMode.Reserve;
+    /// <summary>새 설치 기본값 = 자동 숨김 (v0.5). 예전 기본값(공간 차지)을 쓰던 사람은 이관으로 항상 보이기.</summary>
+    public DockMode Mode { get; set; } = DockMode.AutoHide;
     /// <summary>자동 숨김에서 마우스가 독을 벗어난 뒤 숨기까지 지연 (ms).</summary>
     public int AutoHideDelayMs { get; set; } = 500;
     public DockTheme Theme { get; set; } = DockTheme.System;
@@ -321,12 +325,12 @@ public sealed class CalendarSettings
 public sealed class Settings
 {
     /// <summary>settings.json 형식 버전. 이관은 파일에 적힌 버전이 이보다 낮을 때만 한 번 (SettingsService.Migrate).</summary>
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     /// <summary>
     /// 이 파일이 어느 형식까지 이관됐는지. 키가 없는 옛 파일은 0 으로 본다 (원본 JSON 으로 판단 — 속성 기본값과 무관).
     /// 1 이하: 옛 기본 색·상단바 32/14 를 새 기본값으로 바꾼 적 없음.
-    /// 2: topBar.showTrayIcons 기본값이 true 였음 (3 부터 false — 키 없이 작업 표시줄을 숨기던 사용자는 true 로 이관). 3: 현재.
+    /// 2: topBar.showTrayIcons 기본값이 true 였음 (3 부터 false — 키 없이 작업 표시줄을 숨기던 사용자는 true 로 이관). 3: 트레이 아이콘 이관 뒤. 4: 독 "공간 차지"(Reserve) 삭제 → Overlay 이관 뒤 (현재).
     /// </summary>
     public int SettingsVersion { get; set; } = CurrentVersion;
     public DockSettings Dock { get; set; } = new();

@@ -50,8 +50,17 @@ public static class AppInfo
         }
     }
 
+    /// <summary>
+    /// 설정·로그·캐시 폴더 (%APPDATA%\mongdock). 개발 시험용: 환경 변수 MONGDOCK_DATA_DIR 이 있으면 그 폴더
+    /// (빈 폴더로 "새 설치"를 흉내 낼 때 — 사용자 설정을 건드리지 않음. 이때는 옛 MyDock 이전도 하지 않음).
+    /// </summary>
     public static string DataDirectory { get; } =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), Name);
+        Environment.GetEnvironmentVariable(DataDirVariable) is { Length: > 0 } custom
+            ? Path.GetFullPath(custom)
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), Name);
+
+    private const string DataDirVariable = "MONGDOCK_DATA_DIR";
+    private static bool CustomDataDirectory => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(DataDirVariable));
 
     private static string LegacyDataDirectory { get; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), LegacyName);
@@ -63,6 +72,7 @@ public static class AppInfo
     public static void MigrateLegacyInstall()
     {
         string? note = null;
+        if (CustomDataDirectory) return; // 시험용 폴더: 옛 설치를 옮기거나 Run 키를 건드리지 않음
         try
         {
             if (!Directory.Exists(DataDirectory) && Directory.Exists(LegacyDataDirectory))

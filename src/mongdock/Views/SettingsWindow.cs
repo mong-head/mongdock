@@ -402,7 +402,7 @@ internal sealed partial class SettingsWindow : Window
                 v => Commit(() => D().Edge = v))),
             Row("모니터", "독을 둘 모니터. 연결이 끊기면 주 모니터에 표시됩니다.", MonitorDropdown(d.Monitor)),
             Row("동작", null, Segmented(d.Mode,
-                new[] { (DockMode.AutoHide, "자동 숨김"), (DockMode.Overlay, "항상 보이기"), (DockMode.Reserve, "공간 차지") },
+                new[] { (DockMode.AutoHide, "자동 숨김"), (DockMode.Overlay, "항상 보이기") },
                 v => Commit(() => D().Mode = v)))));
 
         body.Children.Add(Group(

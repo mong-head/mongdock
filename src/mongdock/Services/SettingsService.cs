@@ -143,6 +143,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
     /// 이전 버전 settings.json 을 새 형식으로 이관. 원본 JSON 을 검사한다 (속성 기본값과 헷갈리지 않게).
     /// 키 기반(몇 번이든 안전):
     /// - dock.reserveSpace: true → Mode=Reserve, false → Overlay (dock.mode 키가 이미 있으면 mode 우선)
+    /// - dock.mode=Reserve("공간 차지", v0.5 에서 삭제) → Overlay(항상 보이기) — 버전과 상관없이 매번
     /// 파일의 settingsVersion(없으면 0) 이 2 미만일 때만 한 번 (그 뒤 사용자가 같은 값을 골라도 다시 바꾸지 않음):
     /// - dock.background/borderColor/indicatorColor 가 이전 기본값과 정확히 같으면 "" (테마 기본값)
     /// - topBar.foreground 가 "#FFF2F2F2" 면 "", topBar.background 가 "#C0161618" 이면 새 기본값
@@ -162,13 +163,19 @@ public sealed class SettingsService : ISettingsService, IDisposable
             if (root.ValueKind != JsonValueKind.Object) return false;
             version = TryGetProp(root, "settingsVersion", out var ver) && ver.ValueKind == JsonValueKind.Number && ver.TryGetInt32(out int v) ? v : 0;
 
+            if (!TryGetProp(root, "dock", out _) && version < 4) s.Dock.Mode = DockMode.Reserve; // dock 항목 자체가 없는 옛 파일도 옛 기본값
             if (TryGetProp(root, "dock", out var dock) && dock.ValueKind == JsonValueKind.Object)
             {
-                if (TryGetProp(dock, "reserveSpace", out var rs) && rs.ValueKind is JsonValueKind.True or JsonValueKind.False
-                    && !TryGetProp(dock, "mode", out _))
+                bool hasMode = TryGetProp(dock, "mode", out _);
+                if (TryGetProp(dock, "reserveSpace", out var rs) && rs.ValueKind is JsonValueKind.True or JsonValueKind.False && !hasMode)
                 {
                     s.Dock.Mode = rs.GetBoolean() ? DockMode.Reserve : DockMode.Overlay;
                     notes.Add($"dock.reserveSpace={rs.GetBoolean()} → mode={s.Dock.Mode}");
+                }
+                else if (!hasMode && version < 4)
+                {
+                    // mode 키 없는 옛 파일 = 옛 기본값(공간 차지) → 아래에서 항상 보이기로 (새 기본값 자동 숨김으로 바뀌지 않게)
+                    s.Dock.Mode = DockMode.Reserve;
                 }
                 if (version < 2 && ResetIfOld(dock, "background", OldDockBackground)) { s.Dock.Background = ""; notes.Add("dock.background → \"\""); }
                 if (version < 2 && ResetIfOld(dock, "borderColor", OldDockBorder)) { s.Dock.BorderColor = ""; notes.Add("dock.borderColor → \"\""); }
@@ -204,6 +211,12 @@ public sealed class SettingsService : ISettingsService, IDisposable
         {
             Log.Error("설정 이관 검사 실패", ex);
             return false;
+        }
+        // 4: 독 "공간 차지"(Reserve) 삭제 → 항상 보이기. 버전과 상관없이 (settings.json 을 직접 고쳐 Reserve 로 둔 경우도)
+        if (s.Dock.Mode == DockMode.Reserve)
+        {
+            s.Dock.Mode = DockMode.Overlay;
+            notes.Add("dock.mode Reserve(공간 차지, 삭제됨) → Overlay(항상 보이기)");
         }
         if (version < Settings.CurrentVersion)
         {
@@ -380,6 +393,8 @@ public sealed class SettingsService : ISettingsService, IDisposable
             try
             {
                 loaded = Deserialize(text);
+                // 직접 편집으로 삭제된 "공간 차지"를 고른 경우 → 항상 보이기 (저장은 하지 않음 — 파일은 사용자 것)
+                if (loaded.Dock.Mode == DockMode.Reserve) loaded.Dock.Mode = DockMode.Overlay;
             }
             catch (Exception ex)
             {
