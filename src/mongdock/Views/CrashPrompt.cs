@@ -62,6 +62,13 @@ internal static class CrashPrompt
             switch (choice)
             {
                 case ConfirmCardWindow.Choice.Confirm:
+                    if (ReportWindow.IsOpen)
+                    {
+                        // 이미 쓰던 신고 창이 있으면 덮어쓰지 않음 — 기록을 남겨 다음 실행에 다시 물음
+                        ReportWindow.Open(services);
+                        Log.Info("오류 자동 신고: 신고 창이 이미 열려 있어 오류 정보는 다음에 다시");
+                        break;
+                    }
                     ReportWindow.Open(services, new ReportWindow.Prefill(
                         ReportKind.Bug,
                         crashed ? "갑자기 꺼짐 (자동)" : "오류 (자동)",

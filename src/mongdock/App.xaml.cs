@@ -91,6 +91,8 @@ public partial class App : Application
             (_, _) => Dispatcher.BeginInvoke(() =>
             {
                 Log.Info("종료 요청 받음 (--exit)");
+                // 설치 프로그램·업데이트가 기다리다(10초) 강제 종료해도 "갑자기 꺼졌어요" 가 뜨지 않게 미리 정상 종료 표시
+                if (_sessionStarted) CrashReporter.EndSession();
                 Shutdown();
             }), null, Timeout.Infinite, executeOnlyOnce: true);
 
@@ -337,8 +339,18 @@ public partial class App : Application
         e.Handled = true;
     }
 
+    /// <summary>윈도우 로그아웃·종료·재시작: 그 뒤 윈도우가 프로세스를 바로 끝낼 수 있어 정상 종료 표시를 먼저 지움.</summary>
+    protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
+    {
+        Log.Info($"윈도우 세션 끝 ({e.ReasonSessionEnding})");
+        if (_sessionStarted) CrashReporter.EndSession();
+        base.OnSessionEnding(e);
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
+        // 정상 종료 표시는 정리 작업 전에 (정리가 오래 걸려 강제 종료돼도 비정상 종료로 보지 않게)
+        if (_sessionStarted) CrashReporter.EndSession();
         if (_services is not null) Log.Info($"{AppInfo.Name} 종료");
         CoachMarks.CloseAll();
         // 트레이 아이콘을 내리고, 숨겨 둔 작업 표시줄을 복원한다.
@@ -393,7 +405,6 @@ public partial class App : Application
         _exitWait?.Unregister(null);
         _exitEvent?.Dispose();
         _singleInstance?.Dispose();
-        if (_sessionStarted) CrashReporter.EndSession(); // 정상 종료 표시 (못 지우고 끝나면 다음 실행이 비정상 종료로 봄)
         base.OnExit(e);
     }
 }
