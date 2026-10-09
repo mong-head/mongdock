@@ -1207,7 +1207,7 @@ internal sealed partial class SettingsWindow : Window
     /// </summary>
     private Grid StartupRow()
     {
-        const string title = "컴퓨터를 켜면 몽독도 켜기";
+        string title = Loc.T("컴퓨터를 켜면 몽독도 켜기");
         StartupState state;
         try { state = _services.Startup.State; }
         catch { state = _services.Settings.Current.StartWithWindows ? StartupState.Enabled : StartupState.Disabled; }

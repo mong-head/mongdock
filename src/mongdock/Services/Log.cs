@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Text;
 
@@ -24,7 +25,7 @@ public static class Log
     private static void Write(string level, string message, Exception? ex)
     {
         var sb = new StringBuilder();
-        sb.Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"))
+        sb.Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)) // 불기·다른 구분자 문화권에서도 같은 형식 (사용 통계 오류 세기가 읽음)
           .Append(' ').Append(level)
           .Append(" [").Append(Environment.CurrentManagedThreadId).Append("] ")
           .Append(message);

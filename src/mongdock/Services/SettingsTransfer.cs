@@ -35,7 +35,11 @@ public static class SettingsTransfer
 
     // ───────────────────────── 내보내기 ─────────────────────────
 
-    public static Manifest Export(string path, SettingsService settings, ICalendarFeedService calendars, bool includeCalendarUrls)
+    /// <summary>
+    /// 내보내기 준비: 지금 설정·캘린더 목록의 사본을 뜸 (UI 스레드 — 설정·구독 목록을 바꾸는 쪽과 같은 스레드).
+    /// 돌려준 함수가 파일을 씀 (백그라운드에서 불러도 됨).
+    /// </summary>
+    public static Func<Manifest> PrepareExport(string path, SettingsService settings, ICalendarFeedService calendars, bool includeCalendarUrls)
     {
         string iconsDir = Path.GetFullPath(settings.IconsDirectory);
         var s = SettingsService.ParseForImport(settings.ExportJson()); // 지금 설정의 사본
@@ -54,20 +58,36 @@ public static class SettingsTransfer
         var cals = calendars.Feeds.Select(f => new CalendarEntry(f.Name, f.Color, f.Enabled, includeCalendarUrls && f.Url.Length > 0 ? f.Url : null)).ToList();
         var manifest = new Manifest(Format, FormatVersion, ReportService.AppVersion(), DateTime.Now, includeCalendarUrls && cals.Any(c => c.Url is not null),
             s.Pins.Count, cals.Count, icons.Count);
+        string settingsJson = JsonSerializer.Serialize(s, Json), calsJson = JsonSerializer.Serialize(cals, Json);
 
-        string tmp = path + ".tmp";
-        if (File.Exists(tmp)) File.Delete(tmp);
-        using (var zip = ZipFile.Open(tmp, ZipArchiveMode.Create))
+        return () =>
         {
-            WriteEntry(zip, "manifest.json", JsonSerializer.Serialize(manifest, Json));
-            WriteEntry(zip, "settings.json", JsonSerializer.Serialize(s, Json));
-            WriteEntry(zip, "calendars.json", JsonSerializer.Serialize(cals, Json));
-            foreach (string icon in icons) zip.CreateEntryFromFile(icon, "icons/" + Path.GetFileName(icon));
-        }
-        File.Move(tmp, path, overwrite: true);
-        Log.Info($"설정 내보내기: 독 앱 {manifest.PinCount}개, 아이콘 {manifest.IconCount}개, 캘린더 {manifest.CalendarCount}개 (주소 {(manifest.IncludesCalendarUrls ? "포함" : "뺌")})");
-        return manifest;
+            string tmp = path + ".tmp";
+            try
+            {
+                if (File.Exists(tmp)) File.Delete(tmp);
+                using (var zip = ZipFile.Open(tmp, ZipArchiveMode.Create))
+                {
+                    WriteEntry(zip, "manifest.json", JsonSerializer.Serialize(manifest, Json));
+                    WriteEntry(zip, "settings.json", settingsJson);
+                    WriteEntry(zip, "calendars.json", calsJson);
+                    foreach (string icon in icons) zip.CreateEntryFromFile(icon, "icons/" + Path.GetFileName(icon));
+                }
+                File.Move(tmp, path, overwrite: true);
+            }
+            catch
+            {
+                try { File.Delete(tmp); } catch { /* 지우기 실패는 무시 */ }
+                throw;
+            }
+            Log.Info($"설정 내보내기: 독 앱 {manifest.PinCount}개, 아이콘 {manifest.IconCount}개, 캘린더 {manifest.CalendarCount}개 (주소 {(manifest.IncludesCalendarUrls ? "포함" : "뺌")})");
+            return manifest;
+        };
     }
+
+    /// <summary>가져올 수 있는 아이콘 파일 (그림만, 하나에 5MB 까지).</summary>
+    private static readonly HashSet<string> IconExtensions = new(StringComparer.OrdinalIgnoreCase) { ".png", ".ico", ".jpg", ".jpeg", ".bmp", ".gif", ".webp" };
+    private const long MaxIconBytes = 5 * 1024 * 1024;
 
     // ───────────────────────── 가져오기 ─────────────────────────
 
@@ -107,10 +127,23 @@ public static class SettingsTransfer
             imported = SettingsService.ParseForImport(ReadText(zip, "settings.json") ?? throw new InvalidDataException(Loc.T("설정이 들어 있지 않아요.")));
             cals = ReadJson<List<CalendarEntry>>(zip, "calendars.json") ?? new List<CalendarEntry>();
             Directory.CreateDirectory(iconsDir);
+            string iconsBackup = iconsDir + suffix;
             foreach (var entry in zip.Entries.Where(e => e.FullName.StartsWith("icons/", StringComparison.Ordinal) && e.Name.Length > 0))
             {
                 string name = Path.GetFileName(entry.Name); // 경로 조각 무시 (zip 경로 탈출 방지)
-                entry.ExtractToFile(Path.Combine(iconsDir, name), overwrite: true);
+                if (!IconExtensions.Contains(Path.GetExtension(name)) || entry.Length > MaxIconBytes)
+                {
+                    Log.Warn($"설정 가져오기: 그림이 아니거나 너무 큰 아이콘 건너뜀 ({entry.Length} 바이트)");
+                    continue;
+                }
+                string dest = Path.Combine(iconsDir, name);
+                if (File.Exists(dest))
+                {
+                    // 같은 이름 아이콘은 덮기 전에 icons.bak-import-… 폴더로 (settings.json 백업으로 되돌릴 때 같이 쓰게)
+                    Directory.CreateDirectory(iconsBackup);
+                    File.Copy(dest, Path.Combine(iconsBackup, name), overwrite: true);
+                }
+                entry.ExtractToFile(dest, overwrite: true);
                 icons++;
             }
         }

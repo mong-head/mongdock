@@ -79,7 +79,7 @@ function doGet(e) {
 // 앱(Services/UsageStatsService.cs)이 { token, type:"stats", days:[ {하루치}, ... 최대 7개 ] } 를 보냄.
 // PC 번호·이름·IP 는 없다(Apps Script 는 IP 를 모름). 아래 STATS_COLUMNS 에 있는 칸만 시트에 남기고 나머지는 버린다.
 
-var MAX_STATS_ROWS_PER_DAY = 20000; // 하루 전체 상한 (막 보내는 것 거르기)
+var MAX_STATS_ROWS_PER_6H = 20000; // 6시간 전체 상한 (막 보내는 것 거르기 — CacheService 는 최대 6시간까지만 기억)
 var STATS_SHEET_PROP = 'STATS_SHEET_ID';
 
 // [칸 이름, 검사 함수] — 검사에 걸리면 그 칸은 빈칸
@@ -119,11 +119,14 @@ function handleStats_(body) {
     STATS_COLUMNS.forEach(function (c) {
       var v = c[1](d[c[0]]);
       if (v === null || v === undefined) v = '';
-      // 버전·빌드는 시트가 숫자로 바꾸지 않게 글자로 ("1.0" → 1 방지)
-      else if (c[0] === 'appVersion' || c[0] === 'build') v = "'" + v;
+      // 날짜·버전·빌드는 시트가 날짜/숫자로 바꾸지 않게 글자로 ("1.0" → 1, 시트 시간대로 날짜가 밀리는 것 방지)
+      else if (c[0] === 'date' || c[0] === 'appVersion' || c[0] === 'build') v = "'" + v;
       row.push(v);
     });
-    if (row[1] !== '') rows.push(row); // 날짜 없는 건 버림
+    if (row[1] === '') return; // 날짜 없는 건 버림
+    // 같은 하루치를 다시 보낸 것(앱이 응답 시간 초과로 실패한 뒤 재전송)은 한 번만. nonce 는 시트에 남기지 않음
+    var nonce = typeof d.nonce === 'string' && /^[0-9a-f]{32}$/.test(d.nonce) ? d.nonce : null;
+    rows.push({ row: row, nonce: nonce });
   });
   if (rows.length === 0) return reply_(400, 'no valid days');
 
@@ -131,12 +134,16 @@ function handleStats_(body) {
   lock.waitLock(10000);
   try {
     var cache = CacheService.getScriptCache();
-    var key = 's:' + Utilities.formatDate(received, 'Asia/Seoul', 'yyyyMMdd');
-    var n = Number(cache.get(key) || 0);
-    if (n + rows.length > MAX_STATS_ROWS_PER_DAY) return reply_(429, 'daily limit');
-    cache.put(key, String(n + rows.length), 21600);
-    var sheet = statsSheet_();
-    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+    var fresh = rows.filter(function (r) { return !r.nonce || !cache.get('n:' + r.nonce); }).map(function (r) { return r.row; });
+    if (fresh.length > 0) {
+      var key = 's:' + Math.floor(received.getTime() / 21600000); // 6시간 칸
+      var n = Number(cache.get(key) || 0);
+      if (n + fresh.length > MAX_STATS_ROWS_PER_6H) return reply_(429, 'limit');
+      var sheet = statsSheet_();
+      sheet.getRange(sheet.getLastRow() + 1, 1, fresh.length, fresh[0].length).setValues(fresh);
+      cache.put(key, String(n + fresh.length), 21600);
+    }
+    rows.forEach(function (r) { if (r.nonce) cache.put('n:' + r.nonce, '1', 21600); });
   } finally {
     lock.releaseLock();
   }
@@ -147,9 +154,9 @@ function handleStats_(body) {
 function statsSheet_() {
   var props = PropertiesService.getScriptProperties();
   var id = props.getProperty(STATS_SHEET_PROP);
-  if (id) {
-    try { return SpreadsheetApp.openById(id).getSheets()[0]; } catch (err) { /* 지워졌으면 새로 */ }
-  }
+  // 한 번 만든 뒤에는 열기 실패(일시적 드라이브 오류 등)에 새로 만들지 않음 → 예외 → 500 → 앱이 나중에 다시 보냄.
+  // 시트를 일부러 지웠으면 스크립트 속성 STATS_SHEET_ID 를 지우면 다음 신호 때 새로 만든다.
+  if (id) return SpreadsheetApp.openById(id).getSheets()[0];
   var ss = SpreadsheetApp.create('mongdock-stats');
   var sheet = ss.getSheets()[0];
   sheet.setName('stats');

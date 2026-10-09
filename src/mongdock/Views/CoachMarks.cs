@@ -335,8 +335,13 @@ internal static class CoachMarks
         NextText = step.Key == WhatsNew.IntroKey ? Loc.T("좋아요") : null,
         Action = step.Key == WhatsNew.IntroKey ? (Loc.T("작업 표시줄 다시 보이기"), ShowWindowsTaskbarAgain) : null,
         AdvanceOnUse = step.Key == WhatsNew.SearchKey,
-        Hint = step.Title.Contains(Loc.T("눌러 보세요")) || step.Body.Contains(Loc.T("눌러 보세요")) ? null : PressHint(step.Anchor),
+        Hint = HasPressPrompt(step.Title) || HasPressPrompt(step.Body) ? null : PressHint(step.Anchor),
     };
+
+    /// <summary>카드 글에 이미 "눌러 보세요"(영어 "Click …"/"Try it") 가 있으면 아래 힌트 줄을 또 붙이지 않음.</summary>
+    private static bool HasPressPrompt(string text) => Loc.IsEnglish
+        ? text.StartsWith("Click ", StringComparison.Ordinal) || text.Contains("Try it", StringComparison.Ordinal) || text.Contains("Try clicking", StringComparison.Ordinal)
+        : text.Contains("눌러 보세요", StringComparison.Ordinal);
 
     /// <summary>둘러보기 [허용하기]: 윈도우 허락 창 → 허용되면 알림을 공식 API 로 다시 읽기 시작.</summary>
     private static async Task AllowNotificationsAsync(AppServices services)

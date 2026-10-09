@@ -350,7 +350,11 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
+            // 스토어판 실행 별칭(mongdock.exe)을 윈도우 설정에서 껐을 때 등 → 아무 반응 없이 끝나지 않게 직접 다시 켜 달라고 안내
             Log.Error("다시 시작 실패", ex);
+            if (Current is App { _services: { } services })
+                ConfirmCardWindow.Ask(services, Loc.T("다시 시작하지 못했어요"), Loc.T("몽독을 끈 뒤 시작 메뉴에서 다시 켜 주세요."),
+                    Loc.T("지금 끄기"), () => Current.Shutdown());
         }
     }
 

@@ -131,10 +131,14 @@ public partial class TopBarWindow : Window
     {
         string fmt = t.ClockFormat;
         if (!string.IsNullOrWhiteSpace(fmt) && fmt != DefaultClockFormat) return fmt;
-        string time;
-        try { time = CultureInfo.CurrentCulture.DateTimeFormat.ShortTimePattern; }
-        catch { time = "tt h:mm"; }
-        if (string.IsNullOrWhiteSpace(time)) time = "tt h:mm";
+        // 12/24시간·앞자리 0 은 윈도우 지역 설정을 따르고, 오전/오후 위치는 화면 언어대로 (한국 지역 + 영어 화면 → "7:50 PM")
+        string pattern;
+        try { pattern = CultureInfo.CurrentCulture.DateTimeFormat.ShortTimePattern; }
+        catch { pattern = "tt h:mm"; }
+        if (string.IsNullOrWhiteSpace(pattern)) pattern = "tt h:mm";
+        bool h24 = pattern.Contains('H'), pad = pattern.Contains(h24 ? "HH" : "hh");
+        string hm = (h24 ? (pad ? "HH" : "H") : (pad ? "hh" : "h")) + ":mm";
+        string time = h24 ? hm : Loc.IsEnglish ? hm + " tt" : "tt " + hm;
         // 영어: 맥처럼 "Thu Oct 9  7:50 PM" (날짜 서식은 번역 사전이 아니라 여기서)
         return !t.ShowClockDate ? time : Loc.IsEnglish ? "ddd MMM d  " + time : "M월 d일 (ddd) " + time;
     }

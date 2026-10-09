@@ -140,8 +140,8 @@ internal static class Program
             cals.List.Add(new Mongdock.Models.CalendarFeed { Name = "회사", Url = "https://example.com/private/secret.ics", Color = "#FF3B30" });
 
             string noUrl = Path.Combine(root, "a.mongdock"), withUrl = Path.Combine(root, "b.mongdock");
-            SettingsTransfer.Export(noUrl, settings, cals, includeCalendarUrls: false);
-            SettingsTransfer.Export(withUrl, settings, cals, includeCalendarUrls: true);
+            SettingsTransfer.PrepareExport(noUrl, settings, cals, includeCalendarUrls: false)();
+            SettingsTransfer.PrepareExport(withUrl, settings, cals, includeCalendarUrls: true)();
             var p1 = SettingsTransfer.ReadPreview(noUrl);
             Check("미리 보기 독 앱 수", p1.PinNames.Count, 2);
             Check("미리 보기 아이콘 수", p1.Manifest.IconCount, 1);

@@ -462,6 +462,13 @@ public sealed class SettingsService : ISettingsService, IDisposable
         imported.TaskbarPinsImported = cur.TaskbarPinsImported;
         imported.TaskbarPinImportRequested = false;
         imported.ImportedFromMyDockFinder = cur.ImportedFromMyDockFinder;
+        // 이 PC 사람이 정한 것: 사용 통계 동의(가져온 파일이 옛 버전이면 키가 없어 기본 true 로 되살아남), 화면 언어(다시 시작해야 반영),
+        // 크래시 안내 끔, 처음 쓰기 힌트 기록
+        imported.SendUsageStats = cur.SendUsageStats;
+        imported.Language = cur.Language;
+        imported.CrashPromptDisabled = cur.CrashPromptDisabled;
+        imported.FirstUseHintsPending = cur.FirstUseHintsPending;
+        imported.SeenHints = cur.SeenHints.ToList();
         imported.SettingsVersion = Settings.CurrentVersion;
         lock (_gate) CopyInto(imported, cur);
         Save();

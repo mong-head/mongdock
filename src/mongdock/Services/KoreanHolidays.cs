@@ -107,7 +107,7 @@ public static class KoreanHolidays
                 do cursor = cursor.AddDays(1);
                 while (result.ContainsKey(cursor) || cursor.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday);
                 if (cursor.Year != year) break; // 연말 넘어가면 다음 해 계산에 맡기지 않고 생략 (성탄절이 최대 12/28 이라 실제로는 없음)
-                result[cursor] = SubstituteName;
+                result[cursor] = Loc.T(SubstituteName);
             }
         }
         return result;

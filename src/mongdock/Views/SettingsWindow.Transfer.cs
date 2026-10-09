@@ -65,7 +65,8 @@ internal sealed partial class SettingsWindow
             };
             if (dialog.ShowDialog(this) != true) return;
             _transferBusy = true;
-            var m = await Task.Run(() => SettingsTransfer.Export(dialog.FileName, settings, _services.Calendars, includeUrls));
+            var write = SettingsTransfer.PrepareExport(dialog.FileName, settings, _services.Calendars, includeUrls); // 사본은 UI 스레드에서
+            var m = await Task.Run(write);
             ShowTransferMessage(Loc.F($"내보냈어요: {Path.GetFileName(dialog.FileName)} — 독 앱 {m.PinCount}개, 아이콘 {m.IconCount}개, 캘린더 {m.CalendarCount}개") +
                                 (m.CalendarCount > 0 ? (m.IncludesCalendarUrls ? Loc.T(" (주소 포함 — 파일을 조심히 다뤄 주세요)") : Loc.T(" (주소 뺌)")) : ""));
         }

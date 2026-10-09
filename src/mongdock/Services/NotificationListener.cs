@@ -55,11 +55,23 @@ internal static class NotificationListener
     /// <summary>읽은 토스트 하나 (글자만 — 사진·태그는 DB 로 보강).</summary>
     internal sealed record Toast(uint Id, string Aumid, DateTime ArrivalUtc, string? Title, IReadOnlyList<string> Lines);
 
-    /// <summary>지금 알림 센터의 토스트 (백그라운드 스레드에서). 접근이 없거나 실패하면 예외.</summary>
-    public static List<Toast> Read()
+    /// <summary>
+    /// 지금 알림 센터의 토스트 (백그라운드 스레드에서). 접근이 없거나 실패·5초 넘게 응답 없으면 예외.
+    /// unchanged(최대 Id, 개수, 최근 도착 Ticks) 가 true 면 글자를 꺼내지 않고 null (4초 폴링을 가볍게).
+    /// </summary>
+    public static List<Toast>? Read(Func<(long, long, long), bool> unchanged)
     {
+        var items = UserNotificationListener.Current.GetNotificationsAsync(NotificationKinds.Toast).AsTask()
+            .WaitAsync(TimeSpan.FromSeconds(5)).GetAwaiter().GetResult();
+        long maxId = 0, maxTicks = 0;
+        foreach (var n in items)
+        {
+            maxId = Math.Max(maxId, n.Id);
+            maxTicks = Math.Max(maxTicks, n.CreationTime.UtcTicks);
+        }
+        if (unchanged((maxId, items.Count, maxTicks))) return null;
+
         var list = new List<Toast>();
-        var items = UserNotificationListener.Current.GetNotificationsAsync(NotificationKinds.Toast).AsTask().GetAwaiter().GetResult();
         foreach (var n in items)
         {
             try

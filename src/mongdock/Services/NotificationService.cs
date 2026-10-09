@@ -73,6 +73,11 @@ public sealed class NotificationService : INotificationService, IDisposable
     private bool _loggedFailure;
     /// <summary>스토어판에서 윈도우 알림 접근이 허용돼 목록을 UserNotificationListener 로 읽는 중.</summary>
     private volatile bool _listener;
+    /// <summary>Start 마다 1 증가 — 그 전 읽기의 결과(다른 방식의 Id)가 늦게 도착하면 버림.</summary>
+    private int _generation;
+    /// <summary>스토어판: 몇 분마다 허용 상태를 다시 봄 (윈도우 설정에서 나중에 허용·일시적 실패 뒤 복구).</summary>
+    private DispatcherTimer? _accessCheck;
+    private bool _forceDb;
 
     public NotificationService(IWindowTracker tracker, IAppLauncher launcher)
     {
@@ -114,11 +119,19 @@ public sealed class NotificationService : INotificationService, IDisposable
         // 다시 시작(일시 정지 해제)이면 그 사이 도착한 알림은 배너 없이 기준선으로
         _baselineDone = false;
         _lastStamp = (-1, -1, -1);
+        Interlocked.Increment(ref _generation);
+        _rows = new List<Row>(); // 방식이 바뀌었을 수 있음 → 이전 방식의 Id 로 지우기·숨기기를 하지 않게
         LoadHidden();
         DeleteLegacyTempCopy();
         try
         {
-            _listener = NotificationListener.Supported && NotificationListener.IsAllowed;
+            _listener = !_forceDb && NotificationListener.Supported && NotificationListener.IsAllowed;
+            if (NotificationListener.Supported && _accessCheck is null)
+            {
+                _accessCheck = new DispatcherTimer(DispatcherPriority.Background, _dispatcher) { Interval = TimeSpan.FromMinutes(3) };
+                _accessCheck.Tick += (_, _) => ReconsiderSource();
+            }
+            _accessCheck?.Start();
             if (NotificationListener.Supported)
                 Log.Info(_listener ? "알림: 윈도우 알림 접근 허용됨 → 공식 API 로 읽음 (DB 는 사진 보강)" : $"알림: 윈도우 알림 접근 {NotificationListener.Status()} → DB 방식");
             if (!_listener && !DbUsable())
@@ -169,6 +182,7 @@ public sealed class NotificationService : INotificationService, IDisposable
     {
         if (!_running) return;
         _running = false;
+        _accessCheck?.Stop();
         try
         {
             if (_watcher is not null)
@@ -265,6 +279,7 @@ public sealed class NotificationService : INotificationService, IDisposable
 
     private void ReadOnce(bool force)
     {
+        int generation = Volatile.Read(ref _generation);
         if (_listener)
         {
             try
@@ -274,12 +289,18 @@ public sealed class NotificationService : INotificationService, IDisposable
             }
             catch (Exception ex)
             {
-                // 접근 취소(윈도우 설정에서 끔) 등 → DB 방식으로
-                _listener = false;
-                _lastStamp = (-1, -1, -1);
+                // 접근 취소(윈도우 설정에서 끔)·일시 오류 등 → 처음부터 DB 방식으로 다시 시작 (Id 가 다를 수 있어 기준선부터 — 배너 재발생 방지).
+                // 일시 오류였으면 몇 분 뒤 ReconsiderSource 가 다시 공식 API 로 돌려놓음
                 Log.Warn($"윈도우 알림 접근으로 읽기 실패 → DB 방식으로: {ex.GetType().Name} {ex.Message}");
-                if (!DbUsable()) return;
-                force = true;
+                _dispatcher.BeginInvoke(() =>
+                {
+                    if (!_running || !_listener) return;
+                    Stop();
+                    _forceDb = true;
+                    Start();
+                    _forceDb = false;
+                });
+                return;
             }
         }
 
@@ -332,7 +353,7 @@ public sealed class NotificationService : INotificationService, IDisposable
         }
 
         int parsed = rows.Count(r => r.Content is not null);
-        _dispatcher.BeginInvoke(() => Apply(rows, parsed));
+        _dispatcher.BeginInvoke(() => { if (generation == _generation) Apply(rows, parsed); });
     }
 
     /// <summary>
@@ -341,10 +362,10 @@ public sealed class NotificationService : INotificationService, IDisposable
     /// </summary>
     private void ReadFromListener(bool force)
     {
-        var toasts = NotificationListener.Read();
-        (long, long, long) stamp = (toasts.Count == 0 ? 0 : toasts.Max(t => (long)t.Id), toasts.Count,
-            toasts.Count == 0 ? 0 : toasts.Max(t => t.ArrivalUtc.Ticks));
-        if (!force && stamp == _lastStamp) return;
+        int generation = Volatile.Read(ref _generation);
+        (long, long, long) stamp = default;
+        var toasts = NotificationListener.Read(s => { stamp = s; return !force && s == _lastStamp; });
+        if (toasts is null) return;
 
         List<Row> db = new();
         if (DbUsable())
@@ -376,7 +397,7 @@ public sealed class NotificationService : INotificationService, IDisposable
         }
         _lastStamp = stamp;
         int parsed = rows.Count(r => r.Content is not null);
-        _dispatcher.BeginInvoke(() => Apply(rows, parsed));
+        _dispatcher.BeginInvoke(() => { if (generation == _generation) Apply(rows, parsed); });
     }
 
     private SqliteReader OpenDb()

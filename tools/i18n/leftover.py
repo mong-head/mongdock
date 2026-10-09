@@ -7,6 +7,7 @@ import os
 import re
 import sys
 
+sys.stdout.reconfigure(encoding='utf-8')  # 한국어(cp949) 콘솔에서도 끝까지
 sys.path.insert(0, os.path.dirname(__file__))
 from wrap import parse_string, has_hangul, SKIP_LINE  # noqa: E402
 

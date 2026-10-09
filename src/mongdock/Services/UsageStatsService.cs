@@ -15,7 +15,8 @@ namespace Mongdock.Services;
 /// <summary>
 /// 사용 통계 (#20). PC 번호·이름·경로·창 제목 없이, 몽독이 켜진 날 하루 한 번 작은 신호를 보낸다.
 /// - 그날 첫 실행 2분 뒤(또는 켜 둔 채 자정을 넘기면 다음 확인 때) 그날 것 하나를 만들어 %APPDATA%\mongdock\stats.json 에 모아 두고 보냄.
-/// - 못 보내면(오프라인·받는 쪽 오류) 날짜를 붙여 두었다가 다음 확인(1시간마다) 때 한꺼번에. 7일치까지만 (오래된 것부터 버림).
+/// - 못 보내면(오프라인·받는 쪽 오류) 날짜를 붙여 두었다가 다음 확인(1시간마다) 때 한꺼번에. 최근 7일 안의 것만, 7개까지 (오래된 것부터 버림).
+/// - 하루치마다 무작위 nonce(그 하루치를 다시 보낼 때 같은 값 — 받는 쪽이 응답 시간 초과 뒤 재전송을 한 번만 적게. 날짜·PC 를 잇지 않음).
 /// - 오류 수 = 지난 신호 이후 로그의 ERROR 줄 수 (로그 파일 시각으로 셈 — 다시 시작·크래시에도 이어짐).
 /// - 설정 "사용 통계 보내기"(SendUsageStats)를 끄면 아무것도 만들지 않고 모아 둔 것도 지움.
 /// 받는 쪽: 저장소 tools/support-intake/Code.gs 의 {type:"stats"} → 구글 시트 한 줄씩.
@@ -76,11 +77,11 @@ public sealed class UsageStatsService : IDisposable
             {
                 var now = DateTime.Now;
                 state.Pending.Add(Snapshot(today, CountErrorsSince(state.LastAt ?? now.AddDays(-1))));
-                while (state.Pending.Count > MaxPendingDays) state.Pending.RemoveAt(0);
                 state.LastDay = today;
                 state.LastAt = now;
                 Save(state);
             }
+            if (DropStale(state)) Save(state);
             if (state.Pending.Count > 0 && !_sending) _ = SendAsync();
         }
         catch (Exception ex)
@@ -127,7 +128,24 @@ public sealed class UsageStatsService : IDisposable
             ["hideTaskbar"] = s.HideWindowsTaskbar,
             ["lightMode"] = PerfMode.IsOn(s),
             ["errors"] = errors,
+            ["nonce"] = Guid.NewGuid().ToString("N"),
         };
+    }
+
+    /// <summary>최근 7일 밖의 것과 7개 넘는 앞쪽을 버림 (한 달 꺼져 있던 PC 가 옛날 것을 보내지 않게). 바뀌었으면 true.</summary>
+    private static bool DropStale(State state)
+    {
+        string oldest = DateTime.Now.AddDays(-(MaxPendingDays - 1)).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        int before = state.Pending.Count;
+        state.Pending.RemoveAll(d => string.CompareOrdinal(d["date"]?.GetValue<string>() ?? "", oldest) < 0);
+        if (state.Pending.Count > MaxPendingDays) state.Pending.RemoveRange(0, state.Pending.Count - MaxPendingDays);
+        bool changed = state.Pending.Count != before;
+        foreach (var d in state.Pending.Where(d => d["nonce"] is null)) // nonce 전에 모아 둔 것
+        {
+            d["nonce"] = Guid.NewGuid().ToString("N");
+            changed = true;
+        }
+        return changed;
     }
 
     /// <summary>("10" 또는 "11", "26200.6584"). ProductName 은 11 에서도 "Windows 10" 이라 빌드 번호로 판단.</summary>
@@ -182,10 +200,11 @@ public sealed class UsageStatsService : IDisposable
             if (state.Pending.Count == 0) return;
             var days = new JsonArray(state.Pending.Select(d => (JsonNode?)d.DeepClone()).ToArray());
             int count = state.Pending.Count;
+            var sent = state.Pending.Select(d => d["nonce"]?.GetValue<string>()).OfType<string>().ToHashSet();
             if (_logOnly)
             {
                 Log.Info($"사용 통계 (MONGDOCK_STATS=log — 보내지 않음): {days.ToJsonString()}");
-                Clear(count);
+                Clear(sent);
                 return;
             }
             var body = new JsonObject { ["token"] = ReportService.Token, ["type"] = "stats", ["days"] = days };
@@ -195,7 +214,7 @@ public sealed class UsageStatsService : IDisposable
             int status = response.IsSuccessStatusCode ? ReportService.ParseStatus(text) : (int)response.StatusCode;
             if (status == 200)
             {
-                Clear(count);
+                Clear(sent);
                 Log.Info($"사용 통계 보냄: {count}일치");
             }
             else
@@ -214,11 +233,11 @@ public sealed class UsageStatsService : IDisposable
         }
     }
 
-    /// <summary>보낸 앞쪽 count 개만 지움 (보내는 동안 새로 붙은 것은 남김).</summary>
-    private void Clear(int count)
+    /// <summary>보낸 것만 지움 (nonce 로 — 보내는 동안 새로 붙은 것은 남김).</summary>
+    private void Clear(IReadOnlyCollection<string> sent)
     {
         var state = Load();
-        state.Pending.RemoveRange(0, Math.Min(count, state.Pending.Count));
+        state.Pending.RemoveAll(d => d["nonce"]?.GetValue<string>() is { } n && sent.Contains(n));
         Save(state);
     }
 
