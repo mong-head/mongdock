@@ -444,7 +444,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
     }
 
     /// <summary>
-    /// 가져온 설정 적용: 이 PC 에만 맞는 값(자동 실행 등록, 윈도우 알림 소리, 실행·안내 기록)은 지금 것을 유지하고
+    /// 가져온 설정 적용: 이 PC 에만 맞는 값(자동 실행 등록, 작업 표시줄 숨기기, 윈도우 알림 소리, 화면 언어, 사용 통계, 실행·안내 기록)은 지금 것을 유지하고
     /// 나머지를 값만 복사(참조 유지) → 저장 → SettingsChanged 로 독·상단바에 바로 반영.
     /// </summary>
     public void ApplyImported(Settings imported)
@@ -465,6 +465,9 @@ public sealed class SettingsService : ISettingsService, IDisposable
         // 이 PC 사람이 정한 것: 사용 통계 동의(가져온 파일이 옛 버전이면 키가 없어 기본 true 로 되살아남), 화면 언어(다시 시작해야 반영),
         // 크래시 안내 끔, 처음 쓰기 힌트 기록
         imported.SendUsageStats = cur.SendUsageStats;
+        // 작업 표시줄 숨기기도 이 PC 의 윈도우를 바꾸는 설정 → 그대로 (숨긴 채면 트레이 아이콘을 볼 곳이 상단바뿐이라 그것도 유지)
+        imported.HideWindowsTaskbar = cur.HideWindowsTaskbar;
+        if (cur.HideWindowsTaskbar && cur.TopBar.ShowTrayIcons) imported.TopBar.ShowTrayIcons = true;
         imported.Language = cur.Language;
         imported.CrashPromptDisabled = cur.CrashPromptDisabled;
         imported.FirstUseHintsPending = cur.FirstUseHintsPending;

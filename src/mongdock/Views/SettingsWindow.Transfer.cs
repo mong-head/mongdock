@@ -111,7 +111,7 @@ internal sealed partial class SettingsWindow
             bool ok = await ConfirmCardWindow.AskAsync(_services,
                 Loc.T("이 설정으로 바꿀까요?"),
                 Loc.F($"v{m.AppVersion} · {m.Created:yyyy-MM-dd} 만듦 · 독 앱 {preview.PinNames.Count}개 · 아이콘 {m.IconCount}개{cals}. ") +
-                Loc.T("지금 설정은 백업해 둬요. 자동 실행·알림 소리는 이 PC 설정 그대로예요."),
+                Loc.T("지금 설정은 백업해 둬요. 이 PC 에서 그대로 두는 것: 자동 실행, 작업 표시줄 숨기기, 알림 소리, 화면 언어, 사용 통계."),
                 Loc.T("가져오기"));
             if (!ok) return;
 
