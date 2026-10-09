@@ -33,6 +33,8 @@ DISPLAY_NAME = os.environ.get("MONGDOCK_SUPPORT_NAME", "몽독 지원 (mongdock 
 LOG_PATH = os.environ.get("MONGDOCK_SUPPORT_LOG", r"C:\dev\mongdock-team\support-send-log.jsonl")
 MAX_SENDS_PER_DAY = int(os.environ.get("MONGDOCK_SUPPORT_MAX_PER_DAY", "30"))
 MAX_VAR_LEN = 300
+# 지원 주소: 대표 계정(mongdock@gmail.com)의 +별칭. 이 주소로 온 메일만 보고 답한다 (대표 메일함의 다른 메일은 건드리지 않음).
+SUPPORT_ADDRESS = os.environ.get("MONGDOCK_SUPPORT_ADDRESS", "mongdock+help@gmail.com").strip().lower()
 BODY_PREVIEW = 4000
 
 # ───────────────────────── 자격 증명 (윈도우 자격 증명 관리자, 읽기만) ─────────────────────────
@@ -128,7 +130,16 @@ def fetch(m: imaplib.IMAP4_SSL, uid: str) -> email.message.EmailMessage:
     typ, data = m.uid("fetch", uid, "(BODY.PEEK[])")
     if typ != "OK" or not data or not isinstance(data[0], tuple):
         raise RuntimeError(f"메일을 찾을 수 없어요 (uid {uid})")
-    return email.message_from_bytes(data[0][1], policy=email.policy.default)
+    msg = email.message_from_bytes(data[0][1], policy=email.policy.default)
+    check_support(msg)
+    return msg
+
+
+def check_support(msg: email.message.Message) -> None:
+    """지원 주소로 온 메일인지 (To·Cc·Delivered-To). 아니면 읽기·답장 거부."""
+    heads = " ".join(str(msg.get_all(h, [])) for h in ("To", "Cc", "Delivered-To", "X-Original-To")).lower()
+    if SUPPORT_ADDRESS not in heads:
+        raise RuntimeError("지원 주소로 온 메일이 아니라서 열지 않아요 (대표 메일함의 다른 메일은 다루지 않음)")
 
 
 def summary(uid: str, msg: email.message.Message) -> dict:
@@ -148,10 +159,8 @@ def tool_list_messages(args: dict) -> dict:
     m = imap()
     try:
         m.select(f'"{folder}"' if " " in folder else folder, readonly=True)
-        if query:
-            typ, data = m.uid("search", None, "X-GM-RAW", f'"{query}"')
-        else:
-            typ, data = m.uid("search", None, "UNSEEN" if unread else "ALL")
+        raw = f"to:{SUPPORT_ADDRESS}" + (" is:unread" if unread else "") + (f" {query}" if query else "")
+        typ, data = m.uid("search", None, "X-GM-RAW", f'"{raw.replace(chr(34), "")}"')
         uids = (data[0].split() if typ == "OK" and data and data[0] else [])[-limit:]
         out = []
         for u in reversed(uids):
@@ -199,12 +208,13 @@ def load_templates() -> dict:
 def reply_to(msg: email.message.Message) -> str:
     """답장 받을 주소 = 원래 보낸 사람(Reply-To 우선) 한 명. 우리 주소면 거부."""
     own = account()[0].lower()
+    own_local = own.split("@")[0]
     cands = getaddresses([msg.get("Reply-To", "")]) or []
     cands = [a for _, a in cands if a] or [parseaddr(msg.get("From", ""))[1]]
     addr = (cands[0] if cands else "").strip()
     if not addr or "@" not in addr:
         raise RuntimeError("답장 받을 주소를 찾지 못했어요")
-    if addr.lower() == own:
+    if addr.lower() == own or addr.lower().split("@")[0].split("+")[0] == own_local and addr.lower().endswith(own.split("@")[1]):
         raise RuntimeError("우리 지원 주소로는 답장하지 않아요")
     return addr
 
@@ -215,6 +225,7 @@ def build_reply(msg: email.message.Message, body: str) -> EmailMessage:
     subj = decode_header(msg.get("Subject")) or "mongdock"
     r["Subject"] = subj if subj.lower().startswith("re:") else f"Re: {subj}"
     r["From"] = formataddr((DISPLAY_NAME, addr))
+    r["Reply-To"] = SUPPORT_ADDRESS  # 고객 답장이 다시 지원 주소(+help)로 오게
     r["To"] = reply_to(msg)
     r["Message-ID"] = make_msgid(domain=addr.split("@")[-1])
     if msg.get("Message-ID"):
@@ -326,7 +337,7 @@ def tool_status(args: dict) -> dict:
     try:
         m = imap()
         m.logout()
-        return {"connected": True, "address": addr, "sends_today": sends_today(), "max_per_day": MAX_SENDS_PER_DAY}
+        return {"connected": True, "address": addr, "support_address": SUPPORT_ADDRESS, "sends_today": sends_today(), "max_per_day": MAX_SENDS_PER_DAY}
     except Exception as e:  # 비밀번호는 넣지 않음
         return {"connected": False, "address": addr, "message": f"로그인 실패: {type(e).__name__}"}
 
