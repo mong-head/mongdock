@@ -2,6 +2,58 @@
   "_comment": "mongdock 변경 내역 단일 원본. 앱(설정 → 변경 내역, 새로운 기능 코치마크)과 build-release.ps1(GitHub 릴리스 노트)이 함께 읽는다. 최신 버전을 맨 위에. kind = feature | improvement | fix. coach 가 있는 feature 는 업데이트 후 상단바·독 위 말풍선으로 소개(anchor = Center|Dock|Logo|AppName|Desktops|Tray|Search|Clock, condition = topBar|trayIcons|spotlight|banners|dock|appMenus, 없으면 항상). major = 그 버전의 주요 업데이트(버전당 1~4개, 오랜만에 업데이트한 사람·변경 내역 맨 위·릴리스 노트 \"이번 버전 핵심\"에 씀), headline = 그 버전 한 줄 요약. body 의 {hotkey} 는 실제 검색 단축키 문구로 바뀜.",
   "versions": [
     {
+      "version": "0.5.0",
+      "date": "2026-10-09",
+      "headline": "믿을 수 있는 몽독: 문제 신고·오류 알림·독 정리",
+      "entries": [
+        {
+          "kind": "feature",
+          "major": true,
+          "text": "문제 신고하기: 설정 → 정보나 상단바 로고 메뉴에서 버그·질문·제안을 바로 보낼 수 있어요. 메일 계정이 없어도 되고, 함께 보낼 정보는 보내기 전에 확인할 수 있어요. 이메일·주소·파일 경로·사용자 이름·창 제목은 가려서 보내요."
+        },
+        {
+          "kind": "feature",
+          "major": true,
+          "text": "몽독이 갑자기 꺼지거나 오류가 나면 다음에 켤 때 알려 드려요. 보낼지는 직접 고르고, 보내기 전에 내용을 확인할 수 있어요."
+        },
+        {
+          "kind": "improvement",
+          "major": true,
+          "text": "독 동작이 '자동 숨김'과 '항상 보이기' 두 가지로 정리됐어요. '공간 차지'를 쓰던 분은 '항상 보이기'로 바뀌어요. 새로 설치하면 독은 평소에 숨어 있다가 화면 끝에 마우스를 대면 나타나요(처음 둘러보기에서 직접 보여 드려요)."
+        },
+        {
+          "kind": "improvement",
+          "major": false,
+          "text": "화면 아래 윈도우 작업 표시줄이 가끔 잠깐 보이던 깜빡임을 없앴어요."
+        },
+        {
+          "kind": "improvement",
+          "major": false,
+          "text": "메모리를 덜 써요(아이콘·검색 결과를 쌓아 두는 양을 줄였어요)."
+        },
+        {
+          "kind": "improvement",
+          "major": false,
+          "text": "업데이트할 때 바로 전 설정을 자동으로 백업해 둬요."
+        },
+        {
+          "kind": "feature",
+          "major": false,
+          "text": "설정 → 정보에 '몽독 제거하기…'가 생겼어요. 작업 표시줄·알림 소리를 원래대로 돌린 뒤 윈도우 앱 제거 화면을 열어요."
+        },
+        {
+          "kind": "fix",
+          "major": false,
+          "text": "시스템 종료·다시 시작 같은 확인 카드가 버튼을 누르기 전에 닫혀 버리던 문제를 고쳤어요."
+        }
+      ],
+      "knownIssues": [
+        "카카오톡 알림은 자체 팝업이라 배너로 잡히지 않아요(독 아이콘의 빨간 점은 표시돼요).",
+        "알림 소리는 처음 한 번 바꾼 뒤 다시 로그인해야 적용돼요.",
+        "네이버 캘린더는 구독 주소(iCal)를 주지 않아 연결할 수 없어요."
+      ]
+    },
+    {
       "version": "0.4.2",
       "date": "2026-10-09",
       "headline": "마이크 조절",
