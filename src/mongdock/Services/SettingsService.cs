@@ -426,6 +426,46 @@ public sealed class SettingsService : ISettingsService, IDisposable
         });
     }
 
+    // ───────────────────────── 설정 옮기기 (Services/SettingsTransfer) ─────────────────────────
+
+    /// <summary>내보내기용 지금 설정 JSON (저장 파일과 같은 형식).</summary>
+    public string ExportJson()
+    {
+        lock (_gate) return JsonSerializer.Serialize(Current, JsonOptions);
+    }
+
+    /// <summary>가져온 settings.json 을 읽고 이관까지 거침 (지금 설정은 바꾸지 않음). 손상이면 예외.</summary>
+    public static Settings ParseForImport(string json)
+    {
+        var s = Deserialize(json);
+        Migrate(json, s);
+        return s;
+    }
+
+    /// <summary>
+    /// 가져온 설정 적용: 이 PC 에만 맞는 값(자동 실행 등록, 윈도우 알림 소리, 실행·안내 기록)은 지금 것을 유지하고
+    /// 나머지를 값만 복사(참조 유지) → 저장 → SettingsChanged 로 독·상단바에 바로 반영.
+    /// </summary>
+    public void ApplyImported(Settings imported)
+    {
+        var cur = Current;
+        imported.StartWithWindows = cur.StartWithWindows;
+        imported.Notifications.Sound = cur.Notifications.Sound;
+        imported.Notifications.OriginalSound = cur.Notifications.OriginalSound;
+        imported.LastRunVersion = cur.LastRunVersion;
+        imported.LastSeenVersion = cur.LastSeenVersion;
+        imported.FirstRunTourPending = cur.FirstRunTourPending;
+        imported.StartupPromptPending = cur.StartupPromptPending;
+        imported.NotifiedUpdateVersion = cur.NotifiedUpdateVersion;
+        imported.SkippedUpdateVersion = cur.SkippedUpdateVersion;
+        imported.TaskbarPinsImported = cur.TaskbarPinsImported;
+        imported.TaskbarPinImportRequested = false;
+        imported.ImportedFromMyDockFinder = cur.ImportedFromMyDockFinder;
+        imported.SettingsVersion = Settings.CurrentVersion;
+        lock (_gate) CopyInto(imported, cur);
+        Save();
+    }
+
     /// <summary>
     /// 외부 편집으로 다시 읽은 값을 현재 객체에 반영. 하위 설정 객체(Dock/TopBar/Notifications/Search)와 Pins 리스트는
     /// 참조를 유지한 채 값만 복사하고, 나머지 최상위 속성(FontFamily, HideWindowsTaskbar, AppMenus, 앞으로 추가될 것 포함)은 그대로 대입.

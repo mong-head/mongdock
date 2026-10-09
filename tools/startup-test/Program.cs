@@ -17,8 +17,11 @@ internal static class Program
     private static int _failed;
 
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
+        // 설정 옮기기 시험은 별도 실행: 데이터 폴더를 임시 폴더로 (AppInfo 를 건드리기 전에)
+        if (args.Contains("--transfer")) return TransferTests();
+
         Check("패키지 아님", AppInfo.IsPackaged, false);
         Check("설치 방식", AppInfo.InstallKind, "zip·개발 빌드");
 
@@ -91,6 +94,92 @@ internal static class Program
         {
             try { Directory.Delete(dir, recursive: true); } catch { }
         }
+    }
+
+    // ── 설정 옮기기 (SettingsTransfer) — 임시 데이터 폴더에서만 ──
+    private sealed class FakeCalendars : ICalendarFeedService
+    {
+        public List<Mongdock.Models.CalendarFeed> List = new();
+        public IReadOnlyList<Mongdock.Models.CalendarFeed> Feeds => List;
+        public CalendarFeedStatus GetStatus(string feedId) => new(null, null, false, 0);
+        public event EventHandler? Changed { add { } remove { } }
+        public IReadOnlyList<CalendarOccurrence> GetOccurrences(DateTime from, DateTime to) => Array.Empty<CalendarOccurrence>();
+        public Task<CalendarAddResult> AddAsync(string url)
+        {
+            var f = new Mongdock.Models.CalendarFeed { Name = "added", Url = url };
+            List.Add(f);
+            return Task.FromResult(new CalendarAddResult(true, "", f));
+        }
+        public void Remove(string feedId) { }
+        public void Update(string feedId, Action<Mongdock.Models.CalendarFeed> change) { foreach (var f in List.Where(f => f.Id == feedId)) change(f); }
+        public void Refresh(string feedId) { }
+        public void RefreshAll() { }
+        public void Start() { }
+        public void Stop() { }
+    }
+
+    private static int TransferTests()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "mongdock-transfer-test-" + Guid.NewGuid().ToString("N"));
+        Environment.SetEnvironmentVariable("MONGDOCK_DATA_DIR", Path.Combine(root, "data"));
+        try
+        {
+            using var settings = new SettingsService();
+            Directory.CreateDirectory(settings.IconsDirectory);
+            string icon = Path.Combine(settings.IconsDirectory, "test-icon.png");
+            File.WriteAllBytes(icon, new byte[] { 1, 2, 3 });
+            var s = settings.Current;
+            s.Pins.Clear();
+            s.Pins.Add(new Mongdock.Models.PinItem { Name = "메모장", Kind = Mongdock.Models.PinKind.Exe, Target = "notepad.exe", IconPath = icon });
+            s.Pins.Add(new Mongdock.Models.PinItem { Name = "계산기", Kind = Mongdock.Models.PinKind.Exe, Target = "calc.exe" });
+            s.Dock.IconSize = 60;
+            s.StartWithWindows = true;
+            settings.Save();
+            var cals = new FakeCalendars();
+            cals.List.Add(new Mongdock.Models.CalendarFeed { Name = "회사", Url = "https://example.com/private/secret.ics", Color = "#FF3B30" });
+
+            string noUrl = Path.Combine(root, "a.mongdock"), withUrl = Path.Combine(root, "b.mongdock");
+            SettingsTransfer.Export(noUrl, settings, cals, includeCalendarUrls: false);
+            SettingsTransfer.Export(withUrl, settings, cals, includeCalendarUrls: true);
+            var p1 = SettingsTransfer.ReadPreview(noUrl);
+            Check("미리 보기 독 앱 수", p1.PinNames.Count, 2);
+            Check("미리 보기 아이콘 수", p1.Manifest.IconCount, 1);
+            Check("주소 뺀 캘린더", p1.Calendars.Single().Url, null);
+            Check("주소 뺀 파일에 비밀 주소 없음", System.Text.Encoding.UTF8.GetString(File.ReadAllBytes(noUrl)).Contains("secret"), false);
+            Check("주소 넣은 캘린더", SettingsTransfer.ReadPreview(withUrl).Calendars.Single().Url, "https://example.com/private/secret.ics");
+
+            // 이 PC 에서 바꾼 뒤 가져오기
+            s.Dock.IconSize = 40;
+            s.StartWithWindows = false;
+            File.Delete(icon);
+            var empty = new FakeCalendars();
+            var r = SettingsTransfer.ImportAsync(noUrl, settings, empty).GetAwaiter().GetResult();
+            Check("가져온 독 아이콘 크기", settings.Current.Dock.IconSize, 60.0);
+            Check("자동 실행은 이 PC 값 유지", settings.Current.StartWithWindows, false);
+            Check("아이콘 파일 복원", File.Exists(icon), true);
+            Check("아이콘 경로 이 PC 로", settings.Current.Pins[0].IconPath, icon);
+            Check("다시 연결할 캘린더", string.Join(",", r.CalendarsToReconnect), "회사");
+            Check("이전 설정 백업", File.Exists(settings.SettingsPath + r.BackupSuffix), true);
+            var r2 = SettingsTransfer.ImportAsync(withUrl, settings, empty).GetAwaiter().GetResult();
+            Check("주소 있는 캘린더 추가", r2.CalendarsAdded, 1);
+            Check("추가된 캘린더 이름·색", $"{empty.List[0].Name} {empty.List[0].Color}", "회사 #FF3B30");
+
+            File.WriteAllText(Path.Combine(root, "junk.mongdock"), "not a zip");
+            bool rejected = false;
+            try { SettingsTransfer.ReadPreview(Path.Combine(root, "junk.mongdock")); } catch (Exception ex) when (ex is InvalidDataException or IOException) { rejected = true; }
+            Check("엉뚱한 파일 거절", rejected, true);
+        }
+        catch (Exception ex)
+        {
+            _failed++;
+            Console.WriteLine($"  실패  예외 {ex}");
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
+        Console.WriteLine(_failed == 0 ? "설정 옮기기 시험: 모두 통과" : $"설정 옮기기 시험: {_failed}개 실패");
+        return _failed == 0 ? 0 : 1;
     }
 
     private static string? ReadValue()
