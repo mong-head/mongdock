@@ -32,6 +32,24 @@ if ($killed -and (Test-Path $regularExe)) {
 Get-AppxPackage -Name 'mongdock.mongdock' | ForEach-Object { Remove-AppxPackage $_.PackageFullName }
 Say "패키지: $(if (Get-AppxPackage -Name 'mongdock.mongdock') { '남아 있음 — 설정 → 앱에서 mongdock 제거 필요' } else { '제거됨' })"
 
+# 2.5) run-9-fresh 로 옆에 옮겨 둔 원래 데이터 폴더가 있으면: 시험으로 생긴 폴더는 보관, 원래 폴더를 제자리로
+$aside = Join-Path $out 'fresh-aside'
+$data = Join-Path $env:APPDATA 'mongdock'
+if (Test-Path (Join-Path $aside 'mongdock')) {
+    if (Test-Path $data) {
+        $used = Join-Path $out ("fresh-used-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+        Move-Item $data $used
+        Say "처음 상태 시험 폴더 보관: $used"
+    }
+    Move-Item (Join-Path $aside 'mongdock') $data
+    Remove-Item $aside -Recurse -Force -ErrorAction SilentlyContinue
+    Say "원래 데이터 폴더 제자리로: $data"
+} elseif (Test-Path (Join-Path $aside 'was-empty.txt')) {
+    if (Test-Path $data) { Move-Item $data (Join-Path $out ("fresh-used-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))) }
+    Remove-Item $aside -Recurse -Force -ErrorAction SilentlyContinue
+    Say '원래 데이터 폴더가 없었음 → 시험 폴더만 보관'
+}
+
 # 3) 설정 되돌리기 (스토어판 첫 실행이 StartWithWindows·시작 질문을 저장하고, QA 중 바꾼 설정도 있으므로)
 if (Test-Path $backup) {
     $absent = @()
