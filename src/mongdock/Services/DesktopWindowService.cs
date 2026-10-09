@@ -1308,6 +1308,9 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         {
             bool turnedOn = TaskbarAutoHide.Ensure();
             ApplyTaskbarVisibility(hidden: true);
+            // 표시 훅을 1초 타이머까지 기다리지 않고 바로 (시작 직후 explorer 가 다시 띄우는 것도 즉시 숨김 — #13 QA: 시작 때 18~31ms)
+            if (_dispatcher.CheckAccess()) SyncTaskbarShowHook();
+            else _dispatcher.BeginInvoke(SyncTaskbarShowHook);
             // 자동 숨김을 켜면 explorer 가 작업 표시줄 창을 다시 보이게 함(실측) → 잠시 뒤 다시 숨김
             if (turnedOn) _ = HideAgainLaterAsync();
         }
