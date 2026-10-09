@@ -9,7 +9,9 @@ namespace Mongdock.Views;
 
 /// <summary>
 /// 맥 대화상자 같은 확인 카드 (다시 시작·시스템 종료·로그아웃 전).
-/// 포커스를 뺏지 않는 창 + 마우스만으로 [취소]/[확인]. 바깥 클릭·다른 창 활성화 시 취소로 닫힌다.
+/// 포커스를 뺏지 않는 창 + 마우스만으로 [취소]/[확인]. 바깥 클릭이면 취소로 닫힌다.
+/// 다른 창 활성화로는 닫지 않는다 — 백그라운드 프로그램이 잠깐 포그라운드를 가져가도(알림·콘솔 깜빡임) 카드가 사라져
+/// [확인]이 안 눌리는 일이 있었음(#6 QA). 닫힌 이유는 로그에 남김.
 /// </summary>
 internal sealed class ConfirmCardWindow : Window
 {
@@ -66,12 +68,14 @@ internal sealed class ConfirmCardWindow : Window
         var cancel = MakeButton(cancelText, p.Tile, p.Text);
         cancel.Click += (_, _) =>
         {
+            Log.Info($"확인 카드 '{title}': {cancelText}");
             _cancelClicked = true;
             Close();
         };
         var ok = MakeButton(confirmText, p.Accent, p.AccentText);
         ok.Click += (_, _) =>
         {
+            Log.Info($"확인 카드 '{title}': {confirmText}");
             var action = _onConfirm;
             _onConfirm = null;
             Close();
@@ -102,7 +106,11 @@ internal sealed class ConfirmCardWindow : Window
         root.Children.Add(_card);
         Content = root;
 
-        _watch = new OutsideClickWatcher(services, () => new[] { OutsideClickWatcher.ScreenRect(_card) }, Close);
+        _watch = new OutsideClickWatcher(services, () => new[] { OutsideClickWatcher.ScreenRect(_card) }, Close)
+        {
+            CloseOnActivation = false,
+            LogName = $"확인 카드 '{title}'",
+        };
         SourceInitialized += (_, _) => services.DesktopWindows.MakeOverlay(this);
         Loaded += (_, _) =>
         {

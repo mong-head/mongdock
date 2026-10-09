@@ -29,6 +29,9 @@ internal sealed class OutsideClickWatcher
     /// </summary>
     public bool CloseOnActivation { get; set; } = true;
 
+    /// <summary>있으면 닫는 이유(바깥 클릭 위치·활성화된 창의 프로세스)를 로그에 남김 — 확인 카드처럼 드물게 뜨는 창만 (메뉴는 너무 잦음).</summary>
+    public string? LogName { get; set; }
+
     public OutsideClickWatcher(AppServices services, Func<IEnumerable<Rect>> insideAreas, Action close)
     {
         _services = services;
@@ -55,7 +58,23 @@ internal sealed class OutsideClickWatcher
 
     private void OnWindowActivated(object? sender, IntPtr hwnd)
     {
-        if (CloseOnActivation) Fire();
+        if (!CloseOnActivation)
+        {
+            if (LogName is not null && _running) Log.Info($"{LogName}: 다른 창 활성화 무시 ({ProcessOf(hwnd)})");
+            return;
+        }
+        Fire(LogName is null ? null : $"다른 창 활성화 ({ProcessOf(hwnd)})");
+    }
+
+    private static string ProcessOf(IntPtr hwnd)
+    {
+        try
+        {
+            Native.User32.GetWindowThreadProcessId(hwnd, out uint pid);
+            using var p = System.Diagnostics.Process.GetProcessById((int)pid);
+            return p.ProcessName;
+        }
+        catch { return "?"; }
     }
 
     private void OnGlobalMouseDown(object? sender, Point? position)
@@ -68,13 +87,14 @@ internal sealed class OutsideClickWatcher
                 if (!r.IsEmpty && r.Contains(c)) return; // 안쪽 클릭은 WPF 가 처리 (메뉴 항목 클릭 등)
             }
         }
-        Fire();
+        Fire(LogName is null ? null : $"바깥 클릭 {position?.ToString() ?? "(모니터 밖)"} / 안쪽 {string.Join(" ", _insideAreas())}");
     }
 
-    private void Fire()
+    private void Fire(string? reason)
     {
         if (!_running) return;
         Stop();
+        if (reason is not null) Log.Info($"{LogName}: 닫음 — {reason}");
         // 훅 콜백 안에서 바로 창/팝업을 닫지 않고 디스패처로 미룸
         Application.Current?.Dispatcher.BeginInvoke(() =>
         {
