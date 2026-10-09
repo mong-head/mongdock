@@ -637,6 +637,8 @@ public sealed class SettingsService : ISettingsService, IDisposable
         // 이 PC 사람이 정한 것: 사용 통계 동의(가져온 파일이 옛 버전이면 키가 없어 기본 true 로 되살아남), 화면 언어(다시 시작해야 반영),
         // 크래시 안내 끔, 처음 쓰기 힌트 기록
         imported.SendUsageStats = cur.SendUsageStats;
+        imported.StatsAskDay = cur.StatsAskDay;
+        imported.StatsAskCount = cur.StatsAskCount;
         // 작업 표시줄 숨기기도 이 PC 의 윈도우를 바꾸는 설정 → 그대로 (숨긴 채면 트레이 아이콘을 볼 곳이 상단바뿐이라 그것도 유지)
         imported.HideWindowsTaskbar = cur.HideWindowsTaskbar;
         if (cur.HideWindowsTaskbar && cur.TopBar.ShowTrayIcons) imported.TopBar.ShowTrayIcons = true;

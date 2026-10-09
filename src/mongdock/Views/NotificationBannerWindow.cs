@@ -42,7 +42,13 @@ internal sealed class NotificationBannerWindow : Window
         public bool Leaving { get; set; }
         /// <summary>몽독 자체 배너(업데이트 등)의 클릭 동작. null 이면 알림 보낸 앱 열기.</summary>
         public Action? OnClick { get; init; }
+        /// <summary>버튼으로 묻는 배너 (예: 사용 통계 묻기): 고르지 않고 사라지면(시간 다 됨·×) 불림.</summary>
+        public Action? OnIgnored { get; init; }
+        public bool Answered { get; set; }
     }
+
+    /// <summary>배너 아래 버튼 하나 (Primary = 강조색).</summary>
+    public sealed record BannerButton(string Text, Action Run, bool Primary = false);
 
     // ───────────────────────── 연결 (App.xaml.cs) ─────────────────────────
 
@@ -57,6 +63,14 @@ internal sealed class NotificationBannerWindow : Window
     /// </summary>
     public static bool ShowCustom(NotificationItem item, ImageSource? icon, Action onClick)
         => _host?.Show(item, icon, onClick) ?? false;
+
+    /// <summary>
+    /// 버튼으로 묻는 몽독 배너: 오른쪽 위에 스르르 들어와 life 동안 머물다(마우스를 올리면 멈춤) 흐려지며 나감.
+    /// 버튼을 누르면 그 동작 후 닫힘, 고르지 않고 사라지면 onIgnored. 배너 설정이 꺼져 있어도 띄움(몽독 자체 질문이라).
+    /// 일시 정지·전체 화면이면 안 띄우고 false.
+    /// </summary>
+    public static bool ShowQuestion(NotificationItem item, ImageSource? icon, IReadOnlyList<BannerButton> buttons, TimeSpan life, Action onIgnored)
+        => _host?.Show(item, icon, null, buttons, life, onIgnored, ignoreBannerSetting: true) ?? false;
 
     private sealed class Host : IDisposable
     {
@@ -73,12 +87,13 @@ internal sealed class NotificationBannerWindow : Window
 
         private void OnArrived(object? sender, NotificationItem item) => Show(item, null, null);
 
-        public bool Show(NotificationItem item, ImageSource? icon, Action? onClick)
+        public bool Show(NotificationItem item, ImageSource? icon, Action? onClick,
+            IReadOnlyList<BannerButton>? buttons = null, TimeSpan? life = null, Action? onIgnored = null, bool ignoreBannerSetting = false)
         {
             try
             {
                 var settings = _services.Settings.Current;
-                if (!settings.Notifications.ShowNotificationBanners || AppState.Paused) return false;
+                if ((!settings.Notifications.ShowNotificationBanners && !ignoreBannerSetting) || AppState.Paused) return false;
                 var monitor = Monitors.FromHwnd(_services.Windows.ForegroundWindow);
                 // 전체 화면 앱(게임·동영상) 위에는 띄우지 않음 — 윈도우도 이때는 토스트를 숨김
                 if (_services.DesktopWindows.IsFullscreenOn(monitor.IsPrimary ? "" : monitor.DeviceName)) return false;
@@ -89,7 +104,7 @@ internal sealed class NotificationBannerWindow : Window
                     _window.Closed += (_, _) => _window = null;
                     _window.ShowOn(monitor);
                 }
-                _window.Add(item, icon, onClick);
+                _window.Add(item, icon, onClick, buttons, life, onIgnored);
                 return true;
             }
             catch (Exception ex)
@@ -175,7 +190,8 @@ internal sealed class NotificationBannerWindow : Window
         _tick.Start();
     }
 
-    private void Add(NotificationItem item, ImageSource? icon = null, Action? onClick = null)
+    private void Add(NotificationItem item, ImageSource? icon = null, Action? onClick = null,
+        IReadOnlyList<BannerButton>? buttons = null, TimeSpan? life = null, Action? onIgnored = null)
     {
         if (_closed) return;
         // 같은 알림이 이미 떠 있으면 무시
@@ -186,10 +202,11 @@ internal sealed class NotificationBannerWindow : Window
         card.BorderThickness = new Thickness(0.75);
         card.Padding = new Thickness(12, 11, 12, 11);
 
+        bool asks = buttons is { Count: > 0 };
         var host = new Grid
         {
             Margin = new Thickness(0, 0, 0, 2),
-            Cursor = Cursors.Hand,
+            Cursor = asks ? Cursors.Arrow : Cursors.Hand,
         };
         var (_, shift) = Anim.Transforms(host);
         var shadowed = new Grid { Margin = new Thickness(8, 6, 0, 8) }; // 왼쪽 위는 × 자리
@@ -199,10 +216,15 @@ internal sealed class NotificationBannerWindow : Window
             Background = _p.CardBackground,
             Effect = new DropShadowEffect { BlurRadius = 18, ShadowDepth = 4, Direction = 270, Opacity = _p.ShadowOpacity },
         });
+        var entry = new Entry { Item = item, Root = host, Shift = shift, Remaining = life ?? Life, OnClick = onClick, OnIgnored = onIgnored };
+        if (asks)
+        {
+            // 카드 아래 버튼 줄 (오른쪽 정렬, 같은 폭)
+            card.Child = WrapWithButtons(card.Child, buttons!, entry);
+        }
         shadowed.Children.Add(card);
         host.Children.Add(shadowed);
 
-        var entry = new Entry { Item = item, Root = host, Shift = shift, Remaining = Life, OnClick = onClick };
         var close = NotificationUi.CloseButton(_p, () => Dismiss(entry, fast: false));
         close.Margin = new Thickness(0, 0, 0, 0);
         host.Children.Add(close);
@@ -217,6 +239,7 @@ internal sealed class NotificationBannerWindow : Window
         };
         host.MouseLeftButtonUp += (_, e) =>
         {
+            if (asks) { pressed = false; return; } // 묻는 배너는 버튼으로만
             if (!pressed || e.Handled) return;
             pressed = false;
             e.Handled = true;
@@ -258,6 +281,42 @@ internal sealed class NotificationBannerWindow : Window
         }
     }
 
+    /// <summary>카드 내용 아래에 버튼 줄을 붙임. 버튼을 누르면 답한 것으로 표시하고 닫은 뒤 동작.</summary>
+    private UIElement WrapWithButtons(UIElement content, IReadOnlyList<BannerButton> buttons, Entry entry)
+    {
+        var panel = new StackPanel();
+        panel.Children.Add(content);
+        var row = new Grid { Margin = new Thickness(0, 10, 0, 0) };
+        for (int i = 0; i < buttons.Count; i++)
+        {
+            if (i > 0) row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
+            row.ColumnDefinitions.Add(new ColumnDefinition());
+        }
+        for (int i = 0; i < buttons.Count; i++)
+        {
+            var b = buttons[i];
+            var button = new Button
+            {
+                Style = (Style)Application.Current.FindResource("CardButton"),
+                Content = new TextBlock { Text = b.Text, FontSize = 12.5, FontWeight = FontWeights.SemiBold },
+                Background = b.Primary ? _p.Accent : _p.Tile,
+                Foreground = b.Primary ? _p.AccentText : _p.Text,
+                Height = 28,
+            };
+            button.Click += (_, _) =>
+            {
+                entry.Answered = true;
+                Dismiss(entry, fast: true);
+                try { b.Run(); }
+                catch (Exception ex) { Log.Error("배너 버튼 처리 실패", ex); }
+            };
+            Grid.SetColumn(button, i * 2);
+            row.Children.Add(button);
+        }
+        panel.Children.Add(row);
+        return panel;
+    }
+
     private void OnTick()
     {
         var now = DateTime.UtcNow;
@@ -279,6 +338,11 @@ internal sealed class NotificationBannerWindow : Window
     {
         if (entry.Leaving) return;
         entry.Leaving = true;
+        if (!entry.Answered && entry.OnIgnored is { } ignored)
+        {
+            try { ignored(); }
+            catch (Exception ex) { Log.Error("배너 무시 처리 실패", ex); }
+        }
         entry.Root.IsHitTestVisible = false;
         double ms = fast ? 160 : 220;
         bool slid = false, folded = false;

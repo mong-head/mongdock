@@ -357,6 +357,10 @@ public sealed class Settings
     /// false 면 모아 둔 것도 지움 (Services/UsageStatsService).
     /// </summary>
     public bool? SendUsageStats { get; set; }
+    /// <summary>사용 통계 묻는 배너를 마지막으로 띄운 날 "yyyy-MM-dd" (하루 한 번만).</summary>
+    public string? StatsAskDay { get; set; }
+    /// <summary>사용 통계 배너가 고르지 않고 지나간 횟수 — 3번이면 안 보냄으로 두고 더 묻지 않음 (Views/StatsConsent).</summary>
+    public int StatsAskCount { get; set; }
     /// <summary>체험 남은 날 카드(3일·1일)를 마지막으로 보인 날 "yyyy-MM-dd" — 하루 한 번만 (Views/LicenseUi).</summary>
     public string? TrialNoticeDay { get; set; }
     /// <summary>
