@@ -118,7 +118,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         _broadcastWindow.AddHook(BroadcastWndProc);
 
         _fullscreenTimer = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background,
-            (_, _) => { CheckMonitorMetrics(); EvaluateFullscreen(); KeepTaskbarHidden(); }, _dispatcher);
+            (_, _) => { CheckMonitorMetrics(); EvaluateFullscreen(); SyncTaskbarShowHook(); KeepTaskbarHidden(); }, _dispatcher);
         _fullscreenTimer.Start();
 
         // 가상 데스크톱 전환(데스크톱별 배경)·슬라이드쇼 감지: 백그라운드에서 2초마다 서명 비교
@@ -1319,9 +1319,116 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     private int _taskbarCheckTick;
     private int _taskbarRehideLogs;
 
+    // ── 작업 표시줄이 다시 보이는 순간 숨기기 (#13) ──
+    // explorer 가 자동 숨김 상태의 작업 표시줄을 가끔 다시 보이게 한다(실측 14분에 13번). 예전엔 아래 2초 폴링으로만 잡아서
+    // 최대 2초 동안 보였다 → explorer 프로세스의 EVENT_OBJECT_SHOW 를 받아 바로 숨김. 폴링은 훅을 놓친 경우의 예비.
+    private IntPtr _taskbarShowHook;
+    private uint _taskbarHookPid;
+    private WinEventApi.WinEventProc? _taskbarShowProc;
+    private readonly Queue<long> _taskbarShowTimes = new();
+    private long _taskbarHookBackoffUntil;
+    private int _taskbarShowLogs;
+    private long _lastForegroundAt;
+    private string _lastForeground = "";
+
+    /// <summary>1초 타이머(UI 스레드): 숨기는 중이면 explorer 의 표시 이벤트 훅을 걸고(explorer 재시작이면 새 pid 로), 아니면 뗌.</summary>
+    private void SyncTaskbarShowHook()
+    {
+        if (!_taskbarHidden)
+        {
+            UnhookTaskbarShow();
+            return;
+        }
+        IntPtr tray = TrayApi.FindExplorerTray();
+        if (tray == IntPtr.Zero) return;
+        User32.GetWindowThreadProcessId(tray, out uint pid);
+        if (pid == 0 || (pid == _taskbarHookPid && _taskbarShowHook != IntPtr.Zero)) return;
+        UnhookTaskbarShow();
+        _taskbarShowProc ??= OnTaskbarWinEvent;
+        // 포그라운드 변화(전역)는 "무엇이 작업 표시줄을 다시 띄웠나" 진단용 — 직전 포그라운드만 기억
+        _taskbarShowHook = WinEventApi.SetWinEventHook(WinEventApi.EVENT_OBJECT_SHOW, WinEventApi.EVENT_OBJECT_SHOW,
+            IntPtr.Zero, _taskbarShowProc, pid, 0, WinEventApi.WINEVENT_OUTOFCONTEXT);
+        _foregroundHook = WinEventApi.SetWinEventHook(WinEventApi.EVENT_SYSTEM_FOREGROUND, WinEventApi.EVENT_SYSTEM_FOREGROUND,
+            IntPtr.Zero, _taskbarShowProc, 0, 0, WinEventApi.WINEVENT_OUTOFCONTEXT | WinEventApi.WINEVENT_SKIPOWNPROCESS);
+        if (_taskbarShowHook == IntPtr.Zero)
+        {
+            Log.Warn($"작업 표시줄 표시 훅 실패 (오류 {Marshal.GetLastWin32Error()}) → 2초 확인만");
+            return;
+        }
+        _taskbarHookPid = pid;
+        Log.Info($"작업 표시줄 표시 훅 (explorer pid {pid})");
+    }
+
+    private IntPtr _foregroundHook;
+
+    private void UnhookTaskbarShow()
+    {
+        if (_taskbarShowHook != IntPtr.Zero) WinEventApi.UnhookWinEvent(_taskbarShowHook);
+        if (_foregroundHook != IntPtr.Zero) WinEventApi.UnhookWinEvent(_foregroundHook);
+        _taskbarShowHook = IntPtr.Zero;
+        _foregroundHook = IntPtr.Zero;
+        _taskbarHookPid = 0;
+    }
+
+    private void OnTaskbarWinEvent(IntPtr hook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)
+    {
+        try
+        {
+            if (idObject != WinEventApi.OBJID_WINDOW || idChild != WinEventApi.CHILDID_SELF || hwnd == IntPtr.Zero) return;
+            if (eventType == WinEventApi.EVENT_SYSTEM_FOREGROUND)
+            {
+                _lastForegroundAt = Environment.TickCount64;
+                _lastForeground = ProcessAndClass(hwnd);
+                return;
+            }
+            if (!_taskbarHidden) return;
+            string cls = User32.GetClassNameOf(hwnd);
+            if (cls is not ("Shell_TrayWnd" or "Shell_SecondaryTrayWnd")) return;
+
+            long now = Environment.TickCount64;
+            if (now < _taskbarHookBackoffUntil) return; // explorer 와 숨기기 싸움이 되면 잠깐 2초 확인에 맡김
+            _taskbarShowTimes.Enqueue(now);
+            while (_taskbarShowTimes.Count > 0 && now - _taskbarShowTimes.Peek() > 2000) _taskbarShowTimes.Dequeue();
+            if (_taskbarShowTimes.Count > 8)
+            {
+                _taskbarHookBackoffUntil = now + 10_000;
+                _taskbarShowTimes.Clear();
+                Log.Warn("작업 표시줄이 2초에 8번 넘게 다시 보임 → 10초 동안 즉시 숨기기 멈춤");
+                return;
+            }
+
+            User32.ShowWindowAsync(hwnd, User32.SW_HIDE);
+            if (++_taskbarShowLogs <= 40)
+            {
+                DesktopApi.GetCursorPos(out var c);
+                string fgAgo = _lastForegroundAt == 0 ? "-" : $"{now - _lastForegroundAt}ms 전 {_lastForeground}";
+                Log.Info($"작업 표시줄이 다시 보여 바로 숨김 ({cls}) 마우스=({c.X},{c.Y}) 포그라운드={ProcessAndClass(User32.GetForegroundWindow())} 직전 포그라운드 변화={fgAgo}");
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Warn("작업 표시줄 표시 이벤트 처리 실패", e);
+        }
+    }
+
+    /// <summary>진단 로그용 "프로세스/창 클래스" (창 제목은 남기지 않음).</summary>
+    private static string ProcessAndClass(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return "(없음)";
+        string proc = "?";
+        try
+        {
+            User32.GetWindowThreadProcessId(hwnd, out uint pid);
+            using var p = System.Diagnostics.Process.GetProcessById((int)pid);
+            proc = p.ProcessName;
+        }
+        catch { }
+        return $"{proc}/{User32.GetClassNameOf(hwnd)}";
+    }
+
     /// <summary>
     /// 숨기는 동안 2초마다: explorer 가 작업 표시줄을 다시 보이게 했으면(실측: 자동 숨김 상태에서 가끔 2px 띠로 다시 보임 →
-    /// 마우스를 대면 튀어나옴) 다시 숨김. FindWindowEx·IsWindowVisible 만이라 가벼움.
+    /// 마우스를 대면 튀어나옴) 다시 숨김. FindWindowEx·IsWindowVisible 만이라 가벼움. 표시 훅(위)의 예비 — 여기서 잡히면 훅이 놓친 것.
     /// </summary>
     private void KeepTaskbarHidden()
     {
@@ -1332,7 +1439,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
             {
                 if (!User32.IsWindowVisible(h)) continue;
                 User32.ShowWindowAsync(h, User32.SW_HIDE);
-                if (++_taskbarRehideLogs <= 20) Log.Info($"작업 표시줄이 다시 보여 숨김 (0x{h.ToInt64():X})");
+                if (++_taskbarRehideLogs <= 20) Log.Info($"작업 표시줄이 다시 보여 숨김 (0x{h.ToInt64():X}, 2초 확인)");
             }
         }
         catch (Exception e)
@@ -1412,6 +1519,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         if (_disposed) return;
         _disposed = true;
         RestoreTaskbar("Dispose");
+        UnhookTaskbarShow();
         _mouseHook?.Dispose();
         _mouseHook = null;
         _globalMouseDown = null;

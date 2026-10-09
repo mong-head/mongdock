@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 작업 표시줄(Shell_TrayWnd·Shell_SecondaryTrayWnd)이 언제 보였다 숨는지 기록하는 관찰 도구 (#13).
+       읽기만 함 — 작업 표시줄을 건드리지 않음. 앱 코드와 무관, mongdock.sln 밖, 외부 NuGet 없음. 사용법은 README.md -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <AssemblyName>taskbar-watch</AssemblyName>
+    <RootNamespace>TaskbarWatch</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>
