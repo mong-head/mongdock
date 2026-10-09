@@ -98,6 +98,8 @@ public sealed class ReportWindow : Window
         Background = _p.WindowBackground;
         Foreground = _p.Text;
         SourceInitialized += (_, _) => ApplyTitleBarTheme();
+        // "함께 보낼 정보"를 펼치면 창이 아래로 길어짐 → 화면 아래를 넘으면 위로 올리고, 화면보다 길면 높이를 막아 안에서 스크롤
+        SizeChanged += (_, e) => { if (e.HeightChanged) KeepOnScreen(); };
         Closed += (_, _) =>
         {
             _closed = true;
@@ -279,7 +281,35 @@ public sealed class ReportWindow : Window
         _detailsOpen = open;
         _detailsHost.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
         _detailsChevron.Text = open ? "" : ""; // ChevronDown / ChevronRight
+        // 창 높이가 막혀 안에서 스크롤될 때도 펼친 내용이 보이게
+        if (open) Dispatcher.BeginInvoke(() => _detailsHost.BringIntoView(), System.Windows.Threading.DispatcherPriority.Loaded);
     }
+
+    /// <summary>
+    /// 창이 있는 모니터의 작업 영역 안에 머물게: 높이 상한 = 작업 영역 - 여백, 아래가 넘치면 위로 올림.
+    /// (WPF 좌표는 그 모니터 기준 DIP = 물리 픽셀 / 배율 — Services/Monitors 설명)
+    /// </summary>
+    private void KeepOnScreen()
+    {
+        if (!IsLoaded || WindowState != WindowState.Normal) return;
+        IntPtr hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero || !GetWindowRect(hwnd, out var r)) return;
+        var center = new Point((r.Left + r.Right) / 2.0, (r.Top + r.Bottom) / 2.0);
+        var monitor = Monitors.GetAll().FirstOrDefault(m => m.ContainsPx(center)) ?? Monitors.GetPrimary();
+        Rect work = monitor.WorkArea;
+        const double gap = 12;
+        double max = Math.Max(360, work.Height - gap * 2);
+        if (Math.Abs(MaxHeight - max) > 0.5) MaxHeight = max;
+        double height = Math.Min(ActualHeight, max);
+        if (Top + height > work.Bottom - gap) Top = Math.Max(work.Top + gap, work.Bottom - gap - height);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WinRect { public int Left, Top, Right, Bottom; }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(IntPtr hwnd, out WinRect rect);
 
     private void SelectKind(ReportKind kind)
     {
