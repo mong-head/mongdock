@@ -176,7 +176,18 @@ internal static class CoachMarks
         if (s.LastSeenVersion is null && firstInstall || s.FirstRunTourPending)
         {
             Log.Info($"첫 설치 → 둘러보기 (v{WhatsNew.CurrentText})");
-            if (Start(BuildTour(), isTour: true) is null) ClearTourPending();
+            // 둘러보기를 끝까지 보거나 건너뛰면 (스토어판 새 설치) 자동 실행을 물어봄
+            if (Start(BuildTour(), reason => { if (reason == CoachEndReason.Completed) AskStartupIfPending(); }, isTour: true) is null)
+            {
+                ClearTourPending();
+                AskStartupIfPending();
+            }
+            return;
+        }
+        // 지난번에 카드를 고르지 않고 닫았음 → 이번에 다시
+        if (s.StartupPromptPending)
+        {
+            AskStartupIfPending();
             return;
         }
         var last = WhatsNew.Parse(s.LastSeenVersion) ?? WhatsNew.Parse(WhatsNew.LegacyVersion)!;
@@ -190,6 +201,37 @@ internal static class CoachMarks
             return;
         }
         Start(pages);
+    }
+
+    /// <summary>
+    /// 스토어판 새 설치: "컴퓨터를 켜면 몽독도 같이 켤까요?" [켜기]/[나중에]. 일반판은 설치 프로그램 체크박스로 정하므로 StartupPromptPending 이 켜지지 않음.
+    /// [켜기] → 자동 실행 켬, [나중에] → 꺼진 채. 바깥 클릭 등으로 고르지 않고 닫히면 다음 실행에 다시 물음.
+    /// </summary>
+    private static async void AskStartupIfPending()
+    {
+        var services = _services;
+        if (services is null || !services.Settings.Current.StartupPromptPending) return;
+        try
+        {
+            bool? choice = await ConfirmCardWindow.AskChoiceAsync(services,
+                "컴퓨터를 켜면 몽독도 같이 켤까요?",
+                "로그인하면 독과 상단바가 바로 나타나요. 설정 → 일반에서 언제든 바꿀 수 있어요.",
+                "켜기", "나중에");
+            if (choice is null) return; // 고르지 않음 → 다음 실행에 다시
+            var s = services.Settings.Current;
+            s.StartupPromptPending = false;
+            if (choice == true)
+            {
+                services.Startup.SetEnabled(true);
+                s.StartWithWindows = true;
+            }
+            services.Settings.Save();
+            Log.Info($"첫 실행 자동 실행 질문: {(choice == true ? "켜기" : "나중에")}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("자동 실행 질문 카드 실패", ex);
+        }
     }
 
     /// <summary>첫 설치 둘러보기를 다 봄(또는 건너뜀) → 다음 실행에 다시 띄우지 않음.</summary>

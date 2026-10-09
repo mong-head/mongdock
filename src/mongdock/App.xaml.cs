@@ -121,10 +121,11 @@ public partial class App : Application
         InitializePinsOnce(settings);
         if (startup is PackagedStartupService packaged)
         {
-            // 스토어판 새 설치: 설치 프로그램판처럼 로그인 시 자동 실행을 기본으로 켬 (사용자가 윈도우에서 끄면 그대로 둠)
-            bool fresh = settings.CreatedThisRun && !settings.Current.StartWithWindows;
-            if (fresh) settings.Current.StartWithWindows = true;
-            if (packaged.Adopt(settings.Current) || fresh) settings.Save();
+            // 일반판에서 옮겨 왔으면 Run 키를 이어받고, 아니고 새 설치면 첫 둘러보기 뒤에 자동 실행을 물어봄 (CoachMarks)
+            bool adopted = packaged.Adopt(settings.Current);
+            bool ask = !adopted && settings.CreatedThisRun && !settings.Current.StartWithWindows;
+            if (ask) settings.Current.StartupPromptPending = true;
+            if (adopted || ask) settings.Save();
         }
 
         tracker.Start();

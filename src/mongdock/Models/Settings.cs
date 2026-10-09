@@ -368,6 +368,8 @@ public sealed class Settings
     [System.Text.Json.Serialization.JsonIgnore]
     public bool TaskbarPinImportRequested { get; set; }
     public bool StartWithWindows { get; set; }
+    /// <summary>스토어판 새 설치: 첫 둘러보기 뒤 "컴퓨터를 켜면 몽독도 같이 켤까요?" 카드를 아직 안 물어봄 (Views/CoachMarks). 일반판은 설치 프로그램이 정함.</summary>
+    public bool StartupPromptPending { get; set; }
     /// <summary>MyDockFinder ico.ini 를 한 번 가져왔는지. true 면 다시 가져오지 않음.</summary>
     public bool ImportedFromMyDockFinder { get; set; }
     /// <summary>

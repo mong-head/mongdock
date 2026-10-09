@@ -17,8 +17,10 @@ internal sealed class ConfirmCardWindow : Window
     private readonly Border _card;
     private Action? _onConfirm;
     private Action? _onCancel;
+    /// <summary>[취소] 버튼으로 닫힘 (바깥 클릭·다른 창 활성화와 구분).</summary>
+    private bool _cancelClicked;
 
-    public ConfirmCardWindow(AppServices services, UiPalette p, string title, string message, string confirmText, Action onConfirm)
+    public ConfirmCardWindow(AppServices services, UiPalette p, string title, string message, string confirmText, Action onConfirm, string cancelText = "취소")
     {
         _onConfirm = onConfirm;
         WindowStyle = WindowStyle.None;
@@ -61,8 +63,12 @@ internal sealed class ConfirmCardWindow : Window
         buttons.ColumnDefinitions.Add(new ColumnDefinition());
         buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
         buttons.ColumnDefinitions.Add(new ColumnDefinition());
-        var cancel = MakeButton("취소", p.Tile, p.Text);
-        cancel.Click += (_, _) => Close();
+        var cancel = MakeButton(cancelText, p.Tile, p.Text);
+        cancel.Click += (_, _) =>
+        {
+            _cancelClicked = true;
+            Close();
+        };
         var ok = MakeButton(confirmText, p.Accent, p.AccentText);
         ok.Click += (_, _) =>
         {
@@ -122,6 +128,19 @@ internal sealed class ConfirmCardWindow : Window
         Foreground = foreground,
         Height = 30,
     };
+
+    /// <summary>
+    /// 확인 카드를 띄우고 결과를 기다림: 확인 = true, [취소 버튼] = false, 바깥 클릭·다른 창 활성화 = null (고르지 않음 — 나중에 다시 물을 수 있음).
+    /// </summary>
+    public static Task<bool?> AskChoiceAsync(AppServices services, string title, string message, string confirmText, string cancelText)
+    {
+        var tcs = new TaskCompletionSource<bool?>();
+        var p = UiTheme.Palette(services.Settings.Current);
+        var card = new ConfirmCardWindow(services, p, title, message, confirmText, () => tcs.TrySetResult(true), cancelText);
+        card._onCancel = () => tcs.TrySetResult(card._cancelClicked ? false : null);
+        card.Show();
+        return tcs.Task;
+    }
 
     /// <summary>확인 카드를 띄우고 결과를 기다림 (확인 = true, 취소/바깥 클릭 = false).</summary>
     public static Task<bool> AskAsync(AppServices services, string title, string message, string confirmText)
