@@ -69,7 +69,7 @@ public sealed class TrayController : IDisposable
         bool paused = AppState.Paused;
         var icon = paused ? _pausedIcon : _normalIcon;
         if (!ReferenceEquals(_icon.Icon, icon)) _icon.Icon = icon;
-        _icon.Text = paused ? Loc.F($"{AppInfo.Name} (일시 정지)") : AppInfo.Name;
+        _icon.Text = AppState.Locked ? Loc.F($"{AppInfo.Name} (체험 끝남)") : paused ? Loc.F($"{AppInfo.Name} (일시 정지)") : AppInfo.Name;
 
         bool hide = _services.Settings.Current.HideWindowsTaskbar && !paused;
         if (_taskbarHidden == hide) return;
@@ -114,6 +114,16 @@ public sealed class TrayController : IDisposable
         UiFonts.Apply(_services.Settings.Current);
 
         var menu = new ContextMenu();
+        if (AppState.Locked)
+        {
+            // 체험 끝남 (#5): 구매·종료만 (설정·일시 정지 해제로 다시 켜지지 않게)
+            menu.Items.Add(DockMenus.Item(Loc.T("구매하기…"), () => _ = LicenseUi.PurchaseAsync()));
+            menu.Items.Add(DockMenus.Item(Loc.T("체험이 끝났어요…"), LicenseUi.ShowExpiredCard));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(DockMenus.Quit());
+            ShowAt(menu);
+            return;
+        }
         menu.Items.Add(DockMenus.SettingsWindow(_services));
         menu.Items.Add(new Separator());
         menu.Items.Add(DockMenus.ShowDock(_services));
@@ -128,7 +138,11 @@ public sealed class TrayController : IDisposable
         menu.Items.Add(DockMenus.OpenSettings(_services));
         menu.Items.Add(DockMenus.Quit());
         UpdateUi.AddMenuItems(menu, _services); // 새 버전 있으면 맨 위에 "업데이트 있음 — vX 설치…"
+        ShowAt(menu);
+    }
 
+    private void ShowAt(ContextMenu menu)
+    {
         // 커서 위치에 (메뉴가 화면을 넘으면 WPF 가 위로 뒤집어 줌)
         WpfPoint? cursor = null;
         try { cursor = _services.DesktopWindows.GetCursorPosition(); }

@@ -1168,6 +1168,16 @@ internal sealed partial class SettingsWindow : Window
             Row(Loc.T("설정 파일"), Loc.T("settings.json (직접 편집하면 저장 즉시 반영)"),
                 ActionButton(Loc.T("파일 열기"), () => _services.Launcher.OpenFile(_services.Settings.SettingsPath)))));
 
+        // 스토어 체험판 (#5): 체험 중·끝남일 때만 (정식·일반판은 없음)
+        if (LicenseUi.Service is { Managed: true, Current: { State: not LicenseState.Full } lic })
+        {
+            body.Children.Add(SectionTitle(Loc.T("구매")));
+            body.Children.Add(Group(
+                Row(lic.State == LicenseState.Trial ? Loc.F($"체험판 · {lic.DaysLeft}일 남음") : Loc.T("체험이 끝났어요"),
+                    Loc.T("체험이 끝나면 독과 상단바가 멈춰요. 구매하면 그대로 계속 쓸 수 있어요."),
+                    ActionButton(Loc.T("구매하기"), () => _ = LicenseUi.PurchaseAsync()))));
+        }
+
         body.Children.Add(SectionTitle(Loc.T("도움")));
         body.Children.Add(Group(
             Row(Loc.T("문제 신고하기"), Loc.T("버그·질문·제안을 몽독 지원 메일함으로 보내요. 보내기 전에 함께 보낼 정보를 확인할 수 있어요."),

@@ -356,6 +356,8 @@ public sealed class Settings
     /// 끄면 모아 둔 것도 지움 (Services/UsageStatsService).
     /// </summary>
     public bool SendUsageStats { get; set; } = true;
+    /// <summary>체험 남은 날 카드(3일·1일)를 마지막으로 보인 날 "yyyy-MM-dd" — 하루 한 번만 (Views/LicenseUi).</summary>
+    public string? TrialNoticeDay { get; set; }
     /// <summary>
     /// mongdock 이 켜져 있는 동안 윈도우 작업 표시줄 숨김 (숨기는 동안 작업 표시줄 자동 숨김을 켜서 빈 띠가 안 남게).
     /// 일시 정지·종료·크래시 시 원래대로 복원. 속성 기본값은 false(키 없는 기존 파일 호환) — 새 설치는 SettingsService 가 켬.

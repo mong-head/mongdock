@@ -170,6 +170,8 @@ public partial class App : Application
         tracker.Start();
         _services.Status.Start();
         _services.Media.Start();
+        // 스토어 체험판·구매 (#5) — 독·상단바보다 먼저: 체험이 끝났으면 잠긴(일시 정지) 채로 떠서 깜빡이지 않게. 일반판은 늘 정식
+        LicenseUi.Attach(_services, () => _dock);
         if (!AppState.Paused) _services.Calendars.Start();
         _dock = new DockWindow(_services);
         _dock.Show();
@@ -426,6 +428,7 @@ public partial class App : Application
         _lowBattery?.Dispose();
         _updates?.Dispose();
         _stats?.Dispose();
+        LicenseUi.Detach();
         if (_services is not null)
         {
             _services.Notifications.Stop();
