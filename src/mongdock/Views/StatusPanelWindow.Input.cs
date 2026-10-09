@@ -27,7 +27,7 @@ internal sealed partial class StatusPanelWindow
         var st = _services.Status;
         var section = new StackPanel();
         section.Children.Add(Divider());
-        var title = Sub(Loc.T("입력"));
+        var title = Sub(Loc.IsEnglish ? "Input" : "입력"); // 같은 한국어 키 "입력" 이 윈도우 설정 페이지(Typing)에도 쓰여 여기만 따로
         title.Margin = new Thickness(0, 0, 0, 6);
         section.Children.Add(title);
 

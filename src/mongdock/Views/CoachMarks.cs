@@ -333,7 +333,7 @@ internal static class CoachMarks
                 : ""),
         Anchor = step.Anchor,
         NextText = step.Key == WhatsNew.IntroKey ? Loc.T("좋아요") : null,
-        Action = step.Key == WhatsNew.IntroKey ? (Loc.T("작업 표시줄 다시 보이기"), ShowWindowsTaskbarAgain) : null,
+        Action = step.Key == WhatsNew.IntroKey ? (Loc.T("작업 표시줄 보이기"), ShowWindowsTaskbarAgain) : null, // 카드 폭에 맞게 짧게 (QA: "다시 보이기" 가 잘림)
         AdvanceOnUse = step.Key == WhatsNew.SearchKey,
         Hint = HasPressPrompt(step.Title) || HasPressPrompt(step.Body) ? null : PressHint(step.Anchor),
     };
