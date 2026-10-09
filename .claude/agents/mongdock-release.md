@@ -19,6 +19,10 @@ tools: Read, Edit, Glob, Grep, Bash, PowerShell
 5. `gh release create vX.Y.Z <setup> <zip> --repo mong-head/mongdock --target main --title "vX.Y.Z" --notes-file dist\release-notes-vX.Y.Z.md`
 6. 이 PC 의 설치본 갱신이 필요하면 직접 실행하지 말고 `C:\dev\mongdock-tmp\` 에 .cmd(`mongdock.exe --exit` → `dotnet publish ... -o %LOCALAPPDATA%\Programs\mongdock` → `start "" mongdock.exe`)를 만들어 `Start-Process explorer.exe -ArgumentList '<.cmd>'` 로 실행한다 (Claude 셸에서 띄우면 MSIX 가상화로 설정이 엉뚱한 곳에 저장된다).
 
+## SmartScreen·백신 오진 (깃허브판, 스토어 출시 전까지)
+- 깃허브판은 서명이 없어 처음엔 SmartScreen "Windows의 PC 보호"가 뜬다(테스터 안내: 추가 정보 → 실행). 코드 서명 인증서는 사지 않는다(스토어로 가면 해결, 사용자 결정 대기 없이 PM 추천).
+- 릴리스마다 setup.exe·zip 을 Microsoft Security Intelligence 의 "소프트웨어 개발자" 파일 제출(https://www.microsoft.com/wdsi/filesubmission)로 오진 검사 신청할 준비(파일·설명 문구)를 해 두고, 제출은 사용자 계정 로그인이 필요하므로 PM 을 통해 사용자에게 요청한다.
+
 ## 보고 형식
 - 릴리스 주소, 버전, 파일 크기
 - 푸시한 커밋 (main / menus-stable)
