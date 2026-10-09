@@ -42,6 +42,12 @@
     <EmbeddedResource Include="Changelog.json" LogicalName="Mongdock.Changelog.json" />
     <!-- 영어 화면 문구 사전 { "한국어": "English" } (Loc.cs, tools/i18n) -->
     <EmbeddedResource Include="i18n\en.json" LogicalName="mongdock.i18n.en.json" />
+    <EmbeddedResource Include="i18n\ja.json" LogicalName="mongdock.i18n.ja.json" Condition="Exists('i18n\ja.json')" />
+    <EmbeddedResource Include="i18n\zh-Hans.json" LogicalName="mongdock.i18n.zh-Hans.json" Condition="Exists('i18n\zh-Hans.json')" />
+    <EmbeddedResource Include="i18n\zh-Hant.json" LogicalName="mongdock.i18n.zh-Hant.json" Condition="Exists('i18n\zh-Hant.json')" />
+    <EmbeddedResource Include="i18n\de.json" LogicalName="mongdock.i18n.de.json" Condition="Exists('i18n\de.json')" />
+    <EmbeddedResource Include="i18n\fr.json" LogicalName="mongdock.i18n.fr.json" Condition="Exists('i18n\fr.json')" />
+    <EmbeddedResource Include="i18n\es.json" LogicalName="mongdock.i18n.es.json" Condition="Exists('i18n\es.json')" />
     <!-- 앱 전용 메뉴 규칙 (저장소 루트 menus/). 오프라인·첫 실행 기본값 — 실행 중엔 GitHub 의 같은 파일로 갱신 (Services/MenuRulesService) -->
     <EmbeddedResource Include="..\..\menus\app-menus.json" LogicalName="mongdock.app-menus.json" Link="menus\app-menus.json" />
   </ItemGroup>

@@ -114,20 +114,48 @@ def collect():
     return keys
 
 
+PLACEHOLDER = re.compile(r'\{([^{}:,]+)[^{}]*\}')  # 이름만 비교 ({0:M월 d일} 과 {0:MMM d} 는 같음 — 날짜 서식은 언어마다 다름)
+
+
 def main():
+    """
+    영어(en.json)와 다른 언어(i18n/*.json)를 코드의 키와 비교.
+      --missing [코드]  : 그 언어(기본 en)의 빠진 키를 JSON 으로 (번역 채울 때)
+      --check           : 언어마다 빠진 것·자리표시자({0}·{hotkey}) 어긋남이 있으면 종료 코드 1
+    en.json 에만 있는 동적 키(공휴일·색 이름처럼 Loc.T(변수))는 다른 언어에도 있어야 함 (en 의 키 전체가 기준).
+    """
     keys = collect()
     en = json.load(open(EN, encoding='utf-8')) if os.path.exists(EN) else {}
+    if '--missing' in sys.argv:
+        i = sys.argv.index('--missing')
+        code = sys.argv[i + 1] if i + 1 < len(sys.argv) and not sys.argv[i + 1].startswith('--') else 'en'
+        table = en if code == 'en' else json.load(open(os.path.join(ROOT, 'i18n', code + '.json'), encoding='utf-8'))
+        want = keys if code == 'en' else list(dict.fromkeys(keys + list(en)))
+        print(json.dumps({k: '' for k in want if not table.get(k)}, ensure_ascii=False, indent=1))
+        return 0
+    bad = False
     missing = [k for k in keys if not en.get(k)]
     unused = [k for k in en if k not in set(keys)]
-    if '--missing' in sys.argv:
-        print(json.dumps({k: '' for k in missing}, ensure_ascii=False, indent=1))
-        return 0
-    print(f'keys {len(keys)}, translated {len(keys) - len(missing)}, missing {len(missing)}, unused {len(unused)}')
-    if '--check' in sys.argv and missing:
+    print(f'en: keys {len(keys)}, translated {len(keys) - len(missing)}, missing {len(missing)}, unused {len(unused)}')
+    if missing:
+        bad = True
         for k in missing[:30]:
             print('  missing:', k.replace('\n', '\\n'))
-        return 1
-    return 0
+    want = list(dict.fromkeys(keys + list(en)))
+    for f in sorted(glob.glob(os.path.join(ROOT, 'i18n', '*.json'))):
+        code = os.path.splitext(os.path.basename(f))[0]
+        if code == 'en':
+            continue
+        table = json.load(open(f, encoding='utf-8'))
+        miss = [k for k in want if not table.get(k)]
+        ph = [k for k in want if table.get(k) and sorted(PLACEHOLDER.findall(k)) != sorted(PLACEHOLDER.findall(table[k]))]
+        extra = [k for k in table if k not in set(want)]
+        print(f'{code}: translated {len(want) - len(miss)}/{len(want)}, missing {len(miss)}, placeholder mismatch {len(ph)}, extra {len(extra)}')
+        for k in (miss + ph)[:10]:
+            print('  ' + ('missing' if k in miss else 'placeholder') + ':', k.replace('\n', '\\n')[:80])
+        if miss or ph:
+            bad = True
+    return 1 if '--check' in sys.argv and bad else 0
 
 
 if __name__ == '__main__':

@@ -138,9 +138,9 @@ public partial class TopBarWindow : Window
         if (string.IsNullOrWhiteSpace(pattern)) pattern = "tt h:mm";
         bool h24 = pattern.Contains('H'), pad = pattern.Contains(h24 ? "HH" : "hh");
         string hm = (h24 ? (pad ? "HH" : "H") : (pad ? "hh" : "h")) + ":mm";
-        string time = h24 ? hm : Loc.IsEnglish ? hm + " tt" : "tt " + hm;
+        string time = h24 ? hm : Loc.AmPmFirst ? "tt " + hm : hm + " tt";
         // 영어: 맥처럼 "Thu Oct 9  7:50 PM" (날짜 서식은 번역 사전이 아니라 여기서)
-        return !t.ShowClockDate ? time : Loc.IsEnglish ? "ddd MMM d  " + time : "M월 d일 (ddd) " + time;
+        return !t.ShowClockDate ? time : Loc.ClockDatePrefix + time;
     }
 
     private void ScheduleClock()

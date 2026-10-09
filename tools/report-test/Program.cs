@@ -15,15 +15,27 @@ namespace ReportTest;
 internal static class Program
 {
     private static int _failed;
-    private static bool _english;
+    private static string _lang = "ko";
 
     [STAThread]
     private static int Main(string[] args)
     {
-        _english = args.Contains("--en"); // 영어 화면으로 렌더링 (App 생성자가 언어를 다시 정하므로 렌더링 때 다시 적용)
-        if (_english) Mongdock.Loc.Init("en");
+        // --en 또는 --lang <코드>: 그 언어 화면으로 렌더링 (App 생성자가 언어를 다시 정하므로 렌더링 때 다시 적용)
+        int langAt = Array.FindIndex(args, a => a == "--lang");
+        _lang = args.Contains("--en") ? "en" : langAt >= 0 && langAt + 1 < args.Length ? args[langAt + 1] : "ko";
+        // --settings DIR: 설정 창 페이지 PNG 만 (임시 데이터 폴더 — 다른 시험보다 먼저, AppInfo 를 건드리기 전에)
+        int settingsAt = Array.FindIndex(args, a => a == "--settings");
+        if (settingsAt >= 0 && settingsAt + 1 < args.Length)
+        {
+            Environment.SetEnvironmentVariable("MONGDOCK_DATA_DIR", Path.Combine(Path.GetTempPath(), "mongdock-settings-png-" + Guid.NewGuid().ToString("N")));
+            Mongdock.Loc.Init(_lang);
+            RenderSettingsPages(args[settingsAt + 1]);
+            return 0;
+        }
+        Mongdock.Loc.Init(_lang);
         RedactionTests();
         MenuRuleLanguageTests();
+        LanguageRuleTests();
         Console.WriteLine(_failed == 0 ? "가리기 시험: 모두 통과" : $"가리기 시험: {_failed}개 실패");
 
         // 이 PC 의 실제 로그를 가린 결과 (보내지 않음 — 눈으로 확인용)
@@ -121,7 +133,33 @@ internal static class Program
         }
         Check("앱 메뉴 한국어", First("ko"), "8 파일 새 탭");
         Check("앱 메뉴 영어", First("en"), "8 File New Tab");
-        Mongdock.Loc.Init(_english ? "en" : "ko");
+        Mongdock.Loc.Init(_lang);
+    }
+
+    // 언어 고르기 규칙 (#23): 설정 값·윈도우 문화권 → 지원 코드, 사전 대체 순서
+    private static void LanguageRuleTests()
+    {
+        string N(string v) => Mongdock.Loc.Normalize(v) ?? "(자동)";
+        Check("zh-TW → 번체", N("zh-TW"), "zh-Hant");
+        Check("zh-HK → 번체", N("zh-HK"), "zh-Hant");
+        Check("zh-MO → 번체", N("zh-MO"), "zh-Hant");
+        Check("zh-Hant → 번체", N("zh-hant"), "zh-Hant");
+        Check("zh-CN → 간체", N("zh-CN"), "zh-Hans");
+        Check("zh-SG → 간체", N("zh-SG"), "zh-Hans");
+        Check("ja-JP → ja", N("ja-JP"), "ja");
+        Check("DE → de", N("DE"), "de");
+        Check("fr-CA → fr", N("fr-CA"), "fr");
+        Check("es-MX → es", N("es-MX"), "es");
+        Check("모르는 언어 pt-BR → 자동", N("pt-BR"), "(자동)");
+        Check("이상한 값 → 자동", N("xx-?!"), "(자동)");
+        Check("빈 값 → 자동", N(""), "(자동)");
+        Mongdock.Loc.Init("de");
+        Check("독일어 사전", Mongdock.Loc.T("언어"), "Sprache");
+        Check("사전에 없는 문구 → 한국어", Mongdock.Loc.T("사전에 없는 문구"), "사전에 없는 문구");
+        Check("독일어 날짜", Mongdock.Loc.DateFull(new DateTime(2026, 10, 9)), "9. Oktober 2026");
+        Mongdock.Loc.Init("ja");
+        Check("일본어 날짜", Mongdock.Loc.DateFull(new DateTime(2026, 10, 9)), "2026年10月9日");
+        Mongdock.Loc.Init(_lang);
     }
 
     private static void Check(string name, string actual, string expected)
@@ -137,7 +175,7 @@ internal static class Program
     {
         Directory.CreateDirectory(dir);
         var app = new Mongdock.App();
-        if (_english) Mongdock.Loc.Init("en");
+        Mongdock.Loc.Init(_lang);
         app.InitializeComponent(); // Themes/Controls.xaml·Menus.xaml (CardButton, IconFont)
         var ctx = new ReportRedactor.Context("melon", "DESKTOP-AB12CD", new[] { "연봉 협상안.xlsx - Excel" });
         string sample = ReportRedactor.Redact(
@@ -161,7 +199,7 @@ internal static class Program
                 w.SetDiagnostics(sample);
                 w.SetPreviewState(ReportKind.Bug, open ? "" : "독에서 카카오톡이 안 열려요", "독에서 카카오톡 아이콘을 누르면 창이 안 떠요.\n다시 누르면 떠요.", open ? "me@example.com" : "", open);
                 w.UpdateLayout();
-                string name = $"report-{(Mongdock.Loc.IsEnglish ? "en-" : "")}{theme.ToString().ToLowerInvariant()}{(open ? "-details" : "")}.png";
+                string name = $"report-{(Mongdock.Loc.IsKorean ? "" : Mongdock.Loc.Code + "-")}{theme.ToString().ToLowerInvariant()}{(open ? "-details" : "")}.png";
                 Save(w, Path.Combine(dir, name));
                 w.Close();
                 Console.WriteLine($"  저장  {name}");
@@ -232,6 +270,75 @@ internal static class Program
         rtb.Render(dv);
         rtb.Freeze();
         return rtb;
+    }
+
+    /// <summary>
+    /// 설정 창 페이지마다 PNG (#23 — 언어별 글자 잘림 확인). 앱과 같은 서비스를 만들되 Start 하지 않음(훅·폴링 없음),
+    /// 데이터 폴더는 임시(MONGDOCK_DATA_DIR, Main 맨 앞에서). 페이지 본문(스크롤 안 내용)을 끝까지 그림.
+    /// </summary>
+    private static void RenderSettingsPages(string dir)
+    {
+        Directory.CreateDirectory(dir);
+        var app = new Mongdock.App();
+        Mongdock.Loc.Init(_lang);
+        app.InitializeComponent();
+        app.ShutdownMode = ShutdownMode.OnExplicitShutdown; // 렌더링 중 창이 닫혀도 앱이 꺼지지 않게
+        var settings = new SettingsService();
+        Mongdock.ViewModels.UiFonts.Apply(settings.Current);
+        var tracker = new WindowTracker();
+        var launcher = new AppLauncher(tracker);
+        var services = new AppServices(settings, tracker, launcher, new IconService(), new DesktopWindowService(), new VirtualDesktopService(),
+            new ShellActions(), new ImeService(), new StatusService(), new MediaService(), new AppMenuService(settings), new StartupService(),
+            new NotificationService(tracker, launcher), new TrayIconService(), new CalendarFeedService(settings));
+        var type = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.SettingsWindow")!; // internal
+        var w = (Window)type.GetConstructor(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance, new[] { typeof(AppServices) })!.Invoke(new object[] { services });
+        w.Left = -20000; w.Top = -20000; w.ShowActivated = false;
+        w.Show();
+        var pageType = type.GetNestedType("Page", System.Reflection.BindingFlags.NonPublic)!;
+        var go = type.GetMethod("GoToPage", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var rebuild = type.GetMethod("Rebuild", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        foreach (var page in Enum.GetValues(pageType))
+        {
+            go.Invoke(w, new[] { page });
+            // GoToPage 는 한 박자 늦게 다시 그림 → 바로 다시 그리게
+            rebuild.Invoke(w, null);
+            w.UpdateLayout(); // 디스패처를 돌리지 않음 — 돌리면 App.OnStartup 이 실행돼 (실행 중인 몽독이 있으면) 앱이 종료됨
+            // 가장 큰 ScrollViewer 의 내용 = 페이지 본문
+            var scroll = Descendants(w).OfType<System.Windows.Controls.ScrollViewer>().OrderByDescending(s => s.ActualWidth * s.ActualHeight).FirstOrDefault();
+            if (scroll?.Content is not FrameworkElement body) continue;
+            double width = scroll.ViewportWidth > 0 ? scroll.ViewportWidth : scroll.ActualWidth;
+            body.Measure(new Size(width, double.PositiveInfinity));
+            double height = Math.Max(body.DesiredSize.Height, 50);
+            body.Arrange(new Rect(0, 0, width, height));
+            body.UpdateLayout();
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen())
+            {
+                dc.DrawRectangle(w.Background ?? Brushes.White, null, new Rect(0, 0, width, height));
+                dc.DrawRectangle(new VisualBrush(body) { ViewboxUnits = BrushMappingMode.Absolute, Viewbox = new Rect(0, 0, width, height), Stretch = Stretch.None }, null, new Rect(0, 0, width, height));
+            }
+            const double scale = 1.25;
+            var rtb = new RenderTargetBitmap((int)(width * scale), (int)(height * scale), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
+            rtb.Render(dv);
+            var enc = new PngBitmapEncoder();
+            enc.Frames.Add(BitmapFrame.Create(rtb));
+            string path = Path.Combine(dir, $"settings-{_lang}-{page.ToString()!.ToLowerInvariant()}.png");
+            using (var fs = File.Create(path)) enc.Save(fs);
+            Console.WriteLine($"  저장  {path}");
+        }
+        w.Close();
+        GC.KeepAlive(app);
+    }
+
+    private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
+    {
+        int n = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < n; i++)
+        {
+            var c = VisualTreeHelper.GetChild(root, i);
+            yield return c;
+            foreach (var d in Descendants(c)) yield return d;
+        }
     }
 
     private static void Save(Window w, string path)

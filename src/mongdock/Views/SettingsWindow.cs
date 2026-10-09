@@ -378,30 +378,41 @@ internal sealed partial class SettingsWindow : Window
         BuildTransferSection(body); // SettingsWindow.Transfer.cs
     }
 
-    private enum UiLanguage { Auto, Korean, English }
+    private enum UiLanguageSlot { Auto, English, Other }
 
-    /// <summary>언어: 자동(윈도우 표시 언어) / 한국어 / English. 바꾸면 다시 시작해야 반영 → 카드로 바로 다시 시작.</summary>
-    private Grid LanguageRow(Settings s)
+    /// <summary>
+    /// 언어 (#23): 바로 보이는 건 [윈도우 언어 (지금 언어)] [English] 둘 — 윈도우가 영어면 English 칸은 없음.
+    /// 그 밖의 언어는 "다른 언어…" 목록(언어마다 그 언어 이름)에서 고르고, 고르면 그 이름이 세 번째 칸으로 선택돼 보임.
+    /// 바꾸면 다시 시작해야 반영 → 카드로 바로 다시 시작.
+    /// </summary>
+    private UIElement LanguageRow(Settings s)
     {
-        var current = (s.Language ?? "").Trim().ToLowerInvariant() switch
+        string system = Loc.SystemCode;
+        string chosen = Loc.Normalize(s.Language) ?? "";
+        if (chosen == "en" && system == "en") chosen = ""; // 윈도우가 영어면 English = 자동
+        var options = new List<(UiLanguageSlot, string)> { (UiLanguageSlot.Auto, Loc.F($"윈도우 언어 ({Loc.NativeName(system)})")) };
+        if (system != "en") options.Add((UiLanguageSlot.English, "English"));
+        if (chosen is not ("" or "en")) options.Add((UiLanguageSlot.Other, Loc.NativeName(chosen)));
+        var current = chosen switch { "" => UiLanguageSlot.Auto, "en" => UiLanguageSlot.English, _ => UiLanguageSlot.Other };
+
+        void Pick(string code)
         {
-            "ko" => UiLanguage.Korean,
-            "en" => UiLanguage.English,
-            _ => UiLanguage.Auto,
-        };
+            if ((Loc.Normalize(_services.Settings.Current.Language) ?? "") == code) return;
+            Commit(() => _services.Settings.Current.Language = code, rebuild: true);
+            ConfirmCardWindow.Ask(_services, Loc.T("몽독을 다시 시작할까요?"), Loc.T("언어는 다시 시작하면 바뀌어요."), Loc.T("다시 시작"), App.Relaunch);
+        }
+
+        var controls = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        controls.Children.Add(Segmented(current, options.ToArray(), v =>
+        {
+            if (v == UiLanguageSlot.Auto) Pick("");
+            else if (v == UiLanguageSlot.English) Pick("en");
+        }));
         // 언어 이름은 번역하지 않음 (다른 언어로 바꾸려는 사람이 알아보게)
-        return Row(Loc.T("언어"), Loc.T("바꾸면 몽독을 다시 시작해요."), Segmented(current,
-            new[] { (UiLanguage.Auto, Loc.T("자동")), (UiLanguage.Korean, "한국어"), (UiLanguage.English, "English") },
-            v =>
-            {
-                Commit(() => _services.Settings.Current.Language = v switch
-                {
-                    UiLanguage.Korean => "ko",
-                    UiLanguage.English => "en",
-                    _ => "",
-                });
-                ConfirmCardWindow.Ask(_services, Loc.T("몽독을 다시 시작할까요?"), Loc.T("언어는 다시 시작하면 바뀌어요."), Loc.T("다시 시작"), App.Relaunch);
-            }));
+        var more = Dropdown(Loc.T("다른 언어…"), () => Loc.Languages.Select(l => (l.NativeName, l.Code == (chosen == "" ? system : chosen), (Action)(() => Pick(l.Code)))));
+        more.Margin = new Thickness(8, 0, 0, 0);
+        controls.Children.Add(more);
+        return Row(Loc.T("언어"), Loc.T("바꾸면 몽독을 다시 시작해요."), controls);
     }
 
     private UIElement FontDropdown(string current)
@@ -1300,7 +1311,39 @@ internal sealed partial class SettingsWindow : Window
         if (control is FrameworkElement fe) fe.VerticalAlignment = VerticalAlignment.Center;
         Grid.SetColumn(control, 1);
         grid.Children.Add(control);
+        StackWhenNarrow(grid, texts, control);
         return grid;
+    }
+
+    /// <summary>
+    /// 컨트롤이 줄 폭의 절반을 넘게 차지하면(독일어·프랑스어 긴 세그먼트 등) 제목이 한두 글자씩 끊기지 않게
+    /// 컨트롤을 제목 아래 줄(오른쪽 정렬)로 내림. 폭이 넉넉해지면 다시 옆으로 (#23).
+    /// </summary>
+    private static void StackWhenNarrow(Grid grid, FrameworkElement texts, UIElement control)
+    {
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        bool stacked = false;
+        void Check()
+        {
+            double width = grid.ActualWidth;
+            if (width <= 0) return;
+            control.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            bool want = control.DesiredSize.Width > width * 0.55;
+            if (want == stacked) return;
+            stacked = want;
+            Grid.SetRow(control, want ? 1 : 0);
+            Grid.SetColumn(control, want ? 0 : 1);
+            Grid.SetColumnSpan(control, want ? 2 : 1);
+            Grid.SetColumnSpan(texts, want ? 2 : 1);
+            if (control is FrameworkElement f)
+            {
+                f.HorizontalAlignment = want ? HorizontalAlignment.Right : HorizontalAlignment.Stretch;
+                f.Margin = new Thickness(0, want ? 8 : 0, 0, 0);
+            }
+        }
+        grid.SizeChanged += (_, _) => Check();
+        grid.Loaded += (_, _) => Check();
     }
 
     /// <summary>맥 스위치 (Themes/Controls.xaml MacSwitch).</summary>

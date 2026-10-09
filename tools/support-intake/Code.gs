@@ -6,7 +6,7 @@
  * 요청 본문 (application/json):
  * { "token": "...", "clientId": "신고마다 새 무작위 번호 (PC 를 잇지 않음)", "kind": "bug|question|idea",
  *   "message": "사용자가 쓴 내용", "contact": "답장 받을 이메일(선택)",
- *   "appVersion": "0.4.2", "lang": "ko|en", "diagnostics": "개인정보를 가린 진단 정보" }
+ *   "appVersion": "0.4.2", "lang": "ko|en|ja|zh-Hans|zh-Hant|de|fr|es", "diagnostics": "개인정보를 가린 진단 정보" }
  */
 
 var SUPPORT_TO = 'mongdock+help@gmail.com';
@@ -89,7 +89,7 @@ var STATS_COLUMNS = [
   ['install', oneOf_(['store', 'installer', 'zip'])],
   ['windows', oneOf_(['10', '11'])],
   ['build', function (v) { return /^[0-9.]{1,20}$/.test(v) ? v : null; }],
-  ['lang', oneOf_(['ko', 'en'])],
+  ['lang', oneOf_(['ko', 'en', 'ja', 'zh-Hans', 'zh-Hant', 'de', 'fr', 'es'])],
   ['laptop', bool_],
   ['monitors', int_(0, 16)],
   ['scale', int_(50, 500)],

@@ -374,7 +374,7 @@ internal static class MenuRules
     private static string Display(JsonElement el, string name, string id)
     {
         string ko = Text(el, name, id);
-        if (!Loc.IsEnglish || !el.TryGetProperty(name + "_en", out _)) return ko;
+        if (Loc.IsKorean || !el.TryGetProperty(name + "_en", out _)) return ko; // 한국어가 아니면 영어 글자 (다른 언어는 출시 후)
         try { return Text(el, name + "_en", id); }
         catch (RuleException ex) { Log.Warn($"앱 메뉴 규칙 영어 글자 무시: {ex.Message}"); return ko; }
     }

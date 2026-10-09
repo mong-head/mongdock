@@ -357,7 +357,7 @@ public sealed class ReportWindow : Window
         ReportKind.Question => Loc.T("예: 상단바 시계 형식을 바꿀 수 있나요?"),
         ReportKind.Idea => Loc.T("예: 독 아이콘에 알림 개수도 보여 주세요"),
         _ => Loc.T("예: 독에서 카카오톡이 안 열려요"),
-    } + (Loc.IsEnglish ? "" : Loc.T("  (비우면 내용 첫 줄)")); // 영어는 길어서 한 줄 칸에서 넘침 (QA)
+    } + (Loc.IsKorean ? Loc.T("  (비우면 내용 첫 줄)") : ""); // 다른 언어는 길어서 한 줄 칸에서 넘침 (QA)
 
     private static string PlaceholderFor(ReportKind kind) => kind switch
     {

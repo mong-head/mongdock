@@ -89,7 +89,7 @@ public static class Changelog
                 }
             }
             var issues = new List<string>();
-            if ((Loc.IsEnglish && v.TryGetProperty("knownIssues_en", out var ki) && ki.ValueKind == JsonValueKind.Array)
+            if ((!Loc.IsKorean && v.TryGetProperty("knownIssues_en", out var ki) && ki.ValueKind == JsonValueKind.Array)
                 || (v.TryGetProperty("knownIssues", out ki) && ki.ValueKind == JsonValueKind.Array))
             {
                 foreach (var i in ki.EnumerateArray())
@@ -112,7 +112,7 @@ public static class Changelog
 
     /// <summary>화면 문구: 영어면 "{name}_en" 이 있으면 그것 (없으면 한국어 원문). build-release.ps1 은 한국어만 읽음.</summary>
     private static string? Text(JsonElement e, string name) =>
-        (Loc.IsEnglish ? Str(e, name + "_en") : null) ?? Str(e, name);
+        (!Loc.IsKorean ? Str(e, name + "_en") : null) ?? Str(e, name); // 한국어가 아니면 영어본 (다른 언어 변경 내역은 출시 후)
 
     private static string? Str(JsonElement e, string name) =>
         e.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;

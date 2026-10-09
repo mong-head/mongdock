@@ -339,9 +339,9 @@ internal static class CoachMarks
     };
 
     /// <summary>카드 글에 이미 "눌러 보세요"(영어 "Click …"/"Try it") 가 있으면 아래 힌트 줄을 또 붙이지 않음.</summary>
-    private static bool HasPressPrompt(string text) => Loc.IsEnglish
-        ? text.StartsWith("Click ", StringComparison.Ordinal) || text.Contains("Try it", StringComparison.Ordinal) || text.Contains("Try clicking", StringComparison.Ordinal)
-        : text.Contains("눌러 보세요", StringComparison.Ordinal);
+    private static bool HasPressPrompt(string text) =>
+        (Loc.SourceOf(text) ?? text).Contains("눌러 보세요", StringComparison.Ordinal) // 번역된 문구는 한국어 원문으로 판단
+        || text.StartsWith("Click ", StringComparison.Ordinal) || text.Contains("Try it", StringComparison.Ordinal); // 사전에 없는 영어(변경 내역 _en)
 
     /// <summary>둘러보기 [허용하기]: 윈도우 허락 창 → 허용되면 알림을 공식 API 로 다시 읽기 시작.</summary>
     private static async Task AllowNotificationsAsync(AppServices services)

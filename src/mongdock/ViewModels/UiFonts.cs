@@ -12,7 +12,18 @@ namespace Mongdock.ViewModels;
 public static class UiFonts
 {
     public const string Key = "UiFont";
-    private const string Fallback = "Segoe UI Variable Text, Malgun Gothic";
+    /// <summary>
+    /// 대체 글꼴 (#23): Pretendard 에 없는 글자(일본어 가나·한자, 중국어)는 화면 언어의 윈도우 기본 UI 글꼴을 먼저 —
+    /// 같은 한자라도 언어마다 글자 모양이 달라서 (일본어 Yu Gothic UI, 간체 Microsoft YaHei UI, 번체 Microsoft JhengHei UI).
+    /// 그 뒤는 공통 순서 — 다른 언어 글자(예: 한국어 화면의 일본어 알림)도 네모로 안 깨지게.
+    /// </summary>
+    private static string Fallback => (Loc.Code switch
+    {
+        "ja" => "Yu Gothic UI, ",
+        "zh-Hans" => "Microsoft YaHei UI, ",
+        "zh-Hant" => "Microsoft JhengHei UI, ",
+        _ => "",
+    }) + "Segoe UI Variable Text, Malgun Gothic, Yu Gothic UI, Microsoft YaHei UI, Microsoft JhengHei UI";
     private static string? _applied;
 
     /// <summary>설정 값 → FontFamily. "Pretendard"(대소문자 무시)면 내장 글꼴 + 대체 글꼴.</summary>
@@ -24,7 +35,7 @@ public static class UiFonts
             string asm = typeof(UiFonts).Assembly.GetName().Name ?? AppInfo.Name;
             return new FontFamily(new Uri($"pack://application:,,,/{asm};component/"), "./Fonts/#Pretendard, " + Fallback);
         }
-        return new FontFamily(name.Trim());
+        return new FontFamily(name.Trim() + ", " + Fallback); // 사용자가 고른 글꼴에 없는 글자도 대체
     }
 
     /// <summary>설정의 글꼴로 앱 리소스 교체 (바뀔 때만). 시작 시·SettingsChanged 시 호출.</summary>
