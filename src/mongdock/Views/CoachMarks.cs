@@ -338,6 +338,13 @@ internal static class CoachMarks
         Hint = step.Title.Contains(Loc.T("눌러 보세요")) || step.Body.Contains(Loc.T("눌러 보세요")) ? null : PressHint(step.Anchor),
     };
 
+    /// <summary>둘러보기 [허용하기]: 윈도우 허락 창 → 허용되면 알림을 공식 API 로 다시 읽기 시작.</summary>
+    private static async Task AllowNotificationsAsync(AppServices services)
+    {
+        bool allowed = await NotificationListener.RequestAccessAsync();
+        if (allowed) (services.Notifications as NotificationService)?.ReconsiderSource();
+    }
+
     /// <summary>둘러보기 첫 카드 [작업 표시줄 다시 보이기]: "윈도우 작업 표시줄 숨기기" 끄기 (알림 숨김은 그대로).</summary>
     private static void ShowWindowsTaskbarAgain()
     {
@@ -551,6 +558,18 @@ internal static class CoachMarks
         var last = all[^1];
         var pages = all.Take(all.Count - 1).Where(x => x.IsAvailable(s) && AnchorVisible(x.Anchor))
             .Take(MaxTourSteps - 1).Select(x => ToPage(x, s)).ToList();
+        // 스토어판: 첫 카드(시스템 변경 안내) 다음에 윈도우 알림 접근 허락 카드 (#7 결정 16). 일반판·이미 정했으면 없음
+        if (NotificationListener.Supported && NotificationListener.Status() == Windows.UI.Notifications.Management.UserNotificationListenerAccessStatus.Unspecified)
+        {
+            int at = pages.Count > 0 && all[0].Key == WhatsNew.IntroKey ? 1 : 0;
+            pages.Insert(at, new CoachPage
+            {
+                Title = Loc.T("알림을 몽독에서 보려면"),
+                Body = Loc.T("윈도우가 알림 읽기 허락을 물어봐요. 허용하면 새 알림을 상단바 아래 배너와 알림 목록으로 보여 주고, 몽독에서 지운 알림은 윈도우 알림 센터에서도 지워져요."),
+                Anchor = CoachAnchor.Center,
+                Action = (Loc.T("허용하기"), () => _ = AllowNotificationsAsync(services)),
+            });
+        }
         var final = ToPage(last, s);
         var extras = WhatsNew.ExtraFeatureLines(s);
         (string, Action)? startup = s.StartupPromptPending

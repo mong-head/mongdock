@@ -2,6 +2,7 @@
 <!--
   mongdock MSIX 매니페스트 템플릿. build-msix.ps1 이 {{...}} 를 채워 레이아웃 폴더에 AppxManifest.xml 로 쓴다.
   - runFullTrust: 일반 Win32 데스크톱 앱(WPF)으로 실행.
+  - userNotificationListener: 윈도우 알림 읽기 공식 API (사용자가 허락해야 동작, Services/NotificationListener).
   - unvirtualizedResources + desktop6:*WriteVirtualization=disabled: %APPDATA%·HKCU 쓰기를 패키지 전용 공간으로 돌리지 않는다.
     (몽독은 %APPDATA%\mongdock 설정, 야간 모드·알림 소리 같은 실제 윈도우 설정을 써야 한다.)
   - 실행 별칭 mongdock.exe: 명령줄(종료 옵션 등)에서 쓴다. (XML 주석 안에는 하이픈 두 개를 쓸 수 없음)
@@ -58,6 +59,7 @@
   </Applications>
 
   <Capabilities>
+    <uap3:Capability Name="userNotificationListener" />
     <rescap:Capability Name="runFullTrust" />
     <rescap:Capability Name="unvirtualizedResources" />
   </Capabilities>

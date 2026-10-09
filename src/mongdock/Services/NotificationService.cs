@@ -24,6 +24,10 @@ namespace Mongdock.Services;
 /// 사생활: 알림 제목·본문은 로그에 남기지 않음 (개수·AUMID 만).
 ///
 /// 윈도우 기본 토스트 팝업 숨기기는 NativeToastSuppressor (팝업 창을 화면 밖으로 옮김, 알림 기록은 그대로).
+///
+/// 스토어판 (#7): 윈도우 알림 접근(UserNotificationListener)이 허용돼 있으면 목록·새 알림은 그 API 로 읽고(NotificationListener),
+///   DB 는 같은 알림의 보낸 사람 사진·이미지·태그를 채우는 데만 씀 (못 읽어도 글자만으로 동작). 감지(폴더 감시·4초 폴링)는 같음.
+///   몽독에서 지우면(열기·숨기기·모두 지우기) 윈도우 알림 센터에서도 지움. 접근이 거부·실패하면 DB 방식으로 돌아감.
 /// </summary>
 public sealed class NotificationService : INotificationService, IDisposable
 {
@@ -67,6 +71,8 @@ public sealed class NotificationService : INotificationService, IDisposable
     private List<Row> _rows = new();
     private IReadOnlyList<NotificationItem> _recent = Array.Empty<NotificationItem>();
     private bool _loggedFailure;
+    /// <summary>스토어판에서 윈도우 알림 접근이 허용돼 목록을 UserNotificationListener 로 읽는 중.</summary>
+    private volatile bool _listener;
 
     public NotificationService(IWindowTracker tracker, IAppLauncher launcher)
     {
@@ -112,14 +118,12 @@ public sealed class NotificationService : INotificationService, IDisposable
         DeleteLegacyTempCopy();
         try
         {
-            if (!File.Exists(Path.Combine(Environment.SystemDirectory, "winsqlite3.dll")))
+            _listener = NotificationListener.Supported && NotificationListener.IsAllowed;
+            if (NotificationListener.Supported)
+                Log.Info(_listener ? "알림: 윈도우 알림 접근 허용됨 → 공식 API 로 읽음 (DB 는 사진 보강)" : $"알림: 윈도우 알림 접근 {NotificationListener.Status()} → DB 방식");
+            if (!_listener && !DbUsable())
             {
-                Log.Warn("알림: winsqlite3.dll 없음 → 알림 기능 끔");
-                return;
-            }
-            if (!File.Exists(DbPath))
-            {
-                Log.Warn("알림: wpndatabase.db 없음 → 알림 기능 끔");
+                Log.Warn("알림: winsqlite3.dll 또는 wpndatabase.db 없음 → 알림 기능 끔");
                 return;
             }
             IsAvailable = true;
@@ -127,6 +131,7 @@ public sealed class NotificationService : INotificationService, IDisposable
             _poll = new Timer(_ => RequestRead(force: false), null, PollMs, PollMs);
             try
             {
+                if (!Directory.Exists(DbFolder)) throw new DirectoryNotFoundException("알림 폴더 없음");
                 _watcher = new FileSystemWatcher(DbFolder, "wpndatabase.db*")
                 {
                     NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
@@ -147,6 +152,17 @@ public sealed class NotificationService : INotificationService, IDisposable
         {
             Log.Error("알림 서비스 시작 실패", ex);
         }
+    }
+
+    private static bool DbUsable() =>
+        File.Exists(Path.Combine(Environment.SystemDirectory, "winsqlite3.dll")) && File.Exists(DbPath);
+
+    /// <summary>윈도우 알림 접근 허용 상태가 바뀌었을 수 있음 (허락 창 뒤) → 읽는 방식을 다시 정함. UI 스레드.</summary>
+    internal void ReconsiderSource()
+    {
+        if (!_running || _listener == NotificationListener.IsAllowed) return;
+        Stop();
+        Start();
     }
 
     public void Stop()
@@ -249,6 +265,24 @@ public sealed class NotificationService : INotificationService, IDisposable
 
     private void ReadOnce(bool force)
     {
+        if (_listener)
+        {
+            try
+            {
+                ReadFromListener(force);
+                return;
+            }
+            catch (Exception ex)
+            {
+                // 접근 취소(윈도우 설정에서 끔) 등 → DB 방식으로
+                _listener = false;
+                _lastStamp = (-1, -1, -1);
+                Log.Warn($"윈도우 알림 접근으로 읽기 실패 → DB 방식으로: {ex.GetType().Name} {ex.Message}");
+                if (!DbUsable()) return;
+                force = true;
+            }
+        }
+
         // 복사본 모드가 1분 넘게 지났으면 직접 읽기 재시도 (일시적 잠금이었을 수 있음)
         if (_useCopy && Environment.TickCount64 - _copySinceTick > DirectRetryMs)
         {
@@ -297,6 +331,50 @@ public sealed class NotificationService : INotificationService, IDisposable
             return;
         }
 
+        int parsed = rows.Count(r => r.Content is not null);
+        _dispatcher.BeginInvoke(() => Apply(rows, parsed));
+    }
+
+    /// <summary>
+    /// 스토어판: 목록은 UserNotificationListener, 같은 알림의 사진·이미지·태그·SuppressPopup 은 DB 에서 (Id 가 같거나, 같은 앱·3초 안 도착).
+    /// DB 를 못 읽으면 글자만. 목록이 그대로면(최대 Id·개수·최근 도착) 아무것도 안 함.
+    /// </summary>
+    private void ReadFromListener(bool force)
+    {
+        var toasts = NotificationListener.Read();
+        (long, long, long) stamp = (toasts.Count == 0 ? 0 : toasts.Max(t => (long)t.Id), toasts.Count,
+            toasts.Count == 0 ? 0 : toasts.Max(t => t.ArrivalUtc.Ticks));
+        if (!force && stamp == _lastStamp) return;
+
+        List<Row> db = new();
+        if (DbUsable())
+        {
+            try
+            {
+                using var reader = OpenDb();
+                db = QueryRows(reader);
+            }
+            catch (Exception ex)
+            {
+                if (!_loggedFailure) Log.Info($"알림 DB 보강 못 함 (글자만 표시): {ex.Message}");
+                _loggedFailure = true;
+            }
+        }
+        var byId = db.GroupBy(r => r.Id).ToDictionary(g => g.Key, g => g.First());
+        var rows = new List<Row>();
+        foreach (var t in toasts.OrderByDescending(t => t.ArrivalUtc).ThenByDescending(t => t.Id).Take(MaxRows))
+        {
+            Row? match = byId.TryGetValue(t.Id, out var same) && string.Equals(same.Aumid, t.Aumid, StringComparison.OrdinalIgnoreCase)
+                ? same
+                : db.FirstOrDefault(r => string.Equals(r.Aumid, t.Aumid, StringComparison.OrdinalIgnoreCase)
+                    && Math.Abs((r.ArrivalUtc - t.ArrivalUtc).TotalSeconds) <= 3
+                    && (r.Content?.Title is null || t.Title is null || r.Content.Title == t.Title));
+            var content = match?.Content ?? (t.Title is null && t.Lines.Count == 0
+                ? null
+                : new ToastContent(t.Title, t.Lines, null, null, false, null));
+            rows.Add(new Row(t.Id, t.Id, t.Aumid, t.ArrivalUtc, match?.Tag, match?.Group, match?.SuppressPopup ?? false, content));
+        }
+        _lastStamp = stamp;
         int parsed = rows.Count(r => r.Content is not null);
         _dispatcher.BeginInvoke(() => Apply(rows, parsed));
     }
@@ -416,7 +494,7 @@ public sealed class NotificationService : INotificationService, IDisposable
             if (baseline)
             {
                 _baselineDone = true;
-                Log.Info($"알림 DB 읽음: 토스트 {rows.Count}개, 파싱 {parsed}개, 앱 {rows.Select(r => r.Aumid).Distinct(StringComparer.OrdinalIgnoreCase).Count()}개" +
+                Log.Info($"알림 {(_listener ? "읽음(윈도우 알림 접근)" : "DB 읽음")}: 토스트 {rows.Count}개, 파싱 {parsed}개, 앱 {rows.Select(r => r.Aumid).Distinct(StringComparer.OrdinalIgnoreCase).Count()}개" +
                          (_useCopy ? " (임시 복사본)" : ""));
             }
             if (_lastBannerByTag.Count > 200)
@@ -548,28 +626,36 @@ public sealed class NotificationService : INotificationService, IDisposable
         if (item is null) return;
         if (_hidden.Add(item.Id))
         {
+            RemoveFromWindows(new[] { item.Id });
             SaveHidden();
             Publish();
         }
     }
 
+    /// <summary>스토어판에서 윈도우 알림 접근이 허용돼 있으면 윈도우 알림 센터에서도 지움 (#7 결정 17). 일반판은 몽독 목록에서만.</summary>
+    private void RemoveFromWindows(IEnumerable<long> ids)
+    {
+        if (_listener) NotificationListener.Remove(ids.ToList());
+    }
+
     public void HideApp(string aumid)
     {
         if (string.IsNullOrEmpty(aumid)) return;
-        bool changed = false;
+        var removed = new List<long>();
         foreach (var row in _rows)
-            if (string.Equals(row.Aumid, aumid, StringComparison.OrdinalIgnoreCase))
-                changed |= _hidden.Add(row.Id);
-        if (!changed) return;
+            if (string.Equals(row.Aumid, aumid, StringComparison.OrdinalIgnoreCase) && _hidden.Add(row.Id))
+                removed.Add(row.Id);
+        if (removed.Count == 0) return;
+        RemoveFromWindows(removed);
         SaveHidden();
         Publish();
     }
 
     public void HideAll()
     {
-        bool changed = false;
-        foreach (var row in _rows) changed |= _hidden.Add(row.Id);
-        if (!changed) return;
+        var removed = _rows.Where(row => _hidden.Add(row.Id)).Select(row => row.Id).ToList();
+        if (removed.Count == 0) return;
+        RemoveFromWindows(removed);
         SaveHidden();
         Publish();
     }

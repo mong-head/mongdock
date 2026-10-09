@@ -600,6 +600,24 @@ internal sealed partial class SettingsWindow : Window
         {
             Row(Loc.T("알림 소리"), Loc.T("모든 앱의 알림 소리를 바꿔요. 몽독을 꺼도 유지되고 '원래대로'로 되돌릴 수 있어요."), NotificationSoundDropdown()),
         };
+        // 스토어판만: 윈도우 알림 접근 (#7) — 허용하면 공식 API 로 읽고, 몽독에서 지운 알림은 윈도우 알림 센터에서도 지움
+        if (NotificationListener.Supported)
+        {
+            var status = NotificationListener.Status();
+            bool allowed = status == Windows.UI.Notifications.Management.UserNotificationListenerAccessStatus.Allowed;
+            bool unasked = status == Windows.UI.Notifications.Management.UserNotificationListenerAccessStatus.Unspecified;
+            more.Insert(0, Row(Loc.T("윈도우 알림 접근"),
+                allowed ? Loc.T("허용됨 — 몽독에서 지운 알림은 윈도우 알림 센터에서도 지워져요.")
+                    : Loc.T("허용하면 알림을 더 정확하게 읽고, 몽독에서 지운 알림을 윈도우 알림 센터에서도 지워요."),
+                unasked
+                    ? ActionButton(Loc.T("허용하기"), async () =>
+                    {
+                        if (await NotificationListener.RequestAccessAsync())
+                            (_services.Notifications as NotificationService)?.ReconsiderSource();
+                        Commit(() => { }, rebuild: true);
+                    })
+                    : ActionButton(Loc.T("윈도우 설정 열기"), () => _services.Launcher.OpenFile("ms-settings:privacy-notifications"))));
+        }
         // 배터리 있는 기기만 (#21)
         if (DeviceInfo.HasBattery)
             more.Add(Row(Loc.T("배터리 부족 알림"), Loc.T("배터리로 쓰는 중에 20%·10%·5% 가 되면 한 번씩 알려 줘요.") + (mongdock ? "" : Loc.T(" (몽독 배너일 때만)")),
