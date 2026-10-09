@@ -123,6 +123,14 @@ public sealed class LicenseService : IDisposable
             _store ??= StoreContext.GetDefault();
             var license = await _store.GetAppLicenseAsync();
             if (license is null) throw new InvalidOperationException("라이선스 없음");
+            // 스토어에서 받지 않은 패키지(직접 설치한 시험본·개발용)는 스토어 라이선스가 없어 SkuStoreId 가 비고 IsActive=false 로 옴
+            // → 체험 끝으로 잠그지 않고 정식 취급 (#9 시험·사이드로드). 스토어에서 받은 것은 체험이 끝나도 SkuStoreId 가 있음
+            if (string.IsNullOrEmpty(license.SkuStoreId))
+            {
+                Log.Info($"라이선스 확인({why}): 스토어 라이선스 없음(직접 설치한 패키지) → 정식 취급, 활성 {license.IsActive}");
+                Set(Make(LicenseState.Full, null, "sideload"));
+                return;
+            }
             // IsActive=false: 체험이 끝났거나 소유하지 않음. IsTrial=true 이고 활성: 체험 중. 그 밖: 구매함
             LicenseState state = !license.IsActive ? LicenseState.Expired : license.IsTrial ? LicenseState.Trial : LicenseState.Full;
             DateTimeOffset? expiration = state == LicenseState.Trial ? license.ExpirationDate : null;
