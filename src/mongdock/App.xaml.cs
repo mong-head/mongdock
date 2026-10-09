@@ -30,6 +30,10 @@ public partial class App : Application
     private NativeToastSuppressor? _toastSuppressor;
     private readonly WindowNudger _windowNudger = new();
     private const string ResumeEventName = @"Local\mongdock.Resume";
+    // 실행 중에 mongdock.exe --tour 를 다시 실행하면 그 몽독이 둘러보기를 띄움 (확인·시연용)
+    private const string TourEventName = @"Local\mongdock.Tour";
+    private EventWaitHandle? _tourEvent;
+    private RegisteredWaitHandle? _tourWait;
     private EventWaitHandle? _resumeEvent;
     private RegisteredWaitHandle? _resumeWait;
     // 설치 프로그램/스크립트용 정상 종료 요청 (mongdock.exe --exit). 트레이 "종료" 와 같은 경로로 끝나 작업 표시줄·AppBar 가 복원된다.
@@ -74,9 +78,12 @@ public partial class App : Application
             AppInfo.MigrateLegacyInstall();
         if (!isFirst)
         {
-            // 이미 실행 중이면 그 mongdock 을 깨운다 (일시 정지 해제 / 다 꺼져 있으면 독 켜기).
+            // 이미 실행 중이면 그 mongdock 을 깨운다 (일시 정지 해제 / 다 꺼져 있으면 독 켜기). --tour 면 둘러보기도.
             if (EventWaitHandle.TryOpenExisting(ResumeEventName, out var resume))
                 using (resume) resume.Set();
+            if (e.Args.Any(a => string.Equals(a, "--tour", StringComparison.OrdinalIgnoreCase))
+                && EventWaitHandle.TryOpenExisting(TourEventName, out var tourEvt))
+                using (tourEvt) tourEvt.Set();
             Shutdown();
             return;
         }
@@ -86,6 +93,13 @@ public partial class App : Application
         _resumeEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ResumeEventName);
         _resumeWait = ThreadPool.RegisterWaitForSingleObject(_resumeEvent,
             (_, _) => Dispatcher.BeginInvoke(ResumeFromSecondLaunch), null, Timeout.Infinite, executeOnlyOnce: false);
+        _tourEvent = new EventWaitHandle(false, EventResetMode.AutoReset, TourEventName);
+        _tourWait = ThreadPool.RegisterWaitForSingleObject(_tourEvent,
+            (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+            {
+                Log.Info("둘러보기 요청 받음 (--tour)");
+                CoachMarks.ShowTour();
+            }), null, Timeout.Infinite, executeOnlyOnce: false);
         _exitEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ExitEventName);
         _exitWait = ThreadPool.RegisterWaitForSingleObject(_exitEvent,
             (_, _) => Dispatcher.BeginInvoke(() =>
@@ -402,6 +416,8 @@ public partial class App : Application
         MemoryReport.Stop();
         _resumeWait?.Unregister(null);
         _resumeEvent?.Dispose();
+        _tourWait?.Unregister(null);
+        _tourEvent?.Dispose();
         _exitWait?.Unregister(null);
         _exitEvent?.Dispose();
         _singleInstance?.Dispose();

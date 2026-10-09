@@ -573,7 +573,8 @@ public partial class DockWindow : Window
         }
         else
         {
-            _lastInsideTicks = 0; // 다음 폴링에서 커서가 독 밖이면 지연 없이 숨김
+            // 시연: 커서가 독 근처(바로 위의 [다음] 버튼)에 있어도 한 번은 숨김. 숨은 뒤엔 가장자리 2px 에 닿아야 다시 나타남
+            SetHidden(true, animate: true);
         }
     }
 
