@@ -87,7 +87,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
     {
         if (!File.Exists(SettingsPath))
         {
-            var s = new Settings { FirstRunTourPending = true, LastRunVersion = WhatsNew.CurrentText };
+            var s = new Settings { FirstRunTourPending = true, FirstUseHintsPending = true, LastRunVersion = WhatsNew.CurrentText };
             // 새 설치 기본값: 윈도우 작업 표시줄 숨기기 켬 (+ 앱 트레이 아이콘도 같이 켜짐). 기존 사용자 파일은 건드리지 않음.
             // (SetHideWindowsTaskbar 와 같은 효과지만 작업 표시줄 고정 앱 가져오기는 App 의 첫 핀 설정이 맡음)
             s.HideWindowsTaskbar = true;
@@ -424,6 +424,46 @@ public sealed class SettingsService : ISettingsService, IDisposable
             lock (_gate) CopyInto(loaded, Current);
             SettingsChanged?.Invoke(this, EventArgs.Empty);
         });
+    }
+
+    // ───────────────────────── 설정 옮기기 (Services/SettingsTransfer) ─────────────────────────
+
+    /// <summary>내보내기용 지금 설정 JSON (저장 파일과 같은 형식).</summary>
+    public string ExportJson()
+    {
+        lock (_gate) return JsonSerializer.Serialize(Current, JsonOptions);
+    }
+
+    /// <summary>가져온 settings.json 을 읽고 이관까지 거침 (지금 설정은 바꾸지 않음). 손상이면 예외.</summary>
+    public static Settings ParseForImport(string json)
+    {
+        var s = Deserialize(json);
+        Migrate(json, s);
+        return s;
+    }
+
+    /// <summary>
+    /// 가져온 설정 적용: 이 PC 에만 맞는 값(자동 실행 등록, 윈도우 알림 소리, 실행·안내 기록)은 지금 것을 유지하고
+    /// 나머지를 값만 복사(참조 유지) → 저장 → SettingsChanged 로 독·상단바에 바로 반영.
+    /// </summary>
+    public void ApplyImported(Settings imported)
+    {
+        var cur = Current;
+        imported.StartWithWindows = cur.StartWithWindows;
+        imported.Notifications.Sound = cur.Notifications.Sound;
+        imported.Notifications.OriginalSound = cur.Notifications.OriginalSound;
+        imported.LastRunVersion = cur.LastRunVersion;
+        imported.LastSeenVersion = cur.LastSeenVersion;
+        imported.FirstRunTourPending = cur.FirstRunTourPending;
+        imported.StartupPromptPending = cur.StartupPromptPending;
+        imported.NotifiedUpdateVersion = cur.NotifiedUpdateVersion;
+        imported.SkippedUpdateVersion = cur.SkippedUpdateVersion;
+        imported.TaskbarPinsImported = cur.TaskbarPinsImported;
+        imported.TaskbarPinImportRequested = false;
+        imported.ImportedFromMyDockFinder = cur.ImportedFromMyDockFinder;
+        imported.SettingsVersion = Settings.CurrentVersion;
+        lock (_gate) CopyInto(imported, cur);
+        Save();
     }
 
     /// <summary>

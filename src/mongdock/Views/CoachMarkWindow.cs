@@ -376,11 +376,33 @@ internal sealed class CoachMarkWindow : Window
             Foreground = _p.AccentText,
             Height = 28,
             MinWidth = 76,
-            Content = new TextBlock { Text = last ? "완료" : "다음 →", FontSize = 13, FontWeight = FontWeights.SemiBold },
+            Content = new TextBlock { Text = page.NextText ?? (last ? "완료" : "다음 →"), FontSize = 13, FontWeight = FontWeights.SemiBold },
         };
         next.Click += (_, _) => NextClicked?.Invoke();
         Grid.SetColumn(next, 2);
         buttons.Children.Add(next);
+        if (page.Action is { } action)
+        {
+            // 두 번째 버튼: 실행 → 다음 단계 (예 "작업 표시줄 다시 보이기")
+            var second = new Button
+            {
+                Style = (Style)FindResource("CardButton"),
+                Background = _p.Tile,
+                Foreground = _p.Text,
+                Height = 28,
+                Margin = new Thickness(8, 0, 8, 0),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Content = new TextBlock { Text = action.Label, FontSize = 13 },
+            };
+            second.Click += (_, _) =>
+            {
+                try { action.Run(); }
+                catch (Exception ex) { Log.Error($"코치마크 '{action.Label}' 실패", ex); }
+                NextClicked?.Invoke();
+            };
+            Grid.SetColumn(second, 1);
+            buttons.Children.Add(second);
+        }
         body.Children.Add(buttons);
         return body;
     }

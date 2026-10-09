@@ -374,6 +374,10 @@ public sealed class Settings
     public bool StartWithWindows { get; set; }
     /// <summary>스토어판 새 설치: 첫 둘러보기 뒤 "컴퓨터를 켜면 몽독도 같이 켤까요?" 카드를 아직 안 물어봄 (Views/CoachMarks). 일반판은 설치 프로그램이 정함.</summary>
     public bool StartupPromptPending { get; set; }
+    /// <summary>새 설치(v0.5+)만: 둘러보기에서 뺀 기능을 처음 쓸 때 한 번 짧은 카드 (Views/CoachMarks.HintUsed). 다 보면 false.</summary>
+    public bool FirstUseHintsPending { get; set; }
+    /// <summary>이미 본 처음 쓰기 힌트 키 (appmenu·desktops·calendar·tray).</summary>
+    public List<string> SeenHints { get; set; } = new();
     /// <summary>오류 자동 신고 카드에서 "다시 묻지 않기" (Views/CrashPrompt). 오류 기록은 계속 로그에 남음.</summary>
     public bool CrashPromptDisabled { get; set; }
     /// <summary>MyDockFinder ico.ini 를 한 번 가져왔는지. true 면 다시 가져오지 않음.</summary>

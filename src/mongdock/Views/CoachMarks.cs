@@ -23,8 +23,12 @@ internal sealed class CoachPage
     public string LinkText { get; init; } = "변경 내역 보기 ›";
     /// <summary>본문 아래 강조색 한 줄 (예 "시계를 눌러 보세요") — 앵커를 직접 눌러 보라는 안내.</summary>
     public string? Hint { get; init; }
-    /// <summary>이 단계부터 둘러보기의 독 고정을 풂 (자동 숨김 독이 실제로 숨는 것을 보여 줌).</summary>
-    public bool ReleaseDockPin { get; init; }
+    /// <summary>[다음 →] 대신 쓸 글자 (예 "좋아요").</summary>
+    public string? NextText { get; init; }
+    /// <summary>[다음] 왼쪽의 두 번째 버튼 — 누르면 실행하고 다음 단계로 (예 "작업 표시줄 다시 보이기", "컴퓨터 켜면 몽독도 켜기").</summary>
+    public (string Label, Action Run)? Action { get; init; }
+    /// <summary>가리키는 기능을 직접 써 보면(Spotlight 를 열었다 닫으면) 저절로 다음 단계로.</summary>
+    public bool AdvanceOnUse { get; init; }
 }
 
 /// <summary>둘러보기가 끝난 이유 (설정 창이 다시 나타날 때 포커스를 가져갈지 정하는 데 씀).</summary>
@@ -123,6 +127,46 @@ internal static class CoachMarks
         timer.Start();
     }
 
+    /// <summary>
+    /// 처음 쓰기 힌트 (#22): 새 설치(FirstUseHintsPending)에서 둘러보기에서 뺀 기능(WhatsNew.Hints)을 처음 쓰면,
+    /// 연 패널·메뉴가 닫히고 다른 안내가 없을 때 그 요소를 가리키는 카드 한 장. 키마다 한 번만 (Settings.SeenHints).
+    /// </summary>
+    public static void HintUsed(string key)
+    {
+        try
+        {
+            var services = _services;
+            if (services is null) return;
+            var s = services.Settings.Current;
+            if (!s.FirstUseHintsPending || s.FirstRunTourPending || s.SeenHints.Contains(key, StringComparer.OrdinalIgnoreCase)) return;
+            var step = WhatsNew.Hints.FirstOrDefault(h => h.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
+            if (step is null || !step.IsAvailable(s)) return;
+            s.SeenHints.Add(key);
+            if (WhatsNew.Hints.All(h => s.SeenHints.Contains(h.Key, StringComparer.OrdinalIgnoreCase))) s.FirstUseHintsPending = false;
+            services.Settings.Save();
+
+            // 연 것이 닫히고(달력·메뉴·작업 보기 등) 다른 안내가 없을 때 — 최대 2분 기다림
+            long until = Environment.TickCount64 + 120_000;
+            var timer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(500) };
+            timer.Tick += (_, _) =>
+            {
+                if (Environment.TickCount64 > until) { timer.Stop(); return; }
+                bool popup;
+                try { popup = SpotlightWindow.IsOpen || _popupOpen?.Invoke() == true; }
+                catch { popup = false; }
+                if (popup || Busy() || _session is not null || !AnchorVisible(step.Anchor)) return;
+                timer.Stop();
+                Log.Info($"처음 쓰기 힌트: {key}");
+                Start(new List<CoachPage> { new() { Title = step.Title, Body = step.Body, Anchor = step.Anchor, NextText = "알겠어요" } });
+            };
+            timer.Start();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("처음 쓰기 힌트 실패", ex);
+        }
+    }
+
     /// <summary>트레이·정보 페이지 "새로운 기능 보기": 현재 버전의 새 기능.</summary>
     public static void ShowWhatsNew()
     {
@@ -182,7 +226,8 @@ internal static class CoachMarks
         {
             Log.Info($"첫 설치 → 둘러보기 (v{WhatsNew.CurrentText})");
             // 둘러보기를 끝까지 보거나 건너뛰면 (스토어판 새 설치) 자동 실행을 물어봄
-            if (Start(BuildTour(), reason => { if (reason == CoachEndReason.Completed) AskStartupIfPending(); }, isTour: true) is null)
+            // 자동 실행 질문은 마무리 카드 안 버튼 — 끝까지 보면 따로 묻지 않음 (못 띄우면 카드로)
+            if (Start(BuildTour(), reason => { if (reason == CoachEndReason.Completed) ClearStartupPrompt(); }, isTour: true) is null)
             {
                 ClearTourPending();
                 AskStartupIfPending();
@@ -212,6 +257,13 @@ internal static class CoachMarks
     /// 스토어판 새 설치: "컴퓨터를 켜면 몽독도 같이 켤까요?" [켜기]/[나중에]. 일반판은 설치 프로그램 체크박스로 정하므로 StartupPromptPending 이 켜지지 않음.
     /// [켜기] → 자동 실행 켬, [나중에] → 꺼진 채. 바깥 클릭 등으로 고르지 않고 닫히면 다음 실행에 다시 물음.
     /// </summary>
+    private static void ClearStartupPrompt()
+    {
+        if (_services is null || !_services.Settings.Current.StartupPromptPending) return;
+        _services.Settings.Current.StartupPromptPending = false;
+        _services.Settings.Save();
+    }
+
     private static async void AskStartupIfPending()
     {
         var services = _services;
@@ -273,11 +325,25 @@ internal static class CoachMarks
     private static CoachPage ToPage(CoachStep step, Settings s) => new()
     {
         Title = step.Title,
-        Body = step.Body.Replace("{hotkey}", HotkeyPhrase(s)).Replace("{dockedge}", DockEdgePhrase(s)),
+        Body = step.Body.Replace("{hotkey}", HotkeyPhrase(s)).Replace("{dockedge}", DockEdgePhrase(s))
+            .Replace("{dockhide}", s.Dock.Mode == DockMode.AutoHide
+                ? $" 평소엔 숨어 있다가 마우스를 {DockEdgePhrase(s)} 끝에 대면 나타나요 — [다음]을 누르면 숨는 걸 보여 드려요."
+                : ""),
         Anchor = step.Anchor,
-        ReleaseDockPin = step.Key == WhatsNew.DockHideKey,
+        NextText = step.Key == WhatsNew.IntroKey ? "좋아요" : null,
+        Action = step.Key == WhatsNew.IntroKey ? ("작업 표시줄 다시 보이기", ShowWindowsTaskbarAgain) : null,
+        AdvanceOnUse = step.Key == WhatsNew.SearchKey,
         Hint = step.Title.Contains("눌러 보세요") || step.Body.Contains("눌러 보세요") ? null : PressHint(step.Anchor),
     };
+
+    /// <summary>둘러보기 첫 카드 [작업 표시줄 다시 보이기]: "윈도우 작업 표시줄 숨기기" 끄기 (알림 숨김은 그대로).</summary>
+    private static void ShowWindowsTaskbarAgain()
+    {
+        if (_services is null) return;
+        _services.Settings.Current.SetHideWindowsTaskbar(false);
+        _services.Settings.Save();
+        Log.Info("둘러보기: 작업 표시줄 다시 보이기");
+    }
 
     /// <summary>독 위치 쪽 화면 가장자리 ("화면 아래" / "화면 왼쪽" …).</summary>
     private static string DockEdgePhrase(Settings s) => s.Dock.Edge switch
@@ -470,34 +536,37 @@ internal static class CoachMarks
         _ => 2,
     };
 
-    /// <summary>첫 둘러보기: 켜져 있고 보이는 단계만, 최대 8장 (마지막 "설정" 카드 포함). 넘치면 마지막 카드에 목록.</summary>
+    /// <summary>
+    /// 첫 둘러보기 (#22): 켜져 있고 보이는 단계만 (시스템 변경 안내·독·검색·로고) + 마무리 카드.
+    /// 마무리 카드: 둘러보기에서 뺀 기능 짧은 목록, 스토어판 새 설치면 [컴퓨터 켜면 몽독도 켜기] 버튼 (따로 카드 안 띄움).
+    /// </summary>
     private static List<CoachPage> BuildTour()
     {
-        var s = _services!.Settings.Current;
+        var services = _services!;
+        var s = services.Settings.Current;
         var all = WhatsNew.Tour;
         if (all.Count == 0) return new List<CoachPage>();
         var last = all[^1];
-        var middle = all.Take(all.Count - 1).Where(x => x.IsAvailable(s) && AnchorVisible(x.Anchor)).ToList();
-        var pages = middle.Take(MaxTourSteps - 1).Select(x => ToPage(x, s)).ToList();
-        var rest = middle.Skip(MaxTourSteps - 1).Select(x => x.Title).ToList();
-        // 둘러보기에서 다룬(카드 또는 위 목록) 기능 Key 를 뺀 주요 기능 (현재 버전까지, 같은 Key 는 최신 것만)
-        var covered = new HashSet<string>(middle.Select(x => x.Key).Append(last.Key), StringComparer.OrdinalIgnoreCase);
-        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var release in Changelog.Releases.Where(r => r.Version <= WhatsNew.Current))
-        {
-            foreach (var e in release.Majors)
-            {
-                if (e.Coach is { } c && (!keys.Add(c.Key) || covered.Contains(c.Key))) continue;
-                rest.Add(e.Text);
-            }
-        }
+        var pages = all.Take(all.Count - 1).Where(x => x.IsAvailable(s) && AnchorVisible(x.Anchor))
+            .Take(MaxTourSteps - 1).Select(x => ToPage(x, s)).ToList();
         var final = ToPage(last, s);
-        pages.Add(rest.Count == 0 ? final : new CoachPage
+        var extras = WhatsNew.ExtraFeatureLines(s);
+        (string, Action)? startup = s.StartupPromptPending
+            ? ("컴퓨터 켜면 몽독도 켜기", () =>
+            {
+                services.Startup.SetEnabled(true);
+                services.Settings.Current.StartWithWindows = true;
+                services.Settings.Save();
+                Log.Info("둘러보기 마무리: 로그인 시 자동 실행 켬");
+            })
+            : null;
+        pages.Add(new CoachPage
         {
             Title = final.Title,
             Body = final.Body,
             Anchor = final.Anchor,
-            Groups = new() { ("이 밖에도", rest) },
+            Groups = extras.Count > 0 ? new() { ("이 밖에도", extras.ToList()) } : null,
+            Action = startup,
         });
         return pages;
     }
@@ -550,6 +619,10 @@ internal sealed class CoachSession
     private CoachRingWindow? _ring;
     private int _index;
     private bool _closed;
+    private bool _dockShown;
+    /// <summary>"써 보면 다음으로"(검색) 카드: Spotlight 가 열리면 카드를 숨기고, 닫히면 다음 단계.</summary>
+    private readonly DispatcherTimer _usePoll = new() { Interval = TimeSpan.FromMilliseconds(200) };
+    private bool _usedOpen;
 
     public event Action<CoachEndReason>? Ended;
 
@@ -560,6 +633,7 @@ internal sealed class CoachSession
         _popupOpen = popupOpen;
         _pages = pages;
         _awayPoll.Tick += (_, _) => PollAway();
+        _usePoll.Tick += (_, _) => PollUse();
         _reposition = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
         _reposition.Tick += (_, _) =>
         {
@@ -669,7 +743,10 @@ internal sealed class CoachSession
         }
 
         var current = _pages[_index];
-        if (current.ReleaseDockPin) DockState.SetCoachPinned(false);
+        // 독 카드를 지나면 고정을 풂 → 자동 숨김 독이 다음 카드로 넘어가며 미끄러져 숨는 걸 보여 줌
+        if (current.Anchor == CoachAnchor.Dock) _dockShown = true;
+        else if (_dockShown) DockState.SetCoachPinned(false);
+        if (current.AdvanceOnUse) _usePoll.Start(); else _usePoll.Stop();
         _ring?.Close();
         _ring = null;
         if (anchor is { } a)
@@ -752,6 +829,34 @@ internal sealed class CoachSession
         }
     }
 
+    private void PollUse()
+    {
+        if (_closed || _index >= _pages.Count || !_pages[_index].AdvanceOnUse)
+        {
+            _usePoll.Stop();
+            return;
+        }
+        bool open = SpotlightWindow.IsOpen;
+        if (open && !_usedOpen)
+        {
+            _usedOpen = true;
+            if (!_away)
+            {
+                _ring?.Close();
+                _ring = null;
+                _anchorRect = null;
+                _card?.HideForAway();
+            }
+        }
+        else if (!open && _usedOpen)
+        {
+            _usedOpen = false;
+            _usePoll.Stop();
+            StopAway();
+            Next();
+        }
+    }
+
     private void Return()
     {
         if (!_away) return;
@@ -781,6 +886,7 @@ internal sealed class CoachSession
     {
         if (_closed) return;
         _closed = true;
+        _usePoll.Stop();
         DockState.SetCoachPinned(false);
         _keepOnTop.Stop();
         _services.Windows.WindowActivated -= OnWindowActivated;

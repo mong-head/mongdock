@@ -370,6 +370,8 @@ internal sealed partial class SettingsWindow : Window
         body.Children.Add(Group(
             Row("가벼운 모드", "애니메이션·블러·파도 확대를 끄고 확인 주기를 늘려요. 저사양 PC·원격 접속에 좋아요.",
                 Toggle(PerfMode.IsOn(s), on => Commit(() => PerfMode.Set(_services.Settings.Current, on), rebuild: true)))));
+
+        BuildTransferSection(body); // SettingsWindow.Transfer.cs
     }
 
     private UIElement FontDropdown(string current)
