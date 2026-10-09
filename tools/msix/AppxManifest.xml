@@ -33,6 +33,7 @@
 
   <Resources>
     <Resource Language="ko-KR" />
+    <Resource Language="en-US" />
   </Resources>
 
   <Applications>
