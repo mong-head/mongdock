@@ -87,7 +87,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
     {
         if (!File.Exists(SettingsPath))
         {
-            var s = new Settings { FirstRunTourPending = true, LastRunVersion = WhatsNew.CurrentText };
+            var s = new Settings { FirstRunTourPending = true, FirstUseHintsPending = true, LastRunVersion = WhatsNew.CurrentText };
             // 새 설치 기본값: 윈도우 작업 표시줄 숨기기 켬 (+ 앱 트레이 아이콘도 같이 켜짐). 기존 사용자 파일은 건드리지 않음.
             // (SetHideWindowsTaskbar 와 같은 효과지만 작업 표시줄 고정 앱 가져오기는 App 의 첫 핀 설정이 맡음)
             s.HideWindowsTaskbar = true;

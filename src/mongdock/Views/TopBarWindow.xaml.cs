@@ -880,8 +880,17 @@ public partial class TopBarWindow : Window
 
     // ───────────────────────── 버튼 ─────────────────────────
 
-    private void OnPreviousDesktop(object sender, RoutedEventArgs e) => SwitchDesktop(() => _services.VirtualDesktops.Previous());
-    private void OnNextDesktop(object sender, RoutedEventArgs e) => SwitchDesktop(() => _services.VirtualDesktops.Next());
+    private void OnPreviousDesktop(object sender, RoutedEventArgs e)
+    {
+        SwitchDesktop(() => _services.VirtualDesktops.Previous());
+        CoachMarks.HintUsed("desktops");
+    }
+
+    private void OnNextDesktop(object sender, RoutedEventArgs e)
+    {
+        SwitchDesktop(() => _services.VirtualDesktops.Next());
+        CoachMarks.HintUsed("desktops");
+    }
 
     private void SwitchDesktop(Action action)
     {
@@ -906,9 +915,17 @@ public partial class TopBarWindow : Window
     /// <summary>제어 센터: Win+A 대신 MyDockFinder 같은 타일 패널.</summary>
     private void OnQuickSettings(object sender, RoutedEventArgs e) => TogglePanel(StatusPanelKind.ControlCenter, QuickSettingsButton);
     /// <summary>시계 클릭 = 몽독 달력 카드 + 몽독 알림 목록.</summary>
-    private void OnClockClick(object sender, RoutedEventArgs e) => TogglePanel(StatusPanelKind.Calendar, ClockButton);
+    private void OnClockClick(object sender, RoutedEventArgs e)
+    {
+        TogglePanel(StatusPanelKind.Calendar, ClockButton);
+        CoachMarks.HintUsed("calendar"); // 처음 한 번: 달력을 닫은 뒤 짧은 카드
+    }
 
-    private void OnTaskView(object sender, RoutedEventArgs e) => Safe(() => _services.Shell.OpenTaskView());
+    private void OnTaskView(object sender, RoutedEventArgs e)
+    {
+        Safe(() => _services.Shell.OpenTaskView());
+        CoachMarks.HintUsed("desktops");
+    }
 
     /// <summary>가운데 그룹 배경: true = 옅은 알약(#0D000000), false = 배경 없이 호버만.</summary>
     internal static bool DesktopGroupPill = true;
@@ -935,8 +952,12 @@ public partial class TopBarWindow : Window
 
     // ───────────────────────── 앱 메뉴 (앱 이름 클릭) ─────────────────────────
 
+    /// <summary>트레이 아이콘을 처음 누름 → (메뉴·창이 닫힌 뒤) 처음 쓰기 힌트 한 번.</summary>
+    private void OnTrayAreaMouseUp(object sender, System.Windows.Input.MouseButtonEventArgs e) => CoachMarks.HintUsed("tray");
+
     private void OnAppNameClick(object sender, RoutedEventArgs e)
     {
+        CoachMarks.HintUsed("appmenu");
         _panel?.Close();
         UiTheme.Apply(_services.Settings.Current);
         var app = _currentApp;

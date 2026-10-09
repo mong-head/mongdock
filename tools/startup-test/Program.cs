@@ -21,6 +21,7 @@ internal static class Program
     {
         // 설정 옮기기 시험은 별도 실행: 데이터 폴더를 임시 폴더로 (AppInfo 를 건드리기 전에)
         if (args.Contains("--transfer")) return TransferTests();
+        if (args.Contains("--pins")) return PinsPreview();
 
         Check("패키지 아님", AppInfo.IsPackaged, false);
         Check("설치 방식", AppInfo.InstallKind, "zip·개발 빌드");
@@ -180,6 +181,22 @@ internal static class Program
         }
         Console.WriteLine(_failed == 0 ? "설정 옮기기 시험: 모두 통과" : $"설정 옮기기 시험: {_failed}개 실패");
         return _failed == 0 ? 0 : 1;
+    }
+
+    /// <summary>이 PC 에서 새 설치라면 독에 들어갈 앱 (임시 데이터 폴더, 실제 설정 안 건드림).</summary>
+    private static int PinsPreview()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "mongdock-pins-test-" + Guid.NewGuid().ToString("N"));
+        Environment.SetEnvironmentVariable("MONGDOCK_DATA_DIR", root);
+        try
+        {
+            using var settings = new SettingsService();
+            var pins = DefaultPins.CreateInitial(settings);
+            foreach (var p in pins) Console.WriteLine($"  {p.Kind,-7} {p.Name}");
+            Console.WriteLine($"앱 {pins.Count - 2}개 (Finder·Launchpad 제외)");
+        }
+        finally { try { Directory.Delete(root, true); } catch { } }
+        return 0;
     }
 
     private static string? ReadValue()
