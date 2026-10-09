@@ -73,11 +73,17 @@ try {
     # 3) 관리자 단계 (UAC 1번)
     Say '관리자 확인 창이 뜹니다 → [예]. 그다음 뜨는 파란 창은 10~20분 걸려도 닫지 마세요 (인증서 신뢰·WACK·설치)'
     $admin = Join-Path $PSScriptRoot 'run-9-admin.ps1'
-    $p = Start-Process powershell.exe -Verb RunAs -Wait -PassThru -ArgumentList @(
-        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$admin`"",
-        '-Msix', "`"$msix`"", '-Cer', "`"$(Join-Path $out 'test.cer')`"", '-Out', "`"$out`"", '-Subject', "`"$Subject`"",
-        '-ExpectedUser', "`"$([Security.Principal.WindowsIdentity]::GetCurrent().Name)`"")
-    Say "관리자 단계 끝 (exit $($p.ExitCode))"
+    try {
+        $p = Start-Process powershell.exe -Verb RunAs -Wait -PassThru -ArgumentList @(
+            '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$admin`"",
+            '-Msix', "`"$msix`"", '-Cer', "`"$(Join-Path $out 'test.cer')`"", '-Out', "`"$out`"", '-Subject', "`"$Subject`"",
+            '-ExpectedUser', "`"$([Security.Principal.WindowsIdentity]::GetCurrent().Name)`"")
+    }
+    catch {
+        # 관리자 확인 창에서 [아니요] = Win32 1223 (작업이 취소됨) → 여기로
+        throw "관리자 확인 창이 취소됨(UAC 아니요) 또는 띄우지 못함: $($_.Exception.Message)"
+    }
+    Say "관리자 단계 끝 (exit $($p.ExitCode))$(if (-not (Test-Path (Join-Path $out 'admin-result.txt'))) { ' — admin-result.txt 없음: 관리자 스크립트가 시작하지 못함' })"
     if (Test-Path (Join-Path $out 'admin-result.txt')) { Get-Content (Join-Path $out 'admin-result.txt') -Encoding UTF8 | ForEach-Object { Say "  $_" } }
 
     # 4) CurrentUser 시험 인증서 제거 (옛 CN 포함, 개인 키까지) — 설치된 패키지는 그대로
