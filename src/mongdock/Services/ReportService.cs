@@ -34,7 +34,7 @@ public enum ReportSendResult
 public static class ReportService
 {
     /// <summary>Apps Script 웹 앱 URL (…/exec). 비어 있으면 창은 열리되 "준비 중" 안내.</summary>
-    public const string Endpoint = "https://script.google.com/macros/s/AKfycbzsVgMMjzGK0ewuUb-PJ8ysfHIoD948CZEVFxpa-Td4gOvGJTuU8NUh_d7yocgVp747/exec";
+    public const string Endpoint = "https://script.google.com/macros/s/AKfycbypcummOSv5veADZVUuOC6kyFeSfkeoh6rnqABAQiIEMp59O86a57u5PNqbtAicC-qo/exec";
 
     public const string SupportAddress = "mongdock+help@gmail.com";
     internal const string Token = "mongdock-report-v1";
