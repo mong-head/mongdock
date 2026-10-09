@@ -31,6 +31,8 @@ public sealed class ReportWindow : Window
     private bool _sending;
     private bool _closed;
 
+    private readonly TextBox _title;
+    private readonly TextBlock _titlePlaceholder;
     private readonly TextBox _message;
     private readonly TextBlock _messagePlaceholder;
     private readonly TextBlock _counter;
@@ -117,10 +119,21 @@ public sealed class ReportWindow : Window
         });
         if (!ReportService.IsConfigured) body.Children.Add(NotReadyNote());
 
-        // ── 종류 ── (세그먼트가 내용 칸 안내 문구를 바꾸므로 안내 문구를 먼저 만듦)
+        // ── 종류 ── (세그먼트가 제목·내용 칸 안내 문구를 바꾸므로 안내 문구를 먼저 만듦)
+        _titlePlaceholder = Placeholder(TitlePlaceholderFor(_kind), multiLine: false);
         _messagePlaceholder = Placeholder(PlaceholderFor(_kind), multiLine: true);
         body.Children.Add(Label("종류"));
         body.Children.Add(KindSegments());
+
+        // ── 제목 (선택) ── 받는 쪽은 내용 첫 줄을 메일 제목으로 쓰므로, 적으면 내용 앞줄로 붙여 보냄 (비우면 내용 첫 줄)
+        body.Children.Add(Label("제목 (선택)"));
+        _title = Input(multiLine: false);
+        _title.MaxLength = TitleMax;
+        _title.TextChanged += (_, _) => UpdateForm();
+        var titleGrid = new Grid();
+        titleGrid.Children.Add(_titlePlaceholder);
+        titleGrid.Children.Add(_title);
+        body.Children.Add(InputBox(titleGrid));
 
         // ── 내용 ──
         body.Children.Add(Label("내용"));
@@ -237,7 +250,7 @@ public sealed class ReportWindow : Window
         Content = root;
 
         UpdateForm();
-        Loaded += (_, _) => _message.Focus();
+        Loaded += (_, _) => _title.Focus();
     }
 
     /// <summary>진단 정보가 준비됨 (가린 결과). 미리 보기와 보낼 내용이 같다.</summary>
@@ -251,9 +264,10 @@ public sealed class ReportWindow : Window
     }
 
     /// <summary>시험·스크린샷용: 펼침 상태와 입력값을 정함.</summary>
-    public void SetPreviewState(ReportKind kind, string message, string contact, bool detailsOpen)
+    public void SetPreviewState(ReportKind kind, string title, string message, string contact, bool detailsOpen)
     {
         SelectKind(kind);
+        _title.Text = title;
         _message.Text = message;
         _contact.Text = contact;
         SetDetailsOpen(detailsOpen);
@@ -267,6 +281,7 @@ public sealed class ReportWindow : Window
     {
         int len = _message.Text.Length;
         _messagePlaceholder.Visibility = len == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _titlePlaceholder.Visibility = _title.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         _contactPlaceholder.Visibility = _contact.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         _counter.Text = $"{len:N0} / {ReportService.MaxMessage:N0}";
         bool contactOk = ContactValid;
@@ -321,7 +336,18 @@ public sealed class ReportWindow : Window
             b.Foreground = on ? _p.AccentText : _p.Text;
         }
         _messagePlaceholder.Text = PlaceholderFor(kind);
+        _titlePlaceholder.Text = TitlePlaceholderFor(kind);
     }
+
+    /// <summary>메일 제목 칸 최대 길이 (받는 쪽 Code.gs 가 첫 줄을 60자로 자름).</summary>
+    private const int TitleMax = 60;
+
+    private static string TitlePlaceholderFor(ReportKind kind) => kind switch
+    {
+        ReportKind.Question => "예: 상단바 시계 형식을 바꿀 수 있나요?",
+        ReportKind.Idea => "예: 독 아이콘에 알림 개수도 보여 주세요",
+        _ => "예: 독에서 카카오톡이 안 열려요",
+    } + "  (비우면 내용 첫 줄)";
 
     private static string PlaceholderFor(ReportKind kind) => kind switch
     {
@@ -333,7 +359,10 @@ public sealed class ReportWindow : Window
     private async Task SendAsync()
     {
         if (_sending || !_send.IsEnabled) return;
-        string message = _message.Text, contact = _contact.Text.Trim(), diagnostics = _diagnostics;
+        // 제목을 적었으면 내용 앞줄로 (받는 쪽이 첫 줄을 메일 제목으로 씀)
+        string title = _title.Text.Trim().ReplaceLineEndings(" ");
+        string message = title.Length > 0 ? title + "\n\n" + _message.Text.Trim() : _message.Text;
+        string contact = _contact.Text.Trim(), diagnostics = _diagnostics;
 
         if (!ReportService.IsConfigured)
         {
