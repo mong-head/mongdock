@@ -89,6 +89,7 @@ public partial class DockWindow : Window
 
         // 빈 영역/구분선 드래그 → 독 이동
         PanelBorder.MouseLeftButtonDown += OnPanelMouseDown;
+        Root.MouseLeftButtonDown += OnRootMouseDown; // 패널 밖으로 튀어나온 확대 아이콘을 누른 것 (패널 처리가 먼저 — Handled 면 건너뜀)
         PanelBorder.MouseMove += OnPanelMouseMove;
         PanelBorder.MouseLeftButtonUp += OnPanelMouseUp;
         PanelBorder.LostMouseCapture += OnPanelLostCapture;
@@ -1350,8 +1351,8 @@ public partial class DockWindow : Window
     }
 
     /// <summary>
-    /// 누른 자리가 아이콘 칸 밖이지만 독 방향으로 간격의 절반 + 3px 안이고 다른 방향으로는 칸 안이면 그 아이콘 (가장 가까운 것).
-    /// 자동 구분선은 제외 (그 자리는 독 이동 끌기 시작점).
+    /// 누른 자리의 아이콘 — 칸이 아니라 지금 그려진 모양 기준: 확대된 아이콘은 칸보다 커서 화면 안쪽(옆 독은 가로, 아래·위 독은 세로)으로
+    /// 튀어나오는데 그 부분과, 아이콘 사이 간격(절반 + 3px)도 그 아이콘. 여럿이면 그려진 사각형 중심에 가장 가까운 것. 자동 구분선 제외.
     /// </summary>
     private DockItemView? IconNearPress(MouseButtonEventArgs e)
     {
@@ -1362,14 +1363,28 @@ public partial class DockWindow : Window
         {
             if (v.Item.IsAutoSeparator) continue;
             var p = e.GetPosition(v);
-            double along = _layout.IsVertical ? p.Y : p.X, alongLen = _layout.IsVertical ? v.ActualHeight : v.ActualWidth;
-            double cross = _layout.IsVertical ? p.X : p.Y, crossLen = _layout.IsVertical ? v.ActualWidth : v.ActualHeight;
-            if (cross < 0 || cross > crossLen) continue;
-            double dist = along < 0 ? -along : along > alongLen ? along - alongLen : 0;
-            if (dist <= reach && dist < bestDist) { best = v; bestDist = dist; }
+            var drawn = v.DrawnIconBounds(v);
+            var area = new Rect(0, 0, v.ActualWidth, v.ActualHeight);
+            if (!drawn.IsEmpty) area.Union(drawn);
+            if (_layout.IsVertical) area.Inflate(0, reach); else area.Inflate(reach, 0);
+            if (!area.Contains(p)) continue;
+            var center = drawn.IsEmpty ? new Point(v.ActualWidth / 2, v.ActualHeight / 2) : new Point(drawn.X + drawn.Width / 2, drawn.Y + drawn.Height / 2);
+            double dist = (p - center).Length;
+            if (dist < bestDist) { best = v; bestDist = dist; }
         }
-        if (best is not null) Log.Info($"독 아이콘 옆 간격 누름 → 가까운 아이콘으로 ({bestDist:0}px)");
+        if (best is not null) Log.Info("독: 칸 밖(확대로 튀어나온 부분·간격) 누름 → 그 아이콘으로");
         return best;
+    }
+
+    /// <summary>독 패널 밖(확대로 튀어나온 아이콘 위 — 창의 확대 여유 영역)을 누름: 그려진 아이콘이면 그 아이콘 누름으로.</summary>
+    private void OnRootMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.Handled || _itemArmed || _dragArmed) return;
+        if (IconNearPress(e) is { } near)
+        {
+            OnItemPressed(near, e);
+            e.Handled = true;
+        }
     }
 
     private void LogEmptyPress(MouseButtonEventArgs e)

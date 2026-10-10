@@ -60,6 +60,19 @@ internal sealed class DockItemView : Grid
     /// <summary>현재 비켜서기 목표 이동량 (독 방향, DIP).</summary>
     public double ShiftTarget { get; private set; }
 
+    private FrameworkElement? _iconHost;
+
+    /// <summary>
+    /// 지금 그려진 아이콘 사각형 (확대·누름 반영, relativeTo 좌표). 확대된 아이콘은 칸보다 커서 화면 안쪽으로 튀어나오는데
+    /// 그 부분도 이 아이콘을 누른 것으로 보려고 씀. 구분선은 Rect.Empty.
+    /// </summary>
+    public Rect DrawnIconBounds(Visual relativeTo)
+    {
+        if (_iconHost is null || _iconHost.ActualWidth <= 0) return Rect.Empty;
+        try { return _iconHost.TransformToVisual(relativeTo).TransformBounds(new Rect(_iconHost.RenderSize)); }
+        catch (InvalidOperationException) { return Rect.Empty; }
+    }
+
     public DockItemView(DockItemViewModel item, DockLayout layout)
     {
         Item = item;
@@ -130,6 +143,7 @@ internal sealed class DockItemView : Grid
             _pressHost.Children.Add(_darken);
         }
         iconHost.Children.Add(_pressHost);
+        _iconHost = iconHost;
 
         double n = layout.NotificationSize;
         _notifyDot = new Ellipse
