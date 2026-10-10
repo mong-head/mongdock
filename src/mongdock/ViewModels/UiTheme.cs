@@ -22,6 +22,10 @@ public sealed class UiPalette
     public Brush Divider { get; private init; } = Brushes.LightGray;
     public Brush Accent { get; private init; } = Brushes.Blue;
     public Brush AccentText { get; private init; } = Brushes.White;
+    /// <summary>강조 글자·링크·고리 (몽독 톤 — 바탕 위에서 읽히게 진하게).</summary>
+    public Brush AccentInk { get; private init; } = Brushes.SlateBlue;
+    /// <summary>켜짐 채움 (스위치 켜짐·슬라이더·진행 막대·고른 동그라미): 몽독 하늘~연보라.</summary>
+    public Brush AccentFill { get; private init; } = Brushes.MediumPurple;
     /// <summary>몽독 톤 강조 (#24 새 화면): 연보라 틴트 바탕 + 진한 보라 글자 — 쨍한 파랑 대신. 고른 칸·주 버튼.</summary>
     public Brush SoftAccent { get; private init; } = Brushes.Lavender;
     public Brush SoftAccentText { get; private init; } = Brushes.DarkSlateBlue;
@@ -56,8 +60,10 @@ public sealed class UiPalette
         SubText = F("#8C000000"),
         Disabled = F("#4D000000"),
         Divider = F("#14000000"),
-        Accent = F("#FF0A64D6"),
-        AccentText = F("#FFFFFFFF"),
+        Accent = F("#FFE6E0FF"),
+        AccentText = F("#FF4A3AA8"),
+        AccentInk = F("#FF5B4BC4"),
+        AccentFill = Fill(),
         SoftAccent = F("#FFECE7FF"),
         SoftAccentText = F("#FF4A3AA8"),
         SoftAccentLine = F("#FFB4A3FF"),
@@ -88,8 +94,10 @@ public sealed class UiPalette
         SubText = F("#99FFFFFF"),
         Disabled = F("#4DFFFFFF"),
         Divider = F("#1FFFFFFF"),
-        Accent = F("#FF0A64D6"),
-        AccentText = F("#FFFFFFFF"),
+        Accent = F("#FF443C70"),
+        AccentText = F("#FFE4DEFF"),
+        AccentInk = F("#FFC9BEFF"),
+        AccentFill = Fill(),
         SoftAccent = F("#FF3D3763"),
         SoftAccentText = F("#FFD8CFFF"),
         SoftAccentLine = F("#FF8E7EE0"),
@@ -110,6 +118,14 @@ public sealed class UiPalette
     };
 
     private static SolidColorBrush F(string hex) => BrushParser.Frozen(BrushParser.Hex(hex));
+
+    /// <summary>몽독 하늘(#86C6FF) → 연보라(#A894FF) — 몽독 체크·NEW 와 같은 색.</summary>
+    private static Brush Fill()
+    {
+        var b = new LinearGradientBrush(Color.FromRgb(0x86, 0xC6, 0xFF), Color.FromRgb(0xA8, 0x94, 0xFF), 0);
+        b.Freeze();
+        return b;
+    }
 }
 
 public static class UiTheme

@@ -328,7 +328,7 @@ internal sealed class CoachMarkWindow : Window
             {
                 Text = KeepAll(page.Hint),
                 FontSize = 12.5,
-                Foreground = _p.Accent,
+                Foreground = _p.AccentInk,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 6, 0, 0),
             });
@@ -352,11 +352,11 @@ internal sealed class CoachMarkWindow : Window
             var link = new Button
             {
                 Style = (Style)FindResource("CardLinkButton"),
-                Foreground = _p.Accent,
+                Foreground = _p.AccentInk,
                 Padding = new Thickness(6, 4, 6, 4),
                 Margin = new Thickness(-6, 6, 0, 0),
                 HorizontalAlignment = HorizontalAlignment.Left,
-                Content = new TextBlock { Text = KeepAll(page.LinkText), FontSize = 12.5, Foreground = _p.Accent, TextWrapping = TextWrapping.Wrap },
+                Content = new TextBlock { Text = KeepAll(page.LinkText), FontSize = 12.5, Foreground = _p.AccentInk, TextWrapping = TextWrapping.Wrap },
             };
             link.Click += (_, _) => LinkClicked?.Invoke();
             body.Children.Add(link);
@@ -441,7 +441,7 @@ internal sealed class CoachMarkWindow : Window
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
                 row.ColumnDefinitions.Add(new ColumnDefinition());
                 // 점은 첫 줄 가운데 높이에 (여러 줄로 감겨도)
-                row.Children.Add(new Ellipse { Width = 4, Height = 4, Fill = _p.Accent, VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(2, 8, 0, 0) });
+                row.Children.Add(new Ellipse { Width = 4, Height = 4, Fill = _p.AccentFill, VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(2, 8, 0, 0) });
                 var text = new TextBlock { Text = KeepAll(item), TextWrapping = TextWrapping.Wrap, LineHeight = 19 };
                 Grid.SetColumn(text, 1);
                 row.Children.Add(text);

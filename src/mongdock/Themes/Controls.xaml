@@ -223,7 +223,14 @@
     <Style x:Key="MacSwitch" TargetType="ToggleButton">
         <Setter Property="Focusable" Value="False" />
         <Setter Property="IsTabStop" Value="False" />
-        <Setter Property="Background" Value="#FF0A84FF" />
+        <Setter Property="Background">
+            <Setter.Value>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                    <GradientStop Color="#FF86C6FF" Offset="0" />
+                    <GradientStop Color="#FFA894FF" Offset="1" />
+                </LinearGradientBrush>
+            </Setter.Value>
+        </Setter>
         <Setter Property="BorderBrush" Value="#FFDDDDE0" />
         <Setter Property="Template">
             <Setter.Value>

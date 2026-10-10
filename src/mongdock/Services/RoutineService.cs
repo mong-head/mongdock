@@ -183,7 +183,7 @@ internal static class RoutineService
     {
         try
         {
-            Log.Info($"루틴 실행: 항목 {routine.Items.Count}개, 데스크톱 {routine.Desktop.Mode}");
+            Log.Info($"루틴 실행: 항목 {routine.Items.Count}개");
             var items = routine.Items.ToList();
             // 열 것이 하나도 없으면(전부 이미 켜져 있음) 빈 데스크톱을 만들지 않음
             bool anyToOpen = items.Any(i => !(SkipsIfRunning(i) && services.Windows.Windows.Any(w => Matches(i, w))));
@@ -275,60 +275,42 @@ internal static class RoutineService
         services.Launcher.Activate(hwnd);
     }
 
+    /// <summary>루틴은 늘 새 데스크톱에서 (2026-10-10 사용자 결정 — 데이터의 desktop 값은 무시). 못 만들면 지금 데스크톱에서 열고 안내 한 줄.</summary>
     private static async Task PrepareDesktopAsync(AppServices services, RoutineDef routine, RunState state)
     {
-        switch (routine.Desktop.Mode)
+        var ids = VirtualDesktopService.ReadDesktopIds();
+        if (state.CreatedDesktop && state.Desktop is { } mine && ids.IndexOf(mine) is var at && at >= 0)
         {
-            case RoutineDesktopMode.New:
+            await VirtualDesktopService.MoveToAsync(at + 1); // 이 루틴이 만든 데스크톱이 아직 있으면 그리로
+            return;
+        }
+        var before = ids.ToHashSet();
+        int cur = VirtualDesktopService.Read().Current;
+        Guid? from = cur > 0 && cur <= ids.Count ? ids[cur - 1] : null;
+        bool sent = await VirtualDesktopService.NewAsync(); // Ctrl+Win+D — 새 데스크톱을 만들고 그리로 감
+        for (int i = 0; sent && i < 25; i++)
+        {
+            await Task.Delay(80);
+            var now = VirtualDesktopService.ReadDesktopIds();
+            var added = now.Where(g => !before.Contains(g)).ToList();
+            if (added.Count > 0 && now.Count > Math.Max(before.Count, 1))
             {
-                var ids = VirtualDesktopService.ReadDesktopIds();
-                if (state.CreatedDesktop && state.Desktop is { } mine && ids.IndexOf(mine) is var at && at >= 0)
+                lock (Runs)
                 {
-                    await VirtualDesktopService.MoveToAsync(at + 1); // 이 루틴이 만든 데스크톱이 아직 있으면 그리로
-                    return;
+                    state.Desktop = added[^1];
+                    state.CreatedDesktop = true;
+                    state.ReturnTo = from ?? (now.Count > 0 ? now[0] : null);
                 }
-                var before = ids.ToHashSet();
-                int cur = VirtualDesktopService.Read().Current;
-                Guid? from = cur > 0 && cur <= ids.Count ? ids[cur - 1] : null;
-                bool sent = await VirtualDesktopService.NewAsync(); // Ctrl+Win+D — 새 데스크톱을 만들고 그리로 감
-                for (int i = 0; sent && i < 25; i++)
-                {
-                    await Task.Delay(80);
-                    var now = VirtualDesktopService.ReadDesktopIds();
-                    var added = now.Where(g => !before.Contains(g)).ToList();
-                    if (added.Count > 0 && now.Count > Math.Max(before.Count, 1))
-                    {
-                        lock (Runs)
-                        {
-                            state.Desktop = added[^1];
-                            state.CreatedDesktop = true;
-                            state.ReturnTo = from ?? (now.Count > 0 ? now[0] : null);
-                        }
-                        break;
-                    }
-                }
-                if (!state.CreatedDesktop)
-                {
-                    Log.Warn("루틴: 새 데스크톱을 확인하지 못해 지금 데스크톱에서 엶");
-                    Notify(Loc.T("새 데스크톱을 만들지 못해 지금 데스크톱에서 열어요"));
-                    return;
-                }
-                await Task.Delay(250); // 전환 애니메이션 뒤에 창을 열어야 새 데스크톱에 뜸
-                break;
-            }
-            case RoutineDesktopMode.Index:
-            {
-                int target = Math.Max(1, routine.Desktop.Index);
-                for (int guard = 0; guard < 10 && VirtualDesktopService.Read().Count < target; guard++)
-                {
-                    if (!await VirtualDesktopService.NewAsync()) break;
-                    await Task.Delay(400);
-                }
-                await VirtualDesktopService.MoveToAsync(Math.Min(target, Math.Max(1, VirtualDesktopService.Read().Count)));
-                await Task.Delay(200);
                 break;
             }
         }
+        if (!state.CreatedDesktop)
+        {
+            Log.Warn("루틴: 새 데스크톱을 확인하지 못해 지금 데스크톱에서 엶");
+            Notify(Loc.T("새 데스크톱을 만들지 못해 지금 데스크톱에서 열어요"));
+            return;
+        }
+        await Task.Delay(250); // 전환 애니메이션 뒤에 창을 열어야 새 데스크톱에 뜸
     }
 
     /// <summary>항목 하나 열기. 앱(+ 열 것·인자), 웹 주소(위치를 정했으면 새 창), 파일·폴더(연결된 앱).</summary>

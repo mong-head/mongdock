@@ -163,7 +163,7 @@ internal sealed class SpotlightWindow : Window
             BorderThickness = new Thickness(0),
             Foreground = _p.Text,
             CaretBrush = _p.Text,
-            SelectionBrush = _p.Accent,
+            SelectionBrush = _p.SoftAccentLine,
             VerticalContentAlignment = VerticalAlignment.Center,
             Padding = new Thickness(0),
         };

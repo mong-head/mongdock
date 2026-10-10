@@ -150,7 +150,7 @@ internal sealed partial class SettingsWindow
             track.Children.Add(new Border { Background = _p.Tile, CornerRadius = new CornerRadius(3) });
             _updateFill = new Border
             {
-                Background = _p.Accent,
+                Background = _p.AccentFill,
                 CornerRadius = new CornerRadius(3),
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Width = ProgressWidth * updates.DownloadProgress,
@@ -199,7 +199,7 @@ internal sealed partial class SettingsWindow
         return new Border
         {
             Background = _p.GroupBackground,
-            BorderBrush = _p.Accent,
+            BorderBrush = _p.SoftAccentLine,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
             Margin = new Thickness(0, 0, 0, 16),

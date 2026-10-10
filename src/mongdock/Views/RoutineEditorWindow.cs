@@ -103,19 +103,7 @@ internal sealed class RoutineEditorWindow : RoutineCardWindow
         nameRow.Children.Add(_name);
         Body.Children.Add(LabeledRow(Loc.T("이름"), nameRow));
 
-        // 어디서 (데스크톱)
-        var desktopRow = new StackPanel { Orientation = Orientation.Horizontal };
-        var number = MenuPicker(Enumerable.Range(1, 9).Select(n => n.ToString()).ToList(), Math.Clamp(_r.Desktop.Index, 1, 9) - 1, i => _r.Desktop.Index = i + 1, 52);
-        number.IsEnabled = _r.Desktop.Mode == RoutineDesktopMode.Index;
-        number.Opacity = number.IsEnabled ? 1 : 0.45;
-        int mode = _r.Desktop.Mode switch { RoutineDesktopMode.Current => 1, RoutineDesktopMode.Index => 2, _ => 0 };
-        desktopRow.Children.Add(Segments(new[] { Loc.T("새 데스크톱 만들어서 (기본)"), Loc.T("지금 데스크톱"), Loc.T("데스크톱") }, mode, i =>
-        {
-            _r.Desktop.Mode = i switch { 1 => RoutineDesktopMode.Current, 2 => RoutineDesktopMode.Index, _ => RoutineDesktopMode.New };
-            number.IsEnabled = i == 2;
-        }));
-        desktopRow.Children.Add(number);
-        Body.Children.Add(LabeledRow(Loc.T("어디서"), desktopRow, bottom: 4));
+        // 데스크톱은 고르지 않음 — 루틴은 늘 새 데스크톱에서 열림 (못 만들면 지금 데스크톱 + 안내 한 줄)
 
         // 항목
         var items = new StackPanel();
@@ -658,7 +646,6 @@ internal sealed class RoutineEditorWindow : RoutineCardWindow
         {
             _original.Name = _r.Name;
             _original.Icon = _r.Icon;
-            _original.Desktop = _r.Desktop;
             _original.Items = _r.Items;
             foreach (var pin in Services.Settings.Current.Pins.Where(p => p.Kind == PinKind.Routine && p.Target == _original.Id)) pin.Name = _r.Name;
             Services.Settings.Save();

@@ -436,7 +436,7 @@ public sealed class ReportWindow : Window
             Text = "", // CheckMark
             FontFamily = (FontFamily)FindResource("IconFont"),
             FontSize = 36,
-            Foreground = _p.Accent,
+            Foreground = _p.AccentInk,
             HorizontalAlignment = HorizontalAlignment.Center,
         });
         _done.Children.Add(new TextBlock
@@ -540,7 +540,7 @@ public sealed class ReportWindow : Window
             Background = Brushes.Transparent,
             Foreground = _p.Text,
             CaretBrush = _p.Text,
-            SelectionBrush = _p.Accent,
+            SelectionBrush = _p.SoftAccentLine,
             BorderThickness = new Thickness(0),
             Padding = new Thickness(0),
             AcceptsReturn = multiLine,

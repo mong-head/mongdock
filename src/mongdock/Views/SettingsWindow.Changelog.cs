@@ -81,7 +81,7 @@ internal sealed partial class SettingsWindow
             line.Inlines.Add(new System.Windows.Documents.Run($"v{release.VersionText}")
             {
                 FontWeight = FontWeights.Bold,
-                Foreground = isLatest ? _p.Accent : _p.Text,
+                Foreground = isLatest ? _p.AccentInk : _p.Text,
             });
             if (!string.IsNullOrEmpty(release.Headline))
             {
@@ -101,7 +101,7 @@ internal sealed partial class SettingsWindow
                 {
                     Width = 4,
                     Height = 4,
-                    Fill = isLatest ? _p.Accent : _p.SubText,
+                    Fill = isLatest ? _p.AccentFill : _p.SubText,
                     VerticalAlignment = VerticalAlignment.Top,
                     HorizontalAlignment = HorizontalAlignment.Left,
                     Margin = new Thickness(2, 7, 0, 0),
@@ -137,7 +137,7 @@ internal sealed partial class SettingsWindow
         return new Border
         {
             Background = _p.GroupBackground,
-            BorderBrush = _p.Accent,
+            BorderBrush = _p.SoftAccentLine,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
             Margin = new Thickness(0, 0, 0, 16),
@@ -158,11 +158,11 @@ internal sealed partial class SettingsWindow
         var link = new Button
         {
             Style = (Style)FindResource("CardLinkButton"),
-            Foreground = _p.Accent,
+            Foreground = _p.AccentInk,
             Padding = new Thickness(6, 2, 6, 2),
             Margin = new Thickness(8, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center,
-            Content = new TextBlock { Text = text, FontSize = 12.5, Foreground = _p.Accent },
+            Content = new TextBlock { Text = text, FontSize = 12.5, Foreground = _p.AccentInk },
         };
         link.Click += (_, _) => PlayCoach(build);
         return link;
@@ -310,7 +310,7 @@ internal sealed partial class SettingsWindow
         return new Border
         {
             Background = _p.GroupBackground,
-            BorderBrush = current ? _p.Accent : _p.Divider,
+            BorderBrush = current ? _p.SoftAccentLine : _p.Divider,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
             Margin = new Thickness(0, 0, 0, 16),
@@ -347,7 +347,7 @@ internal sealed partial class SettingsWindow
             {
                 Width = 4,
                 Height = 4,
-                Fill = _p.Accent,
+                Fill = _p.AccentFill,
                 VerticalAlignment = VerticalAlignment.Top,
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Margin = new Thickness(2, 8, 0, 0),
@@ -372,11 +372,11 @@ internal sealed partial class SettingsWindow
         var link = new Button
         {
             Style = (Style)FindResource("CardLinkButton"),
-            Foreground = _p.Accent,
+            Foreground = _p.AccentInk,
             Padding = new Thickness(8, 4, 8, 4),
             Margin = new Thickness(0, 6, 0, 0),
             HorizontalAlignment = align,
-            Content = new TextBlock { Text = text, FontSize = 12.5, Foreground = _p.Accent },
+            Content = new TextBlock { Text = text, FontSize = 12.5, Foreground = _p.AccentInk },
         };
         link.Click += (_, _) =>
         {

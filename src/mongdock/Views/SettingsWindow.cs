@@ -486,7 +486,7 @@ internal sealed partial class SettingsWindow : Window
             var edit = ActionButton(Loc.T("편집…"), () => RoutineEditorWindow.Open(_services, routine));
             edit.Margin = new Thickness(6, 0, 0, 0);
             buttons.Children.Add(edit);
-            routineRows.Add(Row(routine.Name, $"{Loc.F($"{routine.Items.Count}개")} · {RoutineIcons.DesktopText(routine.Desktop)}", buttons));
+            routineRows.Add(Row(routine.Name, Loc.F($"{routine.Items.Count}개"), buttons));
         }
         var make = new StackPanel { Orientation = Orientation.Horizontal };
         bool canAdd = RoutineUi.CanAdd(_services);
@@ -1123,7 +1123,7 @@ internal sealed partial class SettingsWindow : Window
                     var link = new TextBlock
                     {
                         Text = Loc.T("설치"),
-                        Foreground = _p.Accent,
+                        Foreground = _p.AccentInk,
                         Cursor = System.Windows.Input.Cursors.Hand,
                         Margin = new Thickness(16, 0, 0, 0),
                         ToolTip = Loc.T("Microsoft Store 에서 설치"),
@@ -1400,7 +1400,7 @@ internal sealed partial class SettingsWindow : Window
         var tb = new ToggleButton
         {
             Style = (Style)FindResource("MacSwitch"),
-            Background = _p.Accent,
+            Background = _p.AccentFill,
             BorderBrush = _p.CircleOff,
             IsChecked = value,
         };
@@ -1503,12 +1503,12 @@ internal sealed partial class SettingsWindow : Window
         var circle = new Grid { Width = 18, Height = 18, Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center };
         circle.Children.Add(new Ellipse
         {
-            Fill = selected ? _p.Accent : Brushes.Transparent,
-            Stroke = selected ? _p.Accent : _p.SubText,
+            Fill = selected ? _p.AccentFill : Brushes.Transparent,
+            Stroke = selected ? _p.SoftAccentLine : _p.SubText,
             StrokeThickness = 1.2,
         });
         if (selected)
-            circle.Children.Add(new Ellipse { Width = 7, Height = 7, Fill = _p.AccentText });
+            circle.Children.Add(new Ellipse { Width = 7, Height = 7, Fill = Brushes.White });
         grid.Children.Add(circle);
 
         var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
@@ -1553,7 +1553,7 @@ internal sealed partial class SettingsWindow : Window
             LargeChange = step,
             TickFrequency = step,
             IsSnapToTickEnabled = true,
-            Foreground = _p.Accent,
+            Foreground = _p.AccentFill,
             Background = _p.SliderTrack,
             VerticalAlignment = VerticalAlignment.Center,
         };

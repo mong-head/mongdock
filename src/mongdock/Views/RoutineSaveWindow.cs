@@ -18,7 +18,6 @@ internal sealed class RoutineSaveWindow : RoutineCardWindow
 
     private readonly List<(RoutineItem Item, CheckBox Check)> _rows = new();
     private readonly TextBox _name;
-    private readonly RoutineDesktop _desktop = new();
     private readonly bool _pinToDock;
     private readonly Button _save;
 
@@ -56,12 +55,6 @@ internal sealed class RoutineSaveWindow : RoutineCardWindow
         _name.MaxLength = 30;
         Body.Children.Add(LabeledRow(Loc.T("이름"), _name));
 
-        int current = Math.Max(1, VirtualDesktopService.Read().Current);
-        Body.Children.Add(LabeledRow(Loc.T("어디서"), Segments(new[] { Loc.T("새 데스크톱 (기본)"), Loc.T("지금 데스크톱"), Loc.F($"데스크톱 {current}") }, 0, i =>
-        {
-            _desktop.Mode = i switch { 1 => RoutineDesktopMode.Current, 2 => RoutineDesktopMode.Index, _ => RoutineDesktopMode.New };
-            _desktop.Index = current;
-        }), bottom: 6));
 
         var list = new StackPanel();
         if (items.Count == 0) list.Children.Add(Muted(Loc.T("저장할 창이 없어요. 루틴에 넣을 앱을 띄운 뒤 다시 눌러 주세요."), 13));
@@ -136,7 +129,6 @@ internal sealed class RoutineSaveWindow : RoutineCardWindow
         var routine = new RoutineDef
         {
             Name = name.Length > 0 ? name : RoutineUi.NextName(Services),
-            Desktop = new RoutineDesktop { Mode = _desktop.Mode, Index = _desktop.Index },
             Items = items,
             FromScreen = true,
         };

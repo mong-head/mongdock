@@ -781,7 +781,7 @@ internal sealed class CoachSession
                 ? Math.Max(8, _services.Settings.Current.Dock.CornerRadius + 4)
                 : Math.Min(a.Rect.Height / 2 + 3, 10);
             var p = UiTheme.Palette(_services.Settings.Current);
-            _ring = new CoachRingWindow(_services, a.Rect, a.Monitor, radius, p.Accent);
+            _ring = new CoachRingWindow(_services, a.Rect, a.Monitor, radius, p.AccentInk);
             _ring.Show();
         }
         var monitor = anchor?.Monitor ?? _services.DesktopWindows.ResolveMonitor("");

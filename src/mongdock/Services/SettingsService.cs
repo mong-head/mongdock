@@ -341,7 +341,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
             r.Items ??= new List<RoutineItem>();
             r.Items.RemoveAll(i => i is null || string.IsNullOrWhiteSpace(i.Target) && string.IsNullOrWhiteSpace(i.Aumid));
             if (r.Items.Count > RoutineDef.MaxItems) r.Items.RemoveRange(RoutineDef.MaxItems, r.Items.Count - RoutineDef.MaxItems);
-            r.Desktop ??= new RoutineDesktop();
+            r.Desktop = new RoutineDesktop(); // 데스크톱은 고르지 않음 — 옛 값(지금/N번)은 무시하고 늘 새 데스크톱
             r.Name ??= "";
             if (string.IsNullOrWhiteSpace(r.Id) || !routineIds.Add(r.Id)) { r.Id = Guid.NewGuid().ToString("N"); routineIds.Add(r.Id); }
             return false;

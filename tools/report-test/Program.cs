@@ -483,6 +483,10 @@ internal static class Program
             new ShellActions(), new ImeService(), new StatusService(), new MediaService(), new AppMenuService(settings), new StartupService(),
             new NotificationService(tracker, launcher), new TrayIconService(), new CalendarFeedService(settings));
         var type = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.SettingsWindow")!; // internal
+        foreach (var theme in new[] { "light", "dark" }) // 라이트·다크 (몽독 톤 전/후 비교)
+        {
+        settings.Current.Dock.Theme = theme == "dark" ? DockTheme.Dark : DockTheme.Light;
+        Mongdock.ViewModels.UiTheme.Apply(settings.Current);
         var w = (Window)type.GetConstructor(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance, new[] { typeof(AppServices) })!.Invoke(new object[] { services });
         w.Left = -20000; w.Top = -20000; w.ShowActivated = false;
         w.Show();
@@ -514,11 +518,12 @@ internal static class Program
             rtb.Render(dv);
             var enc = new PngBitmapEncoder();
             enc.Frames.Add(BitmapFrame.Create(rtb));
-            string path = Path.Combine(dir, $"settings-{_lang}-{page.ToString()!.ToLowerInvariant()}.png");
+            string path = Path.Combine(dir, $"settings-{_lang}-{theme}-{page.ToString()!.ToLowerInvariant()}.png");
             using (var fs = File.Create(path)) enc.Save(fs);
             Console.WriteLine($"  저장  {path}");
         }
         w.Close();
+        }
         GC.KeepAlive(app);
     }
 

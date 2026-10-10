@@ -71,7 +71,7 @@ internal static class RoutineIcons
     };
 
     /// <summary>툴팁 "업무 시작 · 4개 · 새 데스크톱".</summary>
-    public static string Tooltip(RoutineDef r) => $"{r.Name} · {Loc.F($"{r.Items.Count}개")} · {DesktopText(r.Desktop)}";
+    public static string Tooltip(RoutineDef r) => $"{r.Name} · {Loc.F($"{r.Items.Count}개")}"; // 늘 새 데스크톱이라 데스크톱은 빼고
 
     /// <summary>위치 요약 "모니터 2 · 왼쪽 반".</summary>
     public static string PlacementText(RoutineItem item)

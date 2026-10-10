@@ -457,7 +457,7 @@ internal sealed partial class StatusPanelWindow : Window
         var sw = new ToggleButton
         {
             Style = (Style)FindStyle("MacSwitch"),
-            Background = _p.Accent,
+            Background = _p.AccentFill,
             BorderBrush = _p.CircleOff,
             VerticalAlignment = VerticalAlignment.Center,
         };

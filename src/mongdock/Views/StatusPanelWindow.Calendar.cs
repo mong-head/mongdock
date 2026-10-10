@@ -116,7 +116,7 @@ internal sealed partial class StatusPanelWindow
             {
                 Width = CalTodaySize,
                 Height = CalTodaySize,
-                Stroke = _p.Accent,
+                Stroke = _p.SoftAccentLine,
                 StrokeThickness = 1.5,
                 Visibility = Visibility.Collapsed,
             };
@@ -178,7 +178,7 @@ internal sealed partial class StatusPanelWindow
         {
             Text = Loc.T("캘린더에서 열기"),
             FontSize = 12,
-            Foreground = _p.Accent,
+            Foreground = _p.AccentInk,
             Cursor = Cursors.Hand,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(8, 0, 0, 0),
@@ -230,7 +230,7 @@ internal sealed partial class StatusPanelWindow
         {
             Text = Loc.T("캘린더 일정 연결하기…"),
             FontSize = 12,
-            Foreground = _p.Accent,
+            Foreground = _p.AccentInk,
             Cursor = Cursors.Hand,
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Top,
@@ -297,7 +297,7 @@ internal sealed partial class StatusPanelWindow
 
             monthText.Text = Loc.MonthYear(shown);
             bool isCurrent = shown.Year == today.Year && shown.Month == today.Month;
-            monthText.Foreground = isCurrent ? _p.Text : _p.Accent; // 다른 달을 보고 있으면 "누르면 돌아감" 힌트
+            monthText.Foreground = isCurrent ? _p.Text : _p.AccentInk; // 다른 달을 보고 있으면 "누르면 돌아감" 힌트
 
             var first = shown.AddDays(-(int)shown.DayOfWeek); // 첫 칸 = 그 주 일요일
             var dayColors = withDots ? DayColors(cals.GetOccurrences(first, first.AddDays(42)), first) : null;
@@ -593,7 +593,7 @@ internal sealed partial class StatusPanelWindow
     private Brush FeedBrush(string color)
     {
         if (_feedBrushes.TryGetValue(color, out var b)) return b;
-        var accent = _p.Accent is SolidColorBrush sb ? sb.Color : Colors.DodgerBlue;
+        var accent = _p.AccentInk is SolidColorBrush sb ? sb.Color : Colors.DodgerBlue;
         b = Converters.BrushParser.Parse(color, accent);
         _feedBrushes[color] = b;
         return b;
