@@ -245,7 +245,7 @@ internal static class Program
                       { "kind": "url" } ] } },
                   { "name": "계산기", "kind": "Exe", "target": "calc.exe" } ] }
                 """);
-            Check("폴더는 끝으로·잘못된 폴더/루틴 빠짐", string.Join(",", extras.Pins.Select(p => p.Name)), "메모장,아침,계산기,받은 파일,문서");
+            Check("폴더는 그 자리 그대로·잘못된 폴더/루틴 빠짐", string.Join(",", extras.Pins.Select(p => p.Name)), "받은 파일,메모장,문서,아침,계산기");
             var dl = extras.Pins.First(p => p.Name == "받은 파일");
             Check("폴더 옵션 읽힘 (옛 display 는 무시)", dl.Folder?.Sort, Mongdock.Models.FolderSort.Name);
             Check("옛 폴더 핀: 마지막 연 시각 채움 (새 파일 점은 지금부터)", dl.Folder?.LastOpened is not null, true);
@@ -256,15 +256,6 @@ internal static class Program
             Check("루틴: 데스크톱·모니터·배치·지연", $"{morning.Desktop?.Mode}/{morning.Items[0].Monitor?.Mode}{morning.Items[0].Monitor?.Index}/{morning.Items[0].Placement?.Mode}/{morning.Items[0].DelayMs}", "New/Index1/Left/500");
             var again = SettingsService.ParseForImport(System.Text.Json.JsonSerializer.Serialize(extras, (System.Text.Json.JsonSerializerOptions)typeof(SettingsService).GetField("JsonOptions", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!));
             Check("다시 저장·읽어도 그대로", string.Join(",", again.Pins.Select(p => p.Name + ":" + p.Id)), string.Join(",", extras.Pins.Select(p => p.Name + ":" + p.Id)));
-            var order = new List<Mongdock.Models.PinItem>
-            {
-                new() { Name = "F1", Kind = Mongdock.Models.PinKind.Folder, Target = "a" },
-                new() { Name = "A", Kind = Mongdock.Models.PinKind.Exe, Target = "a.exe" },
-                new() { Name = "F2", Kind = Mongdock.Models.PinKind.Folder, Target = "b" },
-                new() { Name = "B", Kind = Mongdock.Models.PinKind.Exe, Target = "b.exe" },
-            };
-            SettingsService.KeepFoldersLast(order);
-            Check("KeepFoldersLast: 순서 유지하며 끝으로", string.Join(",", order.Select(p => p.Name)), "A,B,F1,F2");
             FolderListTests();
 
             // 5: 핀 이름 Finder·Launchpad → 파일 탐색기·앱 모음 (정확히 같은 이름·대상만, 사용자가 바꾼 이름은 그대로)

@@ -346,7 +346,6 @@ public sealed class SettingsService : ISettingsService, IDisposable
                 if (pin!.Kind == PinKind.Folder) (pin.Folder ??= new FolderOptions()).LastOpened ??= DateTime.UtcNow;
                 if (pin.Kind is PinKind.Folder or PinKind.Routine) pin.Id ??= Guid.NewGuid().ToString("N");
             }
-            KeepFoldersLast(pins);
         }
         FixUndefinedEnums(s, "", fixes); // 숫자로 적은 없는 enum 값(예 "colorMode": 7)은 예외 없이 들어오므로 따로
         // 수동 편집으로 null 이 들어와도 UI 가 죽지 않게 보정.
@@ -399,7 +398,6 @@ public sealed class SettingsService : ISettingsService, IDisposable
         ImportTaskbarPinsIfRequested();
         lock (_gate)
         {
-            KeepFoldersLast(Current.Pins); // 핀을 바로 더하는 곳(상단바·작업 표시줄 가져오기 등)이 있어도 독 폴더는 늘 끝
             string text = JsonSerializer.Serialize(Current, JsonOptions);
             string tmp = SettingsPath + ".tmp";
             try
@@ -506,17 +504,6 @@ public sealed class SettingsService : ISettingsService, IDisposable
             lock (_gate) CopyInto(loaded, Current);
             SettingsChanged?.Invoke(this, EventArgs.Empty);
         });
-    }
-
-    /// <summary>독 폴더(PinKind.Folder)를 목록 끝으로 (순서는 유지). 독 화면에서 폴더는 늘 오른쪽 끝이라 핀 영역 위치 = 목록 위치가 되게.</summary>
-    public static void KeepFoldersLast(List<PinItem> pins)
-    {
-        var folders = pins.Where(p => p?.Kind == PinKind.Folder).ToList();
-        if (folders.Count == 0) return;
-        int firstFolder = pins.FindIndex(p => p?.Kind == PinKind.Folder);
-        if (pins.Skip(firstFolder).All(p => p?.Kind == PinKind.Folder)) return; // 이미 끝에 모여 있음
-        pins.RemoveAll(p => p?.Kind == PinKind.Folder);
-        pins.AddRange(folders);
     }
 
     /// <summary>값만 틀린 원본을 settings.json.bad-시각 으로 보관 (고친 내용으로 덮기 전에).</summary>
