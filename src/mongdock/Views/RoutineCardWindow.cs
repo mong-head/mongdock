@@ -38,13 +38,15 @@ internal abstract class RoutineCardWindow : Window
         TextOptions.SetTextFormattingMode(this, TextFormattingMode.Ideal);
 
         Body.Width = width;
+        // 오른쪽 여백 20 중 12 를 스크롤 막대 자리로 (막대가 내용 위에 겹쳐 그려지는 스타일 — 스위치·[아이콘] 버튼 끝을 가리지 않게, QA)
+        Body.Margin = new Thickness(0, 0, 12, 0);
         var card = new Border
         {
             CornerRadius = new CornerRadius(14),
             Background = P.CardBackground,
             BorderBrush = P.CardBorder,
             BorderThickness = new Thickness(0.75),
-            Padding = new Thickness(20, 16, 20, 16),
+            Padding = new Thickness(20, 16, 8, 16),
             Child = _scroll = new ScrollViewer
             {
                 Content = Body,

@@ -157,19 +157,34 @@ internal sealed class IconPickerWindow : Window
         {
             CloseOnActivation = false,
         };
+        bool placed = false;
         Loaded += (_, _) =>
         {
             var screen = services.DesktopWindows.GetPrimaryScreenBounds();
             Left = Math.Round(screen.Left + (screen.Width - ActualWidth) / 2);
             Top = Math.Round(screen.Top + screen.Height * 0.30 - ActualHeight / 2);
+            placed = true;
+            KeepOnScreen();
             _watch.Start();
         };
+        // 탭을 바꿔 길어지면(기호 칸) 아래·위가 화면 밖으로 나가지 않게 (QA: 기호인 폴더에서 열면 처음부터 길어 제목이 위로 잘림)
+        SizeChanged += (_, _) => { if (placed) KeepOnScreen(); };
         KeyDown += (_, e) =>
         {
             if (e.Key == Key.Escape) { e.Handled = true; Close(); }
             else if (e.Key == Key.Enter) { e.Handled = true; Finish(); }
         };
         Closed += (_, _) => _watch.Stop();
+    }
+
+    /// <summary>카드(그림자 여백 위 16·아래 32 제외)가 작업 영역 안에 — 아래가 넘치면 위로 당기고, 그래도 위가 넘치면 위에 맞춤.</summary>
+    private void KeepOnScreen()
+    {
+        var work = SystemParameters.WorkArea;
+        double top = Top;
+        if (top + ActualHeight - 32 > work.Bottom - 8) top = work.Bottom - 8 - ActualHeight + 32;
+        if (top + 16 < work.Top + 8) top = work.Top + 8 - 16;
+        if (Math.Abs(top - Top) > 0.5) Top = Math.Round(top);
     }
 
     private static PinIcon? Copy(PinIcon? i) => i is null ? null : new PinIcon { Mode = i.Mode, Glyph = i.Glyph, Color = i.Color, Text = i.Text, File = i.File };

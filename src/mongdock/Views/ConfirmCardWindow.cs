@@ -97,7 +97,16 @@ internal sealed class ConfirmCardWindow : Window
             try { action?.Invoke(); }
             catch (Exception ex) { Log.Error($"'{confirmText}' 실행 실패", ex); }
         };
-        Grid.SetColumn(ok, 2);
+        if (TooWide(cancel) || TooWide(ok))
+        {
+            // 두 버튼을 나란히 두면 글자가 잘림 (예: "독을 왼쪽으로 옮기기", 다른 언어) → 위아래로, 주 버튼이 위 (QA)
+            buttons.ColumnDefinitions.Clear();
+            buttons.RowDefinitions.Add(new RowDefinition());
+            buttons.RowDefinitions.Add(new RowDefinition { Height = new GridLength(8) });
+            buttons.RowDefinitions.Add(new RowDefinition());
+            Grid.SetRow(cancel, 2);
+        }
+        else Grid.SetColumn(ok, 2);
         buttons.Children.Add(cancel);
         buttons.Children.Add(ok);
         body.Children.Add(buttons);
@@ -160,6 +169,14 @@ internal sealed class ConfirmCardWindow : Window
             // 확인 없이 닫힘 (취소 버튼·바깥 클릭·다른 창 활성화)
             if (_onConfirm != null) _onCancel?.Invoke();
         };
+    }
+
+    /// <summary>버튼 글자가 반 칸((260-8)/2)에 다 들어가지 않음 (좌우 여백 포함).</summary>
+    private static bool TooWide(Button b)
+    {
+        if (b.Content is not TextBlock t) return false;
+        t.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        return t.DesiredSize.Width + 24 > (260 - 8) / 2.0;
     }
 
     private static Button MakeButton(string text, Brush background, Brush foreground) => new()

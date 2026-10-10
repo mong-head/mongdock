@@ -116,10 +116,22 @@ internal sealed partial class RoutineEditorWindow
 
     // ───────────────────────── ① 시작 조건 ─────────────────────────
 
+    // 묶음 스위치를 껐다 다시 켜면 끄기 전 선택으로 (저장 전 편집 중에만 — QA: 함께 바꿀 것을 껐다 켜면 볼륨이 풀림)
+    private (List<RoutineStart> Start, bool AutoOpen)? _offStart;
+    private RoutineEnd? _offEnd;
+    private RoutineChange? _offChange;
+
     private UIElement StartGroup() => Switch(Loc.T("시작 조건"), Loc.T("조건이 맞으면 열지 물어봐요. 직접 누르기는 늘 돼요."),
         More.Start.Count > 0, on =>
         {
-            if (!on) { More.Start.Clear(); More.AutoOpen = false; } // 켜면 [+ 조건 추가]로 고름 (저절로 넣지 않음)
+            if (!on)
+            {
+                _offStart = (More.Start.ToList(), More.AutoOpen);
+                More.Start.Clear();
+                More.AutoOpen = false;
+            }
+            else if (_offStart is { } prev && More.Start.Count == 0) { More.Start.AddRange(prev.Start); More.AutoOpen = prev.AutoOpen; }
+            // 처음 켜면 [+ 조건 추가]로 고름 (저절로 넣지 않음)
         }, StartDetail);
 
     private UIElement StartDetail()
@@ -245,8 +257,9 @@ internal sealed partial class RoutineEditorWindow
     private UIElement EndGroup() => Switch(Loc.T("끝 조건"), Loc.T("오디오 장치를 빼거나 시간이 되면 끝낼지 물어요. 앱을 다 닫으면 묻지 않고 끝내요."),
         More.End.AudioRemoved is not null || More.End.Time is not null || More.End.AllAppsClosed, on =>
         {
-            if (!on) More.End = new RoutineEnd();
-            else if (More.End.AudioRemoved is null && More.End.Time is null && !More.End.AllAppsClosed) More.End.AllAppsClosed = true;
+            if (!on) { _offEnd = More.End; More.End = new RoutineEnd(); }
+            else if (_offEnd is not null) { More.End = _offEnd; _offEnd = null; }
+            if (on && More.End.AudioRemoved is null && More.End.Time is null && !More.End.AllAppsClosed) More.End.AllAppsClosed = true;
         }, EndDetail);
 
     private UIElement EndDetail()
@@ -308,8 +321,9 @@ internal sealed partial class RoutineEditorWindow
         return Switch(Loc.T("함께 바꿀 것"), Loc.T("열 때 바꾸고 끝내면 열기 직전으로 되돌려요. 도중에 직접 바꾼 건 그대로 둬요."),
             c.Dnd || c.DockHide || c.OutputDevice is not null || c.Volume is not null, on =>
             {
-                if (!on) More.Change = new RoutineChange();
-                else if (!(c.Dnd || c.DockHide || c.OutputDevice is not null || c.Volume is not null)) More.Change.Dnd = true;
+                if (!on) { _offChange = More.Change; More.Change = new RoutineChange(); }
+                else if (_offChange is not null) { More.Change = _offChange; _offChange = null; }
+                if (on && !(More.Change.Dnd || More.Change.DockHide || More.Change.OutputDevice is not null || More.Change.Volume is not null)) More.Change.Dnd = true;
                 Dispatcher.BeginInvoke(RebuildMore); // 방해 금지가 켜지고 꺼짐에 따라 "예외 앱" 묶음도 (QA: 껐다 켜야 활성화됨)
             }, ChangeDetail);
     }
