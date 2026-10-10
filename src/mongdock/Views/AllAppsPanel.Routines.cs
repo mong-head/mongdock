@@ -10,7 +10,7 @@ namespace Mongdock.Views;
 
 /// <summary>
 /// 앱 모음 판 맨 위 "루틴" 줄 (#24-A, spec-all-apps-panel 최종): 루틴 칸들 + 줄 끝 [+ 루틴 추가](지금 화면 그대로 저장 / 직접 만들기 / 루틴이 뭔가요?) + 오른쪽 (?).
-/// 칸 클릭 = 실행, 오른쪽 클릭 = 루틴 메뉴(편집·끝내기·독에 고정·지우기), 끌어서 줄 안 순서 바꾸기·독에 놓으면 고정. 실행 중이면 아이콘 아래 점.
+/// 칸 클릭 = 실행, 오른쪽 클릭 = 루틴 메뉴(편집·끝내기·독에 고정·지우기), 끌어서 줄 안 순서 바꾸기·독에 놓으면 고정. 실행 중이면 이름 왼쪽에 작은 점.
 /// 루틴이 0개면 줄 대신 설명 카드 [지금 화면으로 만들기] [직접 만들기]. 업데이트로 처음 받은 사용자에게 제목 옆 NEW.
 /// </summary>
 internal sealed partial class AllAppsPanel
@@ -73,6 +73,9 @@ internal sealed partial class AllAppsPanel
         return root;
     }
 
+    /// <summary>아이콘과 이름 사이 (루틴 칸·[+ 루틴 추가] 같게).</summary>
+    private const double NameTop = 5;
+
     private Border RoutineCell(RoutineDef routine)
     {
         var image = new Image { Width = AppIcon, Height = AppIcon, HorizontalAlignment = HorizontalAlignment.Center };
@@ -81,9 +84,16 @@ internal sealed partial class AllAppsPanel
         catch (Exception ex) { Log.Warn($"루틴 아이콘 실패: {ex.GetType().Name}"); }
         var stack = new StackPanel();
         stack.Children.Add(image);
-        // 실행 중 = 아이콘 아래 점 (깜빡이지 않음)
-        stack.Children.Add(new Ellipse { Width = 4, Height = 4, Fill = RoutineService.IsRunning(routine.Id) || RoutineService.IsOpening(routine.Id) ? P.Text : Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 2, 0, 0) });
-        stack.Children.Add(new TextBlock { Text = routine.Name, TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 11.5, Margin = new Thickness(0, 1, 0, 0) });
+        // 실행 중 = 이름 왼쪽 점 5px·4px 간격, 점까지 합쳐 가운데 (아이콘과 이름 사이에 끼면 이름에 붙어 보였음 — 사용자). 깜빡이지 않음
+        var name = new DockPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, NameTop, 0, 0) };
+        if (RoutineService.IsRunning(routine.Id) || RoutineService.IsOpening(routine.Id))
+        {
+            var dot = new Ellipse { Width = 5, Height = 5, Fill = P.Text, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 1, 4, 0) };
+            DockPanel.SetDock(dot, Dock.Left);
+            name.Children.Add(dot);
+        }
+        name.Children.Add(new TextBlock { Text = routine.Name, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 11.5 });
+        stack.Children.Add(name);
         var cell = new Border
         {
             Width = AppCell - 4,
@@ -117,7 +127,7 @@ internal sealed partial class AllAppsPanel
 
     /// <summary>
     /// 줄 끝 [+ 루틴 추가]: 루틴 칸과 똑같은 자리 — 아이콘 본체(44px 그림 안의 둥근 사각 ≈ 80%)와 같은 크기·모서리의 연한 회보라 점선,
-    /// 그 아래 점 자리와 이름 기준선도 같게. "+"는 회색(마우스를 올리면 연보라), 글자는 다른 칸 이름과 같은 색·굵기.
+    /// 이름 기준선도 같게. "+"는 회색(마우스를 올리면 연보라), 글자는 다른 칸 이름과 같은 색·굵기.
     /// 누르면 "지금 화면 그대로 저장 / 직접 만들기 / 루틴이 뭔가요?".
     /// </summary>
     private Border AddRoutineCell()
@@ -134,8 +144,7 @@ internal sealed partial class AllAppsPanel
         slot.Children.Add(glyph);
         var stack = new StackPanel();
         stack.Children.Add(slot);
-        stack.Children.Add(new Ellipse { Width = 4, Height = 4, Fill = Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 2, 0, 0) }); // 루틴 칸의 실행 점 자리
-        stack.Children.Add(new TextBlock { Text = Loc.T("루틴 추가"), TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 11.5, Margin = new Thickness(0, 1, 0, 0) });
+        stack.Children.Add(new TextBlock { Text = Loc.T("루틴 추가"), TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 11.5, Margin = new Thickness(0, NameTop, 0, 0) });
         var cell = new Border
         {
             Width = AppCell - 4,
