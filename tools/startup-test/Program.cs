@@ -124,6 +124,48 @@ internal static class Program
     /// settings.json 너그러운 읽기: 값 하나가 틀리면 그 항목만 기본값, 나머지(언어·독·핀)는 그대로 + .bad- 원본 보관.
     /// 파일이 잘렸으면 지금처럼 .corrupt- 백업 후 기본값. 임시 폴더에서만.
     /// </summary>
+    /// <summary>독 폴더 내용 읽기: 숨김·desktop.ini 제외, 이름순/추가된 날짜순, 최대 개수와 전체 수. 없는 폴더는 null.</summary>
+    private static void FolderListTests()
+    {
+        var type = typeof(SettingsService).Assembly.GetType("Mongdock.Services.DockFolderService")!;
+        var list = type.GetMethod("List")!;
+        string dir = Path.Combine(Path.GetTempPath(), "mongdock-foldertest-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var t0 = DateTime.Now.AddHours(-3);
+            foreach (var (name, hours) in new[] { ("b.txt", 1), ("c.txt", 2), ("a.txt", 3) })
+            {
+                string f = Path.Combine(dir, name);
+                File.WriteAllText(f, name);
+                File.SetCreationTime(f, t0.AddHours(hours));
+                File.SetLastWriteTime(f, t0.AddHours(hours));
+            }
+            Directory.CreateDirectory(Path.Combine(dir, "sub"));
+            Directory.SetCreationTime(Path.Combine(dir, "sub"), t0.AddHours(-1));
+            Directory.SetLastWriteTime(Path.Combine(dir, "sub"), t0.AddHours(-1));
+            File.WriteAllText(Path.Combine(dir, "desktop.ini"), "");
+            string hidden = Path.Combine(dir, "hidden.txt");
+            File.WriteAllText(hidden, "");
+            File.SetAttributes(hidden, FileAttributes.Hidden);
+
+            string Names(object? r)
+            {
+                if (r is null) return "null";
+                var items = (System.Collections.IEnumerable)r.GetType().GetField("Item1")!.GetValue(r)!;
+                int total = (int)r.GetType().GetField("Item2")!.GetValue(r)!;
+                return string.Join(",", items.Cast<FileSystemInfo>().Select(f => f.Name)) + "/" + total;
+            }
+            Check("폴더 내용: 추가된 날짜순(최근 먼저)", Names(list.Invoke(null, new object[] { dir, Mongdock.Models.FolderSort.Added, 20 })), "a.txt,c.txt,b.txt,sub/4");
+            Check("폴더 내용: 이름순·최대 2개", Names(list.Invoke(null, new object[] { dir, Mongdock.Models.FolderSort.Name, 2 })), "a.txt,b.txt/4");
+            Check("없는 폴더 → null", Names(list.Invoke(null, new object[] { Path.Combine(dir, "없음"), Mongdock.Models.FolderSort.Added, 20 })), "null");
+        }
+        finally
+        {
+            try { File.SetAttributes(Path.Combine(dir, "hidden.txt"), FileAttributes.Normal); Directory.Delete(dir, true); } catch { }
+        }
+    }
+
     private static int RepairTests()
     {
         string root = Path.Combine(Path.GetTempPath(), "mongdock-repair-test-" + Guid.NewGuid().ToString("N"));
@@ -189,6 +231,40 @@ internal static class Program
             Check("숫자로 적힌 모르는 핀 종류도 그 핀만 빠짐", string.Join(",", SettingsService.ParseForImport("""
                 { "settingsVersion": 5, "pins": [ { "name": "A", "kind": 9, "target": "x" }, { "name": "B", "kind": "Exe", "target": "b.exe" } ] }
                 """).Pins.Select(p => p.Name)), "B");
+
+            // 독 폴더·루틴 (#24): 폴더는 목록 끝으로, 경로 없는 폴더·항목 없는 루틴은 빠짐, 옵션·id 채움
+            var extras = SettingsService.ParseForImport("""
+                { "settingsVersion": 5, "pins": [
+                  { "name": "받은 파일", "kind": "Folder", "target": "C:\\Users\\u\\Downloads", "folder": { "sort": "name", "display": "folder" } },
+                  { "name": "메모장", "kind": "Exe", "target": "notepad.exe" },
+                  { "name": "빈 폴더 핀", "kind": "Folder", "target": "" },
+                  { "name": "문서", "kind": "Folder", "target": "C:\\Users\\u\\Documents" },
+                  { "name": "빈 루틴", "kind": "Routine", "routine": { "items": [] } },
+                  { "name": "아침", "kind": "Routine", "routine": { "desktop": { "mode": "new" }, "items": [
+                      { "kind": "app", "target": "notepad.exe", "monitor": { "mode": "index", "index": 1 }, "placement": { "mode": "left" }, "delayMs": 500 },
+                      { "kind": "url" } ] } },
+                  { "name": "계산기", "kind": "Exe", "target": "calc.exe" } ] }
+                """);
+            Check("폴더는 끝으로·잘못된 폴더/루틴 빠짐", string.Join(",", extras.Pins.Select(p => p.Name)), "메모장,아침,계산기,받은 파일,문서");
+            var dl = extras.Pins.First(p => p.Name == "받은 파일");
+            Check("폴더 옵션 읽힘", $"{dl.Folder?.Sort}/{dl.Folder?.Display}", "Name/Folder");
+            Check("폴더 옵션 없으면 기본값", extras.Pins.First(p => p.Name == "문서").Folder?.Sort, Mongdock.Models.FolderSort.Added);
+            Check("폴더 id 채움", string.IsNullOrEmpty(dl.Id), false);
+            var morning = extras.Pins.First(p => p.Name == "아침").Routine!;
+            Check("루틴: 대상 없는 항목 빠짐", morning.Items.Count, 1);
+            Check("루틴: 데스크톱·모니터·배치·지연", $"{morning.Desktop?.Mode}/{morning.Items[0].Monitor?.Mode}{morning.Items[0].Monitor?.Index}/{morning.Items[0].Placement?.Mode}/{morning.Items[0].DelayMs}", "New/Index1/Left/500");
+            var again = SettingsService.ParseForImport(System.Text.Json.JsonSerializer.Serialize(extras, (System.Text.Json.JsonSerializerOptions)typeof(SettingsService).GetField("JsonOptions", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!));
+            Check("다시 저장·읽어도 그대로", string.Join(",", again.Pins.Select(p => p.Name + ":" + p.Id)), string.Join(",", extras.Pins.Select(p => p.Name + ":" + p.Id)));
+            var order = new List<Mongdock.Models.PinItem>
+            {
+                new() { Name = "F1", Kind = Mongdock.Models.PinKind.Folder, Target = "a" },
+                new() { Name = "A", Kind = Mongdock.Models.PinKind.Exe, Target = "a.exe" },
+                new() { Name = "F2", Kind = Mongdock.Models.PinKind.Folder, Target = "b" },
+                new() { Name = "B", Kind = Mongdock.Models.PinKind.Exe, Target = "b.exe" },
+            };
+            SettingsService.KeepFoldersLast(order);
+            Check("KeepFoldersLast: 순서 유지하며 끝으로", string.Join(",", order.Select(p => p.Name)), "A,B,F1,F2");
+            FolderListTests();
 
             // 5: 핀 이름 Finder·Launchpad → 파일 탐색기·앱 모음 (정확히 같은 이름·대상만, 사용자가 바꾼 이름은 그대로)
             var renamed = SettingsService.ParseForImport("""

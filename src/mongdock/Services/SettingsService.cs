@@ -333,8 +333,21 @@ public sealed class SettingsService : ISettingsService, IDisposable
         var s = parsed ?? throw new JsonException("settings.json 이 null 입니다.");
         // 숫자로 적힌 모르는 핀 종류도 그 핀만 빠짐 (기본값 Exe 로 바꾸지 않음)
         if (s.Pins is { } pins)
+        {
             for (int pi = pins.Count - 1; pi >= 0; pi--)
-                if (pins[pi] is null || !Enum.IsDefined(pins[pi].Kind)) { pins.RemoveAt(pi); fixes.Add($"pins[{pi}]"); }
+            {
+                var pin = pins[pi];
+                bool bad = pin is null || !Enum.IsDefined(pin.Kind)
+                           // 루틴은 항목이 하나는 있어야 (빈 루틴·잘못된 항목은 버림), 폴더는 경로가 있어야
+                           || pin.Kind == PinKind.Routine && (pin.Routine?.Items is not { Count: > 0 })
+                           || pin.Kind == PinKind.Folder && string.IsNullOrWhiteSpace(pin.Target);
+                if (bad) { pins.RemoveAt(pi); fixes.Add($"pins[{pi}]"); continue; }
+                if (pin!.Kind == PinKind.Folder) pin.Folder ??= new FolderOptions();
+                if (pin.Kind is PinKind.Folder or PinKind.Routine) pin.Id ??= Guid.NewGuid().ToString("N");
+                if (pin.Kind == PinKind.Routine) pin.Routine!.Items.RemoveAll(i => i is null || string.IsNullOrWhiteSpace(i.Target) && string.IsNullOrWhiteSpace(i.Aumid));
+            }
+            KeepFoldersLast(pins);
+        }
         FixUndefinedEnums(s, "", fixes); // 숫자로 적은 없는 enum 값(예 "colorMode": 7)은 예외 없이 들어오므로 따로
         // 수동 편집으로 null 이 들어와도 UI 가 죽지 않게 보정.
         s.Dock ??= new DockSettings();
@@ -492,6 +505,17 @@ public sealed class SettingsService : ISettingsService, IDisposable
             lock (_gate) CopyInto(loaded, Current);
             SettingsChanged?.Invoke(this, EventArgs.Empty);
         });
+    }
+
+    /// <summary>독 폴더(PinKind.Folder)를 목록 끝으로 (순서는 유지). 독 화면에서 폴더는 늘 오른쪽 끝이라 핀 영역 위치 = 목록 위치가 되게.</summary>
+    public static void KeepFoldersLast(List<PinItem> pins)
+    {
+        var folders = pins.Where(p => p?.Kind == PinKind.Folder).ToList();
+        if (folders.Count == 0) return;
+        int firstFolder = pins.FindIndex(p => p?.Kind == PinKind.Folder);
+        if (pins.Skip(firstFolder).All(p => p?.Kind == PinKind.Folder)) return; // 이미 끝에 모여 있음
+        pins.RemoveAll(p => p?.Kind == PinKind.Folder);
+        pins.AddRange(folders);
     }
 
     /// <summary>값만 틀린 원본을 settings.json.bad-시각 으로 보관 (고친 내용으로 덮기 전에).</summary>

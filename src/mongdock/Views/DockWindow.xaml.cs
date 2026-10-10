@@ -133,6 +133,8 @@ public partial class DockWindow : Window
     private void OnClosed(object? sender, EventArgs e)
     {
         _closed = true;
+        _folderPanel?.Close();
+        _folders?.Dispose();
         _pollTimer.Stop();
         _launchTimer?.Stop();
         UnhookRender();
@@ -588,7 +590,7 @@ public partial class DockWindow : Window
             return;
         }
         bool menuOpen = PanelBorder.ContextMenu?.IsOpen == true;
-        if (_dragArmed || AnyItemDrag || menuOpen || _dialogOpen || _picker != null)
+        if (_dragArmed || AnyItemDrag || menuOpen || _dialogOpen || _picker != null || _folderPanel != null)
         {
             _lastInsideTicks = Environment.TickCount64;
             return;
@@ -892,6 +894,8 @@ public partial class DockWindow : Window
                 continue;
             }
 
+            if (pin.Kind == PinKind.Folder) continue; // 독 폴더는 오른쪽 끝에 따로 (아래 3)
+
             var pinWindows = windows.Where(w => SafeMatches(pin, w)).ToList();
             foreach (var w in pinWindows) matched.Add(w.Hwnd);
 
@@ -938,6 +942,26 @@ public partial class DockWindow : Window
         {
             _runningOrder.Clear();
         }
+
+        // 3) 독 폴더 (#24-B): 오른쪽 끝, 구분선 뒤. 폴더 내용이 바뀌면 id 의 번호가 올라 아이콘을 다시 만듦
+        var folderPins = settings.Pins.Select((p, i) => (Pin: p, Index: i)).Where(x => x.Pin.Kind == PinKind.Folder).ToList();
+        if (folderPins.Count > 0)
+        {
+            _folders ??= CreateFolderService();
+            const string folderSepId = "sep:folders";
+            list.Add(old.GetValueOrDefault(folderSepId) ?? new DockItemViewModel(folderSepId, null, isSeparator: true, "", null));
+            foreach (var (pin, i) in folderPins)
+            {
+                var opts = pin.Folder ?? new FolderOptions();
+                string id = $"folder:{i}:{pin.Target}:{opts.Display}:{_folders.Version(pin.Target)}:{DockFolderService.Exists(pin.Target)}";
+                var vm = old.GetValueOrDefault(id);
+                if (vm == null || !ReferenceEquals(vm.Pin, pin))
+                    vm = new DockItemViewModel(id, pin, false, PinDisplayName(pin), SafeIcon(() => _folders.Icon(pin, style)));
+                vm.Windows = Array.Empty<AppWindowInfo>();
+                list.Add(vm);
+            }
+        }
+        _folders?.SetWatched(folderPins.Select(x => x.Pin.Target));
 
         // 사라진 창 정리
         var alive = new HashSet<IntPtr>(windows.Select(w => w.Hwnd));
@@ -1001,13 +1025,14 @@ public partial class DockWindow : Window
     private static string PinDisplayName(PinItem pin)
     {
         if (!string.IsNullOrWhiteSpace(pin.Name)) return pin.Name;
+        if (pin.Kind == PinKind.Folder) return System.IO.Path.GetFileName(System.IO.Path.TrimEndingDirectorySeparator(pin.Target));
         if (pin.Kind == PinKind.Exe) return System.IO.Path.GetFileNameWithoutExtension(pin.Target);
         return pin.Target;
     }
 
     /// <summary>실행할 대상이 있는 핀인지 (Target 이 빈 Exe/Aumid 핀은 실행·창 매칭 모두 안 함).</summary>
     internal static bool CanLaunch(PinItem pin)
-        => pin.Kind != PinKind.Separator && !string.IsNullOrWhiteSpace(pin.Target);
+        => pin.Kind is PinKind.Exe or PinKind.Aumid or PinKind.Special && !string.IsNullOrWhiteSpace(pin.Target);
 
     /// <summary>창으로 핀을 만들 수 있는지 (관리자 권한 창 등 경로를 못 읽은 창은 불가).</summary>
     internal static bool CanPin(AppWindowInfo w)
@@ -1045,6 +1070,17 @@ public partial class DockWindow : Window
         _label?.Hide();
         ClearNotification(item);
         UpdateStates();
+
+        if (item.Pin is { Kind: PinKind.Folder } folderPin)
+        {
+            ToggleFolderPanel(sender as DockItemView, item, folderPin);
+            return;
+        }
+        if (item.Pin is { Kind: PinKind.Routine })
+        {
+            Log.Info("루틴 실행은 아직 준비 중"); // #24-A 실행은 다음 단계
+            return;
+        }
 
         try
         {
@@ -1118,6 +1154,52 @@ public partial class DockWindow : Window
         _picker = picker;
         _pickerItem = item;
         picker.Show();
+    }
+
+    // ───────────────────────── 독 폴더 판 (#24-B) ─────────────────────────
+
+    private DockFolderService? _folders;
+    private FolderStackPanel? _folderPanel;
+    private PinItem? _folderPanelPin;
+
+    private DockFolderService CreateFolderService()
+    {
+        var service = new DockFolderService(_services.Icons);
+        service.Changed += _ => { if (!_closed) RefreshItems(); }; // id 의 번호가 바뀌어 그 폴더 아이콘만 새로
+        return service;
+    }
+
+    private void ToggleFolderPanel(DockItemView? view, DockItemViewModel item, PinItem pin)
+    {
+        bool same = _folderPanel != null && ReferenceEquals(_folderPanelPin, pin);
+        _folderPanel?.CloseAnimated();
+        if (same || view == null) return;
+
+        if (!DockFolderService.Exists(pin.Target))
+        {
+            // 없어진 폴더: 이유 + [독에서 빼기]
+            ConfirmCardWindow.Ask(_services, Loc.T("폴더를 찾을 수 없어요"), pin.Target, Loc.T("독에서 빼기"),
+                () => ModifyPins(p => p.Remove(pin)));
+            return;
+        }
+
+        var source = PresentationSource.FromVisual(this);
+        if (source?.CompositionTarget == null) return;
+        var toDip = source.CompositionTarget.TransformFromDevice;
+        var a = toDip.Transform(view.PointToScreen(new Point(0, 0)));
+        var b = toDip.Transform(view.PointToScreen(new Point(view.ActualWidth, view.ActualHeight)));
+        var panel = new FolderStackPanel(_services, UiTheme.Palette(_services.Settings.Current), pin, new Rect(a, b), _layout.Edge, _monitor);
+        panel.SortChanged += sort => ModifyPins(_ => (pin.Folder ??= new FolderOptions()).Sort = sort);
+        panel.Closed += (_, _) =>
+        {
+            if (_folderPanel != panel) return;
+            _folderPanel = null;
+            _folderPanelPin = null;
+            _lastInsideTicks = Environment.TickCount64;
+        };
+        _folderPanel = panel;
+        _folderPanelPin = pin;
+        panel.Show();
     }
 
     private void ClearNotification(DockItemViewModel item)
@@ -1337,6 +1419,7 @@ public partial class DockWindow : Window
 
         var view = FindItemView(e.OriginalSource as DependencyObject);
         if (view == null || view.Item.IsAutoSeparator) BuildEmptyAreaMenu(menu);
+        else if (view.Item.Pin is { Kind: PinKind.Folder }) BuildFolderMenu(menu, view.Item);
         else if (view.Item.Pin != null) BuildPinMenu(menu, view.Item);
         else BuildRunningMenu(menu, view.Item);
 
@@ -1488,6 +1571,7 @@ public partial class DockWindow : Window
         menu.Items.Add(DockMenus.SettingsWindow(_services, Loc.F($"{AppInfo.Name} 설정…")));
         menu.Items.Add(new Separator());
         menu.Items.Add(Item(Loc.T("구분선 추가"), () => ModifyPins(p => p.Add(new PinItem { Kind = PinKind.Separator, Name = "" }))));
+        menu.Items.Add(Item(Loc.T("폴더 추가…"), AddFolderFromDialog));
         menu.Items.Add(new Separator());
         menu.Items.Add(DockMenus.DockPosition(_services));
         menu.Items.Add(DockMenus.DockBehavior(_services));
@@ -1506,7 +1590,7 @@ public partial class DockWindow : Window
         menu.Items.Add(DockMenus.Quit());
     }
 
-    private static MenuItem Item(string header, Action action) => DockMenus.Item(header, action);
+    private static MenuItem Item(string header, Action action, bool enabled = true, bool? isChecked = null) => DockMenus.Item(header, action, enabled, isChecked);
 
     // ───────────────────────── 메뉴 동작 ─────────────────────────
 
@@ -1548,7 +1632,66 @@ public partial class DockWindow : Window
     /// <summary>핀 목록 수정 → 저장. Save 가 SettingsChanged 를 올려 ApplyAll 로 다시 그려진다.</summary>
     private void ModifyPins(Action<List<PinItem>> change)
     {
-        change(_services.Settings.Current.Pins);
+        var pins = _services.Settings.Current.Pins;
+        change(pins);
+        SettingsService.KeepFoldersLast(pins); // 독 폴더는 늘 목록 끝 (화면에서도 오른쪽 끝 — 핀 영역 위치 = 목록 위치가 되게)
         _services.Settings.Save();
+    }
+
+    /// <summary>독 폴더 메뉴: 열기 / 탐색기에서 열기 / 정렬 / 모양 / 왼쪽·오른쪽 / 독에서 빼기.</summary>
+    private void BuildFolderMenu(ContextMenu menu, DockItemViewModel item)
+    {
+        var pin = item.Pin!;
+        var opts = pin.Folder ?? new FolderOptions();
+        bool exists = DockFolderService.Exists(pin.Target);
+        menu.Items.Add(Item(Loc.T("열기"), () => ToggleFolderPanel(_views.GetValueOrDefault(item.Id), item, pin), enabled: exists));
+        menu.Items.Add(Item(Loc.T("탐색기에서 열기"), () => _services.Launcher.OpenFile(pin.Target), enabled: exists));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(Item(Loc.T("추가된 날짜순"), () => ModifyPins(_ => (pin.Folder ??= new FolderOptions()).Sort = FolderSort.Added), isChecked: opts.Sort == FolderSort.Added));
+        menu.Items.Add(Item(Loc.T("이름순"), () => ModifyPins(_ => (pin.Folder ??= new FolderOptions()).Sort = FolderSort.Name), isChecked: opts.Sort == FolderSort.Name));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(Item(Loc.T("파일 겹쳐 보기"), () => ModifyPins(_ => (pin.Folder ??= new FolderOptions()).Display = FolderDisplay.Stack), isChecked: opts.Display == FolderDisplay.Stack));
+        menu.Items.Add(Item(Loc.T("폴더 아이콘으로 보기"), () => ModifyPins(_ => (pin.Folder ??= new FolderOptions()).Display = FolderDisplay.Folder), isChecked: opts.Display == FolderDisplay.Folder));
+        menu.Items.Add(new Separator());
+        var pins = _services.Settings.Current.Pins;
+        int at = pins.IndexOf(pin);
+        menu.Items.Add(Item(Loc.T("왼쪽으로"), () => SwapFolder(pin, -1), enabled: at > 0 && pins[at - 1].Kind == PinKind.Folder));
+        menu.Items.Add(Item(Loc.T("오른쪽으로"), () => SwapFolder(pin, +1), enabled: at >= 0 && at + 1 < pins.Count && pins[at + 1].Kind == PinKind.Folder));
+        menu.Items.Add(Item(Loc.T("독에서 빼기"), () => ModifyPins(p => p.Remove(pin))));
+    }
+
+    private void SwapFolder(PinItem pin, int dir) => ModifyPins(p =>
+    {
+        int i = p.IndexOf(pin), j = i + dir;
+        if (i < 0 || j < 0 || j >= p.Count || p[j].Kind != PinKind.Folder) return;
+        (p[i], p[j]) = (p[j], p[i]);
+    });
+
+    /// <summary>독 빈자리 "폴더 추가…": 윈도우 폴더 고르기 창 → 독 오른쪽 끝에.</summary>
+    private void AddFolderFromDialog()
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog { Title = Loc.T("독에 넣을 폴더") };
+        _dialogOpen = true;
+        bool ok;
+        try { ok = dialog.ShowDialog(this) == true; }
+        finally { _dialogOpen = false; }
+        if (!ok || string.IsNullOrEmpty(dialog.FolderName)) return;
+        AddFolderPins(new[] { dialog.FolderName });
+    }
+
+    /// <summary>폴더 핀 추가 (이미 있는 폴더는 건너뜀).</summary>
+    private void AddFolderPins(IEnumerable<string> folders)
+    {
+        var add = folders.Where(System.IO.Directory.Exists).ToList();
+        if (add.Count == 0) return;
+        ModifyPins(p =>
+        {
+            foreach (var f in add)
+            {
+                if (p.Any(x => x.Kind == PinKind.Folder && string.Equals(System.IO.Path.TrimEndingDirectorySeparator(x.Target), System.IO.Path.TrimEndingDirectorySeparator(f), StringComparison.OrdinalIgnoreCase))) continue;
+                p.Add(new PinItem { Kind = PinKind.Folder, Target = f, Name = System.IO.Path.GetFileName(System.IO.Path.TrimEndingDirectorySeparator(f)), Id = Guid.NewGuid().ToString("N"), Folder = new FolderOptions() });
+            }
+        });
+        Log.Info($"독 폴더 {add.Count}개 추가");
     }
 }

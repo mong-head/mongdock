@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -216,8 +217,9 @@ public partial class DockWindow
         else
         {
             var others = Others(view);
-            int pins = others.Count(v => v.Item.Pin != null);
-            bool pinnable = view.Item.Pin != null || (view.Item.Windows.Count > 0 && CanPin(view.Item.Windows[0]));
+            int pins = others.Count(InPinSection);
+            // 독 폴더는 오른쪽 끝 고정 (끌어서 순서 안 바꿈 — 메뉴 "왼쪽으로/오른쪽으로", 독 밖에 놓으면 빼기)
+            bool pinnable = InPinSection(view) || (view.Item.Pin == null && view.Item.Windows.Count > 0 && CanPin(view.Item.Windows[0]));
             bool running = view.Item.Pin == null;
             target = NearestSlot(others, view.BaseLength, AlongInBase(e),
                 k => (pinnable && k <= pins) || (running && k > pins));
@@ -230,6 +232,9 @@ public partial class DockWindow
             ApplyGapShifts(view, target);
         }
     }
+
+    /// <summary>핀 영역(왼쪽, 끌어서 순서 바꾸는 곳)의 항목인지 — 독 폴더(오른쪽 끝)·실행 중 앱은 아님.</summary>
+    private static bool InPinSection(DockItemView v) => v.Item.Pin is { Kind: not PinKind.Folder };
 
     /// <summary>드래그 항목을 뺀 나머지 뷰 (화면 순서).</summary>
     private List<DockItemView> Others(DockItemView? dragged)
@@ -364,7 +369,7 @@ public partial class DockWindow
         }
 
         // 실행 중 앱: 핀 영역(target <= 핀 수)이면 그 위치에 고정 ("독에 고정" 과 같은 CreatePin), 아니면 표시 순서만
-        int pinCount = Others(view).Count(v => v.Item.Pin != null);
+        int pinCount = Others(view).Count(InPinSection);
         if (target <= pinCount)
         {
             if (item.Windows.Count == 0 || !CanPin(item.Windows[0])) return;
@@ -446,8 +451,10 @@ public partial class DockWindow
         }
 
         var others = Others(null);
-        int pins = others.Count(v => v.Item.Pin != null);
-        int target = NearestSlot(others, _dropGapLength, AlongInBase(e), k => k <= pins);
+        int pins = others.Count(InPinSection);
+        // 폴더만 끌어 오면 맨 끝(독 폴더 자리)에도 놓을 수 있음 → 독 폴더로 추가
+        bool allFolders = DraggedPaths(e) is { Length: > 0 } dragged && dragged.All(Directory.Exists);
+        int target = NearestSlot(others, _dropGapLength, AlongInBase(e), k => k <= pins || (allFolders && k == others.Count));
         if (target >= 0 && target != _dropTarget)
         {
             _dropTarget = target;
@@ -479,8 +486,15 @@ public partial class DockWindow
             if (e.Data.GetData(DataFormats.FileDrop) is string[] p) paths = p;
         }
         catch (Exception ex) { Log.Error("끌어 놓은 파일 읽기 실패", ex); }
+        int lastSlot = Others(null).Count;
+        int pinSlots = Others(null).Count(InPinSection);
         EndFileDrag();
         if (paths.Length == 0 || target < 0) return;
+        if (target > pinSlots && target == lastSlot && paths.All(Directory.Exists))
+        {
+            AddFolderPins(paths); // 맨 끝에 놓은 폴더 = 독 폴더
+            return;
+        }
 
         try
         {
@@ -513,6 +527,12 @@ public partial class DockWindow
         {
             Log.Error("끌어 놓은 파일 고정 실패", ex);
         }
+    }
+
+    private static string[]? DraggedPaths(DragEventArgs e)
+    {
+        try { return e.Data.GetData(DataFormats.FileDrop) as string[]; }
+        catch { return null; }
     }
 
     /// <summary>파일 드래그 표시 정리 (빈 슬롯 제거, 이동 원위치, 창 길이 복구).</summary>
