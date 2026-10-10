@@ -100,7 +100,8 @@ var STATS_COLUMNS = [
   ['searchButton', bool_],
   ['hideTaskbar', bool_],
   ['lightMode', bool_],
-  ['errors', int_(0, 1000000)]
+  ['errors', int_(0, 1000000)],
+  ['folders', int_(0, 200)] // 독 폴더 수 (#24) — 시트 칸이 밀리지 않게 맨 끝에
 ];
 
 function oneOf_(list) { return function (v) { v = String(v); return list.indexOf(v) >= 0 ? v : null; }; }
@@ -151,12 +152,23 @@ function handleStats_(body) {
 }
 
 /** 통계 시트 (처음이면 스크립트 소유자 드라이브에 "mongdock-stats" 를 만들고 id 를 스크립트 속성에 기억). */
+// 칸이 새로 생기면(예: folders) 이미 있는 시트 머리줄 끝에 이름을 붙임 — 보고서가 머리줄 이름으로 칸을 찾으므로.
+function ensureStatsHeader_(sheet) {
+  var want = ['received'].concat(STATS_COLUMNS.map(function (c) { return c[0]; }));
+  var lastCol = Math.max(sheet.getLastColumn(), 1);
+  var have = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  if (have.length < want.length || have.slice(0, want.length).join('|') !== want.join('|'))
+    if (want.slice(0, have.length).join('|') === have.join('|'))
+      sheet.getRange(1, 1, 1, want.length).setValues([want]).setFontWeight('bold');
+  return sheet;
+}
+
 function statsSheet_() {
   var props = PropertiesService.getScriptProperties();
   var id = props.getProperty(STATS_SHEET_PROP);
   // 한 번 만든 뒤에는 열기 실패(일시적 드라이브 오류 등)에 새로 만들지 않음 → 예외 → 500 → 앱이 나중에 다시 보냄.
   // 시트를 일부러 지웠으면 스크립트 속성 STATS_SHEET_ID 를 지우면 다음 신호 때 새로 만든다.
-  if (id) return SpreadsheetApp.openById(id).getSheets()[0];
+  if (id) return ensureStatsHeader_(SpreadsheetApp.openById(id).getSheets()[0]);
   var ss = SpreadsheetApp.create('mongdock-stats');
   var sheet = ss.getSheets()[0];
   sheet.setName('stats');
@@ -242,7 +254,7 @@ function statsPage_() {
 
   h.push('<h2>최근 7일</h2><div class="grid">');
   [['appVersion', '앱 버전'], ['install', '설치 방식'], ['windows', '윈도우'], ['lang', '언어'], ['monitors', '모니터 수'],
-    ['scale', '주 모니터 배율'], ['notifications', '알림 표시']].forEach(function (p) {
+    ['scale', '주 모니터 배율'], ['notifications', '알림 표시'], ['folders', '독 폴더 수']].forEach(function (p) {
     h.push('<table><tr><th colspan="2">' + esc_(p[1]) + '</th></tr>');
     dist(p[0]).forEach(function (kv) { h.push('<tr><td>' + esc_(kv[0]) + '</td><td>' + kv[1] + '</td></tr>'); });
     h.push('</table>');

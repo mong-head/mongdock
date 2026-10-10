@@ -27,8 +27,20 @@ public static class DefaultPins
         catch (Exception ex) { Log.Error("작업 표시줄 고정 앱 읽기 실패", ex); }
         try { popular = AddPopular(pins, settings); }
         catch (Exception ex) { Log.Error("자주 쓰는 앱 찾기 실패", ex); }
-        if (pins.Count <= Base().Count) return Create(); // 아무것도 못 찾으면 예전 기본값
+        if (pins.Count <= Base().Count) return AddDownloads(Create()); // 아무것도 못 찾으면 예전 기본값
         Log.Info($"기본 고정 앱: 파일 탐색기·앱 모음 + 작업 표시줄 {fromTaskbar}개 + 자주 쓰는 앱 {popular}개");
+        return AddDownloads(pins);
+    }
+
+    /// <summary>새 설치: 오른쪽 끝에 다운로드 독 폴더 (#24-B). 다운로드 폴더를 못 찾으면 그냥 둠.</summary>
+    private static List<PinItem> AddDownloads(List<PinItem> pins)
+    {
+        try
+        {
+            if (DockFolderService.DownloadsFolder() is { } dl && !pins.Any(p => p.Kind == PinKind.Folder))
+                pins.Add(new PinItem { Kind = PinKind.Folder, Target = dl, Name = Loc.T("다운로드"), Id = Guid.NewGuid().ToString("N"), Folder = new FolderOptions() });
+        }
+        catch (Exception ex) { Log.Error("다운로드 독 폴더 추가 실패", ex); }
         return pins;
     }
 

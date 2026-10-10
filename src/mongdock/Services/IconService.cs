@@ -397,7 +397,7 @@ public sealed class IconService : IIconService
     }
 
     /// <summary>32bpp HBITMAP → BitmapSource (알파 유지). 프리멀티플라이 여부를 픽셀로 판별.</summary>
-    private static BitmapSource? HBitmapToBitmapSource(IntPtr hbmp)
+    internal static BitmapSource? HBitmapToBitmapSource(IntPtr hbmp)
     {
         if (Gdi32.GetObject(hbmp, Marshal.SizeOf<BITMAP>(), out BITMAP bm) == 0) return null;
         int w = bm.bmWidth, h = Math.Abs(bm.bmHeight);

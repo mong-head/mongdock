@@ -135,6 +135,7 @@ public sealed class UsageStatsService : IDisposable
             ["searchButton"] = s.TopBar.Enabled && s.TopBar.ShowQuickButtons,
             ["hideTaskbar"] = s.HideWindowsTaskbar,
             ["lightMode"] = PerfMode.IsOn(s),
+            ["folders"] = s.Pins.Count(p => p.Kind == PinKind.Folder),
             ["errors"] = errors,
             ["nonce"] = Guid.NewGuid().ToString("N"),
         };
