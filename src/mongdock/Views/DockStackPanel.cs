@@ -78,13 +78,18 @@ internal abstract class DockStackPanel : Window
             Background = P.CardBackground;
             _card.Margin = new Thickness(0);
             _card.Effect = null;
-            _card.CornerRadius = new CornerRadius(0);
-            _card.BorderThickness = new Thickness(0);
+            _card.CornerRadius = new CornerRadius(8); // DWM 둥근 모서리(8px)와 같게 — 얇은 테두리가 모서리에서 끊기지 않게
+            _card.BorderThickness = new Thickness(1);
+            _card.BorderBrush = P.Divider;
             _card.Padding = new Thickness(14, 14, 14, 8);
         }
 
         _watch = new OutsideClickWatcher(services, () => new[] { new Rect(Left, Top, ActualWidth, ActualHeight), Inflate(_anchor) }
-            .Concat(_openMenu is { IsOpen: true } m ? OutsideClickWatcher.MenuAreas(m) : Enumerable.Empty<Rect>()), CloseAnimated);
+            .Concat(_openMenu is { IsOpen: true } m ? OutsideClickWatcher.MenuAreas(m) : Enumerable.Empty<Rect>()), CloseAnimated)
+        {
+            LogName = title, // 닫는 이유(바깥 클릭 위치·활성화된 창)를 로그에
+            ActivationGraceMs = 600,
+        };
         SourceInitialized += (_, _) =>
         {
             Services.DesktopWindows.MakeOverlay(this);
@@ -112,7 +117,18 @@ internal abstract class DockStackPanel : Window
             Keyboard.Focus(this);
             _watch.Start();
         };
-        Deactivated += (_, _) => { if (!Dragging && !KeepOpenOnDeactivate) CloseAnimated(); };
+        Deactivated += (_, _) =>
+        {
+            if (Dragging || KeepOpenOnDeactivate) return;
+            // 열린 직후 잠깐의 활성화 변화(누른 독·이전 창이 포커스를 다시 가져가는 것)로는 닫지 않음 — 바깥 클릭은 OutsideClickWatcher 가
+            if (_showClock.ElapsedMilliseconds < 600)
+            {
+                Log.Info($"{title}: 열린 직후 비활성화 무시 ({_showClock.ElapsedMilliseconds}ms)");
+                return;
+            }
+            Log.Info($"{title}: 닫음 — 비활성화");
+            CloseAnimated();
+        };
         KeyDown += (_, e) => { if (e.Key == Key.Escape) { e.Handled = true; CloseAnimated(); } };
         Closed += (_, _) => _watch.Stop();
     }
@@ -131,6 +147,12 @@ internal abstract class DockStackPanel : Window
     [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct Margins { public int Left, Right, Top, Bottom; }
+
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    private static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref Margins margins);
+
     /// <summary>일반 창을 카드처럼: 윈도우 11 둥근 모서리, 얇은 테두리 색, 기본 창 열기 애니메이션 끔(우리 페이드와 겹치지 않게).</summary>
     private void DwmCard(IntPtr hwnd)
     {
@@ -138,11 +160,12 @@ internal abstract class DockStackPanel : Window
         {
             int round = 2; // DWMWCP_ROUND
             DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, ref round, sizeof(int));
-            if (P.Divider is SolidColorBrush b)
-            {
-                int color = b.Color.R | (b.Color.G << 8) | (b.Color.B << 16);
-                DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, ref color, sizeof(int));
-            }
+            // 윈도우 시스템 테두리(강조색·활성/비활성에 따라 바뀜)는 끔 — 테두리는 몽독 판과 같은 얇은 선(_card)
+            int none = unchecked((int)0xFFFFFFFE); // DWMWA_COLOR_NONE
+            DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, ref none, sizeof(int));
+            // 테두리 없는 창에도 DWM 그림자 (프레임을 1px 넓힘 — 창 배경이 불투명이라 보이지 않음)
+            var margins = new Margins { Left = 1, Right = 1, Top = 1, Bottom = 1 };
+            DwmExtendFrameIntoClientArea(hwnd, ref margins);
             int off = 1;
             DwmSetWindowAttribute(hwnd, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */, ref off, sizeof(int));
             int dark = P.IsLight ? 0 : 1;

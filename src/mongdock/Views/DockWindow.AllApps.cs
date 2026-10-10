@@ -31,6 +31,8 @@ public partial class DockWindow
     private async void ToggleAllAppsPanel(DockItemView? view, PinItem pin)
     {
         bool same = _folderPanel is AllAppsPanel;
+        if (same || view == null || _allAppsOpening)
+            Log.Info($"앱 모음 클릭: {(same ? "열린 판 닫기" : view == null ? "아이콘 없음" : "여는 중")}");
         _folderPanel?.CloseAnimated();
         if (same || view == null || _allAppsOpening) return;
 
