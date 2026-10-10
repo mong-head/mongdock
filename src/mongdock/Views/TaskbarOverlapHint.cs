@@ -7,7 +7,7 @@ namespace Mongdock.Views;
 
 /// <summary>
 /// 윈도우 작업 표시줄이 자동 숨김 + 독이 아래 + 몽독 "작업 표시줄 숨기기" 꺼짐이면, 화면 아래 끝에서 올라온 작업 표시줄이 독을 덮음.
-/// 이 조합을 처음 만나면 한 번만 몽독 톤 카드로 묻고(자동으로 바꾸지 않음): [작업 표시줄 숨기기] [독 위로 옮기기] [그대로 두기].
+/// 이 조합을 처음 만나면 한 번만 몽독 톤 카드로 묻고(자동으로 바꾸지 않음): [작업 표시줄 숨기기] [독을 왼쪽으로 옮기기] [그대로 두기].
 /// [그대로 두기]·다른 선택은 다시 묻지 않음. 바깥을 눌러 그냥 닫으면 다음 시작 때 다시. 일시 정지·전체 화면 중엔 안 물음.
 /// </summary>
 internal static class TaskbarOverlapHint
@@ -51,7 +51,7 @@ internal static class TaskbarOverlapHint
             var choice = await ConfirmCardWindow.AskWithExtraAsync(services,
                 Loc.T("작업 표시줄이 독을 가릴 수 있어요"),
                 Loc.T("윈도우 작업 표시줄이 자동 숨김이라, 화면 아래 끝에서 올라오면 독을 덮어요."),
-                Loc.T("작업 표시줄 숨기기"), Loc.T("독 위로 옮기기"), Loc.T("그대로 두기"));
+                Loc.T("작업 표시줄 숨기기"), Loc.T("독을 왼쪽으로 옮기기"), Loc.T("그대로 두기"));
             s = services.Settings.Current;
             switch (choice)
             {
@@ -59,7 +59,7 @@ internal static class TaskbarOverlapHint
                     s.HideWindowsTaskbar = true; // 몽독이 숨기는 동안 작업 표시줄이 올라오지 않음
                     break;
                 case ConfirmCardWindow.Choice.Cancel:
-                    s.Dock.Edge = DockEdge.Top;
+                    s.Dock.Edge = DockEdge.Left; // 화면 왼쪽 세로 독 (위쪽은 상단바와 겹쳐 어색함)
                     break;
                 case ConfirmCardWindow.Choice.Dismissed:
                     Log.Info("작업 표시줄 겹침 안내: 고르지 않고 닫음 — 다음 시작 때 다시");
