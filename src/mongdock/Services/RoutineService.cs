@@ -829,14 +829,15 @@ internal static class RoutineService
     /// 지금 데스크톱의 보이는 창 → 루틴 항목 (최대 15). 몽독·시스템 창은 뺌. 모니터(장치 이름), 위치(최대화/반쪽/저장한 위치 — 작업 영역 비율),
     /// 열 것(실행 인자에 있는 파일·폴더, 탐색기 창은 그 폴더)은 확실할 때만.
     /// </summary>
-    public static List<(RoutineItem Item, IntPtr Hwnd)> CaptureScreen()
+    public static List<(RoutineItem Item, IntPtr Hwnd)> CaptureScreen(Func<AppWindowInfo, bool>? onDesktop = null)
     {
         var services = _services;
         var list = new List<(RoutineItem, IntPtr)>();
         if (services is null) return list;
+        onDesktop ??= w => w.OnCurrentDesktop;
         var explorerFolders = ExplorerFolders();
         List<(string Name, string Lnk)>? recent = null;
-        foreach (var w in services.Windows.Windows.Where(w => w.OnCurrentDesktop && !w.IsMinimized))
+        foreach (var w in services.Windows.Windows.Where(w => onDesktop(w) && !w.IsMinimized))
         {
             if (list.Count >= RoutineDef.MaxItems) break;
             string exe = ExeName(w.ProcessPath) ?? "";
@@ -1066,6 +1067,64 @@ internal static class RoutineService
         RoutineItemKind.Url => ExeName(DefaultBrowser()),
         _ => Directory.Exists(item.Target) ? "explorer" : ExeName(AssociatedExe(Path.GetExtension(item.Target))),
     };
+
+    /// <summary>
+    /// 편집 창 "지금 화면으로 맞추기"의 판단 (바꾸지는 않음 — 확인 카드가 고른 대로 <see cref="ApplySync"/>).
+    /// 기준 = 이 루틴이 열려 있으면 그 루틴 데스크톱, 아니면 지금 데스크톱의 창 (몽독·시스템 창 제외 — 지금 화면 저장과 같은 규칙).
+    /// Kept = 그대로 있는 앱 항목(그 창), Missing = 화면에 없는 앱 항목, New = 새로 켜진 앱(지금 화면 저장으로 읽은 항목), Fixed = 웹사이트·파일·폴더 항목 수(늘 유지).
+    /// </summary>
+    public sealed record SyncPlan(List<(RoutineItem Item, IntPtr Hwnd)> Kept, List<RoutineItem> Missing, List<(RoutineItem Item, IntPtr Hwnd)> New, int Fixed);
+
+    public static SyncPlan PlanSync(IReadOnlyList<RoutineItem> items, string? routineId)
+    {
+        var kept = new List<(RoutineItem, IntPtr)>();
+        var missing = new List<RoutineItem>();
+        var added = new List<(RoutineItem, IntPtr)>();
+        int fixedCount = items.Count(i => i.Kind != RoutineItemKind.App);
+        var services = _services;
+        if (services is null) return new SyncPlan(kept, missing, added, fixedCount);
+        // 기준 데스크톱: 열린 루틴이면 그 데스크톱 (편집을 다른 데스크톱에서 열었어도)
+        Func<AppWindowInfo, bool> onDesktop = w => w.OnCurrentDesktop;
+        if (routineId is not null && DesktopOf(routineId) is { } g)
+        {
+            var ids = VirtualDesktopService.ReadDesktopIds();
+            int index = ids.IndexOf(g) + 1;
+            if (index > 0) onDesktop = w => VirtualDesktopHelper.GetDesktopIndex(w.Hwnd, ids) is var at && (at > 0 ? at == index : w.OnCurrentDesktop);
+        }
+        var present = services.Windows.Windows.Where(onDesktop).ToList(); // 최소화한 창도 "있음"
+        var used = new HashSet<IntPtr>();
+        foreach (var item in items.Where(i => i.Kind == RoutineItemKind.App))
+        {
+            string? exe = ExpectedExe(item);
+            var w = present.FirstOrDefault(x => !used.Contains(x.Hwnd) && (Matches(item, x) || exe is not null && ExeName(x.ProcessPath) == exe));
+            if (w is null) { missing.Add(item); continue; }
+            used.Add(w.Hwnd);
+            kept.Add((item, w.Hwnd));
+        }
+        foreach (var (item, hwnd) in CaptureScreen(onDesktop))
+        {
+            if (item.Kind != RoutineItemKind.App || used.Contains(hwnd)) continue; // 탐색기 폴더 창은 새 항목 후보로 넣지 않음
+            // 같은 앱 창이 하나 더 떠 있는 것(이미 항목이 있는 앱)은 새 앱이 아님
+            if (items.Any(i => i.Kind == RoutineItemKind.App && (i.Aumid is { Length: > 0 } a ? a == item.Aumid : string.Equals(i.Target, item.Target, StringComparison.OrdinalIgnoreCase)))) continue;
+            if (added.Any(x => x.Item1.Aumid is { Length: > 0 } a ? a == item.Aumid : string.Equals(x.Item1.Target, item.Target, StringComparison.OrdinalIgnoreCase))) continue;
+            added.Add((item, hwnd));
+        }
+        return new SyncPlan(kept, missing, added, fixedCount);
+    }
+
+    /// <summary>맞추기: 그대로 있는 앱은 위치·모니터 갱신(최소화한 창은 그대로), 고른 항목 빼기, 고른 새 앱은 끝에 (최대 항목 수까지). 순서는 기존 그대로.</summary>
+    public static void ApplySync(List<RoutineItem> items, SyncPlan plan, IEnumerable<RoutineItem> remove, IEnumerable<RoutineItem> add)
+    {
+        foreach (var (item, hwnd) in plan.Kept)
+            if (User32.IsWindow(hwnd) && !User32.IsIconic(hwnd)) ReadPlacement(hwnd, item);
+        var drop = remove.ToHashSet();
+        items.RemoveAll(drop.Contains);
+        foreach (var item in add)
+        {
+            if (items.Count >= RoutineDef.MaxItems) break;
+            items.Add(item);
+        }
+    }
 
     /// <summary>"지금 화면으로 위치 다시 저장"·편집 창의 "지금 화면에서 다시 읽기": 지금 데스크톱에 그 앱 창이 있으면 모니터·위치만 다시 채움 (항목은 그대로). 바꾼 수.</summary>
     public static int RereadPlacements(IEnumerable<RoutineItem> items)

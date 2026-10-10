@@ -944,6 +944,20 @@ internal static class Program
             Save((FrameworkElement)save.Content, "save");
             save.Close();
 
+            // 1-b) 지금 화면으로 맞추기 카드: 그대로 2 · 새 앱 1 · 없음 1 · 웹·파일 1
+            {
+                var items = Work();
+                var planType = T("Mongdock.Services.RoutineService+SyncPlan");
+                var kept = new List<(RoutineItem, IntPtr)> { (items[0], IntPtr.Zero), (items[1], IntPtr.Zero) };
+                var added = new List<(RoutineItem, IntPtr)> { (captured[3], IntPtr.Zero) };
+                var missing = new List<RoutineItem> { items[2] };
+                var plan = Activator.CreateInstance(planType, kept, missing, added, 1)!;
+                var syncType = T("Mongdock.Views.RoutineSyncWindow");
+                var sync = (Window)Activator.CreateInstance(syncType, Any, null, new object[] { services, plan, items.Count, new Action<List<RoutineItem>, List<RoutineItem>>((_, _) => { }) }, null)!;
+                Save((FrameworkElement)sync.Content, "sync");
+                sync.Close();
+            }
+
             // 2) 편집 창: 크게 / Chrome 세부 펼침(+ 고급)
             var work = new RoutineDef { Id = "r-test1", Name = "업무 시작", Items = Work() };
             foreach (var expand in new[] { -1, 1 })

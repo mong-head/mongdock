@@ -12,7 +12,7 @@ namespace Mongdock.Views;
 /// <summary>
 /// 루틴 편집 창 (#24-A, spec-routines §3): 위는 크게(이름·아이콘·어디서·항목 목록), 세부는 항목의 ▸ 안에 접어서
 /// (함께 열 것·고급 실행 옵션, 모니터, 창 위치, 다음 항목까지 기다리기, 이미 켜져 있으면).
-/// ≡ 를 끌어 여는 순서, × 로 빼기. [+ 앱] [+ 웹사이트] [+ 파일·폴더] [지금 화면에서 다시 읽기], [루틴 지우기] [취소] [저장].
+/// ≡ 를 끌어 여는 순서, × 로 빼기. [+ 앱] [+ 웹사이트] [+ 파일·폴더] [지금 화면으로 맞추기], [루틴 지우기] [취소] [저장].
 /// 고치는 동안은 사본 — [저장]을 눌러야 반영.
 /// </summary>
 internal sealed partial class RoutineEditorWindow : RoutineCardWindow
@@ -206,7 +206,7 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
             menu.IsOpen = true;
         };
         _addButtons.Children.Add(file);
-        _addButtons.Children.Add(Small(Loc.T("지금 화면에서 다시 읽기"), Reread, _r.Items.Count > 0));
+        _addButtons.Children.Add(Small(Loc.T("지금 화면으로 맞추기"), Sync, true));
     }
 
     // ───────────────────────── 항목 목록 ─────────────────────────
@@ -548,11 +548,28 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         AddItem(new RoutineItem { Kind = RoutineItemKind.Path, Target = path, Name = Path.GetFileName(Path.TrimEndingDirectorySeparator(path)) is { Length: > 0 } n ? n : path });
     }
 
-    private void Reread()
+    /// <summary>
+    /// "지금 화면으로 맞추기": 이 루틴 데스크톱(열려 있지 않으면 지금 데스크톱) 기준으로 새로 켠 앱은 추가, 없는 앱은 빼기, 있는 앱은 위치 갱신 —
+    /// 바로 바꾸지 않고 확인 카드에서 고름 (사용자: 위치만 다시 채워 기대와 달랐음).
+    /// </summary>
+    private void Sync()
     {
-        int n = RoutineService.RereadPlacements(_r.Items);
-        _status.Text = n == 0 ? Loc.T("지금 화면에 이 루틴의 창이 없어요") : Loc.F($"{n}개 항목의 모니터·위치를 지금 화면으로 채웠어요");
-        Rebuild();
+        RoutineService.SyncPlan plan;
+        try { plan = RoutineService.PlanSync(_r.Items, _original?.Id); }
+        catch (Exception ex)
+        {
+            Log.Error("지금 화면으로 맞추기 실패", ex);
+            return;
+        }
+        Log.Info($"지금 화면으로 맞추기: 그대로 {plan.Kept.Count}, 새 앱 {plan.New.Count}, 없음 {plan.Missing.Count}, 웹·파일 {plan.Fixed}");
+        RoutineSyncWindow.Open(Services, plan, _r.Items.Count, (remove, add) =>
+        {
+            RoutineService.ApplySync(_r.Items, plan, remove, add);
+            _status.Text = Loc.F($"지금 화면으로 맞췄어요 (추가 {add.Count} · 빼기 {remove.Count})");
+            Log.Info($"지금 화면으로 맞춤: 추가 {add.Count}, 빼기 {remove.Count}");
+            Rebuild();
+            Activate();
+        });
     }
 
     /// <summary>[+ 앱]: 설치된 앱 목록에서 체크 (검색 칸 포함) → [넣기].</summary>
