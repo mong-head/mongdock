@@ -1349,6 +1349,29 @@ public partial class DockWindow : Window
         return source?.CompositionTarget?.TransformFromDevice.Transform(p) ?? p;
     }
 
+    /// <summary>
+    /// 누른 자리가 아이콘 칸 밖이지만 독 방향으로 간격의 절반 + 3px 안이고 다른 방향으로는 칸 안이면 그 아이콘 (가장 가까운 것).
+    /// 자동 구분선은 제외 (그 자리는 독 이동 끌기 시작점).
+    /// </summary>
+    private DockItemView? IconNearPress(MouseButtonEventArgs e)
+    {
+        double reach = Math.Max(_layout.Spacing, 4) / 2 + 3;
+        DockItemView? best = null;
+        double bestDist = double.MaxValue;
+        foreach (var v in ItemsHost.Children.OfType<DockItemView>())
+        {
+            if (v.Item.IsAutoSeparator) continue;
+            var p = e.GetPosition(v);
+            double along = _layout.IsVertical ? p.Y : p.X, alongLen = _layout.IsVertical ? v.ActualHeight : v.ActualWidth;
+            double cross = _layout.IsVertical ? p.X : p.Y, crossLen = _layout.IsVertical ? v.ActualWidth : v.ActualHeight;
+            if (cross < 0 || cross > crossLen) continue;
+            double dist = along < 0 ? -along : along > alongLen ? along - alongLen : 0;
+            if (dist <= reach && dist < bestDist) { best = v; bestDist = dist; }
+        }
+        if (best is not null) Log.Info($"독 아이콘 옆 간격 누름 → 가까운 아이콘으로 ({bestDist:0}px)");
+        return best;
+    }
+
     private void LogEmptyPress(MouseButtonEventArgs e)
     {
         try
@@ -1366,7 +1389,13 @@ public partial class DockWindow : Window
     private void OnPanelMouseDown(object sender, MouseButtonEventArgs e)
     {
         // 아이콘·핀 구분선은 자체 처리(e.Handled, 순서 바꾸기 드래그) → 여기 오는 건 빈 영역/패딩/자동 구분선
-        // (클릭이 "안 눌린다"면 여기로 온 것 — 가장 가까운 아이콘 기준 위치를 남김)
+        // 아이콘 사이 간격(Spacing)·가장자리 몇 px 는 가까운 아이콘의 누름으로 — 예전엔 독 빈자리로 빠져 "아이콘 왼쪽이 안 눌림"
+        if (IconNearPress(e) is { } near)
+        {
+            OnItemPressed(near, e);
+            e.Handled = true;
+            return;
+        }
         LogEmptyPress(e);
         _dragStart = ToScreenDip(e.GetPosition(this));
         var panelCenter = ToScreenDip(PanelBorder.TranslatePoint(
