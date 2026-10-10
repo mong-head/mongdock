@@ -119,12 +119,16 @@ public sealed class PinItem
     /// <summary>커스텀 아이콘. 항상 %APPDATA%\mongdock\icons\ 안의 복사본 경로. null 이면 exe/패키지 아이콘 사용.</summary>
     public string? IconPath { get; set; }
     /// <summary>폴더·루틴 핀의 고유 id (실행 기록·편집 대상). 다른 핀은 null.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? Id { get; set; }
     /// <summary>PinKind.Folder 의 옵션.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public FolderOptions? Folder { get; set; }
     /// <summary>PinKind.Routine 의 내용.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public RoutineData? Routine { get; set; }
     /// <summary>폴더·루틴의 고른 아이콘 (없으면 자동).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public PinIcon? Icon { get; set; }
 }
 
