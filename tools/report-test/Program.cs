@@ -472,7 +472,7 @@ internal static class Program
         var apps = (System.Collections.ICollection)catalog.GetMethod("Apps")!.Invoke(null, new object[] { false })!;
         Console.WriteLine($"  앱 {apps.Count}개");
         var panelType = asm.GetType("Mongdock.Views.AllAppsPanel")!;
-        panelType.GetField("LoadIconsNow", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, true);
+        panelType.GetProperty("LoadIconsNow", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, true);
         foreach (var theme in new[] { "light", "dark" })
         {
             var settings = new SettingsService(); // 읽기만 (저장하지 않음 — 이 셸의 %APPDATA% 는 가상화된 사본)

@@ -76,7 +76,7 @@ internal static class AllAppsCatalog
     }
 
     private static readonly Regex DesktopAumidExe = new(@"(?:^|\.)([A-Za-z0-9_\-]+)\.exe(?:\.|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex Junk = new(@"(^|\b)(uninstall|uninstaller|제거|삭제|readme|read me|help|도움말|manual|설명서|license|라이선스|release notes|website|web site|홈페이지|documentation|changelog)(\b|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex Junk = new(@"(^|\b)(uninstall|uninstaller|제거|삭제|readme|read me|도움말|manual|설명서|license|라이선스|release notes|website|web site|홈페이지|documentation|changelog)(\b|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly string[] JunkExtensions = { ".url", ".chm", ".txt", ".pdf", ".htm", ".html", ".rtf", ".hlp", ".ini", ".log" };
 
     private static List<AppEntry> Build()
@@ -173,8 +173,22 @@ internal static class AllAppsCatalog
         _rules = rules;
     }
 
-    /// <summary>자동 분류 (사용자가 옮긴 것은 부르는 쪽에서 먼저).</summary>
+    private static readonly Dictionary<string, string> ClassifyCache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>자동 분류 (사용자가 옮긴 것은 부르는 쪽에서 먼저). 앱마다 한 번만 계산 (판을 다시 그릴 때마다 규칙을 다시 돌지 않게).</summary>
     public static string Classify(AppEntry app)
+    {
+        string cacheKey = app.Key + "|" + app.Name;
+        lock (ClassifyCache)
+        {
+            if (ClassifyCache.TryGetValue(cacheKey, out var hit)) return hit;
+        }
+        string id = ClassifyUncached(app);
+        lock (ClassifyCache) ClassifyCache[cacheKey] = id;
+        return id;
+    }
+
+    private static string ClassifyUncached(AppEntry app)
     {
         LoadRules();
         var rules = _rules!;
@@ -298,8 +312,9 @@ internal static class AppUsage
         string cutoff = DateTime.Now.AddDays(-Days).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
         foreach (var key in data.Keys.ToList())
         {
-            data[key].RemoveAll(d => string.CompareOrdinal(d, cutoff) < 0);
-            if (data[key].Count == 0) data.Remove(key);
+            if (data[key] is not { } days) { data.Remove(key); continue; } // 손으로 고친 파일의 null
+            days.RemoveAll(d => d is null || string.CompareOrdinal(d, cutoff) < 0);
+            if (days.Count == 0) data.Remove(key);
         }
     }
 
@@ -308,7 +323,9 @@ internal static class AppUsage
         try
         {
             Directory.CreateDirectory(AppInfo.DataDirectory);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(data));
+            string tmp = FilePath + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(data));
+            File.Move(tmp, FilePath, overwrite: true); // 쓰다 꺼져도 깨진 파일이 남지 않게
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

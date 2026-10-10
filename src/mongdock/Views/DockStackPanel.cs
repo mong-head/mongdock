@@ -251,12 +251,12 @@ internal abstract class DockStackPanel : Window
     private void DragOut(DependencyObject source, string path) => DragData(source, new DataObject(DataFormats.FileDrop, new[] { path }));
 
     /// <summary>끌기 시작 (끝날 때까지 돌아오지 않음). 끄는 동안 판은 닫지 않음.</summary>
-    protected void DragData(DependencyObject source, DataObject data)
+    protected void DragData(DependencyObject source, DataObject data, DragDropEffects allowed = DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link)
     {
         Dragging = true;
         try
         {
-            DragDrop.DoDragDrop(source, data, DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link);
+            DragDrop.DoDragDrop(source, data, allowed);
         }
         catch (Exception ex)
         {

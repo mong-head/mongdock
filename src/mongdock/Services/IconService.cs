@@ -106,6 +106,36 @@ public sealed class IconService : IIconService
         return img;
     }
 
+    /// <summary>
+    /// 앱 모음 판(#24)처럼 한 번에 수백 개를 보여 줄 때: 아이콘 캐시(128개 — 독·실행 중 앱)를 밀어내지 않게 저장하지 않고 만듦.
+    /// 이미 캐시에 있으면 그것. key 는 shell:AppsFolder 파싱 이름 그대로(대소문자 복원 안 함 — AppsFolder 를 다시 열거하지 않게).
+    /// </summary>
+    internal ImageSource GetAppsFolderIconUncached(string key, IconStyle style)
+    {
+        string rawKey = $"pin|{PinKind.Aumid}|{key}|";
+        string? windowsAumid = PackageLogo.IsWindowsPackage(key) ? key : null;
+        if (TryGetCached((style == IconStyle.Mac ? MacStyleVersion + "|" : "orig|") + rawKey) is { } hit) return hit;
+        ImageSource? raw = TryGetCached("orig|" + rawKey);
+        if (raw is null)
+        {
+            try { raw = FromShellItem(AppsFolder.ShellPathOf(key)) ?? PackageLogo.Load(AppsFolder.FamilyOf(key)); }
+            catch (Exception ex) { Log.Warn($"앱 모음 아이콘 실패: {ex.GetType().Name}"); }
+        }
+        if (style != IconStyle.Mac) return raw ?? DefaultIcon;
+        try
+        {
+            if (windowsAumid is not null)
+            {
+                var unplated = PackageLogo.LoadUnplated(windowsAumid);
+                if (unplated is not null && MacIconRenderer.OnPlate(unplated, removeBackground: false) is { } plated) return plated;
+                if (raw is BitmapSource rb && MacIconRenderer.OnPlate(rb, removeBackground: true) is { } onPlate) return onPlate;
+            }
+            else if (raw is BitmapSource bs && MacIconRenderer.Normalize(bs) is { } mac) return mac;
+        }
+        catch (Exception ex) { Log.Warn($"앱 모음 아이콘 모양 실패: {ex.GetType().Name}"); }
+        return MacDefaultIcon;
+    }
+
     /// <summary>패키지 앱 아이콘: shell:AppsFolder\AUMID 의 IShellItemImageFactory → 패키지 로고(Assets) 파일.</summary>
     private static ImageSource? FromAumid(string aumid)
     {

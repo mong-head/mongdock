@@ -64,7 +64,7 @@ internal sealed class AllAppsPanel : DockStackPanel
             {
                 if (IsClosing) return;
                 _apps = t.Result;
-                Rebuild();
+                if (_renaming is null) Rebuild(); // 묶음 이름을 쓰는 중이면 끝난 뒤 (쓰던 글자가 그대로 확정되지 않게)
             });
         }, TaskScheduler.Default);
         Loaded += (_, _) => Dispatcher.BeginInvoke(() => { _search.Focus(); Keyboard.Focus(_search); }, DispatcherPriority.Input);
@@ -186,7 +186,7 @@ internal sealed class AllAppsPanel : DockStackPanel
         {
             root.Children.Add(SectionTitle("★ " + Loc.T("즐겨찾기")));
             var row = new WrapPanel { Width = Cols * AppCell, Background = Brushes.Transparent };
-            foreach (var (app, pinned) in fav) row.Children.Add(AppCellView(app, pinned: pinned));
+            foreach (var (app, pinned) in fav) row.Children.Add(AppCellView(app, pinned: pinned, inFavorites: true));
             var favBox = new Border { CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1.5), BorderBrush = Brushes.Transparent, Child = row };
             DropTarget(favBox, AppFormat, key => !S.Favorites.Contains(key, StringComparer.OrdinalIgnoreCase), PinToTop);
             root.Children.Add(favBox);
@@ -251,7 +251,7 @@ internal sealed class AllAppsPanel : DockStackPanel
 
     // ───────────────────────── 칸 ─────────────────────────
 
-    private Border AppCellView(AppEntry app, bool pinned = false, bool selected = false)
+    private Border AppCellView(AppEntry app, bool pinned = false, bool selected = false, bool inFavorites = false)
     {
         var image = new Image { Width = AppIcon, Height = AppIcon, HorizontalAlignment = HorizontalAlignment.Center };
         RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
@@ -294,7 +294,7 @@ internal sealed class AllAppsPanel : DockStackPanel
             Child = stack,
             ToolTip = app.Name,
             Cursor = Cursors.Hand,
-            ContextMenu = AppMenu(app),
+            ContextMenu = LazyMenu(m => FillAppMenu(m, app)),
         };
         cell.MouseEnter += (_, _) => { if (!selected) cell.Background = P.Tile; };
         cell.MouseLeave += (_, _) => { if (!selected) cell.Background = Brushes.Transparent; };
@@ -305,8 +305,8 @@ internal sealed class AllAppsPanel : DockStackPanel
             if (app.Shortcut is { } lnk && File.Exists(lnk)) data.SetData(DataFormats.FileDrop, new[] { lnk }); // 독·바탕 화면에 놓으면 바로 가기
             return data;
         });
-        // 다른 앱을 이 앱 위에 놓으면 둘로 새 묶음
-        DropTarget(cell, AppFormat, key => key != app.Key, key =>
+        // 다른 앱을 이 앱 위에 놓으면 둘로 새 묶음 (★ 줄 칸은 빼고 — 거기 놓으면 맨 위에 고정)
+        if (!inFavorites) DropTarget(cell, AppFormat, key => key != app.Key, key =>
         {
             var other = _apps.FirstOrDefault(a => a.Key == key);
             if (other is null) return;
@@ -319,19 +319,51 @@ internal sealed class AllAppsPanel : DockStackPanel
     }
 
     /// <summary>시험 그림(report-test --allapps)에서만: 아이콘을 바로 그림 (디스패처를 돌리지 않으므로).</summary>
-    internal static bool LoadIconsNow;
+    internal static bool LoadIconsNow { get; set; }
 
-    /// <summary>아이콘은 판을 먼저 보여 준 뒤 하나씩 (보이는 것부터 — 접힌 칸은 만들지 않으므로).</summary>
+    /// <summary>판 전용 작은 아이콘 (64px, 독 아이콘 캐시와 따로 — 수백 개를 열어도 독 아이콘을 밀어내지 않음).</summary>
+    private static readonly Dictionary<string, ImageSource> SmallIcons = new(StringComparer.OrdinalIgnoreCase);
+    private const int SmallIconPx = 64;
+
+    /// <summary>아이콘은 판을 먼저 보여 준 뒤 하나씩 (보이는 것부터 — 접힌 칸은 만들지 않으므로). 그새 지워진 칸은 건너뜀.</summary>
     private void LoadIcon(Image image, AppEntry app)
     {
         void Load()
         {
-            if (IsClosing) return;
-            try { image.Source = Services.Icons.GetIcon(new PinItem { Kind = PinKind.Aumid, Target = app.Key, Name = app.Name }, _style); }
-            catch (Exception ex) { Log.Warn($"앱 모음 아이콘 실패: {ex.GetType().Name}"); }
+            if (IsClosing || (!LoadIconsNow && PresentationSource.FromVisual(image) is null)) return;
+            string key = _style + "|" + app.Key;
+            if (!SmallIcons.TryGetValue(key, out var small))
+            {
+                try
+                {
+                    var full = Services.Icons is IconService icons
+                        ? icons.GetAppsFolderIconUncached(app.Key, _style)
+                        : Services.Icons.GetIcon(new PinItem { Kind = PinKind.Aumid, Target = app.Key, Name = app.Name }, _style);
+                    small = Shrink(full);
+                    if (SmallIcons.Count > 600) SmallIcons.Clear();
+                    SmallIcons[key] = small;
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn($"앱 모음 아이콘 실패: {ex.GetType().Name}");
+                    return;
+                }
+            }
+            image.Source = small;
         }
         if (LoadIconsNow) Load();
         else Dispatcher.BeginInvoke(Load, DispatcherPriority.Background);
+    }
+
+    private static ImageSource Shrink(ImageSource full)
+    {
+        var dv = new DrawingVisual();
+        RenderOptions.SetBitmapScalingMode(dv, BitmapScalingMode.HighQuality);
+        using (var dc = dv.RenderOpen()) dc.DrawImage(full, new Rect(0, 0, SmallIconPx, SmallIconPx));
+        var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(SmallIconPx, SmallIconPx, 96, 96, PixelFormats.Pbgra32);
+        rtb.Render(dv);
+        rtb.Freeze();
+        return rtb;
     }
 
     /// <summary>묶음 칸: 3x3 아이콘 미리 보기 + 이름 + 앱 수. 누르면 펼침/접힘.</summary>
@@ -379,7 +411,7 @@ internal sealed class AllAppsPanel : DockStackPanel
             Background = Brushes.Transparent,
             Child = stack,
             Cursor = Cursors.Hand,
-            ContextMenu = GroupMenu(id),
+            ContextMenu = LazyMenu(m => FillGroupMenu(m, id)),
         };
         cell.MouseEnter += (_, _) => cell.Background = P.Hover;
         cell.MouseLeave += (_, _) => cell.Background = Brushes.Transparent;
@@ -522,9 +554,21 @@ internal sealed class AllAppsPanel : DockStackPanel
         Rebuild();
     }
 
-    private ContextMenu AppMenu(AppEntry app)
+    /// <summary>메뉴는 열 때 채움 (칸마다 메뉴 항목 20개를 미리 만들지 않게).</summary>
+    private static ContextMenu LazyMenu(Action<ContextMenu> fill)
     {
         var menu = new ContextMenu();
+        menu.Items.Add(new MenuItem()); // 열리게 하는 자리 (열 때 지움)
+        menu.Opened += (_, _) =>
+        {
+            menu.Items.Clear();
+            fill(menu);
+        };
+        return menu;
+    }
+
+    private void FillAppMenu(ContextMenu menu, AppEntry app)
+    {
         menu.Items.Add(DockMenus.Item(Loc.T("실행"), () => Launch(app)));
         bool fav = S.Favorites.Contains(app.Key, StringComparer.OrdinalIgnoreCase);
         menu.Items.Add(fav
@@ -553,12 +597,10 @@ internal sealed class AllAppsPanel : DockStackPanel
         menu.Items.Add(hidden
             ? DockMenus.Item(Loc.T("다시 보이기"), () => { S.Hidden.RemoveAll(k => k.Equals(app.Key, StringComparison.OrdinalIgnoreCase)); Save(); })
             : DockMenus.Item(Loc.T("이 앱 숨기기"), () => { S.Hidden.Add(app.Key); S.Favorites.RemoveAll(k => k.Equals(app.Key, StringComparison.OrdinalIgnoreCase)); Save(); }));
-        return menu;
     }
 
-    private ContextMenu GroupMenu(string id)
+    private void FillGroupMenu(ContextMenu menu, string id)
     {
-        var menu = new ContextMenu();
         var order = AllAppsCatalog.GroupOrder(S);
         int at = order.IndexOf(id);
         menu.Items.Add(DockMenus.Item(Loc.T("이름 바꾸기…"), () => { _expanded = id; _renaming = id; Rebuild(); }));
@@ -578,7 +620,6 @@ internal sealed class AllAppsPanel : DockStackPanel
                 Save();
             }));
         }
-        return menu;
     }
 
     private ContextMenu BuildEmptyMenu()
@@ -635,7 +676,8 @@ internal sealed class AllAppsPanel : DockStackPanel
                 && Math.Abs(p.Y - _pressAt.Y) < SystemParameters.MinimumVerticalDragDistance) return;
             el.ReleaseMouseCapture();
             _pressed = null;
-            DragData(el, drag());
+            // 복사/링크만 허용 — 바탕 화면·탐색기·휴지통에 놓아도 시작 메뉴 바로 가기를 옮기거나 지우지 않음
+            DragData(el, drag(), DragDropEffects.Copy | DragDropEffects.Link);
         };
         el.MouseLeftButtonUp += (_, e) =>
         {
@@ -660,7 +702,7 @@ internal sealed class AllAppsPanel : DockStackPanel
         void Over(object? s, DragEventArgs e)
         {
             if (Data(e) is not { } v || !accept(v)) return; // 다른 형식은 다른 처리기(같은 칸의 묶음/앱)가
-            e.Effects = DragDropEffects.Move;
+            e.Effects = DragDropEffects.Copy;
             e.Handled = true;
             if (before is null) { before = target.BorderBrush ?? Brushes.Transparent; target.BorderBrush = P.Accent; }
         }
@@ -677,7 +719,7 @@ internal sealed class AllAppsPanel : DockStackPanel
         {
             Leave();
             if (Data(e) is not { } v || !accept(v)) return;
-            e.Effects = DragDropEffects.Move;
+            e.Effects = DragDropEffects.Copy;
             e.Handled = true;
             Dispatcher.BeginInvoke(() => drop(v)); // 끌기 중엔 칸을 지우지 않음
         };
@@ -685,7 +727,8 @@ internal sealed class AllAppsPanel : DockStackPanel
 
     private void PinToTop(string key)
     {
-        S.Favorites.RemoveAll(k => k.Equals(key, StringComparison.OrdinalIgnoreCase));
+        S.Favorites.RemoveAll(k => k.Equals(key, StringComparison.OrdinalIgnoreCase)
+                                   || (_apps.Count > 0 && !_apps.Any(a => a.Key.Equals(k, StringComparison.OrdinalIgnoreCase)))); // 없어진 앱
         S.Favorites.Add(key);
         if (S.Favorites.Count > FavMax) S.Favorites.RemoveAt(0);
         Save(false);
@@ -714,8 +757,8 @@ internal sealed class AllAppsPanel : DockStackPanel
     {
         EnsureGroupList();
         string id = "g-" + Guid.NewGuid().ToString("N")[..8];
-        // "기타" 바로 앞에
-        S.Groups.Add(new AppGroupDef { Id = id, Name = Loc.T("새 묶음") });
+        // "기타" 바로 앞에 (EnsureGroupList 가 "기타"를 끝에 둠)
+        S.Groups.Insert(Math.Max(0, S.Groups.Count - 1), new AppGroupDef { Id = id, Name = Loc.T("새 묶음") });
         _expanded = id;
         _renaming = id;
         return id;
