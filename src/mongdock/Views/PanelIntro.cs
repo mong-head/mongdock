@@ -101,11 +101,18 @@ internal static class PanelIntro
         Apply(0);
         ghost.SourceInitialized += (_, _) => services.DesktopWindows.MakeOverlay(ghost);
         var clock = new Stopwatch();
+        var total = Stopwatch.StartNew(); // 보이기 요청부터 (QA 프레임 로그)
+        long firstFrame = -1, lastTick = -1, maxGap = 0, placedAt = -1;
+        int frames = 0;
         int duration = DurationMs(mode);
         bool finished = false;
         void Frame(object? s, EventArgs e)
         {
             if (!ghost.IsVisible) { CompositionTarget.Rendering -= Frame; return; } // 판이 먼저 닫힘 (Esc 등)
+            long now = total.ElapsedMilliseconds;
+            if (lastTick >= 0) maxGap = Math.Max(maxGap, now - lastTick);
+            lastTick = now;
+            frames++;
             double t = clock.ElapsedMilliseconds / (double)duration;
             Apply(t);
             if (t < 1 || finished) return;
@@ -113,17 +120,29 @@ internal static class PanelIntro
             CompositionTarget.Rendering -= Frame;
             try { done(); }
             catch (Exception ex) { Log.Error("판 나타나기 끝 처리 실패", ex); }
+            placedAt = total.ElapsedMilliseconds;
             // 진짜 판이 화면에 나간 다음에 그림 창을 닫음 (사이에 빈 프레임 없게)
             var close = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(34) };
-            close.Tick += (_, _) => { close.Stop(); if (ghost.IsVisible) ghost.Close(); };
+            close.Tick += (_, _) =>
+            {
+                close.Stop();
+                if (ghost.IsVisible) ghost.Close();
+                // 프레임 로그 (번쩍임 확인용): 그림 창 첫 프레임 · 움직인 프레임 수 · 가장 긴 프레임 간격 · 진짜 판을 놓은 때 · 그림 창을 닫은 때
+                Log.Info($"앱 모음 판 나타나기({mode}): 그림 창 첫 프레임 {firstFrame}ms, 프레임 {frames}개(가장 긴 간격 {maxGap}ms), 진짜 판 제자리 {placedAt}ms, 그림 창 닫음 {total.ElapsedMilliseconds}ms");
+            };
             close.Start();
         }
         ghost.ContentRendered += (_, _) =>
         {
+            firstFrame = total.ElapsedMilliseconds;
             clock.Start();
             CompositionTarget.Rendering += Frame;
         };
-        ghost.Closed += (_, _) => CompositionTarget.Rendering -= Frame;
+        ghost.Closed += (_, _) =>
+        {
+            CompositionTarget.Rendering -= Frame;
+            if (!finished) Log.Info($"앱 모음 판 나타나기({mode}): 도중에 닫힘 ({total.ElapsedMilliseconds}ms, 프레임 {frames}개)");
+        };
         ghost.Show();
         return ghost;
     }
