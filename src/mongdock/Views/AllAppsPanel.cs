@@ -24,8 +24,11 @@ internal sealed class AllAppsPanel : DockStackPanel
     public const string AppFormat = "mongdock.allapps.app";
     private const string GroupFormat = "mongdock.allapps.group";
 
-    private const int Cols = 8, FavMax = 8, GroupCols = 5;
-    private const double AppCell = 88, AppIcon = 44, GroupTile = 72;
+    private const int FavMax = 8;
+    private const double AppCell = 88, AppIcon = 44, GroupTile = 72, GroupCell = 132;
+    /// <summary>열 수: 판 폭(작업 영역 비율)에 맞춰 — 칸 크기는 그대로, 넓은 화면은 더 많이 보임.</summary>
+    private readonly int Cols, GroupCols;
+    private readonly double _bodyMaxHeight;
 
     private readonly IconStyle _style;
     private readonly TextBox _search = new();
@@ -59,6 +62,14 @@ internal sealed class AllAppsPanel : DockStackPanel
         : base(services, palette, anchorDip, edge, monitor, "mongdock All Apps")
     {
         _style = services.Settings.Current.Dock.IconStyle;
+        // 크기 = 독이 있는 모니터 작업 영역 비율 (열 때마다 계산 — 배율·모니터가 바뀌어도 맞게):
+        // 폭 60% (세로 모니터 85%), 640~1200 DIP / 높이 75% (최소 480)
+        var work = monitor.WorkArea;
+        bool portrait = work.Height > work.Width;
+        double width = Math.Clamp(work.Width * (portrait ? 0.85 : 0.6), Math.Min(640, work.Width - 40), 1200);
+        Cols = Math.Max(4, (int)((width - 32) / AppCell));
+        GroupCols = Math.Clamp((int)(Cols * AppCell / GroupCell), 4, 8);
+        _bodyMaxHeight = Math.Max(480, work.Height * 0.75) - 130; // 검색 칸·아래 링크·여백 빼고
         SetBody(BuildShell());
         _apps = AllAppsCatalog.Cached ?? Array.Empty<AppEntry>();
         Rebuild();
@@ -128,7 +139,10 @@ internal sealed class AllAppsPanel : DockStackPanel
             },
         };
         root.Children.Add(searchRow);
-        root.Children.Add(ThinScroll(_body, Math.Max(240, Monitor.WorkArea.Height * 0.7 - 120))); // 작업 영역 70% 이하
+        // 높이는 작업 영역 75% 로 고정 — 묶음을 펼치거나 검색해도 판 크기가 출렁이지 않게
+        var scroll = ThinScroll(_body, _bodyMaxHeight);
+        scroll.Height = _bodyMaxHeight;
+        root.Children.Add(scroll);
         root.Children.Add(Link(Loc.T("Windows 시작 메뉴 열기"), () =>
         {
             CloseAnimated();

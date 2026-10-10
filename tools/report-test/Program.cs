@@ -485,6 +485,43 @@ internal static class Program
                 new NotificationService(tracker, launcher), new TrayIconService(), new CalendarFeedService(settings));
             var palette = Mongdock.ViewModels.UiTheme.Palette(settings.Current);
             var monitor = Monitors.GetPrimary();
+            // 화면 크기별 (작업 영역 비율): 1920x1080 · 2560x1440 · 세로 1080x1920 — 높이 제한 그대로
+            var rectType = typeof(Mongdock.App).Assembly.GetType("Mongdock.Native.RECT")!;
+            var monCtor = typeof(MonitorInfo).GetConstructors(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)[0];
+            var sizes = theme == "light" ? new[] { (1920, 1080), (2560, 1440), (1080, 1920) } : Array.Empty<(int, int)>();
+            foreach (var (sw, sh) in sizes)
+            {
+                object bounds = Activator.CreateInstance(rectType, 0, 0, sw, sh)!;
+                object work = Activator.CreateInstance(rectType, 0, 32, sw, sh - 48)!;
+                var fake = (MonitorInfo)monCtor.Invoke(new object[] { @"\.\DISPLAY9", bounds, work, 1.0, true, 9 });
+                var w = (Window)panelType.GetConstructors(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)[0]
+                    .Invoke(new object[] { services, palette, new Rect(800, 1000, 52, 52), Mongdock.Models.DockEdge.Bottom, fake });
+                panelType.GetMethod("Rebuild", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(w, null);
+                var content = (FrameworkElement)w.Content;
+                content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                var size = content.DesiredSize;
+                content.Arrange(new Rect(size));
+                content.UpdateLayout();
+                // 화면 크기 판 위에 판을 가운데 놓은 그림 (화면은 1/2 로 줄여서)
+                const double k = 0.5;
+                var dv = new DrawingVisual();
+                using (var dc = dv.RenderOpen())
+                {
+                    dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(0x9A, 0xA5, 0xB8)), null, new Rect(0, 0, sw * k, sh * k));
+                    dc.PushTransform(new ScaleTransform(k, k));
+                    dc.DrawRectangle(new VisualBrush(content) { ViewboxUnits = BrushMappingMode.Absolute, Viewbox = new Rect(size), Stretch = Stretch.None }, null,
+                        new Rect((sw - size.Width) / 2, 32 + (sh - 48 - size.Height) / 2, size.Width, size.Height));
+                    dc.Pop();
+                }
+                var rtb = new RenderTargetBitmap((int)(sw * k), (int)(sh * k), 96, 96, PixelFormats.Pbgra32);
+                rtb.Render(dv);
+                string spath = Path.Combine(dir, $"allapps-screen-{sw}x{sh}.png");
+                var senc = new PngBitmapEncoder();
+                senc.Frames.Add(BitmapFrame.Create(rtb));
+                using (var fs = File.Create(spath)) senc.Save(fs);
+                Console.WriteLine($"  저장  {spath} (판 {size.Width:0}x{size.Height:0})");
+                w.Close();
+            }
             foreach (var mode in new[] { "home", "group", "search" })
             {
                 var w = (Window)panelType.GetConstructors(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)[0]
