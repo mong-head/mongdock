@@ -166,6 +166,42 @@ internal static class Program
         }
     }
 
+    /// <summary>휴지통 정보 파일($I) 읽기 — 가짜 파일로만 (실제 휴지통은 건드리지 않음). 복원 경로에 확장자가 그대로여야 함.</summary>
+    private static void RecycleInfoTests(Type rb)
+    {
+        var read = rb.GetMethod("ReadOriginalPath", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        string dir = Path.Combine(Path.GetTempPath(), "mongdock-rbtest-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string original = @"C:\Users\u\Documents\보고서 최종.docx";
+            var v2 = new List<byte>();
+            v2.AddRange(BitConverter.GetBytes(2L));
+            v2.AddRange(BitConverter.GetBytes(12345L));
+            v2.AddRange(BitConverter.GetBytes(DateTime.UtcNow.ToFileTimeUtc()));
+            v2.AddRange(BitConverter.GetBytes(original.Length + 1));
+            v2.AddRange(System.Text.Encoding.Unicode.GetBytes(original + "\0"));
+            string f2 = Path.Combine(dir, "$IABC123.docx");
+            File.WriteAllBytes(f2, v2.ToArray());
+            Check("$I 버전 2: 원래 경로(확장자 포함)", read.Invoke(null, new object[] { f2 }), original);
+
+            var v1 = new byte[24 + 520];
+            BitConverter.GetBytes(1L).CopyTo(v1, 0);
+            System.Text.Encoding.Unicode.GetBytes(original).CopyTo(v1, 24);
+            string f1 = Path.Combine(dir, "$IDEF456.docx");
+            File.WriteAllBytes(f1, v1);
+            Check("$I 버전 1: 원래 경로", read.Invoke(null, new object[] { f1 }), original);
+
+            string bad = Path.Combine(dir, "$Ibad");
+            File.WriteAllBytes(bad, new byte[] { 1, 2, 3 });
+            Check("$I 깨진 파일 → null", read.Invoke(null, new object[] { bad }), null);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { }
+        }
+    }
+
     private static int RepairTests()
     {
         string root = Path.Combine(Path.GetTempPath(), "mongdock-repair-test-" + Guid.NewGuid().ToString("N"));
@@ -269,6 +305,7 @@ internal static class Program
             Check("용량 표시 340MB", rb.GetMethod("FormatSize")!.Invoke(null, new object[] { 340L * 1024 * 1024 }), "340MB");
             Check("용량 표시 1.5GB", rb.GetMethod("FormatSize")!.Invoke(null, new object[] { 1536L * 1024 * 1024 }), "1.5GB");
             Check("휴지통 개수 읽힘", rb.GetMethod("Query")!.Invoke(null, null) is not null, true);
+            RecycleInfoTests(rb);
             FolderListTests();
 
             // 5: 핀 이름 Finder·Launchpad → 파일 탐색기·앱 모음 (정확히 같은 이름·대상만, 사용자가 바꾼 이름은 그대로)

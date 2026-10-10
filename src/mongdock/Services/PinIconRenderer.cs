@@ -54,7 +54,11 @@ internal static class PinIconRenderer
             _ when plainOnly => plain!(icon.Color),
             _ => MacIconRenderer.Symbol(missing ? "gray" : icon.Color, icon.Glyph, icon.Text),
         };
-        if (img is not null) Cache[key] = img;
+        if (img is not null)
+        {
+            if (Cache.Count >= 64) Cache.Clear(); // 고르기 카드에서 글자를 칠 때마다 쌓이지 않게
+            Cache[key] = img;
+        }
         return img;
     }
 

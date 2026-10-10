@@ -469,7 +469,6 @@ public partial class DockWindow
         }
         if (trash != null)
         {
-            e.Effects = (e.AllowedEffects & DragDropEffects.Move) != 0 ? DragDropEffects.Move : e.Effects;
             if (_dropTarget != -1)
             {
                 _dropTarget = -1;
@@ -515,6 +514,8 @@ public partial class DockWindow
         EndFileDrag();
         if (paths.Length > 0 && onTrash)
         {
+            // 끈 쪽(탐색기)에는 "복사/링크"로 알림 — Move 면 끈 쪽이 원본을 직접 지울 수 있음. 지우기는 우리가 되돌릴 수 있게만
+            e.Effects = (e.AllowedEffects & DragDropEffects.Link) != 0 ? DragDropEffects.Link : DragDropEffects.Copy;
             RecycleBin.SendInBackground(paths); // 되돌릴 수 있게만 (FOF_ALLOWUNDO)
             return;
         }

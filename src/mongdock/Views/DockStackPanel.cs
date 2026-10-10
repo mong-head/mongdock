@@ -27,6 +27,7 @@ internal abstract class DockStackPanel : Window
     private readonly OutsideClickWatcher _watch;
     private readonly Border _card;
     private bool _closing;
+    private ContextMenu? _openMenu;
     private Point _pressAt;
     private string? _pressKey;
     protected bool Dragging;
@@ -70,7 +71,8 @@ internal abstract class DockStackPanel : Window
         };
         Content = _card;
 
-        _watch = new OutsideClickWatcher(services, () => new[] { new Rect(Left, Top, ActualWidth, ActualHeight), Inflate(_anchor) }, CloseAnimated);
+        _watch = new OutsideClickWatcher(services, () => new[] { new Rect(Left, Top, ActualWidth, ActualHeight), Inflate(_anchor) }
+            .Concat(_openMenu is { IsOpen: true } m ? OutsideClickWatcher.MenuAreas(m) : Enumerable.Empty<Rect>()), CloseAnimated);
         SourceInitialized += (_, _) =>
         {
             Services.DesktopWindows.MakeOverlay(this);
@@ -201,6 +203,11 @@ internal abstract class DockStackPanel : Window
             ContextMenu = menu,
         };
         string key = thumbPath;
+        if (menu is not null)
+        {
+            menu.Opened += (_, _) => _openMenu = menu;
+            menu.Closed += (_, _) => { if (_openMenu == menu) _openMenu = null; };
+        }
         cell.MouseEnter += (_, _) => cell.Background = P.Tile;
         cell.MouseLeave += (_, _) => cell.Background = Brushes.Transparent;
         cell.MouseLeftButtonDown += (_, e) =>

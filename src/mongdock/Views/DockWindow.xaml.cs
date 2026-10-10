@@ -524,7 +524,9 @@ public partial class DockWindow : Window
             if (anchor == CoachAnchor.DockFolder)
             {
                 // 가장 최근에 넣은 독 폴더 (오른쪽 끝)
-                var fv = ItemsHost.Children.OfType<DockItemView>().LastOrDefault(v => v.Item.Pin is { Kind: PinKind.Folder });
+                // 방금 넣은 독 폴더 (없으면 마지막 독 폴더)
+                var fv = ItemsHost.Children.OfType<DockItemView>().FirstOrDefault(v => v.Item.Pin != null && ReferenceEquals(v.Item.Pin, _hintFolder))
+                         ?? ItemsHost.Children.OfType<DockItemView>().LastOrDefault(v => v.Item.Pin is { Kind: PinKind.Folder });
                 if (fv is null || fv.ActualWidth < 1) return null;
                 var q = fv.TranslatePoint(new Point(0, 0), Root);
                 return (new Rect(Left + q.X, Top + q.Y, fv.ActualWidth, fv.ActualHeight), _monitor);
@@ -1223,10 +1225,10 @@ public partial class DockWindow : Window
         var panel = new FolderStackPanel(_services, UiTheme.Palette(_services.Settings.Current), pin, new Rect(a, b), _layout.Edge, _monitor);
         panel.SortChanged += sort => ModifyPins(_ => (pin.Folder ??= new FolderOptions()).Sort = sort);
         panel.EditIconRequested += () => EditFolderIcon(pin);
-        MarkFolderOpened(pin, item);
+        MarkFolderOpened(pin, item, save: false);
         panel.Closed += (_, _) =>
         {
-            MarkFolderOpened(pin, item); // 열어 둔 동안 들어온 파일도 본 것으로
+            MarkFolderOpened(pin, item, save: true); // 열어 둔 동안 들어온 파일도 본 것으로
             if (_folderPanel != panel) return;
             _folderPanel = null;
             _folderPanelPin = null;
@@ -1237,13 +1239,13 @@ public partial class DockWindow : Window
         panel.Show();
     }
 
-    /// <summary>판을 열고 닫을 때: 마지막 연 시각 저장 → 새 파일 점·말풍선의 "새 파일 N개" 사라짐.</summary>
-    private void MarkFolderOpened(PinItem pin, DockItemViewModel item)
+    /// <summary>판을 열고 닫을 때: 마지막 연 시각 → 새 파일 점·말풍선의 "새 파일 N개" 사라짐. 저장은 닫을 때 한 번.</summary>
+    private void MarkFolderOpened(PinItem pin, DockItemViewModel item, bool save)
     {
         (pin.Folder ??= new FolderOptions()).LastOpened = DateTime.UtcNow;
         item.HasNotification = false;
         item.Name = PinDisplayName(pin);
-        _services.Settings.Save();
+        if (save) _services.Settings.Save();
     }
 
     private void ClearNotification(DockItemViewModel item)
@@ -1504,7 +1506,7 @@ public partial class DockWindow : Window
         bool vertical = _layout.IsVertical;
         menu.Items.Add(DockMenus.Item(vertical ? Loc.T("위로 이동") : Loc.T("왼쪽으로 이동"), () => MovePin(pin, -1), enabled: index > 0));
         menu.Items.Add(DockMenus.Item(vertical ? Loc.T("아래로 이동") : Loc.T("오른쪽으로 이동"), () => MovePin(pin, +1),
-            enabled: index >= 0 && index < pins.Count - 1));
+            enabled: index >= 0 && index < pins.Count - 1 && !IsTrash(pins[index + 1]))); // 휴지통은 늘 맨 끝
         menu.Items.Add(new Separator());
         menu.Items.Add(Item(item.IsSeparator ? Loc.T("구분선 제거") : Loc.T("독에서 제거"), () => ModifyPins(p => p.Remove(pin))));
     }
@@ -1702,7 +1704,7 @@ public partial class DockWindow : Window
         int at = pins.IndexOf(pin);
         bool vertical = _layout.IsVertical;
         menu.Items.Add(Item(vertical ? Loc.T("위로 이동") : Loc.T("왼쪽으로 이동"), () => MovePin(pin, -1), enabled: at > 0));
-        menu.Items.Add(Item(vertical ? Loc.T("아래로 이동") : Loc.T("오른쪽으로 이동"), () => MovePin(pin, +1), enabled: at >= 0 && at < pins.Count - 1));
+        menu.Items.Add(Item(vertical ? Loc.T("아래로 이동") : Loc.T("오른쪽으로 이동"), () => MovePin(pin, +1), enabled: at >= 0 && at < pins.Count - 1 && !IsTrash(pins[at + 1])));
         menu.Items.Add(Item(Loc.T("독에서 빼기"), () => ModifyPins(p => p.Remove(pin))));
     }
 
@@ -1729,6 +1731,9 @@ public partial class DockWindow : Window
         if (!ok || string.IsNullOrEmpty(dialog.FolderName)) return;
         AddFolderPins(new[] { dialog.FolderName });
     }
+
+    /// <summary>첫 독 폴더 안내 말풍선이 가리킬 폴더 (방금 넣은 것).</summary>
+    private PinItem? _hintFolder;
 
     /// <summary>처음 독 폴더를 넣었을 때 한 번만: 그 아이콘을 가리키는 작은 말풍선 (독이 새 아이콘을 그린 뒤).</summary>
     private void ShowFolderHintOnce()
@@ -1761,7 +1766,9 @@ public partial class DockWindow : Window
             foreach (var f in add)
             {
                 if (p.Any(x => x.Kind == PinKind.Folder && string.Equals(System.IO.Path.TrimEndingDirectorySeparator(x.Target), System.IO.Path.TrimEndingDirectorySeparator(f), StringComparison.OrdinalIgnoreCase))) continue;
-                p.Insert(Math.Clamp(at++ ?? p.Count, 0, p.Count), new PinItem { Kind = PinKind.Folder, Target = f, Name = System.IO.Path.GetFileName(System.IO.Path.TrimEndingDirectorySeparator(f)), Id = Guid.NewGuid().ToString("N"), Folder = new FolderOptions { LastOpened = DateTime.UtcNow } });
+                var pin = new PinItem { Kind = PinKind.Folder, Target = f, Name = System.IO.Path.GetFileName(System.IO.Path.TrimEndingDirectorySeparator(f)), Id = Guid.NewGuid().ToString("N"), Folder = new FolderOptions { LastOpened = DateTime.UtcNow } };
+                p.Insert(Math.Clamp(at++ ?? p.Count, 0, p.Count), pin);
+                _hintFolder ??= pin;
             }
         });
         Log.Info($"독 폴더 {add.Count}개 추가");

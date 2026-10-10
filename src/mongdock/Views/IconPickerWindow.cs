@@ -195,9 +195,14 @@ internal sealed class IconPickerWindow : Window
             CheckFileExists = true,
         };
         _dialogOpen = true;
+        _watch.Stop(); // 파일 고르기 창 안의 클릭이 이 카드를 닫지 않게 (다시 켬)
         bool ok;
         try { ok = dialog.ShowDialog(this) == true; }
-        finally { _dialogOpen = false; }
+        finally
+        {
+            _dialogOpen = false;
+            if (IsLoaded) _watch.Start();
+        }
         if (!ok) return;
         try
         {

@@ -141,29 +141,36 @@ internal static class RecycleBin
         return list.OrderByDescending(i => i.Deleted).Take(max).ToList();
     }
 
-    /// <summary>원래 자리로 되돌림. 같은 이름이 이미 있으면 그대로 두고 false. 휴지통 정보 파일($I…)도 같이 지움.</summary>
+    /// <summary>
+    /// 원래 자리로 되돌림. 원래 전체 경로는 짝인 정보 파일($I…)에서 읽음 — 셸이 보여 주는 이름은 "알려진 확장자 숨기기"·현지화 이름이라
+    /// 그대로 쓰면 확장자가 빠짐. 같은 이름이 이미 있거나 원래 경로를 모르면 그대로 두고 false. 옮긴 뒤 $I 를 지움.
+    /// </summary>
     public static bool Restore(RecycledItem item)
     {
         try
         {
-            if (string.IsNullOrEmpty(item.OriginalFolder)) return false;
-            string dest = System.IO.Path.Combine(item.OriginalFolder, item.Name);
+            string dir = System.IO.Path.GetDirectoryName(item.Path) ?? "";
+            string file = System.IO.Path.GetFileName(item.Path);
+            if (!file.StartsWith("$R", StringComparison.OrdinalIgnoreCase)) return false;
+            string info = System.IO.Path.Combine(dir, "$I" + file[2..]);
+            string? dest = ReadOriginalPath(info);
+            if (dest is null)
+            {
+                Log.Warn("휴지통 복원: 원래 경로를 읽지 못함");
+                return false;
+            }
             if (File.Exists(dest) || Directory.Exists(dest))
             {
                 Log.Warn("휴지통 복원: 같은 이름이 이미 있음");
                 return false;
             }
-            Directory.CreateDirectory(item.OriginalFolder);
+            string? parent = System.IO.Path.GetDirectoryName(dest);
+            if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
             if (Directory.Exists(item.Path)) Directory.Move(item.Path, dest);
             else File.Move(item.Path, dest);
-            // $R… 과 짝인 $I… (지운 날짜·원래 경로 기록)
-            string dir = System.IO.Path.GetDirectoryName(item.Path) ?? "";
-            string file = System.IO.Path.GetFileName(item.Path);
-            if (file.StartsWith("$R", StringComparison.OrdinalIgnoreCase))
-            {
-                string info = System.IO.Path.Combine(dir, "$I" + file[2..]);
-                if (File.Exists(info)) File.Delete(info);
-            }
+            if (File.Exists(info)) File.Delete(info);
+            NotifyShell(dir);
+            if (!string.IsNullOrEmpty(parent)) NotifyShell(parent);
             Log.Info("휴지통에서 복원");
             return true;
         }
@@ -176,6 +183,48 @@ internal static class RecycleBin
         {
             Touched?.Invoke();
         }
+    }
+
+    /// <summary>
+    /// $I 파일의 원래 전체 경로. 윈도우 10+ (버전 2): 버전 8 + 크기 8 + 지운 시각 8 + 길이(글자 수, 끝 0 포함) 4 + UTF-16 경로.
+    /// 윈도우 7 (버전 1): 버전 8 + 크기 8 + 시각 8 + 고정 520바이트(260자) 경로.
+    /// </summary>
+    internal static string? ReadOriginalPath(string infoFile)
+    {
+        try
+        {
+            byte[] b = File.ReadAllBytes(infoFile);
+            if (b.Length < 24) return null;
+            long version = BitConverter.ToInt64(b, 0);
+            string? path = null;
+            if (version == 2 && b.Length >= 28)
+            {
+                int chars = BitConverter.ToInt32(b, 24);
+                if (chars > 0 && 28 + chars * 2 <= b.Length) path = System.Text.Encoding.Unicode.GetString(b, 28, chars * 2);
+            }
+            else if (version == 1 && b.Length >= 24 + 2)
+            {
+                path = System.Text.Encoding.Unicode.GetString(b, 24, Math.Min(520, b.Length - 24));
+            }
+            path = path?.TrimEnd('\0');
+            int nul = path?.IndexOf('\0') ?? -1;
+            if (nul >= 0) path = path![..nul];
+            return string.IsNullOrWhiteSpace(path) || !System.IO.Path.IsPathFullyQualified(path) ? null : path;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern void SHChangeNotify(int wEventId, uint uFlags, string? dwItem1, IntPtr dwItem2);
+
+    /// <summary>탐색기 창이 열려 있으면 바로 새로 보이게.</summary>
+    private static void NotifyShell(string dir)
+    {
+        try { SHChangeNotify(0x00001000 /* SHCNE_UPDATEDIR */, 0x0005 /* SHCNF_PATHW */, dir, IntPtr.Zero); }
+        catch { /* 알림 실패는 무시 */ }
     }
 
     // ───────────────────────── 비우기 ─────────────────────────
