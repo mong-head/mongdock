@@ -82,6 +82,9 @@ public sealed class SettingsService : ISettingsService, IDisposable
     /// <summary>settings.json 이 이번 실행에서 새로 만들어졌는지 (첫 설치 판단용 — 첫 둘러보기).</summary>
     public bool CreatedThisRun { get; private set; }
 
+    /// <summary>읽으면서 루틴 실행 횟수 이관(0으로)을 했음 — 시작 때 한 번 저장.</summary>
+    internal static bool RoutineRunsJustReset { get; set; }
+
     // ───────────────────────── 로드 ─────────────────────────
 
     private Settings LoadInitial()
@@ -355,6 +358,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
         {
             s.RoutineRunsSinceSignal = 0;
             s.RoutineRunsReset = true;
+            RoutineRunsJustReset = true; // 시작 때 한 번 저장 (파일에도 바로 남게)
         }
         var routineIds = new HashSet<string>();
         s.Routines.RemoveAll(r =>

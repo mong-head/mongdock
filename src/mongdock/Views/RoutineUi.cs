@@ -20,6 +20,11 @@ internal static class RoutineUi
     {
         _services = services;
         RoutineService.Init(services);
+        if (SettingsService.RoutineRunsJustReset)
+        {
+            SettingsService.RoutineRunsJustReset = false;
+            services.Settings.Save(); // 이관한 0 을 파일에도 바로 (저장 전에 꺼져도 다음 시작 때 다시 이관되지만 기다리지 않게)
+        }
         RoutineTriggers.Init(services); // 더 보기: 시작·끝 조건, 함께 바꿀 것, 비슷하게 열면 묻기, 머문 시간
         RoutineService.ElsewhereShown += list => _ = ShowElsewhereAsync(services, list);
     }
