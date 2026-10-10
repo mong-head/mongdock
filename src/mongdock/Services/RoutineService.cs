@@ -146,6 +146,9 @@ internal static class RoutineService
         catch (Exception ex) { Log.Error("루틴 상태 갱신 실패", ex); }
     });
 
+    /// <summary>루틴 이름·아이콘·항목을 바꿈 — 열려 있어도 상단바 이름·판 칸이 바로 (실행 기록은 id 기준이라 그대로 이어짐).</summary>
+    public static void NotifyEdited() => RaiseChanged();
+
     // ───────────────────────── 열린 루틴 기억 (몽독 다시 시작) ─────────────────────────
     // 열린 루틴(데스크톱 GUID·만든 데스크톱인지·창)을 cache/routine-runs.json 에. 몽독이 다시 시작(업데이트·설치)해도
     // 상단바 이름·"이미 열려 있어요"·끝내기가 그대로 (사용자: 다시 시작 뒤 루틴 표시가 사라지고 다시 누르면 반응 없음).

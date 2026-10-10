@@ -654,6 +654,7 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
             Services.Settings.Save();
             Log.Info($"루틴 편집 저장: 항목 {_r.Items.Count}개");
             RoutineTriggers.Refresh(); // 실행 중 루틴의 방해 금지·독 숨김을 바로
+            RoutineService.NotifyEdited(); // 열린 루틴이면 상단바 이름·판 칸 이름도 바로 (독은 설정 바뀜으로 다시 그림)
         }
         Close();
     }
