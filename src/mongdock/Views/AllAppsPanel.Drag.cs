@@ -19,7 +19,10 @@ namespace Mongdock.Views;
 /// </summary>
 internal sealed partial class AllAppsPanel
 {
-    private const double DragStartPx = 4, LiftScale = 1.08, ShiftMs = 120, SettleMs = 150;
+    /// <summary>끌기 시작: 8px 이상 움직이고 150ms 이상 눌렀을 때 (원격 접속에서 클릭 중 흔들림은 클릭으로).</summary>
+    private const double DragStartPx = 8, LiftScale = 1.08, ShiftMs = 120, SettleMs = 150;
+    private const long DragMinHoldMs = 150;
+    private long _pressTicks;
 
     /// <summary>끌 수 있는 것: 앱 또는 묶음.</summary>
     private sealed record DragItem(bool IsGroup, string Key);
@@ -53,6 +56,7 @@ internal sealed partial class AllAppsPanel
         {
             if (_drag is not null) return;
             _press = e.GetPosition(this);
+            _pressTicks = Environment.TickCount64;
             _pressedCell = el;
             el.CaptureMouse();
             e.Handled = true;
@@ -64,6 +68,8 @@ internal sealed partial class AllAppsPanel
             if (_drag is null)
             {
                 if (item is null || (Math.Abs(p.X - _press.X) < DragStartPx && Math.Abs(p.Y - _press.Y) < DragStartPx)) return;
+                if (Environment.TickCount64 - _pressTicks < DragMinHoldMs) return;
+                Log.Info($"앱 모음 판: 끌기 시작 ({(item.IsGroup ? "묶음" : "앱")})");
                 BeginDrag(el, item, oleData, e.GetPosition(el));
             }
             UpdateDrag(p);
@@ -75,7 +81,8 @@ internal sealed partial class AllAppsPanel
             _pressedCell = null;
             el.ReleaseMouseCapture();
             if (_drag is not null) EndDrag(drop: true);
-            else if (pressed) click();
+            else if (pressed) { Log.Info($"앱 모음 판: 클릭 ({(item?.IsGroup == true ? "묶음" : "앱")})"); click(); }
+            else Log.Info("앱 모음 판: 클릭 무시 (누름 기록 없음)");
         };
         el.LostMouseCapture += (_, _) =>
         {

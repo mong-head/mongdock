@@ -29,7 +29,8 @@ public partial class DockWindow
 
     // 아이콘 드래그 상태
     private DockItemView? _pressView;
-    private bool _itemArmed;           // 누른 상태 (캡처 중, 아직 클릭인지 드래그인지 모름)
+    private bool _itemArmed;
+    private long _itemPressTicks;           // 누른 상태 (캡처 중, 아직 클릭인지 드래그인지 모름)
     private bool _itemDragging;        // 임계값을 넘어 드래그 중
     private Point _itemStart;          // 누른 위치 (화면 DIP)
     private Point _itemGrab;           // 누른 위치의 아이콘 안 좌표 (복사본이 같은 자리를 잡고 따라오게)
@@ -76,6 +77,7 @@ public partial class DockWindow
         if (sender is not DockItemView view || _itemArmed || _dragArmed || _fileDragOver) return;
         NotePress(e); // 터치 길게 누르기 판정용 (DockWindow.Touch.cs)
         _pressView = view;
+        _itemPressTicks = Environment.TickCount64;
         _itemStart = ToScreenDip(e.GetPosition(this));
         _itemGrab = e.GetPosition(view);
         _itemDragging = false;
@@ -103,8 +105,11 @@ public partial class DockWindow
         bool dragged = _itemDragging;
         int target = _itemTarget;
         bool outside = _itemOutside;
-        // 터치로 오래 누른 건 "누르고 있기"(→ 윈도우가 오른쪽 클릭으로 메뉴를 띄움) — 실행하지 않음
-        bool click = !dragged && view != null && !WasTouchHold && new Rect(view.RenderSize).Contains(e.GetPosition(view));
+        // 터치로 오래 누른 건 "누르고 있기"(→ 윈도우가 오른쪽 클릭으로 메뉴를 띄움) — 실행하지 않음.
+        // 끌기가 아니면 뗀 자리가 아이콘 밖(이웃과의 틈·흔들림)이어도 누른 아이콘의 클릭 — 예전엔 조용히 무시돼 "가끔 안 눌림"
+        bool click = !dragged && view != null && !WasTouchHold;
+        if (view != null && !dragged && !click) Log.Info("독 클릭 무시: 터치로 길게 누름");
+        else if (view != null && click) Log.Info($"독 클릭: {(view.Item.Pin?.Kind.ToString() ?? "실행 중 앱")}");
 
         EndItemDrag(animateBack: false);
         if (view == null) return;
@@ -149,6 +154,7 @@ public partial class DockWindow
         if (!_itemDragging)
         {
             if (Math.Abs(p.X - _itemStart.X) < DragThreshold && Math.Abs(p.Y - _itemStart.Y) < DragThreshold) return;
+            if (Environment.TickCount64 - _itemPressTicks < DragMinHoldMs) return; // 짧게 누른 건 흔들려도 클릭
             if (IsTrash(_pressView.Item.Pin)) return; // 휴지통은 맨 끝 고정 — 끌지 않음 (누르면 판)
             BeginItemDrag();
         }

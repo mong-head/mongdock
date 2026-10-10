@@ -1332,7 +1332,9 @@ public partial class DockWindow : Window
     // 빈 영역·패딩·"실행 중 앱" 앞 자동 구분선을 끌면 독 자체를 옮긴다.
     // 아이콘·핀 구분선을 끌면 순서 바꾸기 (DockWindow.ItemDrag.cs) — 누른 대상이 달라 서로 겹치지 않는다.
 
-    private const double DragThreshold = 6;
+    /// <summary>끌기로 보는 움직임 (원격 접속에서 클릭 중 커서가 몇 px 흔들려도 클릭으로) + 그만큼 오래 눌렀을 때만.</summary>
+    private const double DragThreshold = 8;
+    private const long DragMinHoldMs = 150;
     private bool _dragArmed;
     private bool _dragging;
     private Point _dragStart;          // 화면 DIP
