@@ -796,11 +796,14 @@ public sealed class SettingsService : ISettingsService, IDisposable
     /// 이미 icons 폴더 안이면 그대로 반환. 같은 이름의 다른 파일이 있으면 "이름-2.png" 처럼 고유 이름 사용,
     /// 같은 내용의 파일이 이미 있으면 그 경로를 재사용. 원본이 없으면 FileNotFoundException.
     /// </summary>
-    public string ImportIcon(string sourcePath)
+    public string ImportIcon(string sourcePath) => ImportIcon(sourcePath, null);
+
+    public string ImportIcon(string sourcePath, string? subfolder)
     {
         if (string.IsNullOrWhiteSpace(sourcePath)) throw new ArgumentException("경로가 비어 있습니다.", nameof(sourcePath));
         string src = Path.GetFullPath(Environment.ExpandEnvironmentVariables(sourcePath.Trim().Trim('"')));
-        string iconsDir = Path.GetFullPath(IconsDirectory);
+        string root = Path.GetFullPath(IconsDirectory);
+        string iconsDir = subfolder is { Length: > 0 } sub ? Path.Combine(root, sub) : root;
 
         if (src.StartsWith(iconsDir.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase) && File.Exists(src))
             return src;

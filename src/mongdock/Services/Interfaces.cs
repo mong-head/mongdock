@@ -19,6 +19,8 @@ public interface ISettingsService
     string SettingsPath { get; }
     /// <summary>원본 이미지를 %APPDATA%\mongdock\icons\ 로 복사하고 복사본 경로를 반환.</summary>
     string ImportIcon(string sourcePath);
+    /// <summary>icons\subfolder\ 로 복사 (루틴·독 폴더 그림 — 안 쓰게 되면 IconFiles.Cleanup 이 지움).</summary>
+    string ImportIcon(string sourcePath, string? subfolder) => ImportIcon(sourcePath);
 }
 
 public interface IWindowTracker

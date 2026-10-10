@@ -109,8 +109,11 @@ internal static class RoutineService
     {
         var services = _services;
         if (services is null || routine.Items.Count == 0) return;
-        // 전체 화면(게임·영상) 중엔 데스크톱 키를 보내지 않음 — 작은 안내만 (다시 누르면 열림)
-        if (Monitors.GetAll().Any(m => services.DesktopWindows.IsFullscreenOn(m.IsPrimary ? "" : m.DeviceName)))
+        // 루틴이 창을 놓을 모니터에 전체 화면(게임·영상)이 떠 있으면 데스크톱 키를 보내지 않음 — 작은 안내만 (다시 누르면 열림).
+        // 다른 모니터의 전체 화면은 막지 않음. 모니터를 정하지 않은 항목은 주 모니터로 봄
+        var targets = routine.Items.Select(i => i.Monitor is { Mode: not RoutineMonitorMode.Keep } m ? ResolveMonitor(m, IntPtr.Zero) : Monitors.GetPrimary())
+            .Select(m => m.DeviceName).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (targets.Any(d => services.DesktopWindows.IsFullscreenOn(Monitors.GetPrimary().DeviceName.Equals(d, StringComparison.OrdinalIgnoreCase) ? "" : d)))
         {
             Log.Info("루틴 실행 안 함: 전체 화면 앱");
             Notify(Loc.T("지금은 루틴을 열 수 없어요 (전체 화면)"));

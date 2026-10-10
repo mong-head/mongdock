@@ -93,6 +93,7 @@ internal static class RoutineUi
         s.Routines.RemoveAll(r => r.Id == routine.Id);
         s.Pins.RemoveAll(p => p.Kind == PinKind.Routine && p.Target == routine.Id);
         services.Settings.Save();
+        IconFiles.Cleanup(services.Settings); // 그 루틴 전용 그림
         Log.Info("루틴 지움");
     }
 

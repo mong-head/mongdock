@@ -1825,7 +1825,11 @@ public partial class DockWindow : Window
         var kind = DockFolderService.GlyphFor(pin.Target);
         IconPickerWindow.Open(_services, pin.Icon, keepDefaultGlyph: true, Loc.T("폴더 종류에 맞는 기본 그림을 써요."),
             preview: icon => PinIconRenderer.Render(icon, c => MacIconRenderer.Folder(kind, false, c), $"folder:{kind}") ?? MacIconRenderer.Folder(kind),
-            done: icon => ModifyPins(_ => pin.Icon = icon));
+            done: icon =>
+            {
+                ModifyPins(_ => pin.Icon = icon);
+                IconFiles.Cleanup(_services.Settings);
+            }, iconFolder: IconFiles.Folders);
     }
 
 

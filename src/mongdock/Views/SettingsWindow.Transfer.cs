@@ -45,12 +45,18 @@ internal sealed partial class SettingsWindow
         try
         {
             bool includeUrls = false;
-            if (_services.Calendars.Feeds.Count > 0)
+            bool calendars = _services.Calendars.Feeds.Count > 0;
+            // 루틴의 웹 주소·파일 경로 (같은 선택을 따름)
+            bool routines = _services.Settings.Current.Routines.Any(r => r.Items.Any(i => i.Kind != Models.RoutineItemKind.App || !string.IsNullOrEmpty(i.Open)));
+            if (calendars || routines)
             {
                 // 캘린더 주소는 비밀 링크 — 기본은 빼고, 원하면 넣기 (DPAPI 원본은 다른 PC 에서 못 풀림)
                 bool? choice = await ConfirmCardWindow.AskChoiceAsync(_services,
-                    Loc.T("캘린더 주소도 넣을까요?"),
-                    Loc.T("캘린더 주소는 비밀 링크라 이 파일을 가진 사람은 일정을 볼 수 있어요. 빼면 다른 PC 에서 캘린더만 다시 연결하면 돼요."),
+                    calendars && routines ? Loc.T("캘린더 주소와 루틴의 웹 주소·파일 경로도 넣을까요?")
+                        : calendars ? Loc.T("캘린더 주소도 넣을까요?") : Loc.T("루틴의 웹 주소·파일 경로도 넣을까요?"),
+                    calendars && routines ? Loc.T("캘린더 주소는 비밀 링크라 이 파일을 가진 사람은 일정을 볼 수 있어요. 빼면 다른 PC 에서 캘린더만 다시 연결하면 되고, 루틴에는 앱만 남아요.")
+                        : calendars ? Loc.T("캘린더 주소는 비밀 링크라 이 파일을 가진 사람은 일정을 볼 수 있어요. 빼면 다른 PC 에서 캘린더만 다시 연결하면 돼요.")
+                        : Loc.T("이 파일을 가진 사람이 루틴에 넣은 웹 주소와 파일 경로를 볼 수 있어요. 빼면 루틴에는 앱만 남아요."),
                     Loc.T("주소 넣기"), Loc.T("빼기"));
                 if (choice is null) return;
                 includeUrls = choice == true;
@@ -68,7 +74,7 @@ internal sealed partial class SettingsWindow
             var write = SettingsTransfer.PrepareExport(dialog.FileName, settings, _services.Calendars, includeUrls); // 사본은 UI 스레드에서
             var m = await Task.Run(write);
             ShowTransferMessage(Loc.F($"내보냈어요: {Path.GetFileName(dialog.FileName)} — 독 앱 {m.PinCount}개, 아이콘 {m.IconCount}개, 캘린더 {m.CalendarCount}개") +
-                                (m.CalendarCount > 0 ? (m.IncludesCalendarUrls ? Loc.T(" (주소 포함 — 파일을 조심히 다뤄 주세요)") : Loc.T(" (주소 뺌)")) : ""));
+                                (m.CalendarCount > 0 || routines ? (includeUrls ? Loc.T(" (주소 포함 — 파일을 조심히 다뤄 주세요)") : Loc.T(" (주소 뺌)")) : ""));
         }
         catch (Exception ex)
         {

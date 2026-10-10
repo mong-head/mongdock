@@ -23,6 +23,7 @@ internal sealed class IconPickerWindow : Window
     private readonly Func<PinIcon?, ImageSource?> _preview;
     private readonly Action<PinIcon?> _done;
     private readonly bool _keepDefaultGlyph;
+    private readonly string? _iconFolder;
     private readonly OutsideClickWatcher _watch;
     private PinIcon _icon;
     private bool _dialogOpen;
@@ -39,18 +40,20 @@ internal sealed class IconPickerWindow : Window
 
     /// <param name="keepDefaultGlyph">독 폴더: 기호 칸 맨 앞 "기본 그림"(폴더 + 종류 그림) — 색만 바꿀 수 있게.</param>
     /// <param name="autoText">[자동] 칸 설명 (예 "폴더 종류에 맞는 기본 그림을 써요.").</param>
-    public static void Open(AppServices services, PinIcon? current, bool keepDefaultGlyph, string autoText, Func<PinIcon?, ImageSource?> preview, Action<PinIcon?> done)
+    /// <param name="iconFolder">고른 그림을 복사할 icons 아래 폴더 (IconFiles.Routines·Folders — 안 쓰게 되면 정리).</param>
+    public static void Open(AppServices services, PinIcon? current, bool keepDefaultGlyph, string autoText, Func<PinIcon?, ImageSource?> preview, Action<PinIcon?> done, string? iconFolder = null)
     {
         _open?.Close();
-        var w = new IconPickerWindow(services, current, keepDefaultGlyph, autoText, preview, done);
+        var w = new IconPickerWindow(services, current, keepDefaultGlyph, autoText, preview, done, iconFolder);
         _open = w;
         w.Closed += (_, _) => { if (_open == w) _open = null; };
         w.Show();
         w.Activate();
     }
 
-    private IconPickerWindow(AppServices services, PinIcon? current, bool keepDefaultGlyph, string autoText, Func<PinIcon?, ImageSource?> preview, Action<PinIcon?> done)
+    private IconPickerWindow(AppServices services, PinIcon? current, bool keepDefaultGlyph, string autoText, Func<PinIcon?, ImageSource?> preview, Action<PinIcon?> done, string? iconFolder)
     {
+        _iconFolder = iconFolder;
         _services = services;
         _p = UiTheme.Palette(services.Settings.Current);
         _preview = preview;
@@ -206,7 +209,7 @@ internal sealed class IconPickerWindow : Window
         if (!ok) return;
         try
         {
-            _icon.File = _services.Settings.ImportIcon(dialog.FileName);
+            _icon.File = _services.Settings.ImportIcon(dialog.FileName, _iconFolder);
             _icon.Mode = PinIconMode.File;
         }
         catch (Exception ex)

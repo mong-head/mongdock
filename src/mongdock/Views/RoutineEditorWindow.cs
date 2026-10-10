@@ -160,6 +160,7 @@ internal sealed class RoutineEditorWindow : RoutineCardWindow
         BuildAddButtons();
         RefreshIcon();
         Rebuild();
+        Closed += (_, _) => IconFiles.Cleanup(Services.Settings); // 취소했거나 바꾼 뒤 안 쓰게 된 루틴 그림
         Loaded += (_, _) =>
         {
             if (!focusName) return;
@@ -187,7 +188,7 @@ internal sealed class RoutineEditorWindow : RoutineCardWindow
             {
                 _r.Icon = icon;
                 RefreshIcon();
-            });
+            }, iconFolder: IconFiles.Routines);
     }
 
     private void BuildAddButtons()

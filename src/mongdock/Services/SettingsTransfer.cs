@@ -21,6 +21,16 @@ public static class SettingsTransfer
     private const string Format = "mongdock-settings";
     private const int FormatVersion = 1;
     private const string IconsToken = "{icons}";
+
+    /// <summary>icons 아래에서 하위 폴더째 옮기는 곳 (루틴·독 폴더 그림). 그 밖은 파일 이름만.</summary>
+    private static readonly HashSet<string> IconSubfolders = new(StringComparer.OrdinalIgnoreCase) { IconFiles.Routines, IconFiles.Folders };
+
+    private static string IconRelative(string iconsDir, string full)
+    {
+        string rel = Path.GetRelativePath(iconsDir, full);
+        var parts = rel.Split('\\', '/');
+        return parts.Length == 2 && IconSubfolders.Contains(parts[0]) ? parts[0] + "\\" + parts[1] : Path.GetFileName(full);
+    }
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true };
 
     public sealed record CalendarEntry(string Name, string Color, bool Enabled, string? Url);
@@ -52,6 +62,18 @@ public static class SettingsTransfer
         s.AllApps.AutoFoldersDay = null;
         s.AllApps.CleanupPromptMonth = null;
         foreach (var g in s.AllApps.Groups) g.AutoApps = null;
+        // 루틴의 웹 주소·파일 경로는 캘린더 주소와 같은 선택을 따름 — 빼면 앱 항목은 앱만, 웹·파일 항목은 빠짐
+        // (실행 옵션은 경로·주소가 든 것만 뺌 — Update.exe --processStart 같은 실행 인자는 있어야 앱이 켜짐)
+        if (!includeCalendarUrls)
+            foreach (var r in s.Routines)
+            {
+                r.Items.RemoveAll(i => i.Kind != RoutineItemKind.App);
+                foreach (var i in r.Items)
+                {
+                    i.Open = null;
+                    if (i.Args is { } a && (a.Contains("://") || a.Contains(":\\") || a.Contains("\\\\"))) i.Args = null;
+                }
+            }
         // 핀 아이콘(IconPath)과 아이콘 바꾸기로 고른 그림(Icon.File) — 몽독 아이콘 폴더 안 것만 묶어 넣고 경로는 토큰으로
         string? Pack(string? path)
         {
@@ -61,7 +83,7 @@ public static class SettingsTransfer
             catch { return path; }
             if (!full.StartsWith(iconsDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || !File.Exists(full)) return path;
             if (!icons.Contains(full, StringComparer.OrdinalIgnoreCase)) icons.Add(full);
-            return IconsToken + "\\" + Path.GetFileName(full);
+            return IconsToken + "\\" + IconRelative(iconsDir, full);
         }
         foreach (var pin in s.Pins)
         {
@@ -86,7 +108,7 @@ public static class SettingsTransfer
                     WriteEntry(zip, "manifest.json", JsonSerializer.Serialize(manifest, Json));
                     WriteEntry(zip, "settings.json", settingsJson);
                     WriteEntry(zip, "calendars.json", calsJson);
-                    foreach (string icon in icons) zip.CreateEntryFromFile(icon, "icons/" + Path.GetFileName(icon));
+                    foreach (string icon in icons) zip.CreateEntryFromFile(icon, "icons/" + IconRelative(iconsDir, icon).Replace('\\', '/'));
                 }
                 File.Move(tmp, path, overwrite: true);
             }
@@ -145,26 +167,35 @@ public static class SettingsTransfer
             string iconsBackup = iconsDir + suffix;
             foreach (var entry in zip.Entries.Where(e => e.FullName.StartsWith("icons/", StringComparison.Ordinal) && e.Name.Length > 0))
             {
-                string name = Path.GetFileName(entry.Name); // 경로 조각 무시 (zip 경로 탈출 방지)
+                string name = Path.GetFileName(entry.Name); // 경로 조각 무시 (zip 경로 탈출 방지) — 정해 둔 하위 폴더(routines·folders)만 살림
+                var parts = entry.FullName.Split('/');
+                string dir = parts.Length == 3 && IconSubfolders.Contains(parts[1]) ? Path.Combine(iconsDir, parts[1]) : iconsDir;
                 if (!IconExtensions.Contains(Path.GetExtension(name)) || entry.Length > MaxIconBytes)
                 {
                     Log.Warn($"설정 가져오기: 그림이 아니거나 너무 큰 아이콘 건너뜀 ({entry.Length} 바이트)");
                     continue;
                 }
-                string dest = Path.Combine(iconsDir, name);
+                Directory.CreateDirectory(dir);
+                string dest = Path.Combine(dir, name);
                 if (File.Exists(dest))
                 {
                     // 같은 이름 아이콘은 덮기 전에 icons.bak-import-… 폴더로 (settings.json 백업으로 되돌릴 때 같이 쓰게)
-                    Directory.CreateDirectory(iconsBackup);
-                    File.Copy(dest, Path.Combine(iconsBackup, name), overwrite: true);
+                    string backupDir = Path.Combine(iconsBackup, Path.GetRelativePath(iconsDir, dir));
+                    Directory.CreateDirectory(backupDir);
+                    File.Copy(dest, Path.Combine(backupDir, name), overwrite: true);
                 }
                 entry.ExtractToFile(dest, overwrite: true);
                 icons++;
             }
         }
-        string? Unpack(string? p) => p is not null && p.StartsWith(IconsToken, StringComparison.Ordinal)
-            ? Path.Combine(iconsDir, Path.GetFileName(p[IconsToken.Length..].TrimStart('\\', '/')))
-            : p;
+        string? Unpack(string? p)
+        {
+            if (p is null || !p.StartsWith(IconsToken, StringComparison.Ordinal)) return p;
+            var parts = p[IconsToken.Length..].TrimStart('\\', '/').Split('\\', '/');
+            return parts.Length == 2 && IconSubfolders.Contains(parts[0])
+                ? Path.Combine(iconsDir, parts[0], Path.GetFileName(parts[1]))
+                : Path.Combine(iconsDir, Path.GetFileName(parts[^1]));
+        }
         foreach (var pin in imported.Pins)
         {
             pin.IconPath = Unpack(pin.IconPath);
