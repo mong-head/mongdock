@@ -242,6 +242,17 @@ internal static class AllAppsCatalog
     /// <summary>실행 횟수를 세는 이름 — 같은 앱을 독(경로 핀)·판(AppsFolder)에서 실행해도 하나로.</summary>
     public static string Identity(AppEntry app) => app.Exe is { Length: > 0 } exe ? "exe:" + exe : "app:" + app.Key.ToLowerInvariant();
 
+    /// <summary>
+    /// 이 앱으로 볼 실행 기록 이름 전부 — exe 이름, AppsFolder 키, 시작 메뉴 이름. 윈도우 기록(UserAssist)은 바로 가기로 켜면
+    /// 바로 가기 이름, 작업 표시줄에서 켜면 AUMID 로 남아서 하나만 보면 "쓴 적 없음"이 됨.
+    /// </summary>
+    public static IEnumerable<string> Identities(AppEntry app)
+    {
+        if (app.Exe is { Length: > 0 } exe) yield return "exe:" + exe;
+        yield return "app:" + app.Key.ToLowerInvariant();
+        yield return "name:" + app.Name.ToLowerInvariant();
+    }
+
     /// <summary>독 핀의 실행 기록 이름 (경로 핀 = exe 이름, AUMID 핀 = 그 앱).</summary>
     public static string? Identity(PinItem pin) => pin.Kind switch
     {
@@ -261,6 +272,132 @@ internal static class AppUsage
     private static readonly object Gate = new();
     private static Dictionary<string, List<string>>? _data;
     private static string FilePath => Path.Combine(AppInfo.DataDirectory, "usage-local.json");
+
+    // 마지막 실행 날짜 (30일 넘게 남김 — "안 쓰는 앱 정리"용): usage-last.json = { 이름: "yyyy-MM-dd" }
+    // 윈도우 UserAssist 씨앗 실행 횟수: usage-seed.json = { 이름: 횟수 } (첫 설치 때 한 번, 이 PC 안에서만)
+    private static Dictionary<string, string>? _last;
+    private static Dictionary<string, int>? _seed;
+    private static string LastPath => Path.Combine(AppInfo.DataDirectory, "usage-last.json");
+    private static string SeedPath => Path.Combine(AppInfo.DataDirectory, "usage-seed.json");
+
+    private static Dictionary<string, string> Last() => _last ??= ReadJson<Dictionary<string, string>>(LastPath) ?? new();
+    private static Dictionary<string, int> Seed() => _seed ??= ReadJson<Dictionary<string, int>>(SeedPath) ?? new();
+
+    private static T? ReadJson<T>(string path) where T : class
+    {
+        try { return File.Exists(path) ? JsonSerializer.Deserialize<T>(File.ReadAllText(path)) : null; }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            Log.Warn($"실행 기록 읽기 실패: {ex.GetType().Name}");
+            return null;
+        }
+    }
+
+    private static void WriteJson(string path, object value)
+    {
+        try
+        {
+            Directory.CreateDirectory(AppInfo.DataDirectory);
+            string tmp = path + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(value));
+            File.Move(tmp, path, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log.Warn($"실행 기록 저장 실패: {ex.GetType().Name}");
+        }
+    }
+
+    /// <summary>여러 이름 중 가장 최근 실행 (앱 하나의 exe·AUMID·시작 메뉴 이름).</summary>
+    public static DateTime? LastUsed(IEnumerable<string> identities) => identities.Select(LastUsed).Max();
+
+    /// <summary>여러 이름의 실행 횟수 중 가장 큰 것 (같은 실행이 여러 이름으로 남을 수 있어 더하지 않음).</summary>
+    public static int Count(IEnumerable<string> identities, int days) => identities.Select(i => Count(i, days)).DefaultIfEmpty(0).Max();
+
+    /// <summary>마지막으로 실행한 날 (이 PC 기록 + 윈도우 씨앗). 모르면 null.</summary>
+    public static DateTime? LastUsed(string identity)
+    {
+        lock (Gate)
+            return Last().TryGetValue(identity, out var d) && DateTime.TryParseExact(d, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var t) ? t : null;
+    }
+
+    /// <summary>최근 days 일 실행 횟수 (씨앗 횟수는 그 앱의 마지막 실행이 기간 안일 때만 더함).</summary>
+    public static int Count(string identity, int days)
+    {
+        lock (Gate)
+        {
+            string cutoff = DateTime.Now.AddDays(-days).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            int n = Data().TryGetValue(identity, out var list) ? list.Count(d => string.CompareOrdinal(d, cutoff) >= 0) : 0;
+            if (Seed().TryGetValue(identity, out int seed) && Last().TryGetValue(identity, out var last) && string.CompareOrdinal(last, cutoff) >= 0) n += Math.Min(seed, 50);
+            return n;
+        }
+    }
+
+    /// <summary>
+    /// 첫 설치 때 한 번: 윈도우가 HKCU UserAssist 에 적어 둔 실행 횟수·마지막 실행 시각(이름은 ROT13)을 씨앗으로 —
+    /// 이 PC 안에서만 쓰고 밖으로 보내지 않음. 실행 파일(exe 이름)·스토어 앱(AUMID)만, 바로 가기는 건너뜀.
+    /// </summary>
+    public static int SeedFromUserAssist()
+    {
+        int n = 0;
+        try
+        {
+            using var root = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\UserAssist");
+            if (root is null) return 0;
+            var seed = new Dictionary<string, int>();
+            var last = new Dictionary<string, string>();
+            foreach (var guid in root.GetSubKeyNames())
+            {
+                using var count = root.OpenSubKey(guid + @"\Count");
+                if (count is null) continue;
+                foreach (var raw in count.GetValueNames())
+                {
+                    if (count.GetValue(raw) is not byte[] b || b.Length < 68) continue;
+                    string name = Rot13(raw);
+                    string? id = name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? "exe:" + Path.GetFileNameWithoutExtension(name).ToLowerInvariant()
+                        : name.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase) ? "name:" + Path.GetFileNameWithoutExtension(name).ToLowerInvariant() // 시작 메뉴 바로 가기
+                        : !name.Contains('\\') && !name.StartsWith("UEME_", StringComparison.OrdinalIgnoreCase) ? "app:" + name.ToLowerInvariant()
+                        : null;
+                    if (id is null) continue;
+                    int runs = BitConverter.ToInt32(b, 4);
+                    long ft = BitConverter.ToInt64(b, 60);
+                    if (runs <= 0 || ft <= 0) continue;
+                    var when = DateTime.FromFileTime(ft);
+                    if (when > DateTime.Now.AddDays(1) || when.Year < 2000) continue;
+                    seed[id] = seed.GetValueOrDefault(id) + runs;
+                    string day = when.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+                    if (!last.TryGetValue(id, out var prev) || string.CompareOrdinal(day, prev) > 0) last[id] = day;
+                    n++;
+                }
+            }
+            lock (Gate)
+            {
+                _seed = seed;
+                var l = Last();
+                foreach (var (id, day) in last)
+                    if (!l.TryGetValue(id, out var prev) || string.CompareOrdinal(day, prev) > 0) l[id] = day;
+                WriteJson(SeedPath, seed);
+                WriteJson(LastPath, l);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"윈도우 실행 기록 읽기 실패: {ex.GetType().Name}");
+        }
+        return n;
+    }
+
+    private static string Rot13(string s)
+    {
+        var c = s.ToCharArray();
+        for (int i = 0; i < c.Length; i++)
+        {
+            char x = c[i];
+            if (x is >= 'a' and <= 'z') c[i] = (char)('a' + (x - 'a' + 13) % 26);
+            else if (x is >= 'A' and <= 'Z') c[i] = (char)('A' + (x - 'A' + 13) % 26);
+        }
+        return new string(c);
+    }
 
     private static Dictionary<string, List<string>> Data()
     {
@@ -288,6 +425,8 @@ internal static class AppUsage
             days.Add(today);
             Prune(data);
             Save(data);
+            Last()[identity] = today;
+            WriteJson(LastPath, Last());
         }
     }
 
@@ -324,7 +463,13 @@ internal static class AppUsage
         lock (Gate)
         {
             _data = new Dictionary<string, List<string>>();
-            try { if (File.Exists(FilePath)) File.Delete(FilePath); }
+            _last = new Dictionary<string, string>();
+            _seed = new Dictionary<string, int>();
+            try
+            {
+                foreach (var p in new[] { FilePath, LastPath, SeedPath })
+                    if (File.Exists(p)) File.Delete(p);
+            }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Log.Warn($"실행 기록 지우기 실패: {ex.GetType().Name}"); }
         }
     }

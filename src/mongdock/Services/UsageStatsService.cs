@@ -140,6 +140,7 @@ public sealed class UsageStatsService : IDisposable
             // 앱 모음 판: 연 횟수와 묶음을 직접 바꾼 적 있는지만 (앱 이름은 보내지 않음)
             ["allAppsOpened"] = Interlocked.Exchange(ref AllAppsCatalog.OpenedSinceSignal, 0),
             ["allAppsCustomized"] = s.AllApps.Customized,
+            ["allAppsCleanup"] = s.AllApps.CleanupUsed, // 안 쓰는 앱 정리를 써 봤는지만
             ["errors"] = errors,
             ["nonce"] = Guid.NewGuid().ToString("N"),
         };

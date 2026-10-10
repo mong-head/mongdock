@@ -36,6 +36,11 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     private readonly ContentControl _body = new() { Focusable = false };
     private IReadOnlyList<AppEntry> _apps = Array.Empty<AppEntry>();
     private Dictionary<string, string> _groupOf = new();
+    private List<AppFolder> _folders = new();
+    /// <summary>폴더 편집 모드 ([편집] — 이름 칸·× 지우기·− 빼기, 흔들림 없음).</summary>
+    private bool _editing;
+    /// <summary>"안 쓰는 앱 정리" 카드를 보는 중.</summary>
+    private List<CleanupRow>? _cleanup;
     private string? _expanded;
     private bool _allOpen, _hiddenOpen;
     /// <summary>큰 묶음을 펼쳤을 때 처음 3줄 뒤 "더 보기"를 누른 묶음.</summary>
@@ -163,8 +168,10 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     private void Rebuild()
     {
         if (IsClosing) return;
-        _groupOf = _apps.ToDictionary(a => a.Key, a => AllAppsCatalog.GroupOf(S, a), StringComparer.OrdinalIgnoreCase);
-        _body.Content = _search.Text.Trim().Length > 0 ? BuildResults() : BuildHome();
+        _folders = AppFolders.Visible(Services.Settings.Current, _apps);
+        _groupOf = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var f in _folders) foreach (var a in f.Apps) _groupOf.TryAdd(a.Key, f.Id);
+        _body.Content = _cleanup is not null ? BuildCleanup() : _search.Text.Trim().Length > 0 ? BuildResults() : BuildHome();
     }
 
     // ───────────────────────── 검색 ─────────────────────────
@@ -221,6 +228,8 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             return root;
         }
 
+        if (CleanupBanner() is { } banner) root.Children.Add(banner);
+
         // ★ 즐겨찾기 (내가 고른 것) + 줄 끝 추천 칸 (0개면 4개 + 제목 옆 안내, 있으면 2개). 추천 후보도 없고 0개면 점선 안내 칸
         var fav = Favorites(visible);
         var suggestions = S.ShowSuggestions ? Suggestions(Services.Settings.Current, visible, fav.Count == 0 ? 4 : 2) : new List<AppEntry>();
@@ -243,19 +252,17 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         DropTarget(favBox, AppFormat, key => !S.Favorites.Contains(key, StringComparer.OrdinalIgnoreCase), PinToTop);
         root.Children.Add(favBox);
 
-        // 묶음 (앱이 없는 묶음은 숨김) — 누르면 그 줄 아래에 펼침
-        root.Children.Add(SectionTitle(Loc.T("묶음")));
-        var groups = AllAppsCatalog.GroupOrder(S)
-            .Select(id => (Id: id, Apps: visible.Where(a => _groupOf.GetValueOrDefault(a.Key) == id).OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).ToList()))
-            .Where(g => g.Apps.Count > 0 || S.Groups.Any(d => d.Id == g.Id && d.Id.StartsWith("g-")))
-            .ToList();
-        for (int i = 0; i < groups.Count; i += GroupCols)
+        // 폴더 (쓰는 앱만 — 안 쓰는 앱은 "모든 앱"에만) + 줄 끝 [+ 새 폴더]. 누르면 그 줄 아래에 펼침
+        root.Children.Add(FolderTitle());
+        var tiles = _folders.Select(f => (Folder: (AppFolder?)f, View: (UIElement)GroupTileView(f))).ToList();
+        tiles.Add((null, NewFolderTile()));
+        for (int i = 0; i < tiles.Count; i += GroupCols)
         {
             var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
-            var chunk = groups.Skip(i).Take(GroupCols).ToList();
-            foreach (var g in chunk) line.Children.Add(GroupTileView(g.Id, g.Apps));
+            var chunk = tiles.Skip(i).Take(GroupCols).ToList();
+            foreach (var t in chunk) line.Children.Add(t.View);
             root.Children.Add(line);
-            if (chunk.FirstOrDefault(g => g.Id == _expanded) is { Id: not null } open && open.Apps is not null)
+            if (chunk.FirstOrDefault(t => t.Folder?.Id == _expanded).Folder is { } open)
                 root.Children.Add(ExpandedGroup(open.Id, open.Apps));
         }
 
@@ -453,16 +460,8 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             if (app.Shortcut is { } lnk && File.Exists(lnk)) data.SetData(DataFormats.FileDrop, new[] { lnk }); // 독·바탕 화면에 놓으면 바로 가기
             return data;
         });
-        // 다른 앱을 이 앱 위에 놓으면 둘로 새 묶음 (★ 줄 칸은 빼고 — 거기 놓으면 맨 위에 고정)
-        if (!inFavorites) DropTarget(cell, AppFormat, key => key != app.Key, key =>
-        {
-            var other = _apps.FirstOrDefault(a => a.Key == key);
-            if (other is null) return;
-            string id = NewGroup();
-            S.Overrides[app.Key] = id;
-            S.Overrides[other.Key] = id;
-            Save();
-        });
+        // 다른 앱을 이 앱 위에 놓으면 둘로 새 폴더 (★ 줄 칸은 빼고 — 거기 놓으면 즐겨찾기)
+        if (!inFavorites) DropTarget(cell, AppFormat, key => key != app.Key, key => MakeGroupOf(app.Key, key));
         return cell;
     }
 
@@ -527,7 +526,18 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         if (_warming) return;
         _warming = true;
         var dispatcher = Dispatcher.CurrentDispatcher;
-        Task.Run(() => AllAppsCatalog.Apps()).ContinueWith(t =>
+        // 처음 한 번: 윈도우 실행 기록(UserAssist)을 씨앗으로 — 이 PC 안에서만 (기록 켜져 있을 때만)
+        var all = services.Settings.Current.AllApps;
+        bool seed = all.ShowSuggestions && all.UsageSeededAt is null;
+        Task.Run(() =>
+        {
+            if (seed)
+            {
+                int n = AppUsage.SeedFromUserAssist();
+                Log.Info($"앱 모음: 윈도우 실행 기록 씨앗 {n}개 (이 PC 안에서만)");
+            }
+            return AllAppsCatalog.Apps();
+        }).ContinueWith(t =>
         {
             if (t.Status != TaskStatus.RanToCompletion) { _warming = false; return; }
             dispatcher.BeginInvoke(() =>
@@ -535,12 +545,14 @@ internal sealed partial class AllAppsPanel : DockStackPanel
                 try
                 {
                     var settings = services.Settings.Current;
+                    if (seed) { settings.AllApps.UsageSeededAt = DateTime.Now; settings.AllApps.AutoFoldersDay = null; }
                     var style = settings.Dock.IconStyle;
                     var visible = t.Result.Where(a => !settings.AllApps.Hidden.Contains(a.Key, StringComparer.OrdinalIgnoreCase)).ToList();
+                    // 자동 폴더는 하루 한 번 (판이 닫혀 있을 때 — 여기는 시작·판을 닫은 뒤)
+                    if (Current is null && AppFolders.RefreshAuto(settings, t.Result)) services.Settings.Save();
                     var targets = Favorites(settings, visible);
                     if (settings.AllApps.ShowSuggestions) targets.AddRange(Suggestions(settings, visible, 6));
-                    foreach (var g in visible.GroupBy(a => AllAppsCatalog.GroupOf(settings.AllApps, a)))
-                        targets.AddRange(g.OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).Take(9));
+                    foreach (var f in AppFolders.Visible(settings, t.Result)) targets.AddRange(f.Apps.Take(9));
                     var queue = new Queue<AppEntry>(targets.DistinctBy(a => a.Key));
                     void Next()
                     {
@@ -608,8 +620,10 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     }
 
     /// <summary>묶음 칸: 3x3 아이콘 미리 보기 + 이름 + 앱 수. 누르면 펼침/접힘.</summary>
-    private Border GroupTileView(string id, List<AppEntry> apps)
+    private Border GroupTileView(AppFolder folder)
     {
+        string id = folder.Id;
+        var apps = folder.Apps;
         var mini = new UniformGrid { Rows = 3, Columns = 3, Width = GroupTile - 12, Height = GroupTile - 12 };
         foreach (var app in apps.Take(9))
         {
@@ -631,16 +645,34 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             Child = mini,
         };
         var stack = new StackPanel();
-        stack.Children.Add(tile);
-        stack.Children.Add(new TextBlock
+        var tileHost = new Grid { Width = GroupTile + 16, HorizontalAlignment = HorizontalAlignment.Center };
+        tileHost.Children.Add(tile);
+        if (_editing)
         {
-            Text = AllAppsCatalog.GroupName(S, id),
-            TextAlignment = TextAlignment.Center,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            FontSize = 12,
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 5, 0, 0),
-        });
+            // 편집 모드: 오른쪽 위 × (폴더 통째 지우기), 왼쪽 위 ≡ (끌어서 순서)
+            tileHost.Children.Add(TileBadge("\uE711", Loc.T("폴더 지우기"), HorizontalAlignment.Right, () => AskDeleteFolder(id)));
+            if (id != AllAppsCatalog.Other)
+                tileHost.Children.Add(new TextBlock { Text = "\uE700", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 11, Foreground = P.SubText, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(2, 2, 0, 0), ToolTip = Loc.T("끌어서 순서 바꾸기") });
+        }
+        stack.Children.Add(tileHost);
+        if (_editing)
+        {
+            var name = new TextBox { Text = AllAppsCatalog.GroupName(S, id), FontSize = 12, FontWeight = FontWeights.SemiBold, MaxLength = 24, TextAlignment = TextAlignment.Center, Margin = new Thickness(2, 5, 2, 0), Padding = new Thickness(2, 1, 2, 1) };
+            void CommitName() { if (name.Text.Trim() != AllAppsCatalog.GroupName(S, id)) RenameGroup(id, name.Text); }
+            name.KeyDown += (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; CommitName(); } };
+            name.LostKeyboardFocus += (_, _) => CommitName();
+            stack.Children.Add(name);
+        }
+        else
+            stack.Children.Add(new TextBlock
+            {
+                Text = AllAppsCatalog.GroupName(S, id),
+                TextAlignment = TextAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 5, 0, 0),
+            });
         stack.Children.Add(new TextBlock { Text = Loc.F($"{apps.Count}개"), TextAlignment = TextAlignment.Center, FontSize = 11, Foreground = P.SubText });
         double w = Cols * AppCell / GroupCols - 4;
         var cell = new Border
@@ -662,7 +694,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             _expanded = open ? null : id;
             Rebuild();
         }, id == AllAppsCatalog.Other ? null : new DragItem(true, id), null);
-        // 앱을 놓으면 이 묶음으로, 다른 묶음을 놓으면 그 묶음을 이 앞으로
+        // 앱을 놓으면 이 폴더로, 다른 폴더를 놓으면 그 폴더를 이 앞으로
         DropTarget(cell, AppFormat, _ => true, key =>
         {
             if (_apps.FirstOrDefault(a => a.Key == key) is { } moved) MoveTo(moved, id);
@@ -720,7 +752,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
                 Margin = new Thickness(4, 0, 0, 0),
                 Background = Brushes.Transparent,
                 Cursor = Cursors.Hand,
-                ToolTip = Loc.T("묶음 이름 바꾸기"),
+                ToolTip = Loc.T("폴더 이름 바꾸기"),
                 Child = new TextBlock { Text = "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 12, Foreground = P.SubText, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
             };
             pencil.MouseEnter += (_, _) => pencil.Background = P.Hover;
@@ -733,7 +765,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         int perRow = Math.Max(1, (int)((Cols * AppCell - 20) / AppCell));
         int limit = _showAll.Contains(id) ? apps.Count : perRow * ExpandedRows;
         var grid = new WrapPanel { Width = Cols * AppCell - 20 };
-        if (apps.Count == 0) stack.Children.Add(Muted(Loc.T("앱을 오른쪽 클릭해 \"묶음 옮기기\"로 넣어요")));
+        if (apps.Count == 0) stack.Children.Add(Muted(Loc.T("앱을 여기로 끌어다 놓거나, 오른쪽 클릭 \"폴더에 넣기\"로 넣어요")));
         _groupGrid = grid;
         _groupGridId = id;
         _groupCells.Clear();
@@ -741,6 +773,19 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         foreach (var app in apps.Take(limit))
         {
             var c = AppCellView(app);
+            if (_editing && c.Child is UIElement inner)
+            {
+                // 편집 모드: 앱마다 − (이 폴더에서 빼기 — 앱은 모든 앱에 그대로)
+                var host = new Grid();
+                c.Child = null;
+                host.Children.Add(inner);
+                host.Children.Add(TileBadge("\uE738", Loc.T("이 폴더에서 빼기"), HorizontalAlignment.Left, () =>
+                {
+                    AppFolders.RemoveFrom(Services.Settings.Current, _apps, id, app.Key);
+                    Save();
+                }));
+                c.Child = host;
+            }
             _groupCells.Add(c);
             _groupApps.Add(app);
             grid.Children.Add(c);
@@ -753,7 +798,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
                 Rebuild();
             }));
         box.Child = stack;
-        box.Tag = new DropTag("groupgrid", id); // 펼친 묶음 안 = 이 묶음으로 (놓일 자리에 빈칸, 이름순 자리)
+        box.Tag = new DropTag("groupgrid", id); // 펼친 폴더 안 = 이 폴더로 (놓일 자리에 빈칸, 맨 끝)
         return box;
     }
 
@@ -830,14 +875,20 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         menu.Items.Add(DockMenus.Item(Loc.T("독에 고정"), () => { CloseAnimated(); PinToDockRequested?.Invoke(app); }));
         menu.Items.Add(new Separator());
 
-        string current = _groupOf.GetValueOrDefault(app.Key) ?? AllAppsCatalog.Other;
-        var move = new MenuItem { Header = Loc.T("묶음 옮기기") };
-        foreach (var id in AllAppsCatalog.GroupOrder(S))
-            move.Items.Add(DockMenus.Item(AllAppsCatalog.GroupName(S, id), () => MoveTo(app, id), isChecked: id == current));
-        move.Items.Add(new Separator());
-        move.Items.Add(DockMenus.Item(Loc.T("새 묶음…"), () => MoveTo(app, NewGroup())));
+        string? current = _groupOf.GetValueOrDefault(app.Key);
+        var move = new MenuItem { Header = Loc.T("폴더에 넣기") };
+        foreach (var f in _folders)
+            move.Items.Add(DockMenus.Item(f.Name, () => MoveTo(app, f.Id), isChecked: f.Id == current));
+        if (_folders.Count > 0) move.Items.Add(new Separator());
+        move.Items.Add(DockMenus.Item(Loc.T("새 폴더…"), () =>
+        {
+            string id = AppFolders.Create(Services.Settings.Current, _apps, Loc.T("새 폴더"), app.Key);
+            _expanded = id;
+            _renaming = id;
+            Save();
+        }));
         menu.Items.Add(move);
-        if (current != AllAppsCatalog.Other) menu.Items.Add(DockMenus.Item(Loc.T("묶음에서 빼기"), () => MoveTo(app, AllAppsCatalog.Other)));
+        if (current is not null) menu.Items.Add(DockMenus.Item(Loc.T("폴더에서 빼기"), () => { AppFolders.RemoveFrom(Services.Settings.Current, _apps, current, app.Key); Save(); }));
         menu.Items.Add(new Separator());
         string? location = app.TargetPath is { Length: > 0 } t && File.Exists(t) ? t : app.Shortcut;
         menu.Items.Add(DockMenus.Item(Loc.T("파일 위치 열기"), () =>
@@ -862,17 +913,9 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             menu.Items.Add(DockMenus.Item(Loc.T("앞으로"), () => MoveGroup(id, -1), enabled: at > 0));
             menu.Items.Add(DockMenus.Item(Loc.T("뒤로"), () => MoveGroup(id, +1), enabled: at >= 0 && at < order.Count - 2)); // "기타"는 늘 끝
         }
-        if (id.StartsWith("g-", StringComparison.Ordinal))
-        {
-            menu.Items.Add(new Separator());
-            menu.Items.Add(DockMenus.Item(Loc.T("묶음 지우기"), () =>
-            {
-                S.Groups.RemoveAll(g => g.Id == id);
-                foreach (var k in S.Overrides.Where(kv => kv.Value == id).Select(kv => kv.Key).ToList()) S.Overrides.Remove(k);
-                if (_expanded == id) _expanded = null;
-                Save();
-            }));
-        }
+        menu.Items.Add(new Separator());
+        menu.Items.Add(DockMenus.Item(Loc.T("폴더 지우기…"), () => AskDeleteFolder(id)));
+        menu.Items.Add(DockMenus.Item(Loc.T("편집"), () => { _editing = true; Rebuild(); }));
     }
 
     private ContextMenu BuildEmptyMenu()
@@ -881,21 +924,24 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         menu.Opened += (_, _) =>
         {
             menu.Items.Clear();
-            menu.Items.Add(DockMenus.Item(Loc.T("즐겨찾기 추천 보이기"), () =>
+            menu.Items.Add(DockMenus.Item(Loc.T("자주 쓰는 앱 기록 (추천·정리에 써요)"), () =>
             {
                 S.ShowSuggestions = !S.ShowSuggestions;
                 if (!S.ShowSuggestions) AppUsage.Clear(); // 끄면 기록도 지움
                 Save(false);
             }, isChecked: S.ShowSuggestions));
+            menu.Items.Add(DockMenus.Item(Loc.T("안 쓰는 앱 정리…"), OpenCleanup, enabled: S.ShowSuggestions));
             menu.Items.Add(new Separator());
-            menu.Items.Add(DockMenus.Item(Loc.T("묶음 원래대로…"), () =>
+            menu.Items.Add(DockMenus.Item(Loc.T("폴더 원래대로…"), () =>
             {
                 KeepOpenOnDeactivate = true;
-                ConfirmCardWindow.Ask(Services, Loc.T("묶음 원래대로"), Loc.T("직접 옮긴 앱과 만든 묶음·이름·순서를 자동 분류로 되돌릴까요? 숨긴 앱과 즐겨찾기는 그대로예요."),
+                ConfirmCardWindow.Ask(Services, Loc.T("폴더 원래대로"), Loc.T("만든 폴더와 바꾼 폴더·이름·순서를 자동 정리로 되돌릴까요? 숨긴 앱과 즐겨찾기는 그대로예요."),
                     Loc.T("되돌리기"), () =>
                     {
                         S.Groups.Clear();
                         S.Overrides.Clear();
+                        S.AutoFoldersDay = null;
+                        AppFolders.RefreshAuto(Services.Settings.Current, _apps, force: true);
                         _expanded = null;
                         Save(false);
                     });
@@ -954,61 +1000,133 @@ internal sealed partial class AllAppsPanel : DockStackPanel
 
     private void MoveGroupBefore(string moving, string target)
     {
-        EnsureGroupList();
+        AppFolders.EnsureOrder(S);
         var g = S.Groups.FirstOrDefault(x => x.Id == moving);
         if (g is null || moving == AllAppsCatalog.Other) return;
         S.Groups.Remove(g);
         int at = S.Groups.FindIndex(x => x.Id == target);
         S.Groups.Insert(at < 0 ? Math.Max(0, S.Groups.Count - 1) : at, g);
-        EnsureGroupList(); // "기타"는 끝
+        AppFolders.EnsureOrder(S); // "기타"는 끝
         Save();
     }
 
-    private void MoveTo(AppEntry app, string group)
+    private void MoveTo(AppEntry app, string folder)
     {
-        if (AllAppsCatalog.Classify(app) == group) S.Overrides.Remove(app.Key);
-        else S.Overrides[app.Key] = group;
+        AppFolders.AddTo(Services.Settings.Current, _apps, folder, app.Key);
         Save();
-    }
-
-    private string NewGroup()
-    {
-        EnsureGroupList();
-        string id = "g-" + Guid.NewGuid().ToString("N")[..8];
-        // "기타" 바로 앞에 (EnsureGroupList 가 "기타"를 끝에 둠)
-        S.Groups.Insert(Math.Max(0, S.Groups.Count - 1), new AppGroupDef { Id = id, Name = Loc.T("새 묶음") });
-        _expanded = id;
-        _renaming = id;
-        return id;
     }
 
     private void RenameGroup(string id, string name)
     {
-        EnsureGroupList();
-        var g = S.Groups.FirstOrDefault(x => x.Id == id);
-        if (g is null) S.Groups.Add(g = new AppGroupDef { Id = id });
-        name = name.Trim();
-        g.Name = name.Length == 0 || name == AllAppsCatalog.DefaultName(id) ? null : name;
+        AppFolders.Rename(Services.Settings.Current, _apps, id, name);
         Save();
+    }
+
+    /// <summary>폴더 통째 지우기 — 확인 카드 "폴더 '업무'를 지울까요? 앱은 모든 앱에 그대로 있어요".</summary>
+    private void AskDeleteFolder(string id)
+    {
+        KeepOpenOnDeactivate = true;
+        ConfirmCardWindow.Ask(Services, Loc.T("폴더 지우기"), Loc.F($"폴더 '{AllAppsCatalog.GroupName(S, id)}'를 지울까요? 앱은 모든 앱에 그대로 있어요."), Loc.T("지우기"), () =>
+        {
+            AppFolders.Delete(Services.Settings.Current, id);
+            if (_expanded == id) _expanded = null;
+            Save();
+        });
+        KeepOpenOnDeactivate = false;
     }
 
     private void MoveGroup(string id, int dir)
     {
-        EnsureGroupList();
+        AppFolders.EnsureOrder(S);
         int i = S.Groups.FindIndex(g => g.Id == id), j = i + dir;
         if (i < 0 || j < 0 || j >= S.Groups.Count || S.Groups[j].Id == AllAppsCatalog.Other) return;
         (S.Groups[i], S.Groups[j]) = (S.Groups[j], S.Groups[i]);
         Save();
     }
 
-    /// <summary>순서를 바꾸기 전에 지금 화면 순서를 설정에 적어 둠 (기본 묶음 포함).</summary>
-    private void EnsureGroupList()
+    // ───────────────────────── 폴더 머리줄·편집 ─────────────────────────
+
+    /// <summary>"폴더" + [편집]/[완료] (+ 편집 중이면 "안 쓰는 앱 정리…").</summary>
+    private UIElement FolderTitle()
     {
-        foreach (var id in AllAppsCatalog.GroupOrder(S))
-            if (!S.Groups.Any(g => g.Id == id)) S.Groups.Add(new AppGroupDef { Id = id });
-        // "기타"는 늘 끝
-        var other = S.Groups.First(g => g.Id == AllAppsCatalog.Other);
-        S.Groups.Remove(other);
-        S.Groups.Add(other);
+        var row = new DockPanel { LastChildFill = false };
+        var title = SectionTitle(Loc.T("폴더"));
+        DockPanel.SetDock(title, Dock.Left);
+        row.Children.Add(title);
+        var edit = SmallLink(_editing ? Loc.T("완료") : Loc.T("편집"), () => { _editing = !_editing; _renaming = null; Rebuild(); });
+        edit.FontWeight = _editing ? FontWeights.SemiBold : FontWeights.Normal;
+        DockPanel.SetDock(edit, Dock.Left);
+        row.Children.Add(edit);
+        if (_editing && S.ShowSuggestions)
+        {
+            var tidy = SmallLink(Loc.T("안 쓰는 앱 정리…"), OpenCleanup);
+            DockPanel.SetDock(tidy, Dock.Right);
+            row.Children.Add(tidy);
+        }
+        return row;
+    }
+
+    private TextBlock SmallLink(string text, Action click)
+    {
+        var t = new TextBlock { Text = text, FontSize = 12, Foreground = P.Accent, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 6, 6, 4) };
+        t.MouseLeftButtonUp += (_, e) => { e.Handled = true; click(); };
+        return t;
+    }
+
+    /// <summary>칸 모서리 작은 동그라미 버튼 (×·− 등).</summary>
+    private Border TileBadge(string glyph, string tip, HorizontalAlignment side, Action run)
+    {
+        var b = new Border
+        {
+            Width = 20,
+            Height = 20,
+            CornerRadius = new CornerRadius(10),
+            Background = P.CardBackground,
+            BorderBrush = P.Divider,
+            BorderThickness = new Thickness(1),
+            HorizontalAlignment = side,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, -4, 0, 0),
+            Cursor = Cursors.Hand,
+            ToolTip = tip,
+            Child = new TextBlock { Text = glyph, FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 9, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+        };
+        b.MouseLeftButtonDown += (_, e) => e.Handled = true;
+        b.MouseLeftButtonUp += (_, e) => { e.Handled = true; run(); };
+        return b;
+    }
+
+    /// <summary>폴더 줄 끝 [+ 새 폴더] (늘 보임).</summary>
+    private Border NewFolderTile()
+    {
+        var plus = new Grid { Width = GroupTile, Height = GroupTile, HorizontalAlignment = HorizontalAlignment.Center };
+        plus.Children.Add(new System.Windows.Shapes.Rectangle { Stroke = P.Divider, StrokeThickness = 1.5, StrokeDashArray = new DoubleCollection { 4, 3 }, RadiusX = 14, RadiusY = 14 });
+        plus.Children.Add(new TextBlock { Text = "\uE710", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 18, Foreground = P.SubText, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
+        var stack = new StackPanel();
+        stack.Children.Add(plus);
+        stack.Children.Add(new TextBlock { Text = Loc.T("새 폴더"), TextAlignment = TextAlignment.Center, FontSize = 12, Foreground = P.SubText, Margin = new Thickness(0, 5, 0, 0) });
+        var cell = new Border
+        {
+            Width = Cols * AppCell / GroupCols - 4,
+            Margin = new Thickness(2),
+            Padding = new Thickness(4, 6, 4, 6),
+            CornerRadius = new CornerRadius(10),
+            Background = Brushes.Transparent,
+            Child = stack,
+            Cursor = Cursors.Hand,
+            ToolTip = Loc.T("새 폴더 — 앱을 여기로 끌어다 놓아도 돼요"),
+            Tag = new DropTag("newfolder", ""),
+        };
+        cell.MouseEnter += (_, _) => cell.Background = P.Hover;
+        cell.MouseLeave += (_, _) => cell.Background = Brushes.Transparent;
+        cell.MouseLeftButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            string id = AppFolders.Create(Services.Settings.Current, _apps, Loc.T("새 폴더"));
+            _expanded = id;
+            _renaming = id;
+            Save();
+        };
+        return cell;
     }
 }

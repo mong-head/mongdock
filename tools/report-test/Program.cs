@@ -532,6 +532,7 @@ internal static class Program
         var apps = (System.Collections.ICollection)catalog.GetMethod("Apps")!.Invoke(null, new object[] { false })!;
         Console.WriteLine($"  앱 {apps.Count}개");
         var panelType = asm.GetType("Mongdock.Views.AllAppsPanel")!;
+        object appsForFolders() => catalog.GetMethod("Apps")!.Invoke(null, new object[] { false })!;
         panelType.GetProperty("LoadIconsNow", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, true);
         foreach (var theme in new[] { "light", "dark" })
         {
@@ -636,11 +637,29 @@ internal static class Program
             settings.Current.Pins.AddRange(savedPins);
             panelType.GetProperty("SuggestionsOverride", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, null);
 
-            foreach (var mode in new[] { "home", "group", "search" })
+            // 쓰는 앱만 담는 폴더·정리는 실행 기록이 있어야 — 이 셸의(가상화된) 데이터에 윈도우 실행 기록 씨앗을 넣고 자동 폴더 계산
+            asm.GetType("Mongdock.Services.AppUsage")!.GetMethod("SeedFromUserAssist")!.Invoke(null, null);
+            settings.Current.AllApps.UsageSeededAt = DateTime.Now.AddDays(-60);
+            settings.Current.AllApps.CleanupPromptMonth = null;
+            asm.GetType("Mongdock.Services.AppFolders")!.GetMethod("RefreshAuto")!.Invoke(null, new object[] { settings.Current, appsForFolders(), true });
+            foreach (var mode in new[] { "home", "group", "search", "edit", "cleanup" })
             {
+                // 처음 화면엔 정리 띠가 보이게 (이 셸 기록엔 두 달 넘은 앱이 없어 기준을 줄임)
+                panelType.GetProperty("StaleDaysForTest", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, mode == "home" ? 3 : null);
                 var w = (Window)panelType.GetConstructors(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)[0]
                     .Invoke(new object[] { services, palette, new Rect(800, 1000, 52, 52), Mongdock.Models.DockEdge.Bottom, monitor });
                 if (mode == "group") panelType.GetField("_expanded", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(w, "tools");
+                if (mode == "edit")
+                {
+                    panelType.GetField("_editing", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(w, true);
+                    panelType.GetField("_expanded", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(w, "dev");
+                }
+                if (mode == "cleanup")
+                {
+                    panelType.GetProperty("StaleDaysForTest", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, 3);
+                    panelType.GetMethod("OpenCleanup", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(w, null);
+                    panelType.GetProperty("StaleDaysForTest", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, null);
+                }
                 if (mode == "search") ((System.Windows.Controls.TextBox)panelType.GetField("_search", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(w)!).Text = "ch";
                 panelType.GetMethod("Rebuild", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(w, null);
                 var content = (FrameworkElement)w.Content;

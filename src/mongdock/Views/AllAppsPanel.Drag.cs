@@ -202,7 +202,7 @@ internal sealed partial class AllAppsPanel
         }
 
         var target = outside ? null : TargetAt(p, d.Item);
-        SetHighlight(target is { Kind: "group" or "app" } ? FindCell(target) : null);
+        SetHighlight(target is { Kind: "group" or "app" or "newfolder" } ? FindCell(target) : null);
         if (target is { Kind: "fav" or "favapp" }) ShiftFavorites(p);
         else ShiftFavorites(null);
         ShiftGroup(target is { Kind: "groupgrid" } && !d.Item.IsGroup ? d.Item.Key : null);
@@ -241,7 +241,8 @@ internal sealed partial class AllAppsPanel
         {
             "fav" => true,
             "favapp" => true,
-            "groupgrid" => _groupApps.All(a => a.Key != item.Key) || tag.Key != _groupGridId, // 이미 이 묶음이면 놓을 곳 아님
+            "groupgrid" => _groupApps.All(a => a.Key != item.Key) || tag.Key != _groupGridId, // 이미 이 폴더면 놓을 곳 아님
+            "newfolder" => !item.IsGroup,
             "group" => true,
             "app" => tag.Key != item.Key,
             _ => false,
@@ -321,9 +322,7 @@ internal sealed partial class AllAppsPanel
     private void ShiftGroup(string? key)
     {
         if (_groupGrid is null) return;
-        int gap = -1;
-        if (key is not null && _apps.FirstOrDefault(a => a.Key == key) is { } app)
-            gap = _groupApps.Count(a => string.Compare(a.Name, app.Name, StringComparison.CurrentCultureIgnoreCase) < 0);
+        int gap = key is not null ? _groupApps.Count : -1; // 넣으면 맨 끝에 들어감
         if (gap == _groupGap) return;
         _groupGap = gap;
         int perRow = Math.Max(1, (int)(_groupGrid.Width / AppCell));
@@ -415,6 +414,13 @@ internal sealed partial class AllAppsPanel
                 "group" when d.Item.IsGroup => () => MoveGroupBefore(d.Item.Key, target.Key),
                 "group" => () => { if (_apps.FirstOrDefault(a => a.Key == d.Item.Key) is { } app) MoveTo(app, target.Key); },
                 "app" => () => MakeGroupOf(target.Key, d.Item.Key),
+                "newfolder" => () =>
+                {
+                    string id = AppFolders.Create(Services.Settings.Current, _apps, Loc.T("새 폴더"), d.Item.Key);
+                    _expanded = id;
+                    _renaming = id;
+                    Save();
+                },
                 _ => null,
             };
         }
@@ -471,9 +477,9 @@ internal sealed partial class AllAppsPanel
 
     private void MakeGroupOf(string a, string b)
     {
-        string id = NewGroup();
-        S.Overrides[a] = id;
-        S.Overrides[b] = id;
+        string id = AppFolders.Create(Services.Settings.Current, _apps, Loc.T("새 폴더"), a, b);
+        _expanded = id;
+        _renaming = id;
         Save();
     }
 

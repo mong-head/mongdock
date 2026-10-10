@@ -133,12 +133,26 @@ public sealed class RoutineDef
 
 // ───────────────────────── 앱 모음 판 (#24) ─────────────────────────
 
-/// <summary>앱 모음 판의 묶음 하나 (화면 순서 = 목록 순서). 기본 묶음 id: work·chat·web·media·music·games·dev·tools·other, 사용자 묶음은 "g-…".</summary>
+/// <summary>
+/// 앱 모음 판의 폴더 하나 (화면 순서 = 목록 순서). 기본 폴더 id: work·chat·web·media·music·games·dev·tools·other, 사용자 폴더는 "g-…".
+/// 자동 폴더는 쓰는 앱만(최근 30일 실행 + 독 핀, 최대 9개, 하루 한 번 갱신 — AutoApps), 사용자가 손대면(이름·넣기·빼기) Touched 가 되고
+/// 그 뒤로는 Apps 목록 그대로 (자동으로 바뀌지 않음).
+/// </summary>
 public sealed class AppGroupDef
 {
     public string Id { get; set; } = "";
     /// <summary>사용자가 바꾼 이름. null 이면 기본 이름(번역).</summary>
     public string? Name { get; set; }
+    /// <summary>사용자가 손댄 폴더 — 내용은 Apps 그대로.</summary>
+    public bool Touched { get; set; }
+    /// <summary>손댄 폴더·사용자 폴더의 앱 (순서대로).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Apps { get; set; }
+    /// <summary>손대지 않은 기본 폴더의 자동 내용 (하루 한 번).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? AutoApps { get; set; }
+    /// <summary>지운 기본 폴더 (자동으로 다시 만들지 않음).</summary>
+    public bool Deleted { get; set; }
 }
 
 /// <summary>
@@ -163,6 +177,14 @@ public sealed class AllAppsSettings
     public Dictionary<string, string> Overrides { get; set; } = new();
     /// <summary>숨긴 앱.</summary>
     public List<string> Hidden { get; set; } = new();
+    /// <summary>자동 폴더를 마지막으로 갱신한 날 (yyyy-MM-dd, 하루 한 번).</summary>
+    public string? AutoFoldersDay { get; set; }
+    /// <summary>윈도우 실행 기록(UserAssist)을 씨앗으로 읽은 날 (한 번만). 이 날부터 30일은 쓴 적 없는 독 핀을 정리에서 뺌.</summary>
+    public DateTime? UsageSeededAt { get; set; }
+    /// <summary>"안 쓰는 앱 정리" 띠를 보였거나 [×]한 달 (yyyy-MM — 다음 달까지 안 띄움). 이 PC 것.</summary>
+    public string? CleanupPromptMonth { get; set; }
+    /// <summary>정리를 써 본 적 있음 (사용 통계).</summary>
+    public bool CleanupUsed { get; set; }
     /// <summary>묶음을 직접 바꾼 적 있음 (사용 통계 "allAppsCustomized" 용).</summary>
     public bool Customized { get; set; }
 }
