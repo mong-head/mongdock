@@ -9,17 +9,14 @@ using Mongdock.Models;
 namespace Mongdock.Services;
 
 /// <summary>
-/// 독 폴더 (#24-B): 폴더 내용 읽기·정렬, 독 아이콘(최근 파일 겹치기 / 폴더 아이콘) 만들기, 폴더 변화 감시(1초 묶음).
+/// 독 폴더 (#24-B): 폴더 내용 읽기·정렬, 독 아이콘(몽독 폴더 + 종류 그림), 새 파일 수, 폴더 변화 감시(1초 묶음).
 /// 독 창(UI 스레드)이 하나 만들어 씀. 폴더가 없어지면 회색 폴더 그림.
 /// </summary>
 internal sealed class DockFolderService : IDisposable
 {
-    private const int StackPx = 256;
-    private readonly IIconService _icons;
     private readonly Dispatcher _dispatcher;
     private readonly Dictionary<string, Watch> _watches = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, int> _versions = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, (string Key, ImageSource Image)> _stackCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, (bool Exists, long At)> _exists = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _checking = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, long> _lastBump = new(StringComparer.OrdinalIgnoreCase);
@@ -41,9 +38,8 @@ internal sealed class DockFolderService : IDisposable
         }
     }
 
-    public DockFolderService(IIconService icons)
+    public DockFolderService()
     {
-        _icons = icons;
         _dispatcher = Dispatcher.CurrentDispatcher;
     }
 
@@ -140,75 +136,85 @@ internal sealed class DockFolderService : IDisposable
 
     // ───────────────────────── 독 아이콘 ─────────────────────────
 
-    /// <summary>
-    /// 독 아이콘: Display=Folder 면 폴더 셸 아이콘, Stack 이면 최근 파일 3개(셸 썸네일/아이콘)를 살짝 어긋나게 겹침.
-    /// 빈 폴더는 폴더 아이콘, 없는 폴더는 회색 폴더 그림. 같은 내용이면 캐시.
-    /// </summary>
+    private static readonly Dictionary<(FolderGlyph, bool), ImageSource> IconCache = new();
+
+    /// <summary>독 아이콘: 몽독 폴더 (알려진 폴더면 종류 그림 — 무슨 폴더인지 보이게). 없는 폴더는 회색. 그림 종류마다 한 번만 그림.</summary>
     public ImageSource Icon(PinItem pin, IconStyle style)
     {
-        string path = pin.Target;
-        var opts = pin.Folder ?? new FolderOptions();
-        if (!IsAvailable(path)) return MissingIcon;
-        if (opts.Display == FolderDisplay.Folder) return FolderIcon(path, style);
-
-        var listed = List(path, FolderSort.Added, 3);
-        if (listed is not { Items.Count: > 0 } l) return FolderIcon(path, style);
-        string key = string.Join("|", l.Items.Select(f => f.FullName + ":" + Added(f).Ticks)) + "|" + style;
-        if (_stackCache.TryGetValue(Normalize(path), out var cached) && cached.Key == key) return cached.Image;
-
-        var rtb = ComposeStack(l.Items.Select(f => (BitmapSource?)Thumbnail(f.FullName, 160)).ToList());
-        _stackCache[Normalize(path)] = (key, rtb);
-        return rtb;
+        bool missing = !IsAvailable(pin.Target);
+        var key = (GlyphFor(pin.Target), missing);
+        if (!IconCache.TryGetValue(key, out var img)) IconCache[key] = img = MacIconRenderer.Folder(key.Item1, missing);
+        return img;
     }
 
-    /// <summary>썸네일(최근 것 먼저) 최대 3장을 오른쪽 위로 조금씩 어긋나게 겹친 256 그림.</summary>
-    internal static BitmapSource ComposeStack(IList<BitmapSource?> images)
+    private static Dictionary<string, FolderGlyph>? _known;
+
+    /// <summary>알려진 폴더(다운로드·문서·사진·바탕 화면·음악·동영상 — 사용자가 옮겼어도 실제 위치)면 그 그림, 아니면 None.</summary>
+    public static FolderGlyph GlyphFor(string path)
     {
-        var dv = new DrawingVisual();
-        using (var dc = dv.RenderOpen())
+        if (_known is null)
         {
-            // 뒤(오래된 것) → 앞(최근 것): 오른쪽 위로 조금씩 어긋나게
-            const double box = 168, step = 22;
-            for (int i = images.Count - 1; i >= 0; i--)
+            _known = new Dictionary<string, FolderGlyph>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (id, glyph) in new[]
             {
-                var img = images[i];
-                if (img is null) continue;
-                double s = Math.Min(box / img.Width, box / img.Height);
-                double w = img.Width * s, h = img.Height * s;
-                double cx = StackPx / 2.0 - step + i * step, cy = StackPx / 2.0 + step - i * step;
-                var rect = new Rect(cx - w / 2, cy - h / 2, w, h);
-                dc.PushOpacity(i == 0 ? 1 : 0.92);
-                dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(0x30, 0, 0, 0)), null, new Rect(rect.X + 2, rect.Y + 4, w, h));
-                dc.DrawImage(img, rect);
-                dc.Pop();
-            }
+                ("374DE290-123F-4565-9164-39C4925E467B", FolderGlyph.Downloads),
+                ("FDD39AD0-238F-46AF-ADB4-6C85480369C7", FolderGlyph.Documents),
+                ("33E28130-4E1E-4676-835A-98395C3BC3BB", FolderGlyph.Pictures),
+                ("B4BFCC3A-DB2C-424C-B029-7FE99A87C641", FolderGlyph.Desktop),
+                ("4BD8D571-6D19-48D3-BE97-422220080E43", FolderGlyph.Music),
+                ("18989B1D-99B5-455B-841C-AB7C74E4DDFC", FolderGlyph.Videos),
+            })
+                if (KnownFolder(new Guid(id)) is { } kp) _known.TryAdd(Normalize(kp), glyph);
         }
-        var rtb = new RenderTargetBitmap(StackPx, StackPx, 96, 96, PixelFormats.Pbgra32);
-        rtb.Render(dv);
-        rtb.Freeze();
-        return rtb;
+        return _known.GetValueOrDefault(Normalize(path));
     }
 
-    private ImageSource FolderIcon(string path, IconStyle style) =>
-        _icons.GetIcon(new PinItem { Kind = PinKind.Exe, Target = path, Name = Path.GetFileName(path) }, style);
+    // ───────────────────────── 새 파일 점 ─────────────────────────
 
-    /// <summary>없어진 폴더: 회색 둥근 판 + 폴더 기호.</summary>
-    private static readonly ImageSource MissingIcon = CreateMissingIcon();
+    private readonly Dictionary<string, (int Version, DateTime Since, int Count)> _newFiles = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _counting = new(StringComparer.OrdinalIgnoreCase);
 
-    private static ImageSource CreateMissingIcon()
+    /// <summary>
+    /// 마지막으로 판을 연 뒤 추가된 항목 수 (최대 99). 폴더가 바뀌거나 연 시각이 바뀌면 백그라운드에서 다시 세고,
+    /// 수가 달라지면 Changed. 세는 동안은 이전 값.
+    /// </summary>
+    public int NewFiles(PinItem pin)
     {
-        var dv = new DrawingVisual();
-        using (var dc = dv.RenderOpen())
+        if (pin.Folder?.LastOpened is not DateTime since || !IsAvailable(pin.Target)) return 0;
+        string key = Normalize(pin.Target);
+        int version = Version(key);
+        bool known = _newFiles.TryGetValue(key, out var c);
+        if (known && c.Version == version && c.Since == since) return c.Count;
+        if (_counting.Add(key))
         {
-            dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(0xC7, 0xC7, 0xCC)), null, new Rect(28, 28, 200, 200), 46, 46);
-            var text = new FormattedText("", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
-                new Typeface("Segoe Fluent Icons, Segoe MDL2 Assets"), 110, Brushes.White, 1.0);
-            dc.DrawText(text, new Point(128 - text.Width / 2, 128 - text.Height / 2));
+            Task.Run(() => CountNewer(key, since)).ContinueWith(t => _dispatcher.BeginInvoke(() =>
+            {
+                _counting.Remove(key);
+                if (_disposed || t.Status != TaskStatus.RanToCompletion) return;
+                int before = _newFiles.TryGetValue(key, out var old) ? old.Count : 0;
+                _newFiles[key] = (version, since, t.Result);
+                if (t.Result != before) Changed?.Invoke(key);
+            }), TaskScheduler.Default);
         }
-        var rtb = new RenderTargetBitmap(StackPx, StackPx, 96, 96, PixelFormats.Pbgra32);
-        rtb.Render(dv);
-        rtb.Freeze();
-        return rtb;
+        return known && c.Since == since ? c.Count : 0;
+    }
+
+    private static int CountNewer(string path, DateTime sinceUtc)
+    {
+        try
+        {
+            int n = 0;
+            foreach (var f in new DirectoryInfo(path).EnumerateFileSystemInfos("*", new EnumerationOptions { IgnoreInaccessible = true, AttributesToSkip = FileAttributes.Hidden | FileAttributes.System }))
+            {
+                if (f.Name.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase) || Added(f) <= sinceUtc) continue;
+                if (++n >= 99) break;
+            }
+            return n;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException or ArgumentException)
+        {
+            return 0;
+        }
     }
 
     /// <summary>파일·폴더의 셸 썸네일(그림은 미리보기, 그 밖은 아이콘). 실패하면 null.</summary>
@@ -248,7 +254,7 @@ internal sealed class DockFolderService : IDisposable
             _watches.Remove(gone);
         }
         // 독에서 뺀 폴더의 기록도 정리 (번호·아이콘 캐시·확인 결과)
-        foreach (var dict in new System.Collections.IDictionary[] { _versions, _stackCache, _exists, _lastBump, _retryWatchAt })
+        foreach (var dict in new System.Collections.IDictionary[] { _versions, _newFiles, _exists, _lastBump, _retryWatchAt })
             foreach (var k in dict.Keys.Cast<string>().Where(k => !want.Contains(k)).ToList()) dict.Remove(k);
         long now = Environment.TickCount64;
         foreach (var path in want)
@@ -339,12 +345,14 @@ internal sealed class DockFolderService : IDisposable
     private static extern int SHGetKnownFolderPath([MarshalAs(UnmanagedType.LPStruct)] Guid rfid, uint flags, IntPtr token, out IntPtr path);
 
     /// <summary>다운로드 폴더 (사용자가 옮겼어도 맞게 FOLDERID_Downloads). 못 구하면 null.</summary>
-    public static string? DownloadsFolder()
+    public static string? DownloadsFolder() => KnownFolder(new Guid("374DE290-123F-4565-9164-39C4925E467B"));
+
+    private static string? KnownFolder(Guid id)
     {
         IntPtr p = IntPtr.Zero;
         try
         {
-            if (SHGetKnownFolderPath(new Guid("374DE290-123F-4565-9164-39C4925E467B"), 0, IntPtr.Zero, out p) != 0) return null;
+            if (SHGetKnownFolderPath(id, 0, IntPtr.Zero, out p) != 0) return null;
             string? s = Marshal.PtrToStringUni(p);
             return s is { Length: > 0 } && Directory.Exists(s) ? s : null;
         }

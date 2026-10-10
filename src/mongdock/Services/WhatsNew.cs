@@ -9,6 +9,8 @@ public enum CoachAnchor
     Center,
     /// <summary>독 패널 전체.</summary>
     Dock,
+    /// <summary>독의 (가장 최근에 넣은) 독 폴더 아이콘.</summary>
+    DockFolder,
     /// <summary>상단바 로고 버튼.</summary>
     Logo,
     /// <summary>상단바 앱 이름(앱 메뉴).</summary>

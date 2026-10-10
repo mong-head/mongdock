@@ -38,7 +38,7 @@ public static class DefaultPins
         try
         {
             if (DockFolderService.DownloadsFolder() is { } dl && !pins.Any(p => p.Kind == PinKind.Folder))
-                pins.Add(new PinItem { Kind = PinKind.Folder, Target = dl, Name = Loc.T("다운로드"), Id = Guid.NewGuid().ToString("N"), Folder = new FolderOptions() });
+                pins.Add(new PinItem { Kind = PinKind.Folder, Target = dl, Name = Loc.T("다운로드"), Id = Guid.NewGuid().ToString("N"), Folder = new FolderOptions { LastOpened = DateTime.UtcNow } });
         }
         catch (Exception ex) { Log.Error("다운로드 독 폴더 추가 실패", ex); }
         return pins;

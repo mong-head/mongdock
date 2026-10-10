@@ -264,7 +264,7 @@ internal static class Program
     }
 
     /// <summary>
-    /// 독 폴더 아이콘 시안 (#24-B): 지금 것(겹친 파일·폴더 아이콘) + A(흰 폴더) + B(파일이 비어져 나온 폴더, 견본·실제 그림) + C(종류별).
+    /// 독 폴더 아이콘 (#24-B): 이전 것(윈도우 폴더 아이콘) + 몽독 폴더(일반·알려진 폴더 종류별·없어진 폴더).
     /// 라이트·다크 독 위에 52px·확대(94px)·2배 화면(104·188px) 으로 한 장씩, 그리고 시안마다 256 원본.
     /// </summary>
     private static void RenderFolderIcons(string dir)
@@ -275,30 +275,23 @@ internal static class Program
         var svc = asm.GetType("Mongdock.Services.DockFolderService")!;
         var glyphType = asm.GetType("Mongdock.Services.FolderGlyph")!;
         BitmapSource? Thumb(string p) => (BitmapSource?)svc.GetMethod("Thumbnail")!.Invoke(null, new object[] { p, 160 });
-        BitmapSource Folder(string g) => (BitmapSource)mac.GetMethod("Folder")!.Invoke(null, new[] { Enum.Parse(glyphType, g) })!;
-        BitmapSource Stack(IReadOnlyList<ImageSource?> recent) => (BitmapSource)mac.GetMethod("FolderStack")!.Invoke(null, new object[] { recent })!;
+        BitmapSource Folder(string g, bool missing = false) => (BitmapSource)mac.GetMethod("Folder")!.Invoke(null, new[] { Enum.Parse(glyphType, g), missing })!;
 
-        // 지금 아이콘: 시험 폴더(C:\dev\mongdock-tmp\dockfolder2) 파일 셸 썸네일 겹치기 / 폴더 셸 아이콘을 맥 판에
-        string sample = @"C:\dev\mongdock-tmp\dockfolder2";
-        var sampleFiles = Directory.Exists(sample) ? Directory.GetFiles(sample).Take(3).Select(Thumb).ToList() : new List<BitmapSource?>();
-        var nowStack = (BitmapSource)svc.GetMethod("ComposeStack", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.Invoke(null, new object[] { sampleFiles })!;
+        // 비교용 지금(이전) 아이콘: 폴더 셸 아이콘을 맥 판에
         var shellFolder = Thumb(Environment.GetFolderPath(Environment.SpecialFolder.Windows));
         var nowFolder = shellFolder is null ? null : (BitmapSource?)mac.GetMethod("Normalize")!.Invoke(null, new object[] { shellFolder });
 
-        // B 실제 그림 예: 윈도우 기본 배경 그림 3장
-        var wallpapers = new[] { @"C:\Windows\Web\Wallpaper\ThemeA\img20.jpg", @"C:\Windows\Web\Wallpaper\ThemeB\img24.jpg", @"C:\Windows\Web\Wallpaper\Spotlight\img50.jpg", @"C:\Windows\Web\Wallpaper\Windows\img0.jpg" }
-            .Where(File.Exists).Take(3).Select(p => (ImageSource?)Thumb(p)).ToList();
-
         var rows = new List<(string Label, BitmapSource? Img, string File)>
         {
-            ("지금: 파일 겹쳐 보기", nowStack, "now-stack"),
-            ("지금: 폴더 아이콘으로 보기", nowFolder, "now-folder"),
-            ("A  흰 폴더", Folder("None"), "A-folder"),
-            ("B  비어져 나온 파일 (견본)", Stack(new ImageSource?[0]), "B-stack-sample"),
-            ("B  비어져 나온 파일 (사진 폴더 예)", Stack(wallpapers), "B-stack-photos"),
-            ("C  다운로드", Folder("Downloads"), "C-downloads"),
-            ("C  문서", Folder("Documents"), "C-documents"),
-            ("C  사진", Folder("Pictures"), "C-pictures"),
+            ("이전: 윈도우 폴더 아이콘", nowFolder, "now-folder"),
+            ("일반 폴더 (A)", Folder("None"), "A-folder"),
+            ("다운로드", Folder("Downloads"), "C-downloads"),
+            ("문서", Folder("Documents"), "C-documents"),
+            ("사진", Folder("Pictures"), "C-pictures"),
+            ("바탕 화면", Folder("Desktop"), "C-desktop"),
+            ("음악", Folder("Music"), "C-music"),
+            ("동영상", Folder("Videos"), "C-videos"),
+            ("없어진 폴더", Folder("Downloads", true), "missing"),
         };
         foreach (var (_, img, file) in rows)
             if (img is not null) SavePng(img, Path.Combine(dir, $"{file}-256.png"));

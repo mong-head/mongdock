@@ -215,7 +215,7 @@ public partial class App : Application
     private (Rect Rect, MonitorInfo Monitor)? ResolveCoachAnchor(CoachAnchor anchor)
     {
         if (_exiting) return null;
-        if (anchor == CoachAnchor.Dock) return _dock?.GetAnchorRect(anchor);
+        if (anchor is CoachAnchor.Dock or CoachAnchor.DockFolder) return _dock?.GetAnchorRect(anchor);
         return _topBars.TryGetValue("", out var bar) ? bar.GetAnchorRect(anchor) : null;
     }
 

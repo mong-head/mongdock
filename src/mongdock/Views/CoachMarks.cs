@@ -320,7 +320,7 @@ internal static class CoachMarks
     {
         if (a == CoachAnchor.Center) return true;
         // 자동 숨김 독은 지금 숨어 있어도 둘러보기가 고정해 보이게 하므로 보이는 것으로 봄 (CoachSession)
-        if (a == CoachAnchor.Dock && _services?.Settings.Current.Dock is { Enabled: true, Mode: DockMode.AutoHide } && !AppState.Paused) return true;
+        if (a is CoachAnchor.Dock or CoachAnchor.DockFolder && _services?.Settings.Current.Dock is { Enabled: true, Mode: DockMode.AutoHide } && !AppState.Paused) return true;
         return _resolve?.Invoke(a) is not null;
     }
 
@@ -716,7 +716,7 @@ internal sealed class CoachSession
         };
         _index = 0;
         // 독을 가리키는 단계가 있으면 자동 숨김 독을 보이게 고정 (설정값은 그대로, Close 에서 반드시 풂)
-        if (_pages.Any(p => p.Anchor == CoachAnchor.Dock)) DockState.SetCoachPinned(true);
+        if (_pages.Any(p => p.Anchor is CoachAnchor.Dock or CoachAnchor.DockFolder)) DockState.SetCoachPinned(true);
         ShowCurrent(animate: true);
     }
 
@@ -770,7 +770,7 @@ internal sealed class CoachSession
 
         var current = _pages[_index];
         // 독 카드를 지나면 고정을 풂 → 자동 숨김 독이 다음 카드로 넘어가며 미끄러져 숨는 걸 보여 줌
-        if (current.Anchor == CoachAnchor.Dock) _dockShown = true;
+        if (current.Anchor is CoachAnchor.Dock or CoachAnchor.DockFolder) _dockShown = true;
         else if (_dockShown) DockState.SetCoachPinned(false);
         if (current.AdvanceOnUse) _usePoll.Start(); else _usePoll.Stop();
         _ring?.Close();

@@ -247,7 +247,8 @@ internal static class Program
                 """);
             Check("폴더는 끝으로·잘못된 폴더/루틴 빠짐", string.Join(",", extras.Pins.Select(p => p.Name)), "메모장,아침,계산기,받은 파일,문서");
             var dl = extras.Pins.First(p => p.Name == "받은 파일");
-            Check("폴더 옵션 읽힘", $"{dl.Folder?.Sort}/{dl.Folder?.Display}", "Name/Folder");
+            Check("폴더 옵션 읽힘 (옛 display 는 무시)", dl.Folder?.Sort, Mongdock.Models.FolderSort.Name);
+            Check("옛 폴더 핀: 마지막 연 시각 채움 (새 파일 점은 지금부터)", dl.Folder?.LastOpened is not null, true);
             Check("폴더 옵션 없으면 기본값", extras.Pins.First(p => p.Name == "문서").Folder?.Sort, Mongdock.Models.FolderSort.Added);
             Check("폴더 id 채움", string.IsNullOrEmpty(dl.Id), false);
             var morning = extras.Pins.First(p => p.Name == "아침").Routine!;
