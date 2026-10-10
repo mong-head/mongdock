@@ -16,6 +16,7 @@ tools: Read, Edit, Glob, Grep, Bash, PowerShell
 2. `dotnet build src/mongdock/mongdock.csproj -c Release` 경고·오류 0.
 3. `.\build-release.ps1 -Version vX.Y.Z` → `dist\mongdock-vX.Y.Z-setup.exe`(프레임워크 의존, ~10MB), `dist\mongdock-vX.Y.Z-win-x64.zip`(자체 포함, ~73MB), `dist\release-notes-vX.Y.Z.md`.
 4. `git push origin HEAD:main`, `git push origin HEAD:menus-stable` (앱이 원격 메뉴 규칙을 menus-stable 에서 읽는다. `menus/app-menus.json` 을 바꿨으면 revision 을 올렸는지 확인).
+   - 0.6.0 부터 앱은 메뉴 규칙을 공개 사이트에서 읽는다: `menus/app-menus.json` 을 `C:\dev\mongdock-team\site\menuspp-menus.json` 으로 복사 → 사이트 저장소(mong-head/mongdock-site) 커밋·푸시. menus-stable 은 옛 판(0.5.x 이하)용으로 저장소가 공개인 동안만 유지.
 5. `gh release create vX.Y.Z <setup> <zip> --repo mong-head/mongdock --target main --title "vX.Y.Z" --notes-file dist\release-notes-vX.Y.Z.md`
 6. 이 PC 의 설치본 갱신이 필요하면 직접 실행하지 말고 `C:\dev\mongdock-tmp\` 에 .cmd(`mongdock.exe --exit` → `dotnet publish ... -o %LOCALAPPDATA%\Programs\mongdock` → `start "" mongdock.exe`)를 만들어 `Start-Process explorer.exe -ArgumentList '<.cmd>'` 로 실행한다 (Claude 셸에서 띄우면 MSIX 가상화로 설정이 엉뚱한 곳에 저장된다).
 
