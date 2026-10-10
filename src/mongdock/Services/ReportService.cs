@@ -33,8 +33,8 @@ public enum ReportSendResult
 /// </summary>
 public static class ReportService
 {
-    /// <summary>Apps Script 웹 앱 URL (…/exec). 비어 있으면 창은 열리되 "준비 중" 안내.</summary>
-    public const string Endpoint = "https://script.google.com/macros/s/AKfycbypcummOSv5veADZVUuOC6kyFeSfkeoh6rnqABAQiIEMp59O86a57u5PNqbtAicC-qo/exec";
+    /// <summary>Apps Script 웹 앱 URL (…/exec) — 홈페이지 endpoint.json 이 정함, 못 읽으면 내장 (<see cref="IntakeEndpoint"/>).</summary>
+    public static string Endpoint => IntakeEndpoint.Current;
 
     public const string SupportAddress = "mongdock+help@gmail.com";
     internal const string Token = "mongdock-report-v1";
@@ -234,7 +234,8 @@ public static class ReportService
                 ["diagnostics"] = Truncate(diagnostics, MaxDiagnostics),
             };
             using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-            using var response = await Http.PostAsync(Endpoint, content, ct).ConfigureAwait(false);
+            string endpoint = await IntakeEndpoint.GetAsync(ct).ConfigureAwait(false);
+            using var response = await Http.PostAsync(endpoint, content, ct).ConfigureAwait(false);
             string text = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {

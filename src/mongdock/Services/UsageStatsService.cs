@@ -243,7 +243,8 @@ public sealed class UsageStatsService : IDisposable
             }
             var body = new JsonObject { ["token"] = ReportService.Token, ["type"] = "stats", ["days"] = days };
             using var content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
-            using var response = await ReportService.Http.PostAsync(ReportService.Endpoint, content).ConfigureAwait(true);
+            string endpoint = await IntakeEndpoint.GetAsync().ConfigureAwait(true);
+            using var response = await ReportService.Http.PostAsync(endpoint, content).ConfigureAwait(true);
             string text = await response.Content.ReadAsStringAsync().ConfigureAwait(true);
             int status = response.IsSuccessStatusCode ? ReportService.ParseStatus(text) : (int)response.StatusCode;
             if (status == 200)
