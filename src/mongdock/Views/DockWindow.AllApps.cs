@@ -62,7 +62,9 @@ public partial class DockWindow
         var toDip = source.CompositionTarget.TransformFromDevice;
         var a = toDip.Transform(view.PointToScreen(new Point(0, 0)));
         var b = toDip.Transform(view.PointToScreen(new Point(view.ActualWidth, view.ActualHeight)));
+        long beforeCtor = clock.ElapsedMilliseconds;
         var panel = new AllAppsPanel(_services, UiTheme.Palette(_services.Settings.Current), new Rect(a, b), _layout.Edge, _monitor);
+        Log.Info($"앱 모음 판 만들기 {clock.ElapsedMilliseconds - beforeCtor}ms");
         panel.Launched += app => AppUsage.Record(AllAppsCatalog.Identity(app), _services.Settings.Current.AllApps);
         panel.PinToDockRequested += PinAppToDock;
         panel.Closed += (_, _) =>

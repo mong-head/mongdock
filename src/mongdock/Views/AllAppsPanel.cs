@@ -96,8 +96,11 @@ internal sealed partial class AllAppsPanel : DockStackPanel
                 });
             }, TaskScheduler.Default);
         Loaded += (_, _) => Dispatcher.BeginInvoke(() => { _search.Focus(); Keyboard.Focus(_search); }, DispatcherPriority.Input);
-        SpotlightWindow.CloseIfOpen();
-        Current = this;
+        if (!_prewarming) // 미리 만들어 보기(화면에 안 띄움)는 검색 창을 닫거나 "열린 판"이 되지 않음
+        {
+            SpotlightWindow.CloseIfOpen();
+            Current = this;
+        }
         void OnRoutines() { if (!IsClosing && _drag is null) Rebuild(); } // 실행 중 점
         RoutineService.Changed += OnRoutines;
         Closed += (_, _) =>
@@ -523,6 +526,39 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     // ───────────────────────── 미리 준비 ─────────────────────────
 
     private static bool _warming;
+    private static bool _prewarming, _prewarmed;
+
+    /// <summary>
+    /// 몽독 시작 뒤 한 번: 판을 화면에 띄우지 않고 만들어 배치하고 그림으로까지 떠 봄 (처음 만들 때만 드는 일 — 코드 준비·글꼴·그림 그리기 —
+    /// 를 미리 끝내 첫 열기도 둘째부터처럼 빠르게. QA: 첫 열기 220~250ms, 둘째부터 90~140ms). 만든 판은 바로 버림.
+    /// </summary>
+    private static void Prewarm(AppServices services)
+    {
+        _prewarmed = true;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        AllAppsPanel? w = null;
+        try
+        {
+            _prewarming = true;
+            var monitor = Monitors.GetPrimary();
+            w = new AllAppsPanel(services, UiTheme.Palette(services.Settings.Current), new Rect(monitor.WorkArea.Left + monitor.WorkArea.Width / 2, monitor.WorkArea.Bottom - 52, 52, 52), DockEdge.Bottom, monitor);
+            if (w.Content is FrameworkElement root)
+            {
+                root.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                root.Arrange(new Rect(root.DesiredSize));
+                root.UpdateLayout();
+                var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(Math.Max(1, (int)root.ActualWidth), Math.Max(1, (int)root.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+                rtb.Render(root); // 그림 뜨기(나타나기)와 같은 길
+            }
+            Log.Info($"앱 모음 판 미리 만들어 봄: {clock.ElapsedMilliseconds}ms");
+        }
+        catch (Exception ex) { Log.Warn($"앱 모음 판 미리 만들기 실패: {ex.GetType().Name}"); }
+        finally
+        {
+            _prewarming = false;
+            try { w?.Close(); } catch (InvalidOperationException) { }
+        }
+    }
 
     /// <summary>
     /// 몽독 시작 몇 초 뒤(유휴) 미리: 앱 목록·분류, 그리고 처음 화면에 보이는 아이콘(★ 줄·묶음 미리 보기)을 64px 로.
@@ -570,6 +606,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
                             lock (KeepIcons) { KeepIcons.Clear(); foreach (var a in targets) KeepIcons.Add(style + "|" + a.Key); }
                             ReleaseTemporaryBitmaps(); // 64px 로 줄이며 만든 256px 임시 그림의 네이티브 메모리를 바로 돌려줌
                             Log.Info($"앱 모음 판 미리 준비: 앱 {t.Result.Count}개, 아이콘 {SmallIcons.Count}개");
+                            if (Current is null && !_prewarmed) Prewarm(services);
                             return;
                         }
                         SmallIcon(services, queue.Dequeue(), style);

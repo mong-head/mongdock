@@ -53,8 +53,9 @@ internal static class Program
         var panelType = asm.GetType("Mongdock.Views.AllAppsPanel")!;
         var introType = asm.GetType("Mongdock.Views.PanelIntro")!;
         asm.GetType("Mongdock.Services.AllAppsCatalog")!.GetMethod("Apps")!.Invoke(null, new object[] { false });
-        introType.GetMethod("Warm", Any)!.Invoke(null, new object[] { services });
-        Pump(600);
+        // 몽독 시작 뒤와 같게: 앱 모음 판 미리 준비(아이콘·그림 창·판 미리 만들어 보기)를 다 끝낸 뒤 시험
+        panelType.GetMethod("Warm", Any)!.Invoke(null, new object[] { services });
+        Pump(8000);
 
         var monitor = Monitors.GetPrimary();
         var work = monitor.WorkArea;
