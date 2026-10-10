@@ -196,7 +196,7 @@ zip 으로 썼다면:
 
 ## 앱 메뉴 규칙
 
-브라우저·탐색기·VS Code·카카오톡·디스코드·노션처럼 윈도우 메뉴가 없는 앱의 상단바 단축키 메뉴는 [`menus/app-menus.json`](menus/app-menus.json) 에 들어 있다. 몽독은 이 파일을 앱 안에 담아 두고(오프라인·첫 실행용), 켜진 지 2분 뒤와 그 뒤 하루에 한 번 GitHub `menus-stable` 브랜치의 같은 파일을 받아 바로 적용한다. 그래서 **새 앱 메뉴는 몽독 새 버전 없이 이 파일만 고치면** 모든 사용자에게 반영된다. 받은 파일은 `%APPDATA%\mongdock\cache\app-menus.json` 에 저장되고, 내장 파일과 비교해 `revision` 이 높은 쪽을 쓴다.
+브라우저·탐색기·VS Code·카카오톡·디스코드·노션처럼 윈도우 메뉴가 없는 앱의 상단바 단축키 메뉴는 [`menus/app-menus.json`](menus/app-menus.json) 에 들어 있다. 몽독은 이 파일을 앱 안에 담아 두고(오프라인·첫 실행용), 켜진 지 2분 뒤와 그 뒤 하루에 한 번 공개 사이트의 같은 파일(`https://mong-head.github.io/mongdock-site/menus/app-menus.json`)을 받아 바로 적용한다(받지 못하면 내장 규칙). 그래서 **새 앱 메뉴는 몽독 새 버전 없이 이 파일만 고치면** 모든 사용자에게 반영된다. 받은 파일은 `%APPDATA%\mongdock\cache\app-menus.json` 에 저장되고, 내장 파일과 비교해 `revision` 이 높은 쪽을 쓴다.
 
 ```jsonc
 {
@@ -221,7 +221,7 @@ zip 으로 썼다면:
 }
 ```
 
-- **추가 방법**: 저장소에서 `menus/app-menus.json` 을 고쳐 PR 을 보내거나(관리자는 직접 수정), `revision` 을 1 올린다. 규칙 변경은 `main` 에서 검토 후 `menus-stable` 로 옮기며, 옮긴 뒤 하루 안에 모든 사용자에게 적용된다. 실제 파일은 주석 대신 맨 위 `_doc` 에 설명이 있다.
+- **추가 방법**: 저장소에서 `menus/app-menus.json` 을 고쳐 PR 을 보내거나(관리자는 직접 수정), `revision` 을 1 올린다. 규칙 변경은 `main` 에서 검토 후 사이트 저장소의 `menus/app-menus.json` 으로 복사해 올리며, 올린 뒤 하루 안에 모든 사용자에게 적용된다(v0.5 이하 옛 판은 `menus-stable` 브랜치를 받음). 실제 파일은 주석 대신 맨 위 `_doc` 에 설명이 있다.
 - **영어**: 메뉴 제목과 항목에 `"title_en"`·`"text_en"` 을 함께 쓸 수 있다(선택). 몽독이 영어일 때 이 글자를 보이고, 없거나 잘못되면 한국어 원문을 쓴다. `_en` 을 모르는 옛 몽독은 무시하므로 `schema` 는 그대로 1.
 - **키 이름**: `A`~`Z`, `0`~`9`, `F1`~`F24`, `Left`/`Right`/`Up`/`Down`, `Tab`, `Enter`, `Esc`, `Space`, `Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, `NumPad0`~`9`, `` = - , . / ; ` [ \ ] ' `` 와 수식키 `Ctrl`/`Shift`/`Alt`.
 - **안전 규칙**: 메뉴 글자와 단축키, 위의 창 동작 네 가지만 쓸 수 있다(프로그램 실행·URL 열기 없음). `Win` 조합·`Alt+Tab`·`Ctrl+Esc`·`Ctrl+Shift+Esc`·`Ctrl+Alt+Delete`·`Shift+Delete`(영구 삭제)·`Alt+F4`(창 닫기는 `"action": "close"`) 는 거부. `Ctrl+W`·`Ctrl+F4` 는 허용. 파일 512KB·앱 300개·메뉴당 항목 80개 상한. 잘못된 앱 항목은 그 앱만 버리고 로그에 남긴다.

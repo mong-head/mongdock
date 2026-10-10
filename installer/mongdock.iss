@@ -22,7 +22,7 @@
 
 #define AppName "mongdock"
 #define AppExe "mongdock.exe"
-#define AppUrl "https://github.com/mong-head/mongdock"
+#define AppUrl "https://mong-head.github.io/mongdock-site/"
 
 [Setup]
 ; AppId 는 절대 바꾸지 말 것 (업그레이드/제거가 이 값으로 같은 앱을 찾는다)
@@ -33,8 +33,8 @@ AppVerName=mongdock (몽독) {#AppVersion}
 UninstallDisplayName=mongdock (몽독)
 AppPublisher=mong-head
 AppPublisherURL={#AppUrl}
-AppSupportURL={#AppUrl}/issues
-AppUpdatesURL={#AppUrl}/releases
+AppSupportURL={#AppUrl}
+AppUpdatesURL={#AppUrl}
 VersionInfoVersion={#NumericVersion}
 VersionInfoProductName=mongdock
 VersionInfoDescription=mongdock (몽독) 설치 프로그램

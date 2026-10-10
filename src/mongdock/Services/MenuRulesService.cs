@@ -16,7 +16,8 @@ namespace Mongdock.Services;
 /// </summary>
 internal sealed class MenuRulesService : IDisposable
 {
-    public const string RemoteUrl = "https://raw.githubusercontent.com/mong-head/mongdock/menus-stable/menus/app-menus.json";
+    /// <summary>공개 사이트의 규칙 파일 (저장소는 출시 때 비공개 — 사이트 저장소 menus/ 에 올림). 공개 전엔 실패 → 내장 규칙.</summary>
+    public const string RemoteUrl = "https://mong-head.github.io/mongdock-site/menus/app-menus.json";
 
     private static readonly TimeSpan FirstDelay = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan Interval = TimeSpan.FromHours(24);
