@@ -42,6 +42,73 @@ internal static partial class MacIconRenderer
         dc.DrawGeometry(Brushes.White, outline, ft.BuildGeometry(new Point(x, y)));
     });
 
+    /// <summary>
+    /// 독 휴지통 (#24-C): 판 위 흰 휴지통 (뚜껑·손잡이·세로 홈). full 이면 뚜껑 대신 종이 두 장이 비어져 나옴 — 빔/참이 52px 에서도 구분되게.
+    /// color = 판 색 이름 (아이콘 바꾸기, null = 몽독 하늘~연보라).
+    /// </summary>
+    public static BitmapSource Trash(bool full, string? color = null) => Render(dc =>
+    {
+        var (top, bottom) = PinIconRenderer.PlateColors(color);
+        dc.DrawGeometry(new LinearGradientBrush(top, bottom, 75), new Pen(new SolidColorBrush(Color.FromArgb(0x24, 0, 0, 0)), 0.5), Squircle);
+        var ink = new SolidColorBrush(color is null or "mongdock" ? FolderInk : bottom);
+        var shade = new SolidColorBrush(Color.FromArgb(0x38, 0x6A, 0x5C, 0xC8));
+        var white = new LinearGradientBrush(Colors.White, Color.FromRgb(0xF3, 0xF1, 0xFF), 90);
+        var r = BodyRect;
+        double cx = r.X + r.Width / 2, w = r.Width;
+
+        // 몸통: 위가 조금 넓은 둥근 사다리꼴
+        double topY = r.Y + r.Height * 0.40, botY = r.Y + r.Height * 0.80, topHalf = w * 0.22, botHalf = w * 0.18, rad = w * 0.035;
+        Geometry Body(double dy)
+        {
+            var g = new StreamGeometry();
+            using (var c = g.Open())
+            {
+                c.BeginFigure(new Point(cx - topHalf, topY + dy), true, true);
+                c.LineTo(new Point(cx + topHalf, topY + dy), true, true);
+                c.LineTo(new Point(cx + botHalf, botY - rad + dy), true, true);
+                c.ArcTo(new Point(cx + botHalf - rad * 1.5, botY + dy), new Size(rad * 1.5, rad * 1.5), 0, false, SweepDirection.Clockwise, true, true);
+                c.LineTo(new Point(cx - botHalf + rad * 1.5, botY + dy), true, true);
+                c.ArcTo(new Point(cx - botHalf, botY - rad + dy), new Size(rad * 1.5, rad * 1.5), 0, false, SweepDirection.Clockwise, true, true);
+            }
+            g.Freeze();
+            return g;
+        }
+
+        if (full)
+        {
+            // 종이 두 장 (몸통 뒤에서 비스듬히 비어져 나옴)
+            var paper = new SolidColorBrush(Colors.White);
+            foreach (var (angle, dx, lift) in new[] { (-14.0, -0.07, 0.15), (11.0, 0.07, 0.19) })
+            {
+                double pw = w * 0.20, ph = w * 0.26, px = cx + w * dx - pw / 2, py = topY - r.Height * lift;
+                dc.PushTransform(new RotateTransform(angle, px + pw / 2, py + ph));
+                dc.DrawRoundedRectangle(shade, null, new Rect(px, py + ph * 0.03, pw, ph), w * 0.02, w * 0.02);
+                dc.DrawRoundedRectangle(paper, null, new Rect(px, py, pw, ph), w * 0.02, w * 0.02);
+                var line = new Pen(new SolidColorBrush(Color.FromArgb(0x70, FolderInk.R, FolderInk.G, FolderInk.B)), w * 0.014) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+                for (int i = 0; i < 3; i++)
+                    dc.DrawLine(line, new Point(px + pw * 0.2, py + ph * (0.25 + i * 0.18)), new Point(px + pw * (i == 2 ? 0.55 : 0.8), py + ph * (0.25 + i * 0.18)));
+                dc.Pop();
+            }
+        }
+
+        dc.DrawGeometry(shade, null, Body(r.Height * 0.03));
+        dc.DrawGeometry(white, null, Body(0));
+        // 세로 홈 3줄
+        var groove = new Pen(ink, w * 0.028) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+        foreach (double t in new[] { -0.09, 0.0, 0.09 })
+            dc.DrawLine(groove, new Point(cx + w * t, topY + r.Height * 0.08), new Point(cx + w * t * 0.85, botY - r.Height * 0.07));
+
+        if (!full)
+        {
+            // 뚜껑 + 손잡이
+            double lidY = topY - r.Height * 0.085, lidH = r.Height * 0.06, lidHalf = w * 0.27;
+            dc.DrawRoundedRectangle(shade, null, new Rect(cx - lidHalf, lidY + lidH * 0.3, lidHalf * 2, lidH), lidH / 2, lidH / 2);
+            dc.DrawRoundedRectangle(white, null, new Rect(cx - lidHalf, lidY, lidHalf * 2, lidH), lidH / 2, lidH / 2);
+            double hw = w * 0.07, hh = r.Height * 0.05;
+            dc.DrawRoundedRectangle(null, new Pen(Brushes.White, w * 0.025), new Rect(cx - hw, lidY - hh, hw * 2, hh + lidH * 0.3), w * 0.02, w * 0.02);
+        }
+    });
+
     /// <summary>판 r 가운데 폭 = r 의 width 비율, 높이 = 폭의 0.8.</summary>
     private static Rect FolderBox(Rect r, double width, double down = 0)
     {

@@ -292,6 +292,8 @@ internal static class Program
             ("음악", Folder("Music"), "C-music"),
             ("동영상", Folder("Videos"), "C-videos"),
             ("없어진 폴더", Folder("Downloads", true), "missing"),
+            ("휴지통 (빔)", (BitmapSource)mac.GetMethod("Trash")!.Invoke(null, new object?[] { false, null })!, "trash-empty"),
+            ("휴지통 (참)", (BitmapSource)mac.GetMethod("Trash")!.Invoke(null, new object?[] { true, null })!, "trash-full"),
         };
         foreach (var (_, img, file) in rows)
             if (img is not null) SavePng(img, Path.Combine(dir, $"{file}-256.png"));

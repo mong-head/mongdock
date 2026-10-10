@@ -346,7 +346,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
                 if (pin!.Kind == PinKind.Folder) (pin.Folder ??= new FolderOptions()).LastOpened ??= DateTime.UtcNow;
                 if (pin.Kind is PinKind.Folder or PinKind.Routine) pin.Id ??= Guid.NewGuid().ToString("N");
             }
-            KeepFoldersLast(pins);
+            KeepTrashLast(pins);
         }
         FixUndefinedEnums(s, "", fixes); // 숫자로 적은 없는 enum 값(예 "colorMode": 7)은 예외 없이 들어오므로 따로
         // 수동 편집으로 null 이 들어와도 UI 가 죽지 않게 보정.
@@ -362,6 +362,9 @@ public sealed class SettingsService : ISettingsService, IDisposable
         s.Search.MaxPerCategory = Math.Clamp(s.Search.MaxPerCategory, 3, 10);
         s.FontFamily ??= "Pretendard";
         s.AppMenus ??= new Dictionary<string, List<AppMenuDef>>();
+        s.SeenHints ??= new List<string>();
+        s.NewSince ??= new Dictionary<string, DateTime>();
+        s.NewSeen ??= new List<string>();
         s.Pins ??= new List<PinItem>();
         s.Pins.RemoveAll(p => p is null);
         foreach (var p in s.Pins)
@@ -399,7 +402,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
         ImportTaskbarPinsIfRequested();
         lock (_gate)
         {
-            KeepFoldersLast(Current.Pins); // 핀을 바로 더하는 곳(상단바·작업 표시줄 가져오기 등)이 있어도 독 폴더는 늘 끝
+            KeepTrashLast(Current.Pins); // 독 휴지통은 화면 맨 끝 — 핀을 바로 더하는 곳이 있어도 목록 끝에 (핀 위치 = 화면 위치)
             string text = JsonSerializer.Serialize(Current, JsonOptions);
             string tmp = SettingsPath + ".tmp";
             try
@@ -508,16 +511,19 @@ public sealed class SettingsService : ISettingsService, IDisposable
         });
     }
 
-    /// <summary>독 폴더(PinKind.Folder)를 목록 끝으로 (순서는 유지). 독 화면에서 폴더는 늘 오른쪽 끝이라 핀 영역 위치 = 목록 위치가 되게.</summary>
-    public static void KeepFoldersLast(List<PinItem> pins)
+    /// <summary>독 휴지통(Special "recyclebin")은 하나만, 목록 맨 끝에.</summary>
+    public static void KeepTrashLast(List<PinItem> pins)
     {
-        var folders = pins.Where(p => p?.Kind == PinKind.Folder).ToList();
-        if (folders.Count == 0) return;
-        int firstFolder = pins.FindIndex(p => p?.Kind == PinKind.Folder);
-        if (pins.Skip(firstFolder).All(p => p?.Kind == PinKind.Folder)) return; // 이미 끝에 모여 있음
-        pins.RemoveAll(p => p?.Kind == PinKind.Folder);
-        pins.AddRange(folders);
+        int first = pins.FindIndex(IsTrashPin);
+        if (first < 0) return;
+        var trash = pins[first];
+        if (first == pins.Count - 1) return;
+        pins.RemoveAll(IsTrashPin);
+        pins.Add(trash);
     }
+
+    private static bool IsTrashPin(PinItem? p) =>
+        p is { Kind: PinKind.Special } && string.Equals(p.Target, DefaultPins.RecycleBinTarget, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>값만 틀린 원본을 settings.json.bad-시각 으로 보관 (고친 내용으로 덮기 전에).</summary>
     private void KeepBadOriginal(string text, List<string> fixes)
@@ -671,6 +677,8 @@ public sealed class SettingsService : ISettingsService, IDisposable
         // 크래시 안내 끔, 처음 쓰기 힌트 기록
         imported.SendUsageStats = cur.SendUsageStats;
         imported.StatsAskDay = cur.StatsAskDay;
+        imported.NewSince = cur.NewSince; // NEW 배지 기록은 이 PC 것
+        imported.NewSeen = cur.NewSeen;
         imported.StatsAskCount = cur.StatsAskCount;
         // 작업 표시줄 숨기기도 이 PC 의 윈도우를 바꾸는 설정 → 그대로 (숨긴 채면 트레이 아이콘을 볼 곳이 상단바뿐이라 그것도 유지)
         imported.HideWindowsTaskbar = cur.HideWindowsTaskbar;

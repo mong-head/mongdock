@@ -44,6 +44,8 @@ public static class SettingsTransfer
         string iconsDir = Path.GetFullPath(settings.IconsDirectory);
         var s = SettingsService.ParseForImport(settings.ExportJson()); // 지금 설정의 사본
         var icons = new List<string>();
+        s.NewSince.Clear(); // NEW 배지 기록은 이 PC 것 — 옮기지 않음
+        s.NewSeen.Clear();
         // 핀 아이콘(IconPath)과 아이콘 바꾸기로 고른 그림(Icon.File) — 몽독 아이콘 폴더 안 것만 묶어 넣고 경로는 토큰으로
         string? Pack(string? path)
         {

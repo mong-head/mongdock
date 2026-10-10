@@ -414,6 +414,10 @@ public sealed class Settings
     public bool FirstUseHintsPending { get; set; }
     /// <summary>이미 본 처음 쓰기 힌트 키 (appmenu·desktops·calendar·tray).</summary>
     public List<string> SeenHints { get; set; } = new();
+    /// <summary>새 기능 NEW 배지 (Services/NewBadges): 기존 사용자가 그 기능을 처음 받은 때 (UTC). 이 PC 것 — 설정 옮기기 제외.</summary>
+    public Dictionary<string, DateTime> NewSince { get; set; } = new();
+    /// <summary>NEW 배지를 다 본(써 본·새 설치) 기능.</summary>
+    public List<string> NewSeen { get; set; } = new();
     /// <summary>오류 자동 신고 카드에서 "다시 묻지 않기" (Views/CrashPrompt). 오류 기록은 계속 로그에 남음.</summary>
     public bool CrashPromptDisabled { get; set; }
     /// <summary>

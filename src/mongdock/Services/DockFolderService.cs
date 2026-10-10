@@ -145,8 +145,9 @@ internal sealed class DockFolderService : IDisposable
     public ImageSource Icon(PinItem pin, IconStyle style)
     {
         bool missing = !IsAvailable(pin.Target);
-        if (PinIconRenderer.Render(pin.Icon, GlyphFor(pin.Target), missing) is { } chosen) return chosen;
-        var key = (GlyphFor(pin.Target), missing);
+        var kind = GlyphFor(pin.Target);
+        if (PinIconRenderer.Render(pin.Icon, c => MacIconRenderer.Folder(kind, missing, c), $"folder:{kind}", missing) is { } chosen) return chosen;
+        var key = (kind, missing);
         if (!IconCache.TryGetValue(key, out var img)) IconCache[key] = img = MacIconRenderer.Folder(key.Item1, missing);
         return img;
     }

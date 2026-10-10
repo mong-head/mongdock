@@ -40,21 +40,25 @@ internal static class PinIconRenderer
 
     /// <summary>
     /// 고른 아이콘. auto(또는 null)·그림 파일을 못 읽음 → null (부르는 쪽 기본 그림).
-    /// 독 폴더는 기호·글자 없이 색만 고르면 그 색 판에 폴더(+ 종류 그림) — folderKind 가 있을 때.
+    /// 기호·글자 없이 색만 고르면 plain(색) — 독 폴더는 그 색 판의 폴더(+ 종류 그림), 휴지통은 그 색 판의 휴지통. plainKey 는 캐시 구분용.
     /// </summary>
-    public static ImageSource? Render(PinIcon? icon, FolderGlyph? folderKind = null, bool missing = false)
+    public static ImageSource? Render(PinIcon? icon, Func<string?, ImageSource>? plain = null, string plainKey = "", bool missing = false)
     {
         if (icon is null || icon.Mode == PinIconMode.Auto) return null;
-        string key = $"{icon.Mode}|{icon.Color}|{icon.Glyph}|{icon.Text}|{icon.File}|{folderKind}|{missing}";
+        bool plainOnly = icon.Mode == PinIconMode.Glyph && string.IsNullOrEmpty(icon.Glyph) && string.IsNullOrWhiteSpace(icon.Text) && plain is not null;
+        string key = $"{icon.Mode}|{icon.Color}|{icon.Glyph}|{icon.Text}|{icon.File}|{(plainOnly ? plainKey : "")}|{missing}";
         if (Cache.TryGetValue(key, out var hit)) return hit;
         ImageSource? img = icon.Mode switch
         {
             PinIconMode.File => FromFile(icon.File),
-            _ when string.IsNullOrEmpty(icon.Glyph) && string.IsNullOrWhiteSpace(icon.Text) && folderKind is { } kind
-                => MacIconRenderer.Folder(kind, missing, icon.Color),
+            _ when plainOnly => plain!(icon.Color),
             _ => MacIconRenderer.Symbol(missing ? "gray" : icon.Color, icon.Glyph, icon.Text),
         };
-        if (img is not null) Cache[key] = img;
+        if (img is not null)
+        {
+            if (Cache.Count >= 64) Cache.Clear(); // 고르기 카드에서 글자를 칠 때마다 쌓이지 않게
+            Cache[key] = img;
+        }
         return img;
     }
 

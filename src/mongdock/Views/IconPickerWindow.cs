@@ -38,17 +38,18 @@ internal sealed class IconPickerWindow : Window
     private readonly TextBlock _fileName = new() { TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
 
     /// <param name="keepDefaultGlyph">독 폴더: 기호 칸 맨 앞 "기본 그림"(폴더 + 종류 그림) — 색만 바꿀 수 있게.</param>
-    public static void Open(AppServices services, PinIcon? current, bool keepDefaultGlyph, Func<PinIcon?, ImageSource?> preview, Action<PinIcon?> done)
+    /// <param name="autoText">[자동] 칸 설명 (예 "폴더 종류에 맞는 기본 그림을 써요.").</param>
+    public static void Open(AppServices services, PinIcon? current, bool keepDefaultGlyph, string autoText, Func<PinIcon?, ImageSource?> preview, Action<PinIcon?> done)
     {
         _open?.Close();
-        var w = new IconPickerWindow(services, current, keepDefaultGlyph, preview, done);
+        var w = new IconPickerWindow(services, current, keepDefaultGlyph, autoText, preview, done);
         _open = w;
         w.Closed += (_, _) => { if (_open == w) _open = null; };
         w.Show();
         w.Activate();
     }
 
-    private IconPickerWindow(AppServices services, PinIcon? current, bool keepDefaultGlyph, Func<PinIcon?, ImageSource?> preview, Action<PinIcon?> done)
+    private IconPickerWindow(AppServices services, PinIcon? current, bool keepDefaultGlyph, string autoText, Func<PinIcon?, ImageSource?> preview, Action<PinIcon?> done)
     {
         _services = services;
         _p = UiTheme.Palette(services.Settings.Current);
@@ -79,7 +80,7 @@ internal sealed class IconPickerWindow : Window
         body.Children.Add(_tabs);
 
         // 자동
-        _autoPage.Children.Add(Muted(keepDefaultGlyph ? Loc.T("폴더 종류에 맞는 기본 그림을 써요.") : Loc.T("담긴 앱 아이콘을 모아 보여 줘요.")));
+        _autoPage.Children.Add(Muted(autoText));
 
         // 기호: 판 색 → 기호 칸 → 글자
         foreach (string c in PinIconRenderer.Colors) _colors.Children.Add(ColorSwatch(c));
@@ -194,9 +195,14 @@ internal sealed class IconPickerWindow : Window
             CheckFileExists = true,
         };
         _dialogOpen = true;
+        _watch.Stop(); // 파일 고르기 창 안의 클릭이 이 카드를 닫지 않게 (다시 켬)
         bool ok;
         try { ok = dialog.ShowDialog(this) == true; }
-        finally { _dialogOpen = false; }
+        finally
+        {
+            _dialogOpen = false;
+            if (IsLoaded) _watch.Start();
+        }
         if (!ok) return;
         try
         {

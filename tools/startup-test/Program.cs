@@ -166,6 +166,42 @@ internal static class Program
         }
     }
 
+    /// <summary>휴지통 정보 파일($I) 읽기 — 가짜 파일로만 (실제 휴지통은 건드리지 않음). 복원 경로에 확장자가 그대로여야 함.</summary>
+    private static void RecycleInfoTests(Type rb)
+    {
+        var read = rb.GetMethod("ReadOriginalPath", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        string dir = Path.Combine(Path.GetTempPath(), "mongdock-rbtest-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string original = @"C:\Users\u\Documents\보고서 최종.docx";
+            var v2 = new List<byte>();
+            v2.AddRange(BitConverter.GetBytes(2L));
+            v2.AddRange(BitConverter.GetBytes(12345L));
+            v2.AddRange(BitConverter.GetBytes(DateTime.UtcNow.ToFileTimeUtc()));
+            v2.AddRange(BitConverter.GetBytes(original.Length + 1));
+            v2.AddRange(System.Text.Encoding.Unicode.GetBytes(original + "\0"));
+            string f2 = Path.Combine(dir, "$IABC123.docx");
+            File.WriteAllBytes(f2, v2.ToArray());
+            Check("$I 버전 2: 원래 경로(확장자 포함)", read.Invoke(null, new object[] { f2 }), original);
+
+            var v1 = new byte[24 + 520];
+            BitConverter.GetBytes(1L).CopyTo(v1, 0);
+            System.Text.Encoding.Unicode.GetBytes(original).CopyTo(v1, 24);
+            string f1 = Path.Combine(dir, "$IDEF456.docx");
+            File.WriteAllBytes(f1, v1);
+            Check("$I 버전 1: 원래 경로", read.Invoke(null, new object[] { f1 }), original);
+
+            string bad = Path.Combine(dir, "$Ibad");
+            File.WriteAllBytes(bad, new byte[] { 1, 2, 3 });
+            Check("$I 깨진 파일 → null", read.Invoke(null, new object[] { bad }), null);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { }
+        }
+    }
+
     private static int RepairTests()
     {
         string root = Path.Combine(Path.GetTempPath(), "mongdock-repair-test-" + Guid.NewGuid().ToString("N"));
@@ -245,7 +281,7 @@ internal static class Program
                       { "kind": "url" } ] } },
                   { "name": "계산기", "kind": "Exe", "target": "calc.exe" } ] }
                 """);
-            Check("폴더는 끝으로·잘못된 폴더/루틴 빠짐", string.Join(",", extras.Pins.Select(p => p.Name)), "메모장,아침,계산기,받은 파일,문서");
+            Check("폴더는 그 자리 그대로·잘못된 폴더/루틴 빠짐", string.Join(",", extras.Pins.Select(p => p.Name)), "받은 파일,메모장,문서,아침,계산기");
             var dl = extras.Pins.First(p => p.Name == "받은 파일");
             Check("폴더 옵션 읽힘 (옛 display 는 무시)", dl.Folder?.Sort, Mongdock.Models.FolderSort.Name);
             Check("옛 폴더 핀: 마지막 연 시각 채움 (새 파일 점은 지금부터)", dl.Folder?.LastOpened is not null, true);
@@ -256,15 +292,20 @@ internal static class Program
             Check("루틴: 데스크톱·모니터·배치·지연", $"{morning.Desktop?.Mode}/{morning.Items[0].Monitor?.Mode}{morning.Items[0].Monitor?.Index}/{morning.Items[0].Placement?.Mode}/{morning.Items[0].DelayMs}", "New/Index1/Left/500");
             var again = SettingsService.ParseForImport(System.Text.Json.JsonSerializer.Serialize(extras, (System.Text.Json.JsonSerializerOptions)typeof(SettingsService).GetField("JsonOptions", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!));
             Check("다시 저장·읽어도 그대로", string.Join(",", again.Pins.Select(p => p.Name + ":" + p.Id)), string.Join(",", extras.Pins.Select(p => p.Name + ":" + p.Id)));
-            var order = new List<Mongdock.Models.PinItem>
-            {
-                new() { Name = "F1", Kind = Mongdock.Models.PinKind.Folder, Target = "a" },
-                new() { Name = "A", Kind = Mongdock.Models.PinKind.Exe, Target = "a.exe" },
-                new() { Name = "F2", Kind = Mongdock.Models.PinKind.Folder, Target = "b" },
-                new() { Name = "B", Kind = Mongdock.Models.PinKind.Exe, Target = "b.exe" },
-            };
-            SettingsService.KeepFoldersLast(order);
-            Check("KeepFoldersLast: 순서 유지하며 끝으로", string.Join(",", order.Select(p => p.Name)), "A,B,F1,F2");
+            // 독 휴지통 (#24-C): 하나만, 늘 목록 끝
+            var trash = SettingsService.ParseForImport("""
+                { "settingsVersion": 5, "pins": [
+                  { "name": "", "kind": "Special", "target": "recyclebin" },
+                  { "name": "메모장", "kind": "Exe", "target": "notepad.exe" },
+                  { "name": "", "kind": "Special", "target": "recyclebin" },
+                  { "name": "문서", "kind": "Folder", "target": "C:/docs" } ] }
+                """);
+            Check("휴지통: 하나만 남고 맨 끝", string.Join(",", trash.Pins.Select(p => p.Target)), "notepad.exe,C:/docs,recyclebin");
+            var rb = typeof(SettingsService).Assembly.GetType("Mongdock.Services.RecycleBin")!;
+            Check("용량 표시 340MB", rb.GetMethod("FormatSize")!.Invoke(null, new object[] { 340L * 1024 * 1024 }), "340MB");
+            Check("용량 표시 1.5GB", rb.GetMethod("FormatSize")!.Invoke(null, new object[] { 1536L * 1024 * 1024 }), "1.5GB");
+            Check("휴지통 개수 읽힘", rb.GetMethod("Query")!.Invoke(null, null) is not null, true);
+            RecycleInfoTests(rb);
             FolderListTests();
 
             // 5: 핀 이름 Finder·Launchpad → 파일 탐색기·앱 모음 (정확히 같은 이름·대상만, 사용자가 바꾼 이름은 그대로)
