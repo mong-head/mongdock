@@ -69,8 +69,10 @@ public partial class DockWindow
         _folderPanelPin = pin;
         Interlocked.Increment(ref AllAppsCatalog.OpenedSinceSignal);
         int nth = ++_allAppsOpens;
-        panel.ContentRendered += (_, _) => Log.Info($"앱 모음 판 열기 {nth}번째: {clock.ElapsedMilliseconds}ms (목록 기다림 {waited}ms, 앱 {AllAppsCatalog.Cached?.Count ?? 0}개)");
+        long requested = 0;
+        panel.ContentRendered += (_, _) => Log.Info($"앱 모음 판 열기 {nth}번째: 클릭→첫 프레임 {clock.ElapsedMilliseconds}ms (목록 기다림 {waited}ms, 보이기 요청→첫 프레임 {clock.ElapsedMilliseconds - requested}ms, 창 생성→첫 프레임 {panel.FirstFrameMs}ms, 앱 {AllAppsCatalog.Cached?.Count ?? 0}개)");
         panel.Closed += (_, _) => { if (!_closed && AllAppsCatalog.IsStale) AllAppsPanel.Warm(_services); }; // 앱 설치·삭제 반영 (다음 열기)
+        requested = clock.ElapsedMilliseconds;
         panel.Show();
     }
 

@@ -58,6 +58,9 @@ internal sealed class AllAppsPanel : DockStackPanel
     /// <summary>앱 모음 판은 "특별대우": 독 버튼 옆이 아니라 화면 가운데.</summary>
     protected override bool Centered => true;
 
+    /// <summary>크기가 커서 레이어드 창 대신 일반 창 (열 때 투명 구간 없이).</summary>
+    protected override bool Layered => false;
+
     public AllAppsPanel(AppServices services, UiPalette palette, Rect anchorDip, DockEdge edge, MonitorInfo monitor)
         : base(services, palette, anchorDip, edge, monitor, "mongdock All Apps")
     {

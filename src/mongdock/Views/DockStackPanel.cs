@@ -70,21 +70,44 @@ internal abstract class DockStackPanel : Window
             Effect = new DropShadowEffect { BlurRadius = 22, ShadowDepth = 4, Direction = 270, Opacity = P.ShadowOpacity },
         };
         Content = _card;
+        if (!Layered)
+        {
+            // 큰 판(앱 모음): 레이어드 창 대신 일반 창 + DWM 둥근 모서리 — 첫 프레임 합성이 무거워
+            // "투명하다가 확 뜨는" 일이 없게. 창 배경 = 카드 색, 그림자·여백은 DWM 이.
+            AllowsTransparency = false;
+            Background = P.CardBackground;
+            _card.Margin = new Thickness(0);
+            _card.Effect = null;
+            _card.CornerRadius = new CornerRadius(0);
+            _card.BorderThickness = new Thickness(0);
+            _card.Padding = new Thickness(14, 14, 14, 8);
+        }
 
         _watch = new OutsideClickWatcher(services, () => new[] { new Rect(Left, Top, ActualWidth, ActualHeight), Inflate(_anchor) }
             .Concat(_openMenu is { IsOpen: true } m ? OutsideClickWatcher.MenuAreas(m) : Enumerable.Empty<Rect>()), CloseAnimated);
         SourceInitialized += (_, _) =>
         {
             Services.DesktopWindows.MakeOverlay(this);
-            _watch.IgnoreHwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle; // 열면서 Activate 한 자기 자신으로 닫히지 않게
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            _watch.IgnoreHwnd = hwnd; // 열면서 Activate 한 자기 자신으로 닫히지 않게
+            if (!Layered) DwmCard(hwnd);
         };
         SizeChanged += (_, _) => Place();
+        _showClock = System.Diagnostics.Stopwatch.StartNew();
+        if (!Layered) _card.Opacity = 0.5;
+        // 일반 창(앱 모음): 첫 프레임이 실제로 화면에 나간 뒤 0.5→1.0 120ms (빈 구간 없이 바로 보이고 살짝 차오름)
+        ContentRendered += (_, _) =>
+        {
+            FirstFrameMs = _showClock.ElapsedMilliseconds;
+            if (Layered) return;
+            _card.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0.5, 1, TimeSpan.FromMilliseconds(120)));
+        };
         Loaded += (_, _) =>
         {
             Place();
-            if (Centered) Anim.Appear(_card, 150, fromScale: 0.97); // 화면 가운데 판: 페이드 + 아주 살짝 커지기 (올라오기 없음)
-            else Anim.Appear(_card, 150, fromX: _edge switch { DockEdge.Left => -8, DockEdge.Right => 8, _ => 0 },
-                fromY: _edge switch { DockEdge.Bottom => 8, DockEdge.Top => -8, _ => 0 });
+            if (Layered)
+                Anim.Appear(_card, 150, fromX: _edge switch { DockEdge.Left => -8, DockEdge.Right => 8, _ => 0 },
+                    fromY: _edge switch { DockEdge.Bottom => 8, DockEdge.Top => -8, _ => 0 });
             Activate();
             Keyboard.Focus(this);
             _watch.Start();
@@ -96,6 +119,37 @@ internal abstract class DockStackPanel : Window
 
     /// <summary>true 면 독 버튼 옆이 아니라 모니터 작업 영역 정가운데 (앱 모음 판).</summary>
     protected virtual bool Centered => false;
+
+    /// <summary>false 면 레이어드(투명) 창 대신 일반 창 + DWM 둥근 모서리 (큰 판 — 첫 프레임이 가벼움).</summary>
+    protected virtual bool Layered => true;
+
+    private readonly System.Diagnostics.Stopwatch _showClock;
+
+    /// <summary>창을 만든 뒤 첫 프레임이 그려지기까지 (열기 시간 로그).</summary>
+    public long FirstFrameMs { get; private set; } = -1;
+
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+    /// <summary>일반 창을 카드처럼: 윈도우 11 둥근 모서리, 얇은 테두리 색, 기본 창 열기 애니메이션 끔(우리 페이드와 겹치지 않게).</summary>
+    private void DwmCard(IntPtr hwnd)
+    {
+        try
+        {
+            int round = 2; // DWMWCP_ROUND
+            DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, ref round, sizeof(int));
+            if (P.Divider is SolidColorBrush b)
+            {
+                int color = b.Color.R | (b.Color.G << 8) | (b.Color.B << 16);
+                DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, ref color, sizeof(int));
+            }
+            int off = 1;
+            DwmSetWindowAttribute(hwnd, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */, ref off, sizeof(int));
+            int dark = P.IsLight ? 0 : 1;
+            DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, ref dark, sizeof(int));
+        }
+        catch (Exception ex) { Log.Warn($"판 창 모양 설정 실패: {ex.GetType().Name}"); }
+    }
 
     /// <summary>확인 카드 등 몽독 창을 띄우는 동안 판을 닫지 않음.</summary>
     protected bool KeepOpenOnDeactivate { get; set; }
@@ -329,7 +383,12 @@ internal abstract class DockStackPanel : Window
         if (_closing) return;
         _closing = true;
         _watch.Stop();
-        Anim.Disappear(_card, 120, () => Dispatcher.BeginInvoke(Close), toScale: Centered ? 0.97 : 1);
+        if (!Layered)
+        {
+            Close(); // 일반 창은 바로 (반투명으로 사라지는 중간 상태 없이)
+            return;
+        }
+        Anim.Disappear(_card, 120, () => Dispatcher.BeginInvoke(Close));
     }
 
     protected bool IsClosing => _closing;
