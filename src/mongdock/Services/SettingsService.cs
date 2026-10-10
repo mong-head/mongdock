@@ -401,6 +401,11 @@ public sealed class SettingsService : ISettingsService, IDisposable
         s.AllApps.Favorites ??= new List<string>();
         s.AllApps.Groups ??= new List<AppGroupDef>();
         s.AllApps.Groups.RemoveAll(g => g is null || string.IsNullOrWhiteSpace(g.Id));
+        foreach (var g in s.AllApps.Groups)
+        {
+            g.Apps?.RemoveAll(k => string.IsNullOrWhiteSpace(k));
+            g.AutoApps?.RemoveAll(k => string.IsNullOrWhiteSpace(k));
+        }
         s.AllApps.Overrides ??= new Dictionary<string, string>();
         s.AllApps.Hidden ??= new List<string>();
         s.AllApps.DismissedSuggestions ??= new Dictionary<string, DateTime>();
@@ -716,6 +721,13 @@ public sealed class SettingsService : ISettingsService, IDisposable
         imported.NewSince = cur.NewSince; // NEW 배지 기록은 이 PC 것
         imported.NewSeen = cur.NewSeen;
         imported.AllApps.DismissedSuggestions = cur.AllApps.DismissedSuggestions; // 추천 거절도 이 PC 것
+        // 실행 기록에서 나온 것(자동 폴더 내용, 씨앗·갱신·정리 띠 날짜)도 이 PC 것 — 다른 PC 의 날짜가 오면 독 핀 유예가 꺼지거나 씨앗을 안 읽음
+        imported.AllApps.UsageSeededAt = cur.AllApps.UsageSeededAt;
+        imported.AllApps.CleanupPromptMonth = cur.AllApps.CleanupPromptMonth;
+        imported.AllApps.CleanupUsed = cur.AllApps.CleanupUsed;
+        imported.AllApps.AutoFoldersDay = null; // 가져온 폴더 기준으로 다음에 다시 채움
+        foreach (var g in imported.AllApps.Groups)
+            g.AutoApps = g.Touched ? null : cur.AllApps.Groups.FirstOrDefault(c => c.Id == g.Id && !c.Touched)?.AutoApps;
         imported.StatsAskCount = cur.StatsAskCount;
         // 작업 표시줄 숨기기도 이 PC 의 윈도우를 바꾸는 설정 → 그대로 (숨긴 채면 트레이 아이콘을 볼 곳이 상단바뿐이라 그것도 유지)
         imported.HideWindowsTaskbar = cur.HideWindowsTaskbar;

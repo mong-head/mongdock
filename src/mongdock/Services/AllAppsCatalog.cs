@@ -337,7 +337,8 @@ internal static class AppUsage
     /// 첫 설치 때 한 번: 윈도우가 HKCU UserAssist 에 적어 둔 실행 횟수·마지막 실행 시각(이름은 ROT13)을 씨앗으로 —
     /// 이 PC 안에서만 쓰고 밖으로 보내지 않음. 실행 파일(exe 이름)·스토어 앱(AUMID)만, 바로 가기는 건너뜀.
     /// </summary>
-    public static int SeedFromUserAssist()
+    /// <param name="stillOn">쓰기 직전에 다시 확인 — 읽는 동안 기록을 끄면 지운 파일을 되살리지 않게.</param>
+    public static int SeedFromUserAssist(Func<bool>? stillOn = null)
     {
         int n = 0;
         try
@@ -361,8 +362,10 @@ internal static class AppUsage
                     if (id is null) continue;
                     int runs = BitConverter.ToInt32(b, 4);
                     long ft = BitConverter.ToInt64(b, 60);
-                    if (runs <= 0 || ft <= 0) continue;
-                    var when = DateTime.FromFileTime(ft);
+                    if (runs <= 0 || ft <= 0 || ft > DateTime.MaxValue.ToFileTimeUtc()) continue;
+                    DateTime when;
+                    try { when = DateTime.FromFileTime(ft); }
+                    catch (ArgumentOutOfRangeException) { continue; }
                     if (when > DateTime.Now.AddDays(1) || when.Year < 2000) continue;
                     seed[id] = seed.GetValueOrDefault(id) + runs;
                     string day = when.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
@@ -372,6 +375,7 @@ internal static class AppUsage
             }
             lock (Gate)
             {
+                if (stillOn is not null && !stillOn()) return 0;
                 _seed = seed;
                 var l = Last();
                 foreach (var (id, day) in last)

@@ -30,7 +30,7 @@ internal sealed partial class AllAppsPanel
         public required string Name { get; init; }
         public AppEntry? App { get; init; }
         public PinItem? Pin { get; init; }
-        public required string Identity { get; init; }
+        public required string Key { get; init; }
         public DateTime? Last { get; init; }
         public CleanupChoice Choice { get; set; } = CleanupChoice.Remove;
     }
@@ -49,37 +49,44 @@ internal sealed partial class AllAppsPanel
         // 지금 창이 떠 있는 앱은 쓰는 중 — 후보에서 뺌
         var running = Services.Windows.Windows.Select(w => System.IO.Path.GetFileNameWithoutExtension(w.ProcessPath).ToLowerInvariant())
             .Where(e => e.Length > 0).Select(e => "exe:" + e).ToHashSet();
+        var dockPins = settings.Pins.Where(p => p.Kind is PinKind.Exe or PinKind.Aumid && !string.IsNullOrWhiteSpace(p.Target)).ToList();
+        var docked = dockPins.Select(AllAppsCatalog.Identity).OfType<string>().ToHashSet();
 
-        void Consider(AppEntry? app, PinItem? pin, bool fromDock)
+        void Consider(AppEntry? app, PinItem? pin)
         {
             string? id = app is not null ? AllAppsCatalog.Identity(app) : pin is not null ? AllAppsCatalog.Identity(pin) : null;
-            if (id is null || rows.ContainsKey(id) || running.Contains(id) || id == "exe:explorer") return; // 파일 탐색기는 늘 쓰는 시스템 앱
+            if (id is null || running.Contains(id) || id == "exe:explorer") return; // 파일 탐색기는 늘 쓰는 시스템 앱
+            string key = app is not null ? "k:" + app.Key : "p:" + id; // 같은 exe 를 쓰는 다른 앱(Squirrel update·PWA)과 섞이지 않게 앱 키로
+            if (rows.ContainsKey(key)) return;
             var ids = app is not null ? AllAppsCatalog.Identities(app).Append(id) : new[] { id };
             var last = AppUsage.LastUsed(ids);
             if (last is { } l && l >= cutoff) return;
-            if (last is null && fromDock && pinGrace) return; // 독 핀은 기록 30일이 쌓이기 전엔 "쓴 적 없음"으로 보지 않음
-            rows[id] = new CleanupRow
+            // 독에 있는 앱은(폴더·즐겨찾기로 먼저 만나도) 기록 30일이 쌓이기 전엔 "쓴 적 없음"으로 보지 않음 — 다른 독에서 켜던 앱은 기록이 없음
+            if (last is null && pinGrace && (pin is not null || docked.Contains(id))) return;
+            rows[key] = new CleanupRow
             {
                 Name = app?.Name ?? (string.IsNullOrWhiteSpace(pin?.Name) ? System.IO.Path.GetFileNameWithoutExtension(pin?.Target ?? "") : pin!.Name),
                 App = app,
                 Pin = pin,
-                Identity = id,
+                Key = key,
                 Last = last,
             };
         }
 
-        foreach (var k in settings.AllApps.Favorites) if (byKey.TryGetValue(k, out var a)) Consider(a, null, false);
-        foreach (var f in _folders) foreach (var a in f.Apps) Consider(a, null, false);
-        foreach (var pin in settings.Pins.Where(p => p.Kind is PinKind.Exe or PinKind.Aumid && !string.IsNullOrWhiteSpace(p.Target)))
+        foreach (var k in settings.AllApps.Favorites) if (byKey.TryGetValue(k, out var a)) Consider(a, null);
+        foreach (var f in _folders) foreach (var a in f.Apps) Consider(a, null);
+        foreach (var pin in dockPins)
         {
             string? id = AllAppsCatalog.Identity(pin);
-            var app = _apps.FirstOrDefault(x => AllAppsCatalog.Identity(x) == id);
-            if (rows.TryGetValue(id ?? "", out var existing))
+            // 이 핀의 앱: 같은 이름(exe·AUMID)을 쓰는 앱이 하나뿐일 때만 — 여럿이면 핀만 따로 한 줄
+            var matches = _apps.Where(x => AllAppsCatalog.Identity(x) == id).Take(2).ToList();
+            var app = matches.Count == 1 ? matches[0] : null;
+            if (app is not null && rows.TryGetValue("k:" + app.Key, out var existing))
             {
-                if (existing.Pin is null) rows[id!] = new CleanupRow { Name = existing.Name, App = existing.App, Pin = pin, Identity = existing.Identity, Last = existing.Last };
+                if (existing.Pin is null) rows[existing.Key] = new CleanupRow { Name = existing.Name, App = existing.App, Pin = pin, Key = existing.Key, Last = existing.Last };
                 continue;
             }
-            Consider(app, pin, true);
+            Consider(app, pin);
         }
         return rows.Values.OrderBy(r => r.Last ?? DateTime.MinValue).ToList();
     }
@@ -88,7 +95,7 @@ internal sealed partial class AllAppsPanel
     private UIElement? CleanupBanner()
     {
         if (!S.ShowSuggestions || S.CleanupPromptMonth == ThisMonth || _apps.Count == 0) return null;
-        int n = CleanupCandidates().Count;
+        int n = _bannerCount ??= CleanupCandidates().Count; // 판을 열 때 한 번만 (다시 그릴 때마다 핀·창 목록을 돌지 않게)
         if (n < MinStale) return null;
         var row = new DockPanel { LastChildFill = true };
         var close = new TextBlock { Text = "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 10, Foreground = P.SubText, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 2, 0), ToolTip = Loc.T("다음 달까지 안 보여요") };
@@ -108,6 +115,8 @@ internal sealed partial class AllAppsPanel
         row.Children.Add(new TextBlock { Text = Loc.F($"한동안 안 쓴 앱이 {n}개 있어요"), VerticalAlignment = VerticalAlignment.Center });
         return new Border { Background = P.Tile, CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 7, 10, 7), Margin = new Thickness(4, 0, 4, 8), Child = row };
     }
+
+    private int? _bannerCount;
 
     private void OpenCleanup()
     {
@@ -202,12 +211,13 @@ internal sealed partial class AllAppsPanel
                     AppFolders.RemoveFrom(settings, _apps, f.Id, app.Key);
                 if (r.Choice == CleanupChoice.Hide && !S.Hidden.Contains(app.Key, StringComparer.OrdinalIgnoreCase)) { S.Hidden.Add(app.Key); hidden++; }
             }
-            settings.Pins.RemoveAll(p => p.Kind is PinKind.Exe or PinKind.Aumid && AllAppsCatalog.Identity(p) == r.Identity);
+            if (r.Pin is { } pin) settings.Pins.Remove(pin);
             removed++;
         }
         S.CleanupUsed = true;
         S.CleanupPromptMonth = ThisMonth;
         _cleanup = null;
+        _bannerCount = null;
         Log.Info($"안 쓰는 앱 정리: 빼기 {removed}개 (숨김 {hidden}개){(openUninstall ? ", 윈도우 앱 목록 열기" : "")}");
         Save();
         if (openUninstall)

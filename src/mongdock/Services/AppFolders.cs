@@ -74,6 +74,10 @@ internal static class AppFolders
         var s = settings.AllApps;
         string today = DateTime.Now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
         if (!force && s.AutoFoldersDay == today) return false;
+        var exists = apps.Select(a => a.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var hidden = s.Hidden.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var claimed = s.Groups.Where(g => (g.Touched || IsCustom(g.Id)) && !g.Deleted && g.Apps is not null)
+            .SelectMany(g => g.Apps!).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var id in AllAppsCatalog.DefaultGroups)
         {
             var d = s.Groups.FirstOrDefault(g => g.Id == id);
@@ -81,6 +85,8 @@ internal static class AppFolders
             var def = Def(s, id);
             var now = AutoMembers(settings, apps, id);
             if (def.AutoApps is null) { def.AutoApps = now; continue; } // 처음 채울 때만 많이 쓴 순
+            // 보이지 않는 앱(숨김·다른 폴더·지운 앱)은 칸만 차지하니 덜어 냄 — 남은 앱의 순서는 그대로
+            def.AutoApps.RemoveAll(k => hidden.Contains(k) || claimed.Contains(k) || (exists.Count > 0 && !exists.Contains(k)));
             // 그 뒤로는 자리 고정: 이미 들어 있는 앱의 자리·순서는 그대로, 새로 쓰기 시작한 앱만 끝에 (9개 꽉 차면 안 붙음).
             // 빠지는 건 사용자가 빼거나 정리 카드에서 골랐을 때만 (그때는 손댄 폴더가 됨)
             foreach (var k in now)
@@ -112,7 +118,7 @@ internal static class AppFolders
     {
         var s = settings.AllApps;
         var target = Touch(settings, apps, id);
-        foreach (var g in s.Groups.Where(g => g != target && g.Apps is not null)) g.Apps!.RemoveAll(k => k.Equals(appKey, StringComparison.OrdinalIgnoreCase));
+        foreach (var g in s.Groups.Where(g => g != target)) Forget(g, appKey);
         target.Apps ??= new List<string>();
         if (!target.Apps.Contains(appKey, StringComparer.OrdinalIgnoreCase)) target.Apps.Add(appKey);
         s.Customized = true;
@@ -123,7 +129,15 @@ internal static class AppFolders
     {
         var d = Touch(settings, apps, id);
         d.Apps!.RemoveAll(k => k.Equals(appKey, StringComparison.OrdinalIgnoreCase));
+        // 다른 자동 폴더에도 들어 있으면 거기서도 뺌 (안 그러면 손댄 폴더에서 풀리자마자 그쪽에 다시 나타남)
+        foreach (var g in settings.AllApps.Groups.Where(g => g != d)) g.AutoApps?.RemoveAll(k => k.Equals(appKey, StringComparison.OrdinalIgnoreCase));
         settings.AllApps.Customized = true;
+    }
+
+    private static void Forget(AppGroupDef g, string appKey)
+    {
+        g.Apps?.RemoveAll(k => k.Equals(appKey, StringComparison.OrdinalIgnoreCase));
+        g.AutoApps?.RemoveAll(k => k.Equals(appKey, StringComparison.OrdinalIgnoreCase));
     }
 
     public static void Rename(Settings settings, IReadOnlyList<AppEntry> apps, string id, string name)

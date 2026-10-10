@@ -101,6 +101,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         Closed += (_, _) =>
         {
             if (Current == this) Current = null;
+            CancelDragOnClose(); // 끄는 중에 닫히면(DPI 바뀜 등) 끄는 아이콘을 남기지 않음
             _body.Content = null; // 닫힌 판의 시각 트리를 바로 놓아줌
             ScheduleTrim();
         };
@@ -533,7 +534,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         {
             if (seed)
             {
-                int n = AppUsage.SeedFromUserAssist();
+                int n = AppUsage.SeedFromUserAssist(() => services.Settings.Current.AllApps.ShowSuggestions);
                 Log.Info($"앱 모음: 윈도우 실행 기록 씨앗 {n}개 (이 PC 안에서만)");
             }
             return AllAppsCatalog.Apps();
@@ -545,7 +546,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
                 try
                 {
                     var settings = services.Settings.Current;
-                    if (seed) { settings.AllApps.UsageSeededAt = DateTime.Now; settings.AllApps.AutoFoldersDay = null; }
+                    if (seed && settings.AllApps.ShowSuggestions) { settings.AllApps.UsageSeededAt = DateTime.Now; settings.AllApps.AutoFoldersDay = null; }
                     var style = settings.Dock.IconStyle;
                     var visible = t.Result.Where(a => !settings.AllApps.Hidden.Contains(a.Key, StringComparer.OrdinalIgnoreCase)).ToList();
                     // 자동 폴더는 하루 한 번 (판이 닫혀 있을 때 — 여기는 시작·판을 닫은 뒤)
@@ -660,6 +661,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             var name = new TextBox { Text = AllAppsCatalog.GroupName(S, id), FontSize = 12, FontWeight = FontWeights.SemiBold, MaxLength = 24, TextAlignment = TextAlignment.Center, Margin = new Thickness(2, 5, 2, 0), Padding = new Thickness(2, 1, 2, 1) };
             void CommitName() { if (name.Text.Trim() != AllAppsCatalog.GroupName(S, id)) RenameGroup(id, name.Text); }
             name.KeyDown += (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; CommitName(); } };
+            name.PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) name.Text = AllAppsCatalog.GroupName(S, id); }; // Esc = 취소 (판이 닫히며 저장되지 않게)
             name.LostKeyboardFocus += (_, _) => CommitName();
             stack.Children.Add(name);
         }
@@ -932,20 +934,18 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             }, isChecked: S.ShowSuggestions));
             menu.Items.Add(DockMenus.Item(Loc.T("안 쓰는 앱 정리…"), OpenCleanup, enabled: S.ShowSuggestions));
             menu.Items.Add(new Separator());
-            menu.Items.Add(DockMenus.Item(Loc.T("폴더 원래대로…"), () =>
+            menu.Items.Add(DockMenus.Item(Loc.T("폴더 원래대로…"), async () =>
             {
                 KeepOpenOnDeactivate = true;
-                ConfirmCardWindow.Ask(Services, Loc.T("폴더 원래대로"), Loc.T("만든 폴더와 바꾼 폴더·이름·순서를 자동 정리로 되돌릴까요? 숨긴 앱과 즐겨찾기는 그대로예요."),
-                    Loc.T("되돌리기"), () =>
-                    {
-                        S.Groups.Clear();
-                        S.Overrides.Clear();
-                        S.AutoFoldersDay = null;
-                        AppFolders.RefreshAuto(Services.Settings.Current, _apps, force: true);
-                        _expanded = null;
-                        Save(false);
-                    });
+                bool ok = await ConfirmCardWindow.AskAsync(Services, Loc.T("폴더 원래대로"), Loc.T("만든 폴더와 바꾼 폴더·이름·순서를 자동 정리로 되돌릴까요? 숨긴 앱과 즐겨찾기는 그대로예요."), Loc.T("되돌리기"));
                 KeepOpenOnDeactivate = false;
+                if (!ok) return;
+                S.Groups.Clear();
+                S.Overrides.Clear();
+                S.AutoFoldersDay = null;
+                AppFolders.RefreshAuto(Services.Settings.Current, _apps, force: true);
+                _expanded = null;
+                Save(false);
             }, enabled: S.Groups.Count > 0 || S.Overrides.Count > 0));
         };
         menu.Items.Add(new MenuItem()); // 열릴 때 채움
@@ -1012,6 +1012,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
 
     private void MoveTo(AppEntry app, string folder)
     {
+        if (_folders.FirstOrDefault(f => f.Id == folder) is { } f && f.Apps.Any(a => a.Key.Equals(app.Key, StringComparison.OrdinalIgnoreCase))) return; // 이미 그 폴더 — 자동 폴더를 굳히지 않음
         AppFolders.AddTo(Services.Settings.Current, _apps, folder, app.Key);
         Save();
     }
@@ -1023,16 +1024,15 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     }
 
     /// <summary>폴더 통째 지우기 — 확인 카드 "폴더 '업무'를 지울까요? 앱은 모든 앱에 그대로 있어요".</summary>
-    private void AskDeleteFolder(string id)
+    private async void AskDeleteFolder(string id)
     {
-        KeepOpenOnDeactivate = true;
-        ConfirmCardWindow.Ask(Services, Loc.T("폴더 지우기"), Loc.F($"폴더 '{AllAppsCatalog.GroupName(S, id)}'를 지울까요? 앱은 모든 앱에 그대로 있어요."), Loc.T("지우기"), () =>
-        {
-            AppFolders.Delete(Services.Settings.Current, id);
-            if (_expanded == id) _expanded = null;
-            Save();
-        });
+        KeepOpenOnDeactivate = true; // 카드가 떠 있는 동안 판이 닫히지 않게 (카드는 모달이 아님)
+        bool ok = await ConfirmCardWindow.AskAsync(Services, Loc.T("폴더 지우기"), Loc.F($"폴더 '{AllAppsCatalog.GroupName(S, id)}'를 지울까요? 앱은 모든 앱에 그대로 있어요."), Loc.T("지우기"));
         KeepOpenOnDeactivate = false;
+        if (!ok || !IsLoaded) return;
+        AppFolders.Delete(Services.Settings.Current, id);
+        if (_expanded == id) _expanded = null;
+        Save();
     }
 
     private void MoveGroup(string id, int dir)

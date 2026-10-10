@@ -47,6 +47,11 @@ public static class SettingsTransfer
         s.NewSince.Clear(); // NEW 배지 기록은 이 PC 것 — 옮기지 않음
         s.NewSeen.Clear();
         s.AllApps.DismissedSuggestions.Clear(); // 추천 거절도
+        // 실행 기록에서 나온 자동 폴더 내용과 기록 날짜도 — 사용 기록은 이 PC 밖으로 안 나감
+        s.AllApps.UsageSeededAt = null;
+        s.AllApps.AutoFoldersDay = null;
+        s.AllApps.CleanupPromptMonth = null;
+        foreach (var g in s.AllApps.Groups) g.AutoApps = null;
         // 핀 아이콘(IconPath)과 아이콘 바꾸기로 고른 그림(Icon.File) — 몽독 아이콘 폴더 안 것만 묶어 넣고 경로는 토큰으로
         string? Pack(string? path)
         {

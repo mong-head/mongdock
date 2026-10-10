@@ -385,11 +385,23 @@ internal sealed partial class AllAppsPanel
             if (c.RenderTransform is TranslateTransform tt) { tt.BeginAnimation(TranslateTransform.XProperty, null); tt.X = 0; }
     }
 
+    /// <summary>판이 닫힐 때 끄는 중이면: 아이콘 창을 바로 닫고 반영 없이 끝.</summary>
+    private void CancelDragOnClose()
+    {
+        var d = _drag;
+        _drag = null;
+        Dragging = false;
+        if (d is null) return;
+        try { d.Ghost.Close(); } catch (InvalidOperationException) { /* 이미 닫힘 */ }
+        Log.Info("앱 모음 판: 끄는 중 판이 닫힘 — 끌기 취소");
+    }
+
     /// <summary>놓기(drop) 또는 취소: 아이콘이 새 자리(또는 원래 자리)로 미끄러져 들어간 뒤 반영.</summary>
     private void EndDrag(bool drop)
     {
         var d = _drag;
         if (d is null) return;
+        if (PresentationSource.FromVisual(this) is null || PresentationSource.FromVisual(d.Source) is null) { CancelDragOnClose(); return; } // 판·칸이 화면에서 떨어짐
         _drag = null;
         var target = drop ? d.Target : null;
         Rect to;
