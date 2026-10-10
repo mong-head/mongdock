@@ -31,6 +31,9 @@ internal sealed class AllAppsPanel : DockStackPanel
     private Dictionary<string, string> _groupOf = new();
     private string? _expanded;
     private bool _allOpen, _hiddenOpen;
+    /// <summary>큰 묶음을 펼쳤을 때 처음 3줄 뒤 "더 보기"를 누른 묶음.</summary>
+    private readonly HashSet<string> _showAll = new();
+    private const int ExpandedRows = 3;
     private string? _renaming;
     private List<AppEntry> _results = new();
     private int _selected;
@@ -109,14 +112,7 @@ internal sealed class AllAppsPanel : DockStackPanel
             },
         };
         root.Children.Add(searchRow);
-        root.Children.Add(new ScrollViewer
-        {
-            Content = _body,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            MaxHeight = Math.Max(240, Monitor.WorkArea.Height * 0.6 - 120),
-            Focusable = false,
-        });
+        root.Children.Add(ThinScroll(_body, Math.Max(240, Monitor.WorkArea.Height * 0.6 - 120)));
         root.Children.Add(Link(Loc.T("Windows 시작 메뉴 열기"), () =>
         {
             CloseAnimated();
@@ -432,10 +428,19 @@ internal sealed class AllAppsPanel : DockStackPanel
             head.Children.Add(pencil);
             stack.Children.Add(head);
         }
+        // 펼친 칸 너비에 들어가는 열 수 기준으로 처음 3줄만, 나머지는 "더 보기" (도구·개발처럼 큰 묶음이 판을 길게 늘이지 않게)
+        int perRow = Math.Max(1, (int)((Cols * AppCell - 20) / AppCell));
+        int limit = _showAll.Contains(id) ? apps.Count : perRow * ExpandedRows;
         var grid = new WrapPanel { Width = Cols * AppCell - 20 };
         if (apps.Count == 0) stack.Children.Add(Muted(Loc.T("앱을 오른쪽 클릭해 \"묶음 옮기기\"로 넣어요")));
-        foreach (var app in apps) grid.Children.Add(AppCellView(app));
+        foreach (var app in apps.Take(limit)) grid.Children.Add(AppCellView(app));
         stack.Children.Add(grid);
+        if (apps.Count > perRow * ExpandedRows)
+            stack.Children.Add(Toggle(_showAll.Contains(id) ? Loc.T("접기") : Loc.F($"더 보기 ({apps.Count - limit}개)"), _showAll.Contains(id), () =>
+            {
+                if (!_showAll.Remove(id)) _showAll.Add(id);
+                Rebuild();
+            }));
         box.Child = stack;
         return box;
     }

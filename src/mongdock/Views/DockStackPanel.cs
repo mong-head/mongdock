@@ -157,14 +157,23 @@ internal abstract class DockStackPanel : Window
         int cols = cells.Count <= 8 ? 4 : 5;
         var grid = new WrapPanel { Width = cols * Cell };
         foreach (var c in cells) grid.Children.Add(c);
-        return new ScrollViewer
+        return ThinScroll(grid, Math.Max(200, Monitor.WorkArea.Height * 0.6));
+    }
+
+    /// <summary>몽독 다른 창과 같은 얇은 겹침형 스크롤바 (넘칠 때만, Themes/Controls.xaml OverlayScrollViewer·ThinScrollBar).</summary>
+    protected ScrollViewer ThinScroll(object content, double maxHeight)
+    {
+        var scroll = new ScrollViewer
         {
-            Content = grid,
+            Content = content,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            MaxHeight = Math.Max(200, Monitor.WorkArea.Height * 0.6),
+            MaxHeight = maxHeight,
             Focusable = false,
         };
+        if (TryFindResource("OverlayScrollViewer") is Style overlay) scroll.Style = overlay;
+        if (TryFindResource("ThinScrollBar") is Style thin) scroll.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), thin);
+        return scroll;
     }
 
     /// <summary>
