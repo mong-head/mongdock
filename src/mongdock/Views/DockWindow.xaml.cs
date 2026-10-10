@@ -75,6 +75,7 @@ public partial class DockWindow : Window
         _monitor = services.DesktopWindows.ResolveMonitor(services.Settings.Current.Dock.Monitor);
         UiFonts.Apply(services.Settings.Current);
         InitializeComponent();
+        ScheduleAllAppsWarm(); // 앱 모음 판: 시작 5초 뒤 유휴 때 앱 목록·아이콘 미리 (#24)
 
         PanelBorder.ContextMenu = new ContextMenu();
         // 바깥(다른 앱) 클릭·다른 창 활성화 시 닫힘. 독 패널 안 클릭은 WPF 가 처리

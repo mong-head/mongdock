@@ -69,6 +69,12 @@ internal static class AllAppsCatalog
         }
     }
 
+    /// <summary>캐시가 60초보다 오래됨 (앱 설치·삭제를 반영하려면 뒤에서 다시 만들 때).</summary>
+    public static bool IsStale
+    {
+        get { lock (Gate) return _cache is null || DateTime.UtcNow - _cacheTime > TimeSpan.FromSeconds(60); }
+    }
+
     /// <summary>캐시된 목록이 있으면 (판을 바로 그리게).</summary>
     public static IReadOnlyList<AppEntry>? Cached
     {

@@ -24,7 +24,7 @@ internal sealed class AllAppsPanel : DockStackPanel
     public const string AppFormat = "mongdock.allapps.app";
     private const string GroupFormat = "mongdock.allapps.group";
 
-    private const int Cols = 6, FavMax = 8, GroupCols = 4;
+    private const int Cols = 8, FavMax = 8, GroupCols = 5;
     private const double AppCell = 88, AppIcon = 44, GroupTile = 72;
 
     private readonly IconStyle _style;
@@ -49,6 +49,12 @@ internal sealed class AllAppsPanel : DockStackPanel
 
     private AllAppsSettings S => Services.Settings.Current.AllApps;
 
+    /// <summary>열려 있는 판 (몽독 검색 창과 겹쳐 열리지 않게 — 하나 열면 다른 건 닫음).</summary>
+    public static AllAppsPanel? Current { get; private set; }
+
+    /// <summary>앱 모음 판은 "특별대우": 독 버튼 옆이 아니라 화면 가운데.</summary>
+    protected override bool Centered => true;
+
     public AllAppsPanel(AppServices services, UiPalette palette, Rect anchorDip, DockEdge edge, MonitorInfo monitor)
         : base(services, palette, anchorDip, edge, monitor, "mongdock All Apps")
     {
@@ -56,18 +62,24 @@ internal sealed class AllAppsPanel : DockStackPanel
         SetBody(BuildShell());
         _apps = AllAppsCatalog.Cached ?? Array.Empty<AppEntry>();
         Rebuild();
-        // 목록은 백그라운드에서 (처음엔 수백 ms) — 캐시가 있으면 먼저 그것으로 그려 둠
-        Task.Run(() => AllAppsCatalog.Apps()).ContinueWith(t =>
-        {
-            if (t.Status != TaskStatus.RanToCompletion) return;
-            Dispatcher.BeginInvoke(() =>
+        // 미리 만든 목록으로 다 그린 상태로 열림. 목록이 오래됐으면 뒤에서 새로 만들어 다음 열기에 반영
+        // (열려 있는 판은 출렁이지 않게 — 목록이 아예 없었을 때만 채움)
+        bool hadApps = _apps.Count > 0;
+        if (!hadApps || AllAppsCatalog.IsStale)
+            Task.Run(() => AllAppsCatalog.Apps()).ContinueWith(t =>
             {
-                if (IsClosing) return;
-                _apps = t.Result;
-                if (_renaming is null) Rebuild(); // 묶음 이름을 쓰는 중이면 끝난 뒤 (쓰던 글자가 그대로 확정되지 않게)
-            });
-        }, TaskScheduler.Default);
+                if (t.Status != TaskStatus.RanToCompletion) return;
+                Dispatcher.BeginInvoke(() =>
+                {
+                    if (IsClosing || hadApps) return;
+                    _apps = t.Result;
+                    if (_renaming is null) Rebuild();
+                });
+            }, TaskScheduler.Default);
         Loaded += (_, _) => Dispatcher.BeginInvoke(() => { _search.Focus(); Keyboard.Focus(_search); }, DispatcherPriority.Input);
+        SpotlightWindow.CloseIfOpen();
+        Current = this;
+        Closed += (_, _) => { if (Current == this) Current = null; };
         PreviewKeyDown += OnKey;
     }
 
@@ -116,7 +128,7 @@ internal sealed class AllAppsPanel : DockStackPanel
             },
         };
         root.Children.Add(searchRow);
-        root.Children.Add(ThinScroll(_body, Math.Max(240, Monitor.WorkArea.Height * 0.6 - 120)));
+        root.Children.Add(ThinScroll(_body, Math.Max(240, Monitor.WorkArea.Height * 0.7 - 120))); // 작업 영역 70% 이하
         root.Children.Add(Link(Loc.T("Windows 시작 메뉴 열기"), () =>
         {
             CloseAnimated();
@@ -231,8 +243,11 @@ internal sealed class AllAppsPanel : DockStackPanel
     }
 
     /// <summary>★ 줄: 고정한 앱(핀 표시) → 남은 칸은 자주 쓰는 앱(이 PC 실행 횟수 30일, 기록이 없으면 독 핀).</summary>
-    private List<(AppEntry App, bool Pinned)> Favorites(List<AppEntry> visible)
+    private List<(AppEntry App, bool Pinned)> Favorites(List<AppEntry> visible) => Favorites(Services.Settings.Current, visible);
+
+    private static List<(AppEntry App, bool Pinned)> Favorites(Settings settings, List<AppEntry> visible)
     {
+        var S = settings.AllApps;
         var byKey = visible.ToDictionary(a => a.Key, StringComparer.OrdinalIgnoreCase);
         var list = S.Favorites.Select(k => byKey.GetValueOrDefault(k)).OfType<AppEntry>().Take(FavMax).Select(a => (a, true)).ToList();
         if (!S.FillFrequent || list.Count >= FavMax) return list;
@@ -240,7 +255,7 @@ internal sealed class AllAppsPanel : DockStackPanel
         foreach (var a in visible) byIdentity.TryAdd(AllAppsCatalog.Identity(a), a);
         var candidates = AppUsage.Top(FavMax * 2).ToList();
         if (candidates.Count == 0)
-            candidates = Services.Settings.Current.Pins.Select(AllAppsCatalog.Identity).OfType<string>().ToList();
+            candidates = settings.Pins.Select(AllAppsCatalog.Identity).OfType<string>().ToList();
         foreach (var id in candidates)
         {
             if (list.Count >= FavMax) break;
@@ -321,38 +336,93 @@ internal sealed class AllAppsPanel : DockStackPanel
     /// <summary>시험 그림(report-test --allapps)에서만: 아이콘을 바로 그림 (디스패처를 돌리지 않으므로).</summary>
     internal static bool LoadIconsNow { get; set; }
 
-    /// <summary>판 전용 작은 아이콘 (64px, 독 아이콘 캐시와 따로 — 수백 개를 열어도 독 아이콘을 밀어내지 않음).</summary>
+    /// <summary>판 전용 작은 아이콘 (64px, 독 아이콘 캐시와 따로 — 수백 개를 열어도 독 아이콘을 밀어내지 않음). UI 스레드.</summary>
     private static readonly Dictionary<string, ImageSource> SmallIcons = new(StringComparer.OrdinalIgnoreCase);
     private const int SmallIconPx = 64;
 
-    /// <summary>아이콘은 판을 먼저 보여 준 뒤 하나씩 (보이는 것부터 — 접힌 칸은 만들지 않으므로). 그새 지워진 칸은 건너뜀.</summary>
+    private static ImageSource? SmallIcon(AppServices services, AppEntry app, IconStyle style)
+    {
+        string key = style + "|" + app.Key;
+        if (SmallIcons.TryGetValue(key, out var small)) return small;
+        try
+        {
+            var full = services.Icons is IconService icons
+                ? icons.GetAppsFolderIconUncached(app.Key, style)
+                : services.Icons.GetIcon(new PinItem { Kind = PinKind.Aumid, Target = app.Key, Name = app.Name }, style);
+            small = Shrink(full);
+            if (SmallIcons.Count > 600) SmallIcons.Clear();
+            SmallIcons[key] = small;
+            return small;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"앱 모음 아이콘 실패: {ex.GetType().Name}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 아이콘: 미리 만들어 둔 것이면 바로(판이 다 그려진 채 나타남). 아니면 칸 자리는 그대로 두고 뒤에서 만들어 100ms 페이드로 조용히.
+    /// 그새 지워진 칸은 건너뜀.
+    /// </summary>
     private void LoadIcon(Image image, AppEntry app)
     {
-        void Load()
+        if (SmallIcons.TryGetValue(_style + "|" + app.Key, out var ready) || LoadIconsNow)
         {
-            if (IsClosing || (!LoadIconsNow && PresentationSource.FromVisual(image) is null)) return;
-            string key = _style + "|" + app.Key;
-            if (!SmallIcons.TryGetValue(key, out var small))
+            image.Source = ready ?? SmallIcon(Services, app, _style);
+            return;
+        }
+        image.Opacity = 0;
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (IsClosing || PresentationSource.FromVisual(image) is null) return;
+            image.Source = SmallIcon(Services, app, _style);
+            image.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(100)));
+        }, DispatcherPriority.Background);
+    }
+
+    // ───────────────────────── 미리 준비 ─────────────────────────
+
+    private static bool _warming;
+
+    /// <summary>
+    /// 몽독 시작 몇 초 뒤(유휴) 미리: 앱 목록·분류, 그리고 처음 화면에 보이는 아이콘(★ 줄·묶음 미리 보기)을 64px 로.
+    /// 아이콘은 하나씩 유휴 우선순위로 만들어 독·다른 창이 버벅이지 않게. 앱 목록이 오래되면(60초) 다음 열기 전에 다시.
+    /// </summary>
+    public static void Warm(AppServices services)
+    {
+        if (_warming) return;
+        _warming = true;
+        var dispatcher = Dispatcher.CurrentDispatcher;
+        Task.Run(() => AllAppsCatalog.Apps()).ContinueWith(t =>
+        {
+            if (t.Status != TaskStatus.RanToCompletion) { _warming = false; return; }
+            dispatcher.BeginInvoke(() =>
             {
                 try
                 {
-                    var full = Services.Icons is IconService icons
-                        ? icons.GetAppsFolderIconUncached(app.Key, _style)
-                        : Services.Icons.GetIcon(new PinItem { Kind = PinKind.Aumid, Target = app.Key, Name = app.Name }, _style);
-                    small = Shrink(full);
-                    if (SmallIcons.Count > 600) SmallIcons.Clear();
-                    SmallIcons[key] = small;
+                    var settings = services.Settings.Current;
+                    var style = settings.Dock.IconStyle;
+                    var visible = t.Result.Where(a => !settings.AllApps.Hidden.Contains(a.Key, StringComparer.OrdinalIgnoreCase)).ToList();
+                    var targets = Favorites(settings, visible).Select(f => f.App).ToList();
+                    foreach (var g in visible.GroupBy(a => AllAppsCatalog.GroupOf(settings.AllApps, a)))
+                        targets.AddRange(g.OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase).Take(9));
+                    var queue = new Queue<AppEntry>(targets.DistinctBy(a => a.Key));
+                    void Next()
+                    {
+                        if (queue.Count == 0) { _warming = false; Log.Info($"앱 모음 판 미리 준비: 앱 {t.Result.Count}개, 아이콘 {SmallIcons.Count}개"); return; }
+                        SmallIcon(services, queue.Dequeue(), style);
+                        dispatcher.BeginInvoke(Next, DispatcherPriority.ApplicationIdle);
+                    }
+                    Next();
                 }
                 catch (Exception ex)
                 {
-                    Log.Warn($"앱 모음 아이콘 실패: {ex.GetType().Name}");
-                    return;
+                    _warming = false;
+                    Log.Error("앱 모음 판 미리 준비 실패", ex);
                 }
-            }
-            image.Source = small;
-        }
-        if (LoadIconsNow) Load();
-        else Dispatcher.BeginInvoke(Load, DispatcherPriority.Background);
+            }, DispatcherPriority.ApplicationIdle);
+        }, TaskScheduler.Default);
     }
 
     private static ImageSource Shrink(ImageSource full)

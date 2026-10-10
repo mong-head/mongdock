@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Threading;
 using Mongdock.Models;
 using Mongdock.Services;
 using Mongdock.ViewModels;
@@ -12,11 +13,42 @@ public partial class DockWindow
     internal static bool IsAllApps(PinItem? pin) =>
         pin is { Kind: PinKind.Special } && pin.Target.Equals("launchpad", StringComparison.OrdinalIgnoreCase);
 
-    private void ToggleAllAppsPanel(DockItemView? view, PinItem pin)
+    private bool _allAppsOpening;
+    private int _allAppsOpens;
+
+    /// <summary>몽독 시작 5초 뒤 유휴 때 앱 모음 판 준비 (앱 목록·분류·처음 보이는 아이콘). 그 뒤 판을 닫을 때마다 다음 열기를 위해 다시.</summary>
+    private void ScheduleAllAppsWarm()
+    {
+        var timer = new DispatcherTimer(DispatcherPriority.ApplicationIdle) { Interval = TimeSpan.FromSeconds(5) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (!_closed) AllAppsPanel.Warm(_services);
+        };
+        timer.Start();
+    }
+
+    private async void ToggleAllAppsPanel(DockItemView? view, PinItem pin)
     {
         bool same = _folderPanel is AllAppsPanel;
         _folderPanel?.CloseAnimated();
-        if (same || view == null) return;
+        if (same || view == null || _allAppsOpening) return;
+
+        // 목록이 아직이면 준비될 때까지(최대 300ms) 기다렸다 다 그린 판을 한 번에 — 검색 칸만 있는 빈 판을 보이지 않게
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        long waited = 0;
+        if (AllAppsCatalog.Cached is null)
+        {
+            _allAppsOpening = true;
+            try
+            {
+                var load = Task.Run(() => AllAppsCatalog.Apps());
+                await Task.WhenAny(load, Task.Delay(300));
+            }
+            finally { _allAppsOpening = false; }
+            waited = clock.ElapsedMilliseconds;
+            if (_closed) return;
+        }
 
         var source = PresentationSource.FromVisual(this);
         if (source?.CompositionTarget == null) return;
@@ -36,6 +68,9 @@ public partial class DockWindow
         _folderPanel = panel;
         _folderPanelPin = pin;
         Interlocked.Increment(ref AllAppsCatalog.OpenedSinceSignal);
+        int nth = ++_allAppsOpens;
+        panel.ContentRendered += (_, _) => Log.Info($"앱 모음 판 열기 {nth}번째: {clock.ElapsedMilliseconds}ms (목록 기다림 {waited}ms, 앱 {AllAppsCatalog.Cached?.Count ?? 0}개)");
+        panel.Closed += (_, _) => { if (!_closed && AllAppsCatalog.IsStale) AllAppsPanel.Warm(_services); }; // 앱 설치·삭제 반영 (다음 열기)
         panel.Show();
     }
 

@@ -82,7 +82,8 @@ internal abstract class DockStackPanel : Window
         Loaded += (_, _) =>
         {
             Place();
-            Anim.Appear(_card, 150, fromX: _edge switch { DockEdge.Left => -8, DockEdge.Right => 8, _ => 0 },
+            if (Centered) Anim.Appear(_card, 150, fromScale: 0.97); // 화면 가운데 판: 페이드 + 아주 살짝 커지기 (올라오기 없음)
+            else Anim.Appear(_card, 150, fromX: _edge switch { DockEdge.Left => -8, DockEdge.Right => 8, _ => 0 },
                 fromY: _edge switch { DockEdge.Bottom => 8, DockEdge.Top => -8, _ => 0 });
             Activate();
             Keyboard.Focus(this);
@@ -92,6 +93,9 @@ internal abstract class DockStackPanel : Window
         KeyDown += (_, e) => { if (e.Key == Key.Escape) { e.Handled = true; CloseAnimated(); } };
         Closed += (_, _) => _watch.Stop();
     }
+
+    /// <summary>true 면 독 버튼 옆이 아니라 모니터 작업 영역 정가운데 (앱 모음 판).</summary>
+    protected virtual bool Centered => false;
 
     /// <summary>확인 카드 등 몽독 창을 띄우는 동안 판을 닫지 않음.</summary>
     protected bool KeepOpenOnDeactivate { get; set; }
@@ -301,6 +305,12 @@ internal abstract class DockStackPanel : Window
         if (work.IsEmpty || work.Width <= 0) work = Monitor.Bounds;
         const double gap = 2; // 카드 여백(16)이 이미 있음
         double w = ActualWidth, h = ActualHeight;
+        if (Centered)
+        {
+            Left = Math.Round(work.Left + Math.Max(0, (work.Width - w) / 2));
+            Top = Math.Round(work.Top + Math.Max(0, (work.Height - h) / 2));
+            return;
+        }
         double cx = _anchor.Left + _anchor.Width / 2, cy = _anchor.Top + _anchor.Height / 2;
         double left, top;
         switch (_edge)
@@ -319,7 +329,7 @@ internal abstract class DockStackPanel : Window
         if (_closing) return;
         _closing = true;
         _watch.Stop();
-        Anim.Disappear(_card, 120, () => Dispatcher.BeginInvoke(Close));
+        Anim.Disappear(_card, 120, () => Dispatcher.BeginInvoke(Close), toScale: Centered ? 0.97 : 1);
     }
 
     protected bool IsClosing => _closing;

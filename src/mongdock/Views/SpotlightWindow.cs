@@ -101,6 +101,9 @@ internal sealed class SpotlightWindow : Window
     /// <summary>검색창이 열려 있는지 (코치마크가 앵커 클릭 뒤 닫힘을 감지).</summary>
     public static bool IsOpen => _current is not null;
 
+    /// <summary>열려 있으면 닫음 (앱 모음 판을 열 때 — 둘이 겹쳐 열리지 않게).</summary>
+    public static void CloseIfOpen() => _current?.CloseSafe();
+
     /// <summary>상단바 검색 버튼: 열려 있으면 닫고, 아니면 연다.</summary>
     public static void Toggle(AppServices services)
     {
@@ -111,6 +114,7 @@ internal sealed class SpotlightWindow : Window
         }
         // 열린 창을 닫은 바로 그 클릭(비활성화 → 닫힘 → 버튼 Click)이면 다시 열지 않음
         if (Environment.TickCount64 - _closedAt < 300) return;
+        AllAppsPanel.Current?.CloseAnimated(); // 앱 모음 판과 겹쳐 열리지 않게
         var w = new SpotlightWindow(services);
         _current = w;
         w.ShowOnCursorMonitor();
