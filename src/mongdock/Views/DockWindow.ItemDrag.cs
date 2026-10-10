@@ -356,6 +356,9 @@ public partial class DockWindow
         }
         if (target < 0) return;
 
+        // 독 폴더는 끌어서 순서를 바꾸지 않음 (화면 인덱스 ≠ 설정 인덱스) — 독 밖에 놓을 때만 빼기
+        if (item.Pin is { Kind: PinKind.Folder }) return;
+
         if (item.Pin is PinItem pin)
         {
             int from = pins.IndexOf(pin);
@@ -453,7 +456,12 @@ public partial class DockWindow
         var others = Others(null);
         int pins = others.Count(InPinSection);
         // 폴더만 끌어 오면 맨 끝(독 폴더 자리)에도 놓을 수 있음 → 독 폴더로 추가
-        bool allFolders = DraggedPaths(e) is { Length: > 0 } dragged && dragged.All(Directory.Exists);
+        if (!ReferenceEquals(e.Data, _dropDataSeen)) // 끌기 하나에 한 번만 확인 (DragOver 마다 디스크를 보지 않게)
+        {
+            _dropDataSeen = e.Data;
+            _dropAllFolders = DraggedPaths(e) is { Length: > 0 } dragged && dragged.All(Directory.Exists);
+        }
+        bool allFolders = _dropAllFolders;
         int target = NearestSlot(others, _dropGapLength, AlongInBase(e), k => k <= pins || (allFolders && k == others.Count));
         if (target >= 0 && target != _dropTarget)
         {
@@ -487,10 +495,11 @@ public partial class DockWindow
         }
         catch (Exception ex) { Log.Error("끌어 놓은 파일 읽기 실패", ex); }
         int lastSlot = Others(null).Count;
-        int pinSlots = Others(null).Count(InPinSection);
+        bool allFolders = _dropAllFolders;
+        _dropDataSeen = null;
         EndFileDrag();
         if (paths.Length == 0 || target < 0) return;
-        if (target > pinSlots && target == lastSlot && paths.All(Directory.Exists))
+        if (target == lastSlot && allFolders) // 맨 끝 = 독 폴더 자리 (독 폴더·실행 중 앱이 없어 핀 끝과 같아도)
         {
             AddFolderPins(paths); // 맨 끝에 놓은 폴더 = 독 폴더
             return;
@@ -528,6 +537,9 @@ public partial class DockWindow
             Log.Error("끌어 놓은 파일 고정 실패", ex);
         }
     }
+
+    private object? _dropDataSeen;
+    private bool _dropAllFolders;
 
     private static string[]? DraggedPaths(DragEventArgs e)
     {

@@ -337,6 +337,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
             for (int pi = pins.Count - 1; pi >= 0; pi--)
             {
                 var pin = pins[pi];
+                if (pin?.Kind == PinKind.Routine) pin.Routine?.Items?.RemoveAll(i => i is null || string.IsNullOrWhiteSpace(i.Target) && string.IsNullOrWhiteSpace(i.Aumid));
                 bool bad = pin is null || !Enum.IsDefined(pin.Kind)
                            // 루틴은 항목이 하나는 있어야 (빈 루틴·잘못된 항목은 버림), 폴더는 경로가 있어야
                            || pin.Kind == PinKind.Routine && (pin.Routine?.Items is not { Count: > 0 })
@@ -344,7 +345,6 @@ public sealed class SettingsService : ISettingsService, IDisposable
                 if (bad) { pins.RemoveAt(pi); fixes.Add($"pins[{pi}]"); continue; }
                 if (pin!.Kind == PinKind.Folder) pin.Folder ??= new FolderOptions();
                 if (pin.Kind is PinKind.Folder or PinKind.Routine) pin.Id ??= Guid.NewGuid().ToString("N");
-                if (pin.Kind == PinKind.Routine) pin.Routine!.Items.RemoveAll(i => i is null || string.IsNullOrWhiteSpace(i.Target) && string.IsNullOrWhiteSpace(i.Aumid));
             }
             KeepFoldersLast(pins);
         }
@@ -399,6 +399,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
         ImportTaskbarPinsIfRequested();
         lock (_gate)
         {
+            KeepFoldersLast(Current.Pins); // 핀을 바로 더하는 곳(상단바·작업 표시줄 가져오기 등)이 있어도 독 폴더는 늘 끝
             string text = JsonSerializer.Serialize(Current, JsonOptions);
             string tmp = SettingsPath + ".tmp";
             try

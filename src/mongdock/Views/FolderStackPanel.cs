@@ -80,16 +80,20 @@ internal sealed class FolderStackPanel : Window
         Content = _card;
 
         _watch = new OutsideClickWatcher(services, () => new[] { new Rect(Left, Top, ActualWidth, ActualHeight), Inflate(_anchor) }, CloseAnimated);
-        SourceInitialized += (_, _) => _services.DesktopWindows.MakeOverlay(this);
+        SourceInitialized += (_, _) =>
+        {
+            _services.DesktopWindows.MakeOverlay(this);
+            _watch.IgnoreHwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle; // 열면서 Activate 한 자기 자신으로 닫히지 않게
+        };
         SizeChanged += (_, _) => Place();
         Loaded += (_, _) =>
         {
             Place();
             Anim.Appear(_card, 150, fromX: _edge switch { DockEdge.Left => -8, DockEdge.Right => 8, _ => 0 },
                 fromY: _edge switch { DockEdge.Bottom => 8, DockEdge.Top => -8, _ => 0 });
-            _watch.Start();
             Activate();
             Keyboard.Focus(this);
+            _watch.Start();
         };
         Deactivated += (_, _) => { if (!_dragging) CloseAnimated(); };
         KeyDown += (_, e) => { if (e.Key == Key.Escape) { e.Handled = true; CloseAnimated(); } };
@@ -268,9 +272,12 @@ internal sealed class FolderStackPanel : Window
         menu.Items.Add(new Separator());
         menu.Items.Add(DockMenus.Item(Loc.T("휴지통으로 버리기"), () =>
         {
-            if (RecycleBin.Send(path)) Log.Info("독 폴더: 휴지통으로 버림");
-            // 판은 열어 둠 — 폴더 감시가 독 아이콘을 다시 그리고, 판 내용은 다시 열면 반영
+            // 판을 먼저 닫고(맨 위 판에 윈도우 확인 창이 가리지 않게) 백그라운드에서 — 큰 폴더도 독이 멈추지 않게.
+            // 폴더 감시가 독 아이콘을 다시 그림
             CloseAnimated();
+            var t = new System.Threading.Thread(() => { if (RecycleBin.Send(path)) Log.Info("독 폴더: 휴지통으로 버림"); }) { IsBackground = true };
+            t.SetApartmentState(System.Threading.ApartmentState.STA);
+            t.Start();
         }));
         menu.Items.Add(DockMenus.Item(Loc.T("이름 복사"), () =>
         {

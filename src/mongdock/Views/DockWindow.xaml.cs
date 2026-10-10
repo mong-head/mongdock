@@ -953,7 +953,7 @@ public partial class DockWindow : Window
             foreach (var (pin, i) in folderPins)
             {
                 var opts = pin.Folder ?? new FolderOptions();
-                string id = $"folder:{i}:{pin.Target}:{opts.Display}:{_folders.Version(pin.Target)}:{DockFolderService.Exists(pin.Target)}";
+                string id = $"folder:{i}:{pin.Target}:{opts.Display}:{_folders.Version(pin.Target)}:{_folders.IsAvailable(pin.Target)}";
                 var vm = old.GetValueOrDefault(id);
                 if (vm == null || !ReferenceEquals(vm.Pin, pin))
                     vm = new DockItemViewModel(id, pin, false, PinDisplayName(pin), SafeIcon(() => _folders.Icon(pin, style)));
@@ -1175,7 +1175,7 @@ public partial class DockWindow : Window
         _folderPanel?.CloseAnimated();
         if (same || view == null) return;
 
-        if (!DockFolderService.Exists(pin.Target))
+        if (!(_folders?.IsAvailable(pin.Target) ?? DockFolderService.Exists(pin.Target)))
         {
             // 없어진 폴더: 이유 + [독에서 빼기]
             ConfirmCardWindow.Ask(_services, Loc.T("폴더를 찾을 수 없어요"), pin.Target, Loc.T("독에서 빼기"),
@@ -1643,7 +1643,7 @@ public partial class DockWindow : Window
     {
         var pin = item.Pin!;
         var opts = pin.Folder ?? new FolderOptions();
-        bool exists = DockFolderService.Exists(pin.Target);
+        bool exists = _folders?.IsAvailable(pin.Target) ?? DockFolderService.Exists(pin.Target);
         menu.Items.Add(Item(Loc.T("열기"), () => ToggleFolderPanel(_views.GetValueOrDefault(item.Id), item, pin), enabled: exists));
         menu.Items.Add(Item(Loc.T("탐색기에서 열기"), () => _services.Launcher.OpenFile(pin.Target), enabled: exists));
         menu.Items.Add(new Separator());

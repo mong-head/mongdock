@@ -29,6 +29,9 @@ internal sealed class OutsideClickWatcher
     /// </summary>
     public bool CloseOnActivation { get; set; } = true;
 
+    /// <summary>활성화돼도 닫지 않을 창 (패널 자기 자신 — 열면서 Activate 하는 창).</summary>
+    public IntPtr IgnoreHwnd { get; set; }
+
     /// <summary>있으면 닫는 이유(바깥 클릭 위치·활성화된 창의 프로세스)를 로그에 남김 — 확인 카드처럼 드물게 뜨는 창만 (메뉴는 너무 잦음).</summary>
     public string? LogName { get; set; }
 
@@ -58,6 +61,7 @@ internal sealed class OutsideClickWatcher
 
     private void OnWindowActivated(object? sender, IntPtr hwnd)
     {
+        if (hwnd != IntPtr.Zero && hwnd == IgnoreHwnd) return;
         if (!CloseOnActivation)
         {
             if (LogName is not null && _running) Log.Info($"{LogName}: 다른 창 활성화 무시 ({ProcessOf(hwnd)})");

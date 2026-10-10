@@ -20,7 +20,14 @@ internal sealed class DockFolderService : IDisposable
     private readonly Dictionary<string, Watch> _watches = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, int> _versions = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, (string Key, ImageSource Image)> _stackCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (bool Exists, long At)> _exists = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _checking = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, long> _lastBump = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, long> _retryWatchAt = new(StringComparer.OrdinalIgnoreCase);
     private bool _disposed;
+
+    /// <summary>있는지 다시 볼 간격, 같은 폴더 아이콘을 다시 만드는 최소 간격(내려받는 동안 1초마다 다시 그리지 않게), 감시가 죽은 뒤 다시 켜기까지.</summary>
+    private const long RecheckMs = 5000, MinBumpMs = 3000, WatchRetryMs = 10000;
 
     private sealed class Watch : IDisposable
     {
@@ -77,6 +84,54 @@ internal sealed class DockFolderService : IDisposable
         catch { return DateTime.MinValue; }
     }
 
+    /// <summary>
+    /// 폴더가 있는지 — UI 스레드용 캐시. 5초 지나면 백그라운드에서 다시 보고, 바뀌면 Changed (독이 다시 그림).
+    /// 네트워크 경로(\\서버, 연결된 드라이브)는 처음에도 기다리지 않음 — 확인 전엔 없음으로 보고 곧 다시 그림.
+    /// </summary>
+    public bool IsAvailable(string path)
+    {
+        string key = Normalize(path);
+        long now = Environment.TickCount64;
+        if (_exists.TryGetValue(key, out var known))
+        {
+            if (now - known.At > RecheckMs) Recheck(key);
+            return known.Exists;
+        }
+        if (IsNetwork(key))
+        {
+            _exists[key] = (false, now);
+            Recheck(key);
+            return false;
+        }
+        bool exists = Exists(key);
+        _exists[key] = (exists, now);
+        return exists;
+    }
+
+    private void Recheck(string key)
+    {
+        if (_disposed || !_checking.Add(key)) return;
+        Task.Run(() => Exists(key)).ContinueWith(t => _dispatcher.BeginInvoke(() =>
+        {
+            _checking.Remove(key);
+            if (_disposed) return;
+            bool now = t.Status == TaskStatus.RanToCompletion && t.Result;
+            bool changed = !_exists.TryGetValue(key, out var old) || old.Exists != now;
+            _exists[key] = (now, Environment.TickCount64);
+            if (changed) Bump(key);
+        }), TaskScheduler.Default);
+    }
+
+    private static bool IsNetwork(string path)
+    {
+        try
+        {
+            if (path.StartsWith(@"\\", StringComparison.Ordinal)) return true;
+            return path.Length >= 2 && path[1] == ':' && new DriveInfo(path[..1]).DriveType == DriveType.Network;
+        }
+        catch { return true; }
+    }
+
     public static bool Exists(string path)
     {
         try { return Directory.Exists(Environment.ExpandEnvironmentVariables(path)); }
@@ -93,7 +148,7 @@ internal sealed class DockFolderService : IDisposable
     {
         string path = pin.Target;
         var opts = pin.Folder ?? new FolderOptions();
-        if (!Exists(path)) return MissingIcon;
+        if (!IsAvailable(path)) return MissingIcon;
         if (opts.Display == FolderDisplay.Folder) return FolderIcon(path, style);
 
         var listed = List(path, FolderSort.Added, 3);
@@ -186,9 +241,14 @@ internal sealed class DockFolderService : IDisposable
             _watches[gone].Dispose();
             _watches.Remove(gone);
         }
+        // 독에서 뺀 폴더의 기록도 정리 (번호·아이콘 캐시·확인 결과)
+        foreach (var dict in new System.Collections.IDictionary[] { _versions, _stackCache, _exists, _lastBump, _retryWatchAt })
+            foreach (var k in dict.Keys.Cast<string>().Where(k => !want.Contains(k)).ToList()) dict.Remove(k);
+        long now = Environment.TickCount64;
         foreach (var path in want)
         {
-            if (_watches.ContainsKey(path) || !Directory.Exists(path)) continue;
+            if (_watches.ContainsKey(path) || !IsAvailable(path)) continue;
+            if (_retryWatchAt.TryGetValue(path, out long retry) && now < retry) continue;
             try
             {
                 var fsw = new FileSystemWatcher(path)
@@ -197,7 +257,7 @@ internal sealed class DockFolderService : IDisposable
                     NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
                 };
                 string key = path;
-                var debounce = new Timer(_ => _dispatcher.BeginInvoke(() => Bump(key)), null, Timeout.Infinite, Timeout.Infinite);
+                var debounce = new Timer(_ => _dispatcher.BeginInvoke(() => BumpThrottled(key)), null, Timeout.Infinite, Timeout.Infinite);
                 void Poke(object? s, EventArgs e)
                 {
                     try { debounce.Change(1000, Timeout.Infinite); } catch (ObjectDisposedException) { }
@@ -206,7 +266,13 @@ internal sealed class DockFolderService : IDisposable
                 fsw.Deleted += Poke;
                 fsw.Renamed += Poke;
                 fsw.Changed += Poke;
-                fsw.Error += (_, e) => Log.Warn($"독 폴더 감시 오류: {e.GetException().Message}");
+                fsw.Error += (_, e) =>
+                {
+                    // 버퍼 넘침: 바뀐 것을 놓쳤을 수 있음 → 다시 그림. 그 밖(폴더 삭제·네트워크 끊김): 감시를 버리고 나중에 다시 켬
+                    if (e.GetException() is InternalBufferOverflowException) { Poke(s: null, e: EventArgs.Empty); return; }
+                    Log.Warn($"독 폴더 감시 오류: {e.GetException().GetType().Name}");
+                    _dispatcher.BeginInvoke(() => DropWatch(key));
+                };
                 fsw.EnableRaisingEvents = true;
                 _watches[path] = new Watch { Watcher = fsw, Debounce = debounce };
             }
@@ -215,6 +281,29 @@ internal sealed class DockFolderService : IDisposable
                 Log.Warn($"독 폴더 감시 시작 실패: {ex.GetType().Name}");
             }
         }
+    }
+
+    private void DropWatch(string key)
+    {
+        if (_disposed || !_watches.Remove(key, out var w)) return;
+        w.Dispose();
+        _retryWatchAt[key] = Environment.TickCount64 + WatchRetryMs;
+        _exists.Remove(key);
+        Bump(key); // 독이 다시 그리며 있는지 다시 보고, 10초 뒤 SetWatched 가 감시를 다시 켬
+    }
+
+    /// <summary>같은 폴더는 3초에 한 번만 다시 그림 (내려받는 동안 파일 시각이 계속 바뀌어도).</summary>
+    private void BumpThrottled(string key)
+    {
+        if (_disposed) return;
+        long since = Environment.TickCount64 - _lastBump.GetValueOrDefault(key, long.MinValue / 2);
+        if (since < MinBumpMs && _watches.TryGetValue(key, out var w))
+        {
+            try { w.Debounce.Change(MinBumpMs - since, Timeout.Infinite); } catch (ObjectDisposedException) { }
+            return;
+        }
+        _lastBump[key] = Environment.TickCount64;
+        Bump(key);
     }
 
     private void Bump(string path)
