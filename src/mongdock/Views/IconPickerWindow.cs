@@ -93,6 +93,7 @@ internal sealed class IconPickerWindow : Window
         _glyphPage.Children.Add(_glyphs);
         var textRow = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 10, 0, 0) };
         textRow.Children.Add(new TextBlock { Text = Loc.T("글자 (1~2자)"), Foreground = _p.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
+        MongField.Apply(_text, _p);
         _text.Text = _icon.Text ?? "";
         _text.TextChanged += (_, _) =>
         {

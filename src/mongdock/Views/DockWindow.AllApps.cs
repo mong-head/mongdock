@@ -76,6 +76,7 @@ public partial class DockWindow
             _lastInsideTicks = Environment.TickCount64;
         };
         _folderPanel = panel;
+        _label?.Hide(); // 판이 열린 동안 이름표는 숨김 (판 제목 위에 겹쳐 보임 — QA)
         _folderPanelPin = pin;
         Interlocked.Increment(ref AllAppsCatalog.OpenedSinceSignal);
         int nth = ++_allAppsOpens;

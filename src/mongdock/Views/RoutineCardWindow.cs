@@ -119,7 +119,7 @@ internal abstract class RoutineCardWindow : Window
 
     protected TextBlock Muted(string text, double size = 12) => new() { Text = text, FontSize = size, Foreground = P.SubText, TextWrapping = TextWrapping.Wrap };
 
-    protected TextBox Field(string text, double width = double.NaN) => new()
+    protected TextBox Field(string text, double width = double.NaN) => MongField.Apply(new TextBox
     {
         Text = text,
         Width = width,
@@ -130,7 +130,7 @@ internal abstract class RoutineCardWindow : Window
         Foreground = P.Text,
         BorderBrush = P.Divider,
         CaretBrush = P.Text,
-    };
+    }, P);
 
     /// <summary>빈 칸에 흐린 안내 글자 (입력하면 사라짐) — 칸을 감싼 Grid 를 돌려줌.</summary>
     protected Grid Hinted(TextBox box, string hint)

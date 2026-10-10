@@ -1265,6 +1265,7 @@ public partial class DockWindow : Window
             _lastInsideTicks = Environment.TickCount64;
         };
         _folderPanel = panel;
+        _label?.Hide(); // 판이 열린 동안 이름표는 숨김 (판 제목 위에 겹쳐 보임 — QA)
         _folderPanelPin = pin;
         panel.Show();
     }
@@ -1337,7 +1338,7 @@ public partial class DockWindow : Window
     private void OnItemHoverStarted(object? sender, EventArgs e)
     {
         if (sender is not DockItemView view || string.IsNullOrEmpty(view.Item.Name)) return;
-        if (PanelBorder.ContextMenu?.IsOpen == true || _dragArmed || _itemDragging || _fileDragOver || _hideTo >= 1) return;
+        if (PanelBorder.ContextMenu?.IsOpen == true || _dragArmed || _itemDragging || _fileDragOver || _hideTo >= 1 || _folderPanel != null) return;
         if (LabelAnchor(view) is not Point anchor) return;
 
         // 숨은 말풍선은 다른 DPI 모니터로 옮겨도 DPI 가 안 바뀔 수 있어, DPI 가 다르면 새로 만든다 (새 창은 WPF 가 그 모니터 DPI 로 만듦)

@@ -129,9 +129,20 @@ internal sealed partial class StatusPanelWindow : Window
         _mediaTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
         _mediaTimer.Tick += (_, _) => RefreshAll();
 
+        // Esc 로 닫기: 포커스를 받지 않는 창이라 키 이벤트가 오지 않음 → 열려 있는 동안만 Esc 가 새로 눌렸는지 확인 (QA)
+        bool escHeld = true; // 열 때 이미 눌려 있던 Esc 는 무시 (뗐다가 다시 눌러야)
+        var escTimer = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(50) };
+        escTimer.Tick += (_, _) =>
+        {
+            bool down = Native.MenuApi.IsKeyDown(0x1B /* VK_ESCAPE */);
+            if (down && !escHeld && !_closed) { escTimer.Stop(); Close(); }
+            escHeld = down;
+        };
+        Closed += (_, _) => escTimer.Stop();
         SourceInitialized += (_, _) => _services.DesktopWindows.MakeOverlay(this);
         Loaded += (_, _) =>
         {
+            escTimer.Start();
             RefreshAll();
             QueueFit(); // 내용이 처음 채워진 뒤 다시 맞춤
             _watch.Start();

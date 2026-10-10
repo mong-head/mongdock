@@ -84,7 +84,8 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         // 미리 만든 목록으로 다 그린 상태로 열림. 목록이 오래됐으면 뒤에서 새로 만들어 다음 열기에 반영
         // (열려 있는 판은 출렁이지 않게 — 목록이 아예 없었을 때만 채움)
         bool hadApps = _apps.Count > 0;
-        if (!hadApps || AllAppsCatalog.IsStale)
+        // 목록이 있으면 여는 동안은 새로 만들지 않음 (나타나기와 CPU 를 다투지 않게) — 오래됐으면 닫을 때 Warm 이 새로 만듦
+        if (!hadApps && !_prewarming)
             Task.Run(() => AllAppsCatalog.Apps()).ContinueWith(t =>
             {
                 if (t.Status != TaskStatus.RanToCompletion) return;
@@ -702,7 +703,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         stack.Children.Add(tileHost);
         if (_editing)
         {
-            var name = new TextBox { Text = AllAppsCatalog.GroupName(S, id), FontSize = 12, FontWeight = FontWeights.SemiBold, MaxLength = 24, TextAlignment = TextAlignment.Center, Margin = new Thickness(2, 5, 2, 0), Padding = new Thickness(2, 1, 2, 1) };
+            var name = MongField.Apply(new TextBox { Text = AllAppsCatalog.GroupName(S, id), FontSize = 12, FontWeight = FontWeights.SemiBold, MaxLength = 24, TextAlignment = TextAlignment.Center, Margin = new Thickness(2, 5, 2, 0), Padding = new Thickness(2, 1, 2, 1) }, P);
             void CommitName() { if (name.Text.Trim() != AllAppsCatalog.GroupName(S, id)) RenameGroup(id, name.Text); }
             name.KeyDown += (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; CommitName(); } };
             name.PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) name.Text = AllAppsCatalog.GroupName(S, id); }; // Esc = 취소 (판이 닫히며 저장되지 않게)
@@ -771,6 +772,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
                 Margin = new Thickness(4, 0, 4, 6),
                 Padding = new Thickness(4, 2, 4, 2),
             };
+            MongField.Apply(edit, P);
             void Commit()
             {
                 if (_renaming != id) return;

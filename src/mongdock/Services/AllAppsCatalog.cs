@@ -54,6 +54,9 @@ internal static class AllAppsCatalog
     // ───────────────────────── 목록 ─────────────────────────
 
     private static readonly object Gate = new();
+    /// <summary>목록을 새로 만드는 동안만 (한 번에 하나). Gate 는 결과를 바꿔 넣는 순간만 쥠 — 만드는 수백 ms 동안 Gate 를 쥐면
+    /// UI 스레드의 Cached·IsStale 이 그만큼 멈춤 (QA: 오래 쉰 뒤 판 열기 때 나타나기가 0.7초 멈춤).</summary>
+    private static readonly object BuildGate = new();
     private static List<AppEntry>? _cache;
     private static DateTime _cacheTime;
 
@@ -61,11 +64,20 @@ internal static class AllAppsCatalog
     public static IReadOnlyList<AppEntry> Apps(bool refresh = false)
     {
         lock (Gate)
-        {
             if (!refresh && _cache is not null && DateTime.UtcNow - _cacheTime < TimeSpan.FromSeconds(60)) return _cache;
-            _cache = Build();
-            _cacheTime = DateTime.UtcNow;
-            return _cache;
+        lock (BuildGate)
+        {
+            var started = DateTime.UtcNow;
+            lock (Gate) // 기다리는 동안 다른 쪽이 새로 만들었으면 그대로
+                if (!refresh && _cache is not null && DateTime.UtcNow - _cacheTime < TimeSpan.FromSeconds(60)) return _cache;
+            var list = Build();
+            lock (Gate)
+            {
+                _cache = list;
+                _cacheTime = DateTime.UtcNow;
+            }
+            Log.Info($"앱 목록 새로 만듦: {list.Count}개, {(DateTime.UtcNow - started).TotalMilliseconds:0}ms");
+            return list;
         }
     }
 

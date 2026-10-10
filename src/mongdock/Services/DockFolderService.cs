@@ -41,7 +41,18 @@ internal sealed class DockFolderService : IDisposable
     public DockFolderService()
     {
         _dispatcher = Dispatcher.CurrentDispatcher;
+        // 폴더 자체를 지우거나 이름을 바꾸면 그 폴더 감시에는 소식이 오지 않음 → 독에 있는 폴더가 있는지 5초마다 뒤에서 확인
+        // (바뀌면 Changed — 독 아이콘이 바로 회색/원래대로, 메뉴 "열기"도). QA: 눌러야 회색이 됨
+        _existsTimer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher) { Interval = TimeSpan.FromMilliseconds(RecheckMs) };
+        _existsTimer.Tick += (_, _) =>
+        {
+            if (_disposed) { _existsTimer.Stop(); return; }
+            foreach (var key in _exists.Keys.ToList()) Recheck(key);
+        };
+        _existsTimer.Start();
     }
+
+    private readonly DispatcherTimer _existsTimer;
 
     /// <summary>폴더 내용이 바뀜 (1초 묶음, UI 스레드). 인자 = 폴더 경로.</summary>
     public event Action<string>? Changed;
@@ -112,9 +123,15 @@ internal sealed class DockFolderService : IDisposable
             _checking.Remove(key);
             if (_disposed) return;
             bool now = t.Status == TaskStatus.RanToCompletion && t.Result;
-            bool changed = !_exists.TryGetValue(key, out var old) || old.Exists != now;
+            if (!_exists.TryGetValue(key, out var old)) return; // 그새 독에서 뺌 (SetWatched 가 지움)
+            bool changed = old.Exists != now;
             _exists[key] = (now, Environment.TickCount64);
-            if (changed) Bump(key);
+            if (!changed) return;
+            Log.Info($"독 폴더 {(now ? "다시 있음" : "없어짐")}");
+            // 없어졌으면 감시를 버림 (이름을 바꾼 폴더를 계속 보고 있지 않게) — 다시 생기면 SetWatched 가 새로 켬
+            if (!now && _watches.Remove(key, out var w)) w.Dispose();
+            if (now) _retryWatchAt.Remove(key);
+            Bump(key);
         }), TaskScheduler.Default);
     }
 
@@ -340,6 +357,7 @@ internal sealed class DockFolderService : IDisposable
     public void Dispose()
     {
         _disposed = true;
+        _existsTimer.Stop();
         foreach (var w in _watches.Values) w.Dispose();
         _watches.Clear();
     }

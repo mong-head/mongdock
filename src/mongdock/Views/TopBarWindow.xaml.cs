@@ -137,6 +137,14 @@ public partial class TopBarWindow : Window
         catch { pattern = "tt h:mm"; }
         if (string.IsNullOrWhiteSpace(pattern)) pattern = "tt h:mm";
         bool h24 = pattern.Contains('H'), pad = pattern.Contains(h24 ? "HH" : "hh");
+        // 화면 언어가 24시간이 보통이면(독일어·프랑스어 등) 지역이 12시간이어도 24시간 (QA: 한국 지역 + 독일어 → "12:19 AM")
+        if (!h24)
+        {
+            string ui;
+            try { ui = Loc.Culture.DateTimeFormat.ShortTimePattern; }
+            catch { ui = ""; }
+            if (ui.Contains('H')) { h24 = true; pad = ui.Contains("HH"); }
+        }
         string hm = (h24 ? (pad ? "HH" : "H") : (pad ? "hh" : "h")) + ":mm";
         string time = h24 ? hm : Loc.AmPmFirst ? "tt " + hm : hm + " tt";
         // 영어: 맥처럼 "Thu Oct 9  7:50 PM" (날짜 서식은 번역 사전이 아니라 여기서)
