@@ -1616,8 +1616,8 @@ public partial class DockWindow : Window
         menu.Items.Add(DockMenus.SettingsWindow(_services, Loc.F($"{AppInfo.Name} 설정…")));
         menu.Items.Add(new Separator());
         menu.Items.Add(Item(Loc.T("구분선 추가"), () => ModifyPins(p => p.Add(new PinItem { Kind = PinKind.Separator, Name = "" }))));
-        menu.Items.Add(Item(Loc.T("폴더 추가…"), AddFolderFromDialog));
-        if (!_services.Settings.Current.Pins.Any(IsTrash)) menu.Items.Add(Item(Loc.T("휴지통 보이기"), ShowTrash));
+        menu.Items.Add(DockMenus.ItemNew(_services, Loc.T("폴더 추가…"), NewBadges.Folders, AddFolderFromDialog));
+        if (!_services.Settings.Current.Pins.Any(IsTrash)) menu.Items.Add(DockMenus.ItemNew(_services, Loc.T("휴지통 보이기"), NewBadges.RecycleBin, ShowTrash));
         menu.Items.Add(new Separator());
         menu.Items.Add(DockMenus.DockPosition(_services));
         menu.Items.Add(DockMenus.DockBehavior(_services));
@@ -1765,6 +1765,7 @@ public partial class DockWindow : Window
             }
         });
         Log.Info($"독 폴더 {add.Count}개 추가");
+        NewBadges.Used(NewBadges.Folders); // 끌어 놓아 넣어도 써 본 것
         ShowFolderHintOnce();
     }
 }

@@ -66,6 +66,7 @@ public partial class DockWindow
         _folderPanel = panel;
         _folderPanelPin = pin;
         _recycle?.CheckSoon();
+        NewBadges.Used(NewBadges.RecycleBin);
         panel.Show();
     }
 

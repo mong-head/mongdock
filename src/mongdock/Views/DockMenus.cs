@@ -19,6 +19,33 @@ internal static class DockMenus
         return mi;
     }
 
+    /// <summary>
+    /// 새 기능 메뉴 항목: NewBadges.Show(feature) 면 이름 옆에 작은 알약 "NEW" (몽독 강조색, 모든 언어 같은 글자). 누르면 그 기능을 쓴 것으로.
+    /// </summary>
+    public static MenuItem ItemNew(AppServices services, string header, string feature, Action action)
+    {
+        var mi = Item(header, () =>
+        {
+            NewBadges.Used(feature);
+            action();
+        });
+        if (!NewBadges.Show(feature)) return mi;
+        var p = ViewModels.UiTheme.Palette(services.Settings.Current);
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(new TextBlock { Text = header, VerticalAlignment = System.Windows.VerticalAlignment.Center });
+        row.Children.Add(new Border
+        {
+            Background = p.Accent,
+            CornerRadius = new System.Windows.CornerRadius(7),
+            Padding = new System.Windows.Thickness(5, 0, 5, 1),
+            Margin = new System.Windows.Thickness(8, 0, 0, 0),
+            VerticalAlignment = System.Windows.VerticalAlignment.Center,
+            Child = new TextBlock { Text = "NEW", FontSize = 9.5, FontWeight = System.Windows.FontWeights.Bold, Foreground = p.AccentText },
+        });
+        mi.Header = row;
+        return mi;
+    }
+
     private static MenuItem Choice<T>(string header, IEnumerable<(T Value, string Label)> options, T current, Action<T> set)
         where T : struct, Enum
     {
