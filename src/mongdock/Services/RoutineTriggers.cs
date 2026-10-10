@@ -80,6 +80,7 @@ internal static class RoutineTriggers
         var second = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         second.Tick += (_, _) => OnSecond();
         second.Start();
+        Post(UpdateFocus); // 몽독을 다시 켜며 되살린 루틴의 데스크톱이면 방해 금지·독 숨김을 바로
     }
 
     private static void Post(Action a) => _d?.BeginInvoke(() =>

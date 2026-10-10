@@ -198,7 +198,11 @@ internal static class RoutineService
                     Runs[s.Id] = state;
                     restored++;
                 }
-            if (restored > 0) Log.Info($"열린 루틴 {restored}개 되살림 (몽독 다시 시작)");
+            if (restored > 0)
+            {
+                Log.Info($"열린 루틴 {restored}개 되살림 (몽독 다시 시작)");
+                RaiseChanged(); // 다음 차례(RoutineTriggers 가 구독한 뒤) — 방해 금지·독 숨김·상단바를 다시 (QA: 되살린 뒤 ☾ 가 빠짐)
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
     }
