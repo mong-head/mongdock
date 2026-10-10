@@ -1,4 +1,5 @@
 using System.Windows.Controls;
+using System.Windows.Media;
 using Mongdock.Models;
 using Mongdock.Services;
 
@@ -22,6 +23,24 @@ internal static class DockMenus
     /// <summary>
     /// 새 기능 메뉴 항목: NewBadges.Show(feature) 면 이름 옆에 작은 알약 "NEW" (몽독 강조색, 모든 언어 같은 글자). 누르면 그 기능을 쓴 것으로.
     /// </summary>
+    /// <summary>NEW 배지: 몽독 하늘~연보라 그라데이션 + 진한 보라 글자 (모든 테마 같음).</summary>
+    internal static readonly Brush NewBadgeBrush = Frozen(new LinearGradientBrush(Color.FromRgb(0x9F, 0xD6, 0xFF), Color.FromRgb(0xCB, 0xBE, 0xFF), 0));
+    internal static readonly Brush NewBadgeText = Frozen(new SolidColorBrush(Color.FromRgb(0x2E, 0x24, 0x70)));
+
+    private static Brush Frozen(Brush b) { b.Freeze(); return b; }
+
+    /// <summary>몽독 체크 (둥근 사각·얇은 테두리, 켜지면 하늘~연보라) — 기본 체크 상자 대신.</summary>
+    internal static CheckBox Check(ViewModels.UiPalette p, object? content = null, bool isChecked = false) => new()
+    {
+        Style = (System.Windows.Style)System.Windows.Application.Current.FindResource("MongCheck"),
+        Background = p.CheckOff,
+        BorderBrush = p.CheckBorder,
+        Foreground = p.Text,
+        Content = content,
+        IsChecked = isChecked,
+        VerticalAlignment = System.Windows.VerticalAlignment.Center,
+    };
+
     public static MenuItem ItemNew(AppServices services, string header, string feature, Action action)
     {
         var mi = Item(header, () =>
@@ -35,12 +54,12 @@ internal static class DockMenus
         row.Children.Add(new TextBlock { Text = header, VerticalAlignment = System.Windows.VerticalAlignment.Center });
         row.Children.Add(new Border
         {
-            Background = p.Accent,
+            Background = NewBadgeBrush,
             CornerRadius = new System.Windows.CornerRadius(7),
             Padding = new System.Windows.Thickness(5, 0, 5, 1),
             Margin = new System.Windows.Thickness(8, 0, 0, 0),
             VerticalAlignment = System.Windows.VerticalAlignment.Center,
-            Child = new TextBlock { Text = "NEW", FontSize = 9.5, FontWeight = System.Windows.FontWeights.Bold, Foreground = p.AccentText },
+            Child = new TextBlock { Text = "NEW", FontSize = 9.5, FontWeight = System.Windows.FontWeights.Bold, Foreground = NewBadgeText },
         });
         mi.Header = row;
         return mi;

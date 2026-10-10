@@ -22,6 +22,14 @@ public sealed class UiPalette
     public Brush Divider { get; private init; } = Brushes.LightGray;
     public Brush Accent { get; private init; } = Brushes.Blue;
     public Brush AccentText { get; private init; } = Brushes.White;
+    /// <summary>몽독 톤 강조 (#24 새 화면): 연보라 틴트 바탕 + 진한 보라 글자 — 쨍한 파랑 대신. 고른 칸·주 버튼.</summary>
+    public Brush SoftAccent { get; private init; } = Brushes.Lavender;
+    public Brush SoftAccentText { get; private init; } = Brushes.DarkSlateBlue;
+    /// <summary>몽독 톤 선 (놓을 곳 강조·고른 칸 테두리·검색 선택).</summary>
+    public Brush SoftAccentLine { get; private init; } = Brushes.MediumPurple;
+    /// <summary>몽독 체크 (안 켜짐 바탕·테두리). 켜지면 하늘~연보라 그라데이션.</summary>
+    public Brush CheckOff { get; private init; } = Brushes.White;
+    public Brush CheckBorder { get; private init; } = Brushes.Gray;
     public Brush Hover { get; private init; } = Brushes.LightGray;
     public Brush Tile { get; private init; } = Brushes.WhiteSmoke;
     public Brush CircleOff { get; private init; } = Brushes.LightGray;
@@ -50,6 +58,11 @@ public sealed class UiPalette
         Divider = F("#14000000"),
         Accent = F("#FF0A64D6"),
         AccentText = F("#FFFFFFFF"),
+        SoftAccent = F("#FFECE7FF"),
+        SoftAccentText = F("#FF4A3AA8"),
+        SoftAccentLine = F("#FFB4A3FF"),
+        CheckOff = F("#FFFFFFFF"),
+        CheckBorder = F("#40000000"),
         Hover = F("#0F000000"),
         Tile = F("#FFF0F0F2"),
         CircleOff = F("#FFE1E1E4"),
@@ -77,6 +90,11 @@ public sealed class UiPalette
         Divider = F("#1FFFFFFF"),
         Accent = F("#FF0A64D6"),
         AccentText = F("#FFFFFFFF"),
+        SoftAccent = F("#FF3D3763"),
+        SoftAccentText = F("#FFD8CFFF"),
+        SoftAccentLine = F("#FF8E7EE0"),
+        CheckOff = F("#FF3A3A3C"),
+        CheckBorder = F("#4DFFFFFF"),
         Hover = F("#14FFFFFF"),
         Tile = F("#FF3A3A3C"),
         CircleOff = F("#FF505053"),

@@ -278,7 +278,7 @@ internal sealed partial class AllAppsPanel
         if (cell is not null)
         {
             Animate(cell, 1.05);
-            cell.BorderBrush = P.Accent;
+            cell.BorderBrush = P.SoftAccentLine;
         }
 
         static void Animate(Border b, double to)

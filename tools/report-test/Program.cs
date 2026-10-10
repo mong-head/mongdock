@@ -45,6 +45,9 @@ internal static class Program
         int iconsAt = Array.FindIndex(args, a => a == "--icons");
         if (iconsAt >= 0 && iconsAt + 1 < args.Length) RenderAllAppsIcons(args[iconsAt + 1]);
 
+        int introAt = Array.FindIndex(args, a => a == "--intro");
+        if (introAt >= 0 && introAt + 1 < args.Length) { RenderIntroFrames(args[introAt + 1]); return 0; }
+
         int routinesAt = Array.FindIndex(args, a => a == "--routines");
         if (routinesAt >= 0 && routinesAt + 1 < args.Length) { RenderRoutines(args[routinesAt + 1]); return _failed == 0 ? 0 : 1; }
 
@@ -690,6 +693,104 @@ internal static class Program
             }
             settings.Dispose();
         }
+        GC.KeepAlive(app);
+    }
+
+    // ───────────────────────── 앱 모음 판 나타나기 (A 가운데 / B 아이콘에서) 시연 프레임 ─────────────────────────
+
+    /// <summary>--intro DIR: 1920x1080 화면(1/2)에 독과 앱 모음 아이콘, 판이 나타나는 0·30·60·100% 프레임을 가로로 (A center, B icon).</summary>
+    private static void RenderIntroFrames(string dir)
+    {
+        Directory.CreateDirectory(dir);
+        var app = new Mongdock.App();
+        Mongdock.Loc.Init(_lang);
+        app.InitializeComponent();
+        app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        var asm = typeof(Mongdock.App).Assembly;
+        asm.GetType("Mongdock.Services.AllAppsCatalog")!.GetMethod("Apps")!.Invoke(null, new object[] { false });
+        var settings = new SettingsService();
+        settings.Current.Dock.Theme = DockTheme.Light;
+        Mongdock.ViewModels.UiFonts.Apply(settings.Current);
+        var tracker = new WindowTracker();
+        var launcher = new AppLauncher(tracker);
+        var services = new AppServices(settings, tracker, launcher, new IconService(), new DesktopWindowService(), new VirtualDesktopService(),
+            new ShellActions(), new ImeService(), new StatusService(), new MediaService(), new AppMenuService(settings), new StartupService(),
+            new NotificationService(tracker, launcher), new TrayIconService(), new CalendarFeedService(settings));
+        var palette = Mongdock.ViewModels.UiTheme.Palette(settings.Current);
+        var panelType = asm.GetType("Mongdock.Views.AllAppsPanel")!;
+        panelType.GetProperty("LoadIconsNow", Any)!.SetValue(null, true);
+        const int sw = 1920, sh = 1080;
+        var rectType = asm.GetType("Mongdock.Native.RECT")!;
+        var monCtor = typeof(MonitorInfo).GetConstructors(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)[0];
+        var fake = (MonitorInfo)monCtor.Invoke(new object[] { @"\.\DISPLAY9", Activator.CreateInstance(rectType, 0, 0, sw, sh)!, Activator.CreateInstance(rectType, 0, 0, sw, sh - 80)!, 1.0, true, 9 });
+        var icon = new Rect(sw / 2 - 26 - 3 * 62, sh - 70, 52, 52); // 독 가운데 줄의 앱 모음 아이콘
+        var w = (Window)panelType.GetConstructors(Any)[0].Invoke(new object[] { services, palette, icon, DockEdge.Bottom, fake });
+        panelType.GetMethod("Rebuild", Any)!.Invoke(w, null);
+        var content = (FrameworkElement)w.Content;
+        foreach (var sv in Descendants(content).OfType<System.Windows.Controls.ScrollViewer>()) sv.MaxHeight = sh * 0.75 - 120;
+        content.Opacity = 1;
+        content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var size = content.DesiredSize;
+        content.Arrange(new Rect(size));
+        content.UpdateLayout();
+        var picture = new RenderTargetBitmap((int)size.Width, (int)size.Height, 96, 96, PixelFormats.Pbgra32);
+        var pv = new DrawingVisual();
+        using (var dc = pv.RenderOpen())
+        {
+            dc.DrawRectangle(palette.CardBackground, null, new Rect(size));
+            dc.DrawRectangle(new VisualBrush(content) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top }, null, new Rect(size));
+        }
+        picture.Render(pv);
+        var final = new Rect((sw - size.Width) / 2, (sh - 80 - size.Height) / 2, size.Width, size.Height);
+        var intro = asm.GetType("Mongdock.Views.PanelIntro")!;
+        var sample = intro.GetMethod("Sample", Any)!;
+        var appsIcon = new IconService().GetIcon(new PinItem { Kind = PinKind.Special, Target = "launchpad" }, IconStyle.Mac);
+        const double k = 0.32;
+        var ts = new[] { 0.0, 0.3, 0.6, 1.0 };
+        foreach (var mode in new[] { "center", "icon" })
+        {
+            double fw = sw * k, fh = sh * k;
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen())
+            {
+                for (int i = 0; i < ts.Length; i++)
+                {
+                    dc.PushTransform(new TranslateTransform(i * (fw + 16), 0));
+                    dc.PushClip(new RectangleGeometry(new Rect(0, 0, fw, fh)));
+                    dc.PushTransform(new ScaleTransform(k, k));
+                    dc.DrawRectangle(new LinearGradientBrush(Color.FromRgb(0x9A, 0xA9, 0xC4), Color.FromRgb(0xB9, 0xB2, 0xD6), 90), null, new Rect(0, 0, sw, sh));
+                    dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(0xC8, 0xFF, 0xFF, 0xFF)), null, new Rect(sw / 2 - 360, sh - 80, 720, 72), 20, 20);
+                    for (int j = -5; j <= 5; j++)
+                    {
+                        var r = new Rect(sw / 2 - 26 + j * 62, sh - 70, 52, 52);
+                        if (j == -3) dc.DrawImage(appsIcon, r);
+                        else dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(0x55, 0x60, 0x70, 0xA0)), null, r, 12, 12);
+                    }
+                    var res = sample.Invoke(null, new object[] { mode, ts[i], final, icon })!;
+                    var rect = (Rect)res.GetType().GetField("Item1")!.GetValue(res)!;
+                    double op = (double)res.GetType().GetField("Item2")!.GetValue(res)!;
+                    dc.PushOpacity(op);
+                    double rad = 8 * rect.Width / final.Width;
+                    dc.DrawRoundedRectangle(new ImageBrush(picture), new Pen(new SolidColorBrush(Color.FromArgb(0x30, 0, 0, 0)), 1), rect, rad, rad);
+                    dc.Pop();
+                    dc.Pop();
+                    dc.Pop();
+                    dc.Pop();
+                    var label = new FormattedText($"{(int)(ts[i] * (mode == "icon" ? 200 : 160))}ms", System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                        new Typeface("Segoe UI"), 13, Brushes.Black, 1.0);
+                    dc.DrawText(label, new Point(i * (fw + 16) + 6, fh + 4));
+                }
+            }
+            var rtb = new RenderTargetBitmap((int)(ts.Length * (fw + 16)), (int)fh + 24, 96, 96, PixelFormats.Pbgra32);
+            rtb.Render(dv);
+            string path = Path.Combine(dir, $"intro-{(mode == "center" ? "A-center" : "B-icon")}.png");
+            var enc = new PngBitmapEncoder();
+            enc.Frames.Add(BitmapFrame.Create(rtb));
+            using (var fs = File.Create(path)) enc.Save(fs);
+            Console.WriteLine($"  저장  {path}");
+        }
+        w.Close();
+        settings.Dispose();
         GC.KeepAlive(app);
     }
 

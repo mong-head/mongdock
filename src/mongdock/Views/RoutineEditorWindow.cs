@@ -280,7 +280,7 @@ internal sealed class RoutineEditorWindow : RoutineCardWindow
         Grid.SetColumn(pill, 3);
         grid.Children.Add(pill);
 
-        var chevron = new TextBlock { Text = index == _expanded ? "" : "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 10, Foreground = index == _expanded ? P.Accent : P.SubText, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, ToolTip = Loc.T("세부") };
+        var chevron = new TextBlock { Text = index == _expanded ? "" : "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 10, Foreground = index == _expanded ? P.SoftAccentText : P.SubText, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, ToolTip = Loc.T("세부") };
         Grid.SetColumn(chevron, 4);
         grid.Children.Add(chevron);
 
@@ -289,7 +289,7 @@ internal sealed class RoutineEditorWindow : RoutineCardWindow
         Grid.SetColumn(remove, 5);
         grid.Children.Add(remove);
 
-        var row = new Border { CornerRadius = new CornerRadius(7), Padding = new Thickness(4, 4, 2, 4), Child = grid, Background = index == _expanded ? P.Tile : Brushes.Transparent, Focusable = true, BorderBrush = P.Accent, BorderThickness = new Thickness(0) };
+        var row = new Border { CornerRadius = new CornerRadius(7), Padding = new Thickness(4, 4, 2, 4), Child = grid, Background = index == _expanded ? P.Tile : Brushes.Transparent, Focusable = true, BorderBrush = P.SoftAccentLine, BorderThickness = new Thickness(0) };
         row.MouseEnter += (_, _) => { if (index != _expanded) row.Background = P.Hover; };
         row.MouseLeave += (_, _) => { if (index != _expanded) row.Background = Brushes.Transparent; };
         row.MouseLeftButtonUp += (_, e) =>
@@ -613,7 +613,8 @@ internal sealed class RoutineEditorWindow : RoutineCardWindow
             foreach (var app in list)
             {
                 var a = app;
-                var check = new CheckBox { IsChecked = chosen.Contains(a), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+                var check = DockMenus.Check(P, null, chosen.Contains(a));
+                check.Margin = new Thickness(0, 0, 8, 0);
                 var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 1, 0, 1) };
                 line.Children.Add(check);
                 var img = new Image { Width = 20, Height = 20, Margin = new Thickness(0, 0, 8, 0) };

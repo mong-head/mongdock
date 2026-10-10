@@ -155,13 +155,14 @@ internal sealed partial class AllAppsPanel
                 foreach (Border b in choices.Children)
                 {
                     bool on = (CleanupChoice)b.Tag == r.Choice;
-                    b.Background = on ? P.Accent : P.Tile;
-                    ((TextBlock)b.Child).Foreground = on ? P.AccentText : P.Text;
+                    b.Background = on ? P.SoftAccent : P.Tile;
+                    b.BorderBrush = on ? P.SoftAccentLine : Brushes.Transparent;
+                    ((TextBlock)b.Child).Foreground = on ? P.SoftAccentText : P.Text;
                 }
             }
             foreach (var (c, label) in new[] { (CleanupChoice.Keep, Loc.T("그대로")), (CleanupChoice.Remove, Loc.T("즐겨찾기·폴더·독에서 빼기")), (CleanupChoice.Hide, Loc.T("판에서 숨기기")), (CleanupChoice.Uninstall, Loc.T("Windows에서 제거…")) })
             {
-                var b = new Border { Tag = c, CornerRadius = new CornerRadius(6), Padding = new Thickness(8, 3, 8, 3), Margin = new Thickness(4, 0, 0, 0), Cursor = Cursors.Hand, Child = new TextBlock { Text = label, FontSize = 11.5 } };
+                var b = new Border { Tag = c, CornerRadius = new CornerRadius(6), BorderThickness = new Thickness(1), Padding = new Thickness(7, 2, 7, 2), Margin = new Thickness(4, 0, 0, 0), Cursor = Cursors.Hand, Child = new TextBlock { Text = label, FontSize = 11.5 } };
                 b.MouseLeftButtonUp += (_, e) => { e.Handled = true; r.Choice = c; Paint(); };
                 choices.Children.Add(b);
             }
@@ -186,7 +187,7 @@ internal sealed partial class AllAppsPanel
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 10, 0, 4) };
         var cancel = new Button { Style = (Style)Application.Current.FindResource("CardButton"), Content = new TextBlock { Text = Loc.T("취소") }, Background = P.Tile, Foreground = P.Text, Height = 28, Padding = new Thickness(18, 0, 18, 0) };
         cancel.Click += (_, _) => { _cleanup = null; Rebuild(); };
-        var apply = new Button { Style = (Style)Application.Current.FindResource("CardButton"), Content = new TextBlock { Text = Loc.T("적용"), FontWeight = FontWeights.SemiBold }, Background = P.Accent, Foreground = P.AccentText, Height = 28, Padding = new Thickness(18, 0, 18, 0), Margin = new Thickness(8, 0, 0, 0), IsEnabled = rows.Count > 0 };
+        var apply = new Button { Style = (Style)Application.Current.FindResource("CardButton"), Content = new TextBlock { Text = Loc.T("적용"), FontWeight = FontWeights.SemiBold }, Background = P.SoftAccent, Foreground = P.SoftAccentText, Height = 28, Padding = new Thickness(18, 0, 18, 0), Margin = new Thickness(8, 0, 0, 0), IsEnabled = rows.Count > 0 };
         apply.Click += (_, _) => ApplyCleanup(rows);
         buttons.Children.Add(cancel);
         buttons.Children.Add(apply);

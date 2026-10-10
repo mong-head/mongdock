@@ -1025,7 +1025,7 @@ public partial class DockWindow : Window
         foreach (var item in _items)
         {
             if (item.IsSeparator) continue;
-            item.IsRunning = item.Pin is { Kind: PinKind.Routine } rp ? RoutineService.IsRunning(rp.Target) : item.Windows.Count > 0;
+            item.IsRunning = item.Pin is { Kind: PinKind.Routine } rp ? RoutineService.IsRunning(rp.Target) || RoutineService.IsOpening(rp.Target) : item.Windows.Count > 0;
             item.RunningElsewhereOnly = item.Pin is not { Kind: PinKind.Routine } && item.IsRunning && item.Windows.All(w => !w.OnCurrentDesktop);
             item.HasNotification = item.Pin is { Kind: PinKind.Folder } folder
                 ? (_folders?.NewFiles(folder) ?? 0) > 0 // 독 폴더: 마지막으로 연 뒤 새 파일
@@ -1136,7 +1136,7 @@ public partial class DockWindow : Window
             if (RoutineUi.Find(_services, routinePin.Target) is { } routine)
             {
                 if (routine.Items.Count == 0) RoutineEditorWindow.Open(_services, routine); // 빈 루틴은 편집 창으로
-                else RoutineUi.Run(_services, routine);
+                else _ = ClickRoutineAsync(sender as DockItemView, routine);
             }
             return;
         }
@@ -1276,6 +1276,52 @@ public partial class DockWindow : Window
     private void ClearNotification(DockItemViewModel item)
     {
         foreach (var w in item.Windows) _flashed.Remove(w.Hwnd);
+    }
+
+    /// <summary>
+    /// 독 루틴 누름: 새로 열거나, 이미 열려 있으면 그 데스크톱으로 가서 창을 앞으로. 이미 이 데스크톱이면(또는 여는 중이면)
+    /// 아이콘 위 말풍선을 잠깐 "이미 열려 있어요"/"여는 중이에요"로 — 눌렸는지 알 수 있게 (되튐 없음).
+    /// </summary>
+    private async Task ClickRoutineAsync(DockItemView? view, RoutineDef routine)
+    {
+        RoutineUi.Click result;
+        try { result = await RoutineUi.RunOrFocusAsync(_services, routine); }
+        catch (Exception ex)
+        {
+            Log.Error("루틴 누름 실패", ex);
+            return;
+        }
+        string? note = result switch
+        {
+            RoutineUi.Click.AlreadyHere => Loc.T("이미 열려 있어요"),
+            RoutineUi.Click.Opening => Loc.T("여는 중이에요"),
+            _ => null,
+        };
+        if (note is not null && view is not null && !_closed) FlashLabel(view, note);
+    }
+
+    private DispatcherTimer? _flashTimer;
+
+    /// <summary>아이콘 위 말풍선에 잠깐(1.2초) 다른 글자 — 그 뒤 마우스가 아직 위에 있으면 이름으로, 아니면 숨김.</summary>
+    private void FlashLabel(DockItemView view, string text)
+    {
+        if (LabelAnchor(view) is not Point anchor) return;
+        if (_label == null)
+        {
+            _label = new DockLabelWindow(_services);
+            _label.SetColors(_layout.LabelBackground, _layout.LabelForeground, _layout.LabelBorder);
+        }
+        _label.ShowAt(text, anchor, _layout.Edge);
+        _flashTimer?.Stop();
+        _flashTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
+        _flashTimer.Tick += (_, _) =>
+        {
+            _flashTimer?.Stop();
+            if (_closed || _label is null) return;
+            if (_labelView == view && view.IsMouseOver && LabelAnchor(view) is Point a) _label.ShowAt(view.Item.Name, a, _layout.Edge);
+            else _label.Hide();
+        };
+        _flashTimer.Start();
     }
 
     // ───────────────────────── 이름 말풍선 ─────────────────────────

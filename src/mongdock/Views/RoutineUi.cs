@@ -39,11 +39,23 @@ internal static class RoutineUi
         }
     }
 
-    public static void Run(AppServices services, RoutineDef routine)
+    /// <summary>루틴을 눌렀을 때 일어난 일 (독이 짧은 말풍선으로 알림).</summary>
+    public enum Click { Started, Opening, MovedToDesktop, AlreadyHere, NotStarted }
+
+    /// <summary>
+    /// 루틴 누름 (독·판·메뉴 "열기"·설정 공통): 이번 실행 창이 살아 있으면 새로 열지 않고 그 데스크톱으로 가서 창들을 앞으로,
+    /// 여는 중이면 무시, 아니면 새로 엶.
+    /// </summary>
+    public static async Task<Click> RunOrFocusAsync(AppServices services, RoutineDef routine)
     {
         NewBadges.Used(Badge);
-        RoutineService.Run(routine);
+        if (RoutineService.IsRunning(routine.Id))
+            return await RoutineService.FocusRunningAsync(routine.Id) ? Click.AlreadyHere : Click.MovedToDesktop;
+        if (RoutineService.IsOpening(routine.Id)) return Click.Opening;
+        return RoutineService.Run(routine) ? Click.Started : Click.NotStarted;
     }
+
+    public static void Run(AppServices services, RoutineDef routine) => _ = RunOrFocusAsync(services, routine);
 
     /// <summary>끝내기 확인: "업무 시작 — 창 4개를 닫을까요?" + (이 루틴이 데스크톱을 만들었으면) "데스크톱도 닫기"(기본 켬).</summary>
     public static async void AskEnd(AppServices services, RoutineDef routine)

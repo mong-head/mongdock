@@ -92,7 +92,8 @@ internal sealed class RoutineSaveWindow : RoutineCardWindow
     {
         var box = new StackPanel { Margin = new Thickness(0, 0, 0, 6) };
         var line = new DockPanel { LastChildFill = true };
-        var check = new CheckBox { IsChecked = true, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+        var check = DockMenus.Check(P, null, true);
+        check.Margin = new Thickness(0, 0, 8, 0);
         check.Checked += (_, _) => UpdateSave();
         check.Unchecked += (_, _) => UpdateSave();
         _rows.Add((item, check));

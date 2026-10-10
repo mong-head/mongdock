@@ -69,14 +69,10 @@ internal sealed class ConfirmCardWindow : Window
 
         if (checkText is not null)
         {
-            _check = new CheckBox
-            {
-                Content = new TextBlock { Text = checkText, Foreground = p.Text },
-                IsChecked = checkDefault,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, -6, 0, 14),
-                Focusable = false,
-            };
+            _check = DockMenus.Check(p, new TextBlock { Text = checkText, Foreground = p.Text }, checkDefault);
+            _check.HorizontalAlignment = HorizontalAlignment.Center;
+            _check.Margin = new Thickness(0, -6, 0, 14);
+            _check.Focusable = false;
             body.Children.Add(_check);
         }
 

@@ -122,7 +122,7 @@ internal sealed class IconPickerWindow : Window
         buttons.ColumnDefinitions.Add(new ColumnDefinition());
         var cancel = MakeButton(Loc.T("취소"), _p.Tile, _p.Text);
         cancel.Click += (_, _) => Close();
-        var ok = MakeButton(Loc.T("완료"), _p.Accent, _p.AccentText);
+        var ok = MakeButton(Loc.T("완료"), _p.SoftAccent, _p.SoftAccentText);
         ok.Click += (_, _) => Finish();
         Grid.SetColumn(ok, 2);
         buttons.Children.Add(cancel);
@@ -232,9 +232,9 @@ internal sealed class IconPickerWindow : Window
                 CornerRadius = new CornerRadius(7),
                 Padding = new Thickness(12, 4, 12, 4),
                 Margin = new Thickness(2, 0, 2, 0),
-                Background = on ? _p.Accent : _p.Tile,
+                Background = on ? _p.SoftAccent : _p.Tile,
                 Cursor = Cursors.Hand,
-                Child = new TextBlock { Text = label, Foreground = on ? _p.AccentText : _p.Text, FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal },
+                Child = new TextBlock { Text = label, Foreground = on ? _p.SoftAccentText : _p.Text, FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal },
             };
             tab.MouseLeftButtonUp += (_, _) => { _icon.Mode = mode; Refresh(); };
             _tabs.Children.Add(tab);
@@ -255,7 +255,7 @@ internal sealed class IconPickerWindow : Window
         {
             bool on = _icon.Text is null && (string?)cell.Tag == _icon.Glyph;
             cell.Background = on ? _p.Hover : Brushes.Transparent;
-            cell.BorderBrush = on ? _p.Accent : Brushes.Transparent;
+            cell.BorderBrush = on ? _p.SoftAccentLine : Brushes.Transparent;
         }
 
         PinIcon? candidate = _icon.Mode switch

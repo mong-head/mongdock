@@ -99,17 +99,33 @@ internal abstract class DockStackPanel : Window
         };
         SizeChanged += (_, _) => Place();
         _showClock = System.Diagnostics.Stopwatch.StartNew();
-        if (!Layered) _card.Opacity = 0.5;
+        // 앱 모음 판: 나타나는 모양 (PanelIntro — 가운데에서 커짐 / 앱 모음 아이콘에서 나옴 / 예전 페이드)
+        _intro = !Layered && Centered ? PanelIntro.Mode(services.Settings.Current) : PanelIntro.Fade;
+        if (!Layered && _intro == PanelIntro.Fade) _card.Opacity = 0.5;
         // 일반 창(앱 모음): 첫 프레임이 실제로 화면에 나간 뒤 0.5→1.0 120ms (빈 구간 없이 바로 보이고 살짝 차오름)
         ContentRendered += (_, _) =>
         {
             FirstFrameMs = _showClock.ElapsedMilliseconds;
             if (Layered) return;
+            if (_introHold is { } final)
+            {
+                // 화면 밖에서 다 그려진 판을 그림으로 떠서 움직이고, 끝나는 순간 진짜 판을 제자리에
+                if (Snapshot() is { } picture)
+                    PanelIntro.Play(Services, _intro, picture, final, _anchor, () => { _introHold = null; Place(); });
+                else { _introHold = null; Place(); }
+                return;
+            }
             _card.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0.5, 1, TimeSpan.FromMilliseconds(120)));
         };
         Loaded += (_, _) =>
         {
             Place();
+            if (!Layered && _intro != PanelIntro.Fade)
+            {
+                _introHold = new Rect(Left, Top, ActualWidth, ActualHeight); // 제자리는 기억해 두고 그동안 화면 밖에
+                Left = -32000;
+                Top = -32000;
+            }
             if (Layered)
                 Anim.Appear(_card, 150, fromX: _edge switch { DockEdge.Left => -8, DockEdge.Right => 8, _ => 0 },
                     fromY: _edge switch { DockEdge.Bottom => 8, DockEdge.Top => -8, _ => 0 });
@@ -140,6 +156,36 @@ internal abstract class DockStackPanel : Window
     protected virtual bool Layered => true;
 
     private readonly System.Diagnostics.Stopwatch _showClock;
+    private readonly string _intro;
+    /// <summary>나타나는 중: 진짜 판의 제자리 (그동안 판은 화면 밖, 그림이 움직임).</summary>
+    private Rect? _introHold;
+
+    /// <summary>판 전체를 그림으로 (모니터 배율 그대로).</summary>
+    private System.Windows.Media.Imaging.BitmapSource? Snapshot()
+    {
+        try
+        {
+            if (Content is not FrameworkElement root || root.ActualWidth <= 0) return null;
+            var dpi = VisualTreeHelper.GetDpi(root);
+            var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(root.ActualWidth * dpi.DpiScaleX), (int)Math.Ceiling(root.ActualHeight * dpi.DpiScaleY),
+                96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, PixelFormats.Pbgra32);
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen())
+            {
+                var size = new Size(root.ActualWidth, root.ActualHeight);
+                dc.DrawRectangle(Background, null, new Rect(size)); // 창 배경(카드 색)도
+                dc.DrawRectangle(new VisualBrush(root) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top }, null, new Rect(size));
+            }
+            bmp.Render(dv);
+            bmp.Freeze();
+            return bmp;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"판 그림 뜨기 실패: {ex.GetType().Name}");
+            return null;
+        }
+    }
 
     /// <summary>창을 만든 뒤 첫 프레임이 그려지기까지 (열기 시간 로그).</summary>
     public long FirstFrameMs { get; private set; } = -1;
@@ -356,7 +402,7 @@ internal abstract class DockStackPanel : Window
         var link = new Button
         {
             Style = (Style)Application.Current.FindResource("CardLinkButton"),
-            Foreground = P.Accent,
+            Foreground = P.SoftAccentText,
             Padding = new Thickness(6, 6, 6, 4),
             HorizontalAlignment = HorizontalAlignment.Center,
             Content = new TextBlock { Text = text, FontSize = 12 },
@@ -378,7 +424,7 @@ internal abstract class DockStackPanel : Window
     /// <summary>아이콘 옆(독 안쪽)에, 작업 영역 안으로.</summary>
     private void Place()
     {
-        if (ActualWidth <= 0 || _closing) return;
+        if (ActualWidth <= 0 || _closing || _introHold is not null) return;
         Services.DesktopWindows.EnsureOnMonitor(this, Monitor);
         var work = Monitor.WorkArea;
         if (work.IsEmpty || work.Width <= 0) work = Monitor.Bounds;

@@ -187,4 +187,7 @@ public sealed class AllAppsSettings
     public bool CleanupUsed { get; set; }
     /// <summary>묶음을 직접 바꾼 적 있음 (사용 통계 "allAppsCustomized" 용).</summary>
     public bool Customized { get; set; }
+    /// <summary>숨은 설정: 판이 나타나는 모양 "center"(기본)·"icon"·"fade" (Views/PanelIntro). 화면에는 없음 — 사용자가 고르면 기본값을 정함.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? OpenAnimation { get; set; }
 }

@@ -140,8 +140,9 @@ internal abstract class RoutineCardWindow : Window
             {
                 var b = (Border)wrap.Children[i];
                 bool on = i == selected;
-                b.Background = on ? P.Accent : P.Tile;
-                ((TextBlock)b.Child).Foreground = on ? P.AccentText : P.Text;
+                b.Background = on ? P.SoftAccent : P.Tile;
+                b.BorderBrush = on ? P.SoftAccentLine : Brushes.Transparent;
+                ((TextBlock)b.Child).Foreground = on ? P.SoftAccentText : P.Text;
             }
         }
         for (int i = 0; i < labels.Count; i++)
@@ -150,7 +151,8 @@ internal abstract class RoutineCardWindow : Window
             var b = new Border
             {
                 CornerRadius = new CornerRadius(7),
-                Padding = new Thickness(10, 3, 10, 4),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(9, 2, 9, 3),
                 Margin = new Thickness(0, 0, 6, 6),
                 Cursor = Cursors.Hand,
                 Focusable = true,
@@ -195,8 +197,8 @@ internal abstract class RoutineCardWindow : Window
     {
         Style = (Style)Application.Current.FindResource("CardButton"),
         Content = new TextBlock { Text = text, FontSize = 13, FontWeight = primary ? FontWeights.SemiBold : FontWeights.Normal },
-        Background = primary ? P.Accent : P.Tile,
-        Foreground = primary ? P.AccentText : danger ? new SolidColorBrush(Color.FromRgb(0xD6, 0x3B, 0x30)) : P.Text,
+        Background = primary ? P.SoftAccent : P.Tile,
+        Foreground = primary ? P.SoftAccentText : danger ? new SolidColorBrush(Color.FromRgb(0xD6, 0x3B, 0x30)) : P.Text,
         Height = 30,
         Padding = new Thickness(16, 0, 16, 0),
         MinWidth = 72,

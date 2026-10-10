@@ -121,7 +121,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         _search.BorderThickness = new Thickness(0);
         _search.Foreground = P.Text;
         _search.CaretBrush = P.Text;
-        _search.SelectionBrush = P.Accent;
+        _search.SelectionBrush = P.SoftAccentLine;
         _search.VerticalContentAlignment = VerticalAlignment.Center;
         _search.SetResourceReference(FontFamilyProperty, UiFonts.Key);
         InputMethod.SetIsInputMethodEnabled(_search, true);
@@ -450,7 +450,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             Padding = new Thickness(2, 6, 2, 4),
             CornerRadius = new CornerRadius(8),
             Background = selected ? P.Tile : Brushes.Transparent,
-            BorderBrush = selected ? P.Accent : Brushes.Transparent,
+            BorderBrush = selected ? P.SoftAccentLine : Brushes.Transparent,
             BorderThickness = new Thickness(1.5),
             Child = stack,
             ToolTip = app.Name,
@@ -646,7 +646,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             Height = GroupTile,
             CornerRadius = new CornerRadius(14),
             Background = P.Tile,
-            BorderBrush = open ? P.Accent : Brushes.Transparent,
+            BorderBrush = open ? P.SoftAccentLine : Brushes.Transparent,
             BorderThickness = new Thickness(1.5),
             HorizontalAlignment = HorizontalAlignment.Center,
             Child = mini,
@@ -976,7 +976,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             if (Data(e) is not { } v || !accept(v)) return; // 다른 형식은 다른 처리기(같은 칸의 묶음/앱)가
             e.Effects = DragDropEffects.Copy;
             e.Handled = true;
-            if (before is null) { before = target.BorderBrush ?? Brushes.Transparent; target.BorderBrush = P.Accent; }
+            if (before is null) { before = target.BorderBrush ?? Brushes.Transparent; target.BorderBrush = P.SoftAccentLine; }
         }
         void Leave()
         {
@@ -1075,7 +1075,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
 
     private TextBlock SmallLink(string text, Action click)
     {
-        var t = new TextBlock { Text = text, FontSize = 12, Foreground = P.Accent, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 6, 6, 4) };
+        var t = new TextBlock { Text = text, FontSize = 12, Foreground = P.SoftAccentText, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 6, 6, 4) };
         t.MouseLeftButtonUp += (_, e) => { e.Handled = true; click(); };
         return t;
     }

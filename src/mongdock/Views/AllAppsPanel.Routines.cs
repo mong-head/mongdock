@@ -31,12 +31,12 @@ internal sealed partial class AllAppsPanel
         {
             var badge = new Border
             {
-                Background = P.Accent,
+                Background = DockMenus.NewBadgeBrush,
                 CornerRadius = new CornerRadius(7),
                 Padding = new Thickness(5, 0, 5, 1),
                 Margin = new Thickness(0, 6, 0, 4),
                 VerticalAlignment = VerticalAlignment.Center,
-                Child = new TextBlock { Text = "NEW", FontSize = 9.5, FontWeight = FontWeights.Bold, Foreground = P.AccentText },
+                Child = new TextBlock { Text = "NEW", FontSize = 9.5, FontWeight = FontWeights.Bold, Foreground = DockMenus.NewBadgeText },
             };
             DockPanel.SetDock(badge, Dock.Left);
             title.Children.Add(badge);
@@ -82,7 +82,7 @@ internal sealed partial class AllAppsPanel
         var stack = new StackPanel();
         stack.Children.Add(image);
         // 실행 중 = 아이콘 아래 점 (깜빡이지 않음)
-        stack.Children.Add(new Ellipse { Width = 4, Height = 4, Fill = RoutineService.IsRunning(routine.Id) ? P.Text : Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 2, 0, 0) });
+        stack.Children.Add(new Ellipse { Width = 4, Height = 4, Fill = RoutineService.IsRunning(routine.Id) || RoutineService.IsOpening(routine.Id) ? P.Text : Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 2, 0, 0) });
         stack.Children.Add(new TextBlock { Text = routine.Name, TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 11.5, Margin = new Thickness(0, 1, 0, 0) });
         var cell = new Border
         {
@@ -123,14 +123,15 @@ internal sealed partial class AllAppsPanel
             Width = AppIcon,
             Height = AppIcon,
             CornerRadius = new CornerRadius(10),
-            BorderBrush = P.Accent,
+            BorderBrush = P.SoftAccentLine,
             BorderThickness = new Thickness(1.5),
+            Background = P.SoftAccent,
             HorizontalAlignment = HorizontalAlignment.Center,
-            Child = new TextBlock { Text = "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 16, Foreground = P.Accent, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+            Child = new TextBlock { Text = "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 16, Foreground = P.SoftAccentText, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
         };
         var stack = new StackPanel();
         stack.Children.Add(plus);
-        stack.Children.Add(new TextBlock { Text = Loc.T("루틴 추가"), TextAlignment = TextAlignment.Center, FontSize = 11.5, Foreground = P.Accent, Margin = new Thickness(0, 7, 0, 0) });
+        stack.Children.Add(new TextBlock { Text = Loc.T("루틴 추가"), TextAlignment = TextAlignment.Center, FontSize = 11.5, Foreground = P.SoftAccentText, Margin = new Thickness(0, 7, 0, 0) });
         var cell = new Border
         {
             Width = AppCell - 4,
@@ -193,8 +194,8 @@ internal sealed partial class AllAppsPanel
                 {
                     Style = (Style)Application.Current.FindResource("CardButton"),
                     Content = new TextBlock { Text = label, FontWeight = primary ? FontWeights.SemiBold : FontWeights.Normal },
-                    Background = primary ? P.Accent : P.CardBackground,
-                    Foreground = primary ? P.AccentText : P.Text,
+                    Background = primary ? P.SoftAccent : P.CardBackground,
+                    Foreground = primary ? P.SoftAccentText : P.Text,
                     Height = 28,
                     Padding = new Thickness(14, 0, 14, 0),
                     Margin = new Thickness(0, 0, 8, 0),
@@ -222,7 +223,7 @@ internal sealed partial class AllAppsPanel
     private UIElement BurstPicture()
     {
         var canvas = new Canvas { Width = 112, Height = 76 };
-        var colors = new[] { Color.FromRgb(0x2B, 0x7B, 0xD8), Color.FromRgb(0x7A, 0x5B, 0xE0), Color.FromRgb(0x1F, 0x9F, 0xB3) };
+        var colors = new[] { Color.FromRgb(0x9F, 0xD3, 0xFF), Color.FromRgb(0xC2, 0xB4, 0xFF), Color.FromRgb(0xA8, 0xE6, 0xD6) };
         for (int i = 0; i < 3; i++)
         {
             var win = new Border

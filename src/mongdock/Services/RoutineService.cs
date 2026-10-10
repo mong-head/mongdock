@@ -105,10 +105,51 @@ internal static class RoutineService
     /// <summary>창이 살아 있고 보임 — 닫으면 트레이로 숨는 앱(디스코드·팀즈 등)은 "닫힌" 것으로 봄.</summary>
     private static bool Alive(IntPtr h) => User32.IsWindow(h) && User32.IsWindowVisible(h);
 
-    public static void Run(RoutineDef routine)
+    /// <summary>여는 중 (창을 찾는 중 포함).</summary>
+    public static bool IsOpening(string id)
+    {
+        lock (Runs) return Runs.TryGetValue(id, out var r) && r.Running;
+    }
+
+    /// <summary>
+    /// 이미 열린 루틴을 다시 누름: 새로 열지 않고 루틴 데스크톱(다른 데스크톱이면)으로 간 뒤 루틴 창들을 앞으로 (목록 첫 항목이 맨 위).
+    /// 이미 그 데스크톱이었으면 true (독은 "이미 열려 있어요"). UI 스레드에서 부름(COM).
+    /// </summary>
+    public static async Task<bool> FocusRunningAsync(string id)
     {
         var services = _services;
-        if (services is null || routine.Items.Count == 0) return;
+        RunState? state;
+        lock (Runs) Runs.TryGetValue(id, out state);
+        if (services is null || state is null) return false;
+        List<IntPtr> windows;
+        lock (Runs) windows = state.Windows.Where(Alive).ToList();
+        if (windows.Count == 0) return false;
+        var ids = VirtualDesktopService.ReadDesktopIds();
+        int cur = VirtualDesktopService.Read().Current;
+        int index = state.CreatedDesktop && state.Desktop is { } g && ids.IndexOf(g) is var at && at >= 0
+            ? at + 1
+            : VirtualDesktopHelper.GetDesktopIndex(windows[0], ids);
+        bool here = index <= 0 ? VirtualDesktopHelper.IsOnCurrentDesktop(windows[0]) != false : index == cur;
+        if (!here && index > 0)
+        {
+            Log.Info("루틴 다시 누름: 루틴 데스크톱으로 이동");
+            await VirtualDesktopService.MoveToAsync(index);
+            await Task.Delay(150);
+        }
+        else Log.Info("루틴 다시 누름: 이미 이 데스크톱 — 창을 앞으로");
+        for (int i = windows.Count - 1; i >= 0; i--)
+        {
+            services.Launcher.Activate(windows[i]);
+            if (i > 0) await Task.Delay(40);
+        }
+        return here;
+    }
+
+    /// <summary>새로 열기 시작했으면 true (전체 화면·여는 중·빈 루틴이면 false).</summary>
+    public static bool Run(RoutineDef routine)
+    {
+        var services = _services;
+        if (services is null || routine.Items.Count == 0) return false;
         // 루틴이 창을 놓을 모니터에 전체 화면(게임·영상)이 떠 있으면 데스크톱 키를 보내지 않음 — 작은 안내만 (다시 누르면 열림).
         // 다른 모니터의 전체 화면은 막지 않음. 모니터를 정하지 않은 항목은 주 모니터로 봄
         var targets = routine.Items.Select(i => i.Monitor is { Mode: not RoutineMonitorMode.Keep } m ? ResolveMonitor(m, IntPtr.Zero) : Monitors.GetPrimary())
@@ -117,7 +158,7 @@ internal static class RoutineService
         {
             Log.Info("루틴 실행 안 함: 전체 화면 앱");
             Notify(Loc.T("지금은 루틴을 열 수 없어요 (전체 화면)"));
-            return;
+            return false;
         }
         RunState state;
         lock (Runs)
@@ -126,14 +167,16 @@ internal static class RoutineService
             // 여는 중에 또 누름(더블클릭·늦은 반응): 데스크톱·앱이 두 벌 생기지 않게 무시
             if (state.Running)
             {
-                Log.Info("루틴 실행 중 — 다시 누름 무시");
-                return;
+                Log.Info("루틴 여는 중 — 다시 누름 무시");
+                return false;
             }
             state.Running = true;
         }
         services.Settings.Current.RoutineRunsSinceSignal++;
         services.Settings.Save();
+        RaiseChanged(); // 여는 중에도 점 (누르자마자 반응)
         _ = RunAsync(services, routine, state);
+        return true;
     }
 
     private static async Task RunAsync(AppServices services, RoutineDef routine, RunState state)
@@ -207,6 +250,7 @@ internal static class RoutineService
         finally
         {
             lock (Runs) state.Running = false;
+            RaiseChanged();
         }
     }
 
