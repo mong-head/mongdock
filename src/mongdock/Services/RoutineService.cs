@@ -269,8 +269,6 @@ internal static class RoutineService
             }
             state.Running = true;
         }
-        services.Settings.Current.RoutineRunsSinceSignal++;
-        services.Settings.Save();
         RaiseChanged(); // 여는 중에도 점 (누르자마자 반응)
         _ = RunAsync(services, routine, state);
         return true;
@@ -293,7 +291,13 @@ internal static class RoutineService
             {
                 Log.Error("루틴 데스크톱 준비 실패", ex);
             }
-            if (anyToOpen) RaiseStarted(routine); // 함께 바꿀 것 (소리 장치·볼륨·방해 금지·독 숨김)
+            if (anyToOpen)
+            {
+                RaiseStarted(routine); // 함께 바꿀 것 (소리 장치·볼륨·방해 금지·독 숨김)
+                // 실행 횟수(통계)는 실제로 새로 열 때만 — 전부 이미 켜져 있어 안내만 한 누름은 세지 않음
+                services.Settings.Current.RoutineRunsSinceSignal++;
+                services.Settings.Save();
+            }
             // 이번 실행의 데스크톱 (새 창은 이 데스크톱에 뜬 것만 루틴 창으로 봄)
             var ids = VirtualDesktopService.ReadDesktopIds();
             int cur = VirtualDesktopService.Read().Current;

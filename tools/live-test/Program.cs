@@ -155,9 +155,10 @@ internal static class Program
         }
         bool active = w.IsActive;
         bool visible = w.IsVisible;
-        // 보이는 정도: 열기 전 바탕과 다른 픽셀 비율
-        var shown = frames.Select(f => Diff(before, f.Px)).ToList();
-        double final = shown.Count > 0 ? shown[^1] : 0;
+        // 보이는 정도: 다 열린 마지막 화면과 얼마나 같은지 (1 = 같음). 열기 전 바탕과 비교하면 판 뒤에 밝은 창이 있을 때 판정이 안 됨(4분 쉰 뒤 시험)
+        var last = frames.Count > 0 ? frames[^1].Px : before;
+        var shown = frames.Select(f => 1 - Diff(last, f.Px)).ToList();
+        double final = 1 - Diff(last, before) < 0.9 ? 1 : 0; // 열기 전과 마지막이 다르면 판이 떴음
         double peak = 0;
         int dips = 0;
         foreach (var s in shown)
