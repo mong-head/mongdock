@@ -210,6 +210,10 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         var root = new StackPanel();
         _favRow = null;
         _favCells.Clear();
+        _groupGrid = null;
+        _groupGridId = null;
+        _groupCells.Clear();
+        _groupApps.Clear();
         var visible = _apps.Where(a => !S.Hidden.Contains(a.Key, StringComparer.OrdinalIgnoreCase)).ToList();
         if (_apps.Count == 0)
         {
@@ -632,7 +636,17 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         int limit = _showAll.Contains(id) ? apps.Count : perRow * ExpandedRows;
         var grid = new WrapPanel { Width = Cols * AppCell - 20 };
         if (apps.Count == 0) stack.Children.Add(Muted(Loc.T("앱을 오른쪽 클릭해 \"묶음 옮기기\"로 넣어요")));
-        foreach (var app in apps.Take(limit)) grid.Children.Add(AppCellView(app));
+        _groupGrid = grid;
+        _groupGridId = id;
+        _groupCells.Clear();
+        _groupApps.Clear();
+        foreach (var app in apps.Take(limit))
+        {
+            var c = AppCellView(app);
+            _groupCells.Add(c);
+            _groupApps.Add(app);
+            grid.Children.Add(c);
+        }
         stack.Children.Add(grid);
         if (apps.Count > perRow * ExpandedRows)
             stack.Children.Add(Toggle(_showAll.Contains(id) ? Loc.T("접기") : Loc.F($"더 보기 ({apps.Count - limit}개)"), _showAll.Contains(id), () =>
@@ -641,6 +655,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
                 Rebuild();
             }));
         box.Child = stack;
+        box.Tag = new DropTag("groupgrid", id); // 펼친 묶음 안 = 이 묶음으로 (놓일 자리에 빈칸, 이름순 자리)
         return box;
     }
 
