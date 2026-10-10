@@ -15,6 +15,9 @@ namespace Mongdock.Views;
 /// 판(일반 창 — 크기를 매 프레임 바꾸면 번쩍임)은 화면 밖에서 다 그려 두고, 그 그림을 가벼운 투명 창에서 움직인 뒤
 /// 끝나는 순간 진짜 판을 제자리에 놓고 그림 창을 닫음. 고르기: 환경 변수 MONGDOCK_ALLAPPS_ANIM 또는 settings.json "allApps"."openAnimation".
 /// </summary>
+/// <summary>설정 창 고르기용 (임시 — 사용자가 둘 중 고르는 동안).</summary>
+internal enum PanelIntroStyle { Center, Icon }
+
 internal static class PanelIntro
 {
     public const string Center = "center", Icon = "icon", Fade = "fade";

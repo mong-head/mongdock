@@ -468,7 +468,12 @@ internal sealed partial class SettingsWindow : Window
                 {
                     _services.Settings.Current.AllApps.ShowSuggestions = on;
                     if (!on) AppUsage.Clear();
-                })))));
+                }))),
+            // 판이 나타나는 모양 — 사용자가 직접 눌러 비교해 보고 고르게 (임시 줄, 닫기는 둘 다 즉시)
+            Row(Loc.T("열 때 효과"), Loc.T("앱 모음 판이 나타나는 모양. 닫을 때는 바로 사라져요."), Segmented(
+                PanelIntro.Mode(_services.Settings.Current) == PanelIntro.Icon ? PanelIntroStyle.Icon : PanelIntroStyle.Center,
+                new[] { (PanelIntroStyle.Center, Loc.T("가운데에서")), (PanelIntroStyle.Icon, Loc.T("아이콘에서")) },
+                v => Commit(() => _services.Settings.Current.AllApps.OpenAnimation = v == PanelIntroStyle.Icon ? PanelIntro.Icon : PanelIntro.Center)))));
 
         // 루틴 (#24-A): 새 전역 설정은 없음 — 목록과 만들기 버튼만 (모든 루틴은 앱 모음 판 맨 위에도 있음)
         body.Children.Add(SectionTitle(Loc.T("루틴")));
