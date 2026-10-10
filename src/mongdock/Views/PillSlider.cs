@@ -21,7 +21,7 @@ internal sealed class PillSlider : Grid
     private readonly TextBlock _valueText;
     private double _value;
     private readonly Brush _textOnTrack;
-    private static readonly Brush TextOnFill = Converters.BrushParser.Frozen(Color.FromArgb(0x8C, 0, 0, 0));
+    private readonly Brush _textOnFill;
 
     /// <summary>사용자가 바꾼 값 (0~1).</summary>
     public event EventHandler<double>? UserChanged;
@@ -34,6 +34,7 @@ internal sealed class PillSlider : Grid
     public PillSlider(UiPalette p, bool showValue = true)
     {
         _textOnTrack = p.SubText;
+        _textOnFill = p.SoftAccentText;
         Height = H;
         Background = Brushes.Transparent;
         Cursor = Cursors.Arrow;
@@ -48,8 +49,8 @@ internal sealed class PillSlider : Grid
         _fill = new Border
         {
             CornerRadius = new CornerRadius(H / 2),
-            Background = p.SliderFill,
-            BorderBrush = p.SliderBorder,
+            Background = p.SoftAccent, // 몽독 보라 (흰 채움은 보라 톤에서 벗어남 — QA 관찰 B)
+            BorderBrush = p.SoftAccentLine,
             BorderThickness = new Thickness(0.75),
             HorizontalAlignment = HorizontalAlignment.Left,
             Width = H,
@@ -99,7 +100,7 @@ internal sealed class PillSlider : Grid
         _fill.Width = x + H;
         _valueText.Text = Math.Round(_value * 100).ToString(CultureInfo.InvariantCulture);
         // 채움(밝은색)이 숫자 위까지 오면 어두운 글자, 아니면 트랙 위 글자색 (다크 테마 대비)
-        _valueText.Foreground = x + H > 40 ? TextOnFill : _textOnTrack;
+        _valueText.Foreground = x + H > 40 ? _textOnFill : _textOnTrack;
     }
 
     private void SetFromMouse(MouseEventArgs e)
