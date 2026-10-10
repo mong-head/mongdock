@@ -51,6 +51,7 @@ internal static class RoutineService
     {
         _services = services;
         _dispatcher = Dispatcher.CurrentDispatcher;
+        LoadRuns();
         services.Windows.WindowsChanged += (_, _) =>
         {
             bool any = false;
@@ -140,9 +141,93 @@ internal static class RoutineService
 
     private static void RaiseChanged() => _dispatcher?.BeginInvoke(() =>
     {
+        SaveRuns();
         try { Changed?.Invoke(); }
         catch (Exception ex) { Log.Error("루틴 상태 갱신 실패", ex); }
     });
+
+    // ───────────────────────── 열린 루틴 기억 (몽독 다시 시작) ─────────────────────────
+    // 열린 루틴(데스크톱 GUID·만든 데스크톱인지·창)을 cache/routine-runs.json 에. 몽독이 다시 시작(업데이트·설치)해도
+    // 상단바 이름·"이미 열려 있어요"·끝내기가 그대로 (사용자: 다시 시작 뒤 루틴 표시가 사라지고 다시 누르면 반응 없음).
+    // 창은 핸들과 프로세스 id 가 둘 다 그대로일 때만 되살림 (핸들이 다른 창에 다시 쓰였으면 버림).
+
+    private static readonly string RunsPath = Path.Combine(AppInfo.DataDirectory, "cache", "routine-runs.json");
+    private static string? _savedRuns;
+
+    private sealed record SavedWindow(long H, uint Pid);
+    private sealed record SavedRun(string Id, Guid? Desktop, bool Created, Guid? ReturnTo, double Seconds, List<SavedWindow> Windows);
+
+    private static void SaveRuns()
+    {
+        try
+        {
+            List<SavedRun> list;
+            lock (Runs)
+                list = Runs.Where(r => r.Value.Windows.Any(Alive)).Select(r => new SavedRun(r.Key, r.Value.Desktop, r.Value.CreatedDesktop, r.Value.ReturnTo, r.Value.Seconds,
+                    r.Value.Windows.Where(Alive).Select(h => { TrayApi.GetWindowThreadProcessId(h, out uint pid); return new SavedWindow(h.ToInt64(), pid); }).ToList())).ToList();
+            string json = System.Text.Json.JsonSerializer.Serialize(list);
+            if (json == _savedRuns) return;
+            _savedRuns = json;
+            Directory.CreateDirectory(Path.GetDirectoryName(RunsPath)!);
+            AtomicFile.WriteAllText(RunsPath, json);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
+    private static void LoadRuns()
+    {
+        try
+        {
+            if (!File.Exists(RunsPath)) return;
+            var list = System.Text.Json.JsonSerializer.Deserialize<List<SavedRun>>(File.ReadAllText(RunsPath));
+            if (list is null) return;
+            var routines = _services?.Settings.Current.Routines.Select(r => r.Id).ToHashSet() ?? new HashSet<string>();
+            int restored = 0;
+            lock (Runs)
+                foreach (var s in list)
+                {
+                    if (!routines.Contains(s.Id)) continue;
+                    var alive = s.Windows.Select(w => (H: new IntPtr(w.H), w.Pid))
+                        .Where(w => Alive(w.H) && TrayApi.GetWindowThreadProcessId(w.H, out uint pid) != 0 && pid == w.Pid).Select(w => w.H).ToList();
+                    if (alive.Count == 0) continue;
+                    var state = new RunState { Desktop = s.Desktop, CreatedDesktop = s.Created, ReturnTo = s.ReturnTo, HadWindows = true, Seconds = s.Seconds };
+                    foreach (var h in alive) { state.Windows.Add(h); state.Claimed.Add(h); }
+                    Runs[s.Id] = state;
+                    restored++;
+                }
+            if (restored > 0) Log.Info($"열린 루틴 {restored}개 되살림 (몽독 다시 시작)");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { }
+    }
+
+    /// <summary>
+    /// 이번 실행 기록이 없는데 루틴 앱(앞으로 가져오기 항목)이 전부 지금 데스크톱에 이미 켜져 있음 → 그 창들 (아니면 null).
+    /// 누르면 창만 앞으로 + "이미 열려 있어요" — 이 데스크톱을 루틴 데스크톱으로 잡지는 않음 (기본 데스크톱에 방해 금지·데스크톱 닫기가 걸리지 않게).
+    /// </summary>
+    public static List<IntPtr>? AllHere(RoutineDef routine)
+    {
+        var services = _services;
+        if (services is null || routine.Items.Count == 0 || !routine.Items.All(SkipsIfRunning)) return null;
+        var found = new List<IntPtr>();
+        foreach (var item in routine.Items)
+        {
+            var w = services.Windows.Windows.FirstOrDefault(w => !found.Contains(w.Hwnd) && Matches(item, w) && (VirtualDesktopHelper.IsOnCurrentDesktop(w.Hwnd) ?? w.OnCurrentDesktop));
+            if (w is null) return null;
+            found.Add(w.Hwnd);
+        }
+        return found;
+    }
+
+    /// <summary>창들을 앞으로 (목록 첫 항목이 맨 위).</summary>
+    public static async Task BringToFrontAsync(List<IntPtr> windows)
+    {
+        if (_services is not { } services) return;
+        for (int i = windows.Count - 1; i >= 0; i--)
+        {
+            services.Launcher.Activate(windows[i]);
+            if (i > 0) await Task.Delay(40);
+        }
+    }
 
     /// <summary>이번 실행에 연 창이 하나라도 살아 있음.</summary>
     public static bool IsRunning(string id)

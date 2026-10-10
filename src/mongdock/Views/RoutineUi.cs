@@ -58,6 +58,13 @@ internal static class RoutineUi
         if (RoutineService.IsRunning(routine.Id))
             return await RoutineService.FocusRunningAsync(routine.Id) ? Click.AlreadyHere : Click.MovedToDesktop;
         if (RoutineService.IsOpening(routine.Id)) return Click.Opening;
+        // 기록은 없지만(몽독을 다시 켰음 등) 루틴 앱이 이 데스크톱에 다 켜져 있음: 창만 앞으로 + "이미 열려 있어요" (루틴 데스크톱으로 잡지는 않음)
+        if (RoutineService.AllHere(routine) is { } here)
+        {
+            Log.Info("루틴 누름: 기록은 없고 앱이 이 데스크톱에 다 켜져 있음 — 창만 앞으로");
+            await RoutineService.BringToFrontAsync(here);
+            return Click.AlreadyHere;
+        }
         return RoutineService.Run(routine) ? Click.Started : Click.NotStarted;
     }
 
