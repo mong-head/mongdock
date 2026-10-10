@@ -275,7 +275,7 @@ internal static class Program
         var svc = asm.GetType("Mongdock.Services.DockFolderService")!;
         var glyphType = asm.GetType("Mongdock.Services.FolderGlyph")!;
         BitmapSource? Thumb(string p) => (BitmapSource?)svc.GetMethod("Thumbnail")!.Invoke(null, new object[] { p, 160 });
-        BitmapSource Folder(string g, bool missing = false) => (BitmapSource)mac.GetMethod("Folder")!.Invoke(null, new[] { Enum.Parse(glyphType, g), missing })!;
+        BitmapSource Folder(string g, bool missing = false) => (BitmapSource)mac.GetMethod("Folder")!.Invoke(null, new object?[] { Enum.Parse(glyphType, g), missing, null })!;
 
         // 비교용 지금(이전) 아이콘: 폴더 셸 아이콘을 맥 판에
         var shellFolder = Thumb(Environment.GetFolderPath(Environment.SpecialFolder.Windows));
@@ -295,6 +295,8 @@ internal static class Program
         };
         foreach (var (_, img, file) in rows)
             if (img is not null) SavePng(img, Path.Combine(dir, $"{file}-256.png"));
+
+        RenderPickerSamples(dir, mac, glyphType);
 
         int[] sizes = { 52, 94, 104, 188 };
         var allApps = (ImageSource)mac.GetMethod("AllApps")!.Invoke(null, null)!;
@@ -338,6 +340,37 @@ internal static class Program
             SavePng(rtb, path);
             Console.WriteLine($"  저장  {path}");
         }
+    }
+
+    /// <summary>아이콘 고르기 견본: 기호 30개(몽독 판) + 판 색 8가지(폴더 그대로 / 글자) — 52px.</summary>
+    private static void RenderPickerSamples(string dir, Type mac, Type glyphType)
+    {
+        var renderer = typeof(Mongdock.App).Assembly.GetType("Mongdock.Services.PinIconRenderer")!;
+        var glyphs = (string[])renderer.GetField("Glyphs")!.GetValue(null)!;
+        var colors = (string[])renderer.GetField("Colors")!.GetValue(null)!;
+        var symbol = mac.GetMethod("Symbol")!;
+        var folder = mac.GetMethod("Folder")!;
+        const int s = 52, pad = 12, cols = 10;
+        int rows = (glyphs.Length + cols - 1) / cols + 3;
+        var dv = new DrawingVisual();
+        using (var dc = dv.RenderOpen())
+        {
+            dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(0xE9, 0xEC, 0xF4)), null, new Rect(0, 0, pad + cols * (s + pad), pad + rows * (s + pad)));
+            for (int i = 0; i < glyphs.Length; i++)
+                dc.DrawImage(Downscale((ImageSource)symbol.Invoke(null, new object?[] { "mongdock", glyphs[i], null })!, s), new Rect(pad + i % cols * (s + pad), pad + i / cols * (s + pad), s, s));
+            int r0 = (glyphs.Length + cols - 1) / cols;
+            for (int i = 0; i < colors.Length; i++)
+            {
+                dc.DrawImage(Downscale((ImageSource)folder.Invoke(null, new object?[] { Enum.Parse(glyphType, "Downloads"), false, colors[i] })!, s), new Rect(pad + i * (s + pad), pad + r0 * (s + pad), s, s));
+                dc.DrawImage(Downscale((ImageSource)symbol.Invoke(null, new object?[] { colors[i], null, i % 2 == 0 ? "업" : "W" })!, s), new Rect(pad + i * (s + pad), pad + (r0 + 1) * (s + pad), s, s));
+                dc.DrawImage(Downscale((ImageSource)symbol.Invoke(null, new object?[] { colors[i], glyphs[i * 3], null })!, s), new Rect(pad + i * (s + pad), pad + (r0 + 2) * (s + pad), s, s));
+            }
+        }
+        var rtb = new RenderTargetBitmap(pad + cols * (s + pad), pad + rows * (s + pad), 96, 96, PixelFormats.Pbgra32);
+        rtb.Render(dv);
+        string path = Path.Combine(dir, "icon-picker-samples.png");
+        SavePng(rtb, path);
+        Console.WriteLine($"  저장  {path}");
     }
 
     private static void SavePng(BitmapSource img, string path)

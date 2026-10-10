@@ -960,7 +960,7 @@ public partial class DockWindow : Window
             list.Add(old.GetValueOrDefault(folderSepId) ?? new DockItemViewModel(folderSepId, null, isSeparator: true, "", null));
             foreach (var (pin, i) in folderPins)
             {
-                string id = $"folder:{i}:{pin.Target}:{_folders.IsAvailable(pin.Target)}";
+                string id = $"folder:{i}:{pin.Target}:{_folders.IsAvailable(pin.Target)}:{IconKey(pin.Icon)}";
                 var vm = old.GetValueOrDefault(id);
                 if (vm == null || !ReferenceEquals(vm.Pin, pin))
                     vm = new DockItemViewModel(id, pin, false, PinDisplayName(pin), SafeIcon(() => _folders.Icon(pin, style)));
@@ -1202,6 +1202,7 @@ public partial class DockWindow : Window
         var b = toDip.Transform(view.PointToScreen(new Point(view.ActualWidth, view.ActualHeight)));
         var panel = new FolderStackPanel(_services, UiTheme.Palette(_services.Settings.Current), pin, new Rect(a, b), _layout.Edge, _monitor);
         panel.SortChanged += sort => ModifyPins(_ => (pin.Folder ??= new FolderOptions()).Sort = sort);
+        panel.EditIconRequested += () => EditFolderIcon(pin);
         MarkFolderOpened(pin, item);
         panel.Closed += (_, _) =>
         {
@@ -1675,9 +1676,22 @@ public partial class DockWindow : Window
         menu.Items.Add(new Separator());
         var pins = _services.Settings.Current.Pins;
         int at = pins.IndexOf(pin);
+        menu.Items.Add(Item(Loc.T("아이콘 바꾸기…"), () => EditFolderIcon(pin)));
+        menu.Items.Add(new Separator());
         menu.Items.Add(Item(Loc.T("왼쪽으로"), () => SwapFolder(pin, -1), enabled: at > 0 && pins[at - 1].Kind == PinKind.Folder));
         menu.Items.Add(Item(Loc.T("오른쪽으로"), () => SwapFolder(pin, +1), enabled: at >= 0 && at + 1 < pins.Count && pins[at + 1].Kind == PinKind.Folder));
         menu.Items.Add(Item(Loc.T("독에서 빼기"), () => ModifyPins(p => p.Remove(pin))));
+    }
+
+    private static string IconKey(PinIcon? i) => i is null ? "" : $"{i.Mode}|{i.Color}|{i.Glyph}|{i.Text}|{i.File}";
+
+    /// <summary>아이콘 바꾸기 카드 (루틴과 같은 카드). 자동 = 몽독 폴더 + 종류 그림, 기호 칸의 "기본 그림" = 색만 바꾼 폴더.</summary>
+    private void EditFolderIcon(PinItem pin)
+    {
+        var kind = DockFolderService.GlyphFor(pin.Target);
+        IconPickerWindow.Open(_services, pin.Icon, keepDefaultGlyph: true,
+            preview: icon => PinIconRenderer.Render(icon, kind) ?? MacIconRenderer.Folder(kind),
+            done: icon => ModifyPins(_ => pin.Icon = icon));
     }
 
     private void SwapFolder(PinItem pin, int dir) => ModifyPins(p =>

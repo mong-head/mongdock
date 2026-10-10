@@ -16,11 +16,30 @@ internal static partial class MacIconRenderer
     private static readonly Color FolderInk = Color.FromRgb(0x7A, 0x8A, 0xEE); // 흰 폴더 위 그림 색 (판의 중간 톤)
     private static readonly Color MissingTop = Color.FromRgb(0xD1, 0xD1, 0xD6), MissingBottom = Color.FromRgb(0xAE, 0xAE, 0xB2);
 
-    public static BitmapSource Folder(FolderGlyph glyph = FolderGlyph.None, bool missing = false) => Render(dc =>
+    /// <summary>color = 판 색 이름(아이콘 고르기, null = 몽독 하늘~연보라). 종류 그림은 판 색의 진한 쪽.</summary>
+    public static BitmapSource Folder(FolderGlyph glyph = FolderGlyph.None, bool missing = false, string? color = null) => Render(dc =>
     {
-        dc.DrawGeometry(missing ? new LinearGradientBrush(MissingTop, MissingBottom, 75) : new LinearGradientBrush(SkyTop, SkyBottom, 75),
-            new Pen(new SolidColorBrush(Color.FromArgb(0x24, 0, 0, 0)), 0.5), Squircle);
-        DrawFolder(dc, FolderBox(BodyRect, 0.68, down: 0.02), glyph, missing);
+        var (top, bottom) = missing ? (MissingTop, MissingBottom) : PinIconRenderer.PlateColors(color);
+        dc.DrawGeometry(new LinearGradientBrush(top, bottom, 75), new Pen(new SolidColorBrush(Color.FromArgb(0x24, 0, 0, 0)), 0.5), Squircle);
+        var ink = missing ? Color.FromRgb(0xA0, 0xA0, 0xA8) : color is null or "mongdock" ? FolderInk : bottom;
+        DrawFolder(dc, FolderBox(BodyRect, 0.68, down: 0.02), glyph, missing, ink);
+    });
+
+    /// <summary>아이콘 고르기 "기호": 판 색 위 흰 기호(Segoe Fluent Icons) 또는 글자 1~2자. 둘 다 없으면 판만.</summary>
+    public static BitmapSource Symbol(string? color, string? glyph, string? text) => Render(dc =>
+    {
+        var (top, bottom) = PinIconRenderer.PlateColors(color);
+        dc.DrawGeometry(new LinearGradientBrush(top, bottom, 75), new Pen(new SolidColorBrush(Color.FromArgb(0x24, 0, 0, 0)), 0.5), Squircle);
+        var shade = new SolidColorBrush(Color.FromArgb(0x30, 0x20, 0x20, 0x40));
+        FormattedText? ft = !string.IsNullOrWhiteSpace(text)
+            ? PinIconRenderer.Text(text.Trim(), PinIconRenderer.TextFace, BodySize * (text.Trim().Length > 1 ? 0.40 : 0.52), Brushes.White)
+            : !string.IsNullOrEmpty(glyph) ? PinIconRenderer.Text(glyph, PinIconRenderer.GlyphFace, BodySize * 0.54, Brushes.White) : null;
+        if (ft is null) return;
+        double x = BodyRect.X + (BodySize - ft.Width) / 2, y = BodyRect.Y + (BodySize - ft.Height) / 2;
+        // 기호는 선이 가늘어 작은 독에서 흐려짐 → 같은 색 테두리로 굵게
+        var outline = string.IsNullOrWhiteSpace(text) ? new Pen(Brushes.White, BodySize * 0.014) { LineJoin = PenLineJoin.Round } : null;
+        dc.DrawGeometry(shade, outline is null ? null : new Pen(shade, outline.Thickness), ft.BuildGeometry(new Point(x, y + BodySize * 0.012)));
+        dc.DrawGeometry(Brushes.White, outline, ft.BuildGeometry(new Point(x, y)));
     });
 
     /// <summary>판 r 가운데 폭 = r 의 width 비율, 높이 = 폭의 0.8.</summary>
@@ -31,7 +50,7 @@ internal static partial class MacIconRenderer
     }
 
     /// <summary>뒤판(왼쪽 위 탭) → 앞판(+ 그림). 아래로 옅은 그림자 (앱 모음 칸과 같은 톤).</summary>
-    private static void DrawFolder(DrawingContext dc, Rect box, FolderGlyph glyph, bool missing)
+    private static void DrawFolder(DrawingContext dc, Rect box, FolderGlyph glyph, bool missing, Color ink)
     {
         double w = box.Width, h = box.Height, rad = w * 0.075;
         var shade = new SolidColorBrush(missing ? Color.FromArgb(0x30, 0x40, 0x40, 0x48) : Color.FromArgb(0x38, 0x6A, 0x5C, 0xC8));
@@ -48,7 +67,7 @@ internal static partial class MacIconRenderer
         dc.DrawRoundedRectangle(shade, null, new Rect(front.X, front.Y - h * 0.015, front.Width, front.Height), rad, rad);
         dc.DrawRoundedRectangle(new LinearGradientBrush(Colors.White, missing ? Color.FromRgb(0xF2, 0xF2, 0xF4) : Color.FromRgb(0xF3, 0xF1, 0xFF), 90), null, front, rad, rad);
 
-        if (glyph != FolderGlyph.None) DrawFolderGlyph(dc, front, glyph, missing ? Color.FromRgb(0xA0, 0xA0, 0xA8) : FolderInk);
+        if (glyph != FolderGlyph.None) DrawFolderGlyph(dc, front, glyph, ink);
     }
 
     /// <summary>앞판 가운데의 종류 그림 (한 색, 굵은 선 — 52px 에서도 보이게).</summary>

@@ -108,20 +108,53 @@ internal sealed class FolderStackPanel : Window
 
     // ───────────────────────── 내용 ─────────────────────────
 
+    /// <summary>머리줄 연필: 아이콘 바꾸기 카드를 열어 달라는 요청 (판은 닫힘).</summary>
+    public event Action? EditIconRequested;
+
     private UIElement BuildContent()
     {
         var root = new StackPanel();
         string path = _pin.Target;
         var opts = _pin.Folder ?? new FolderOptions();
 
-        // 머리: 폴더 이름
-        root.Children.Add(new TextBlock
+        // 머리: 폴더 이름 + 작은 연필 (아이콘 바꾸기 — 메뉴에만 숨기지 않음)
+        var head = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(4, 0, 4, 8) };
+        head.Children.Add(new TextBlock
         {
             Text = string.IsNullOrWhiteSpace(_pin.Name) ? Path.GetFileName(Path.TrimEndingDirectorySeparator(path)) : _pin.Name,
             FontSize = 13,
             FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(4, 0, 4, 8),
+            VerticalAlignment = VerticalAlignment.Center,
         });
+        var pencil = new Border
+        {
+            Width = 22,
+            Height = 22,
+            CornerRadius = new CornerRadius(6),
+            Margin = new Thickness(4, 0, 0, 0),
+            Background = Brushes.Transparent,
+            Cursor = Cursors.Hand,
+            ToolTip = Loc.T("아이콘 바꾸기"),
+            Child = new TextBlock
+            {
+                Text = "\uE70F",
+                FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),
+                FontSize = 12,
+                Foreground = _p.SubText,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            },
+        };
+        pencil.MouseEnter += (_, _) => pencil.Background = _p.Hover;
+        pencil.MouseLeave += (_, _) => pencil.Background = Brushes.Transparent;
+        pencil.MouseLeftButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            CloseAnimated();
+            EditIconRequested?.Invoke();
+        };
+        head.Children.Add(pencil);
+        root.Children.Add(head);
 
         var listed = DockFolderService.List(path, opts.Sort, MaxItems);
         if (listed is not { } l)

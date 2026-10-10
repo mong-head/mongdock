@@ -138,10 +138,14 @@ internal sealed class DockFolderService : IDisposable
 
     private static readonly Dictionary<(FolderGlyph, bool), ImageSource> IconCache = new();
 
-    /// <summary>독 아이콘: 몽독 폴더 (알려진 폴더면 종류 그림 — 무슨 폴더인지 보이게). 없는 폴더는 회색. 그림 종류마다 한 번만 그림.</summary>
+    /// <summary>
+    /// 독 아이콘: 사용자가 고른 아이콘(아이콘 바꾸기 — 기호·색·그림 파일)이 있으면 그것, 아니면(자동) 몽독 폴더
+    /// (알려진 폴더면 종류 그림 — 무슨 폴더인지 보이게). 없는 폴더는 회색. 같은 그림은 한 번만 그림.
+    /// </summary>
     public ImageSource Icon(PinItem pin, IconStyle style)
     {
         bool missing = !IsAvailable(pin.Target);
+        if (PinIconRenderer.Render(pin.Icon, GlyphFor(pin.Target), missing) is { } chosen) return chosen;
         var key = (GlyphFor(pin.Target), missing);
         if (!IconCache.TryGetValue(key, out var img)) IconCache[key] = img = MacIconRenderer.Folder(key.Item1, missing);
         return img;
