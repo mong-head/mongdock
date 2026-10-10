@@ -31,8 +31,12 @@ public partial class DockWindow
         return vm;
     }
 
+    /// <summary>자동 = 판 없는 흰 통 + 연보라 줄무늬 (빈/찬, 2026-10-10 사용자 결정 B). 색만 고르면 그 색 판 위 휴지통.</summary>
     private static ImageSource TrashIcon(PinIcon? icon, bool full) =>
-        PinIconRenderer.Render(icon, c => MacIconRenderer.Trash(full, c), $"trash:{full}") ?? MacIconRenderer.Trash(full);
+        PinIconRenderer.Render(icon, c => MacIconRenderer.Trash(full, c), $"trash:{full}") ?? (full ? FullTrash : EmptyTrash);
+
+    private static readonly ImageSource EmptyTrash = MacIconRenderer.TrashStandalone(full: false, glass: false);
+    private static readonly ImageSource FullTrash = MacIconRenderer.TrashStandalone(full: true, glass: false);
 
     private RecycleBinWatcher CreateRecycleWatcher()
     {

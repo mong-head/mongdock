@@ -23,14 +23,14 @@ internal static partial class MacIconRenderer
         // 아래 옅은 그림자 (바닥에 놓인 느낌)
         var shadow = new DrawingVisual { Effect = new BlurEffect { Radius = 10, KernelType = KernelType.Gaussian } };
         using (var dc = shadow.RenderOpen())
-            dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(0x55, 0x20, 0x18, 0x50)), null, new Point(S * 0.5, S * 0.935), S * 0.31, S * 0.035);
+            dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(0x55, 0x20, 0x18, 0x50)), null, new Point(S * 0.5, S * 0.965), S * 0.32, S * 0.03);
         root.Children.Add(shadow);
 
         var body = new DrawingVisual();
         RenderOptions.SetEdgeMode(body, EdgeMode.Unspecified);
         using (var dc = body.RenderOpen())
         {
-            double cx = S * 0.5, top = S * 0.22, bottom = S * 0.92, topHalf = S * 0.355, botHalf = S * 0.285, r = S * 0.065;
+            double cx = S * 0.5, top = S * 0.17, bottom = S * 0.95, topHalf = S * 0.375, botHalf = S * 0.30, r = S * 0.07;
             var shape = new StreamGeometry();
             using (var g = shape.Open())
             {
@@ -87,7 +87,7 @@ internal static partial class MacIconRenderer
             dc.DrawGeometry(null, new Pen(new SolidColorBrush(TrashRim), S * 0.012) { LineJoin = PenLineJoin.Round }, shape);
 
             // 위 가장자리 테두리 (통 입구)
-            double rimHalf = S * 0.39, rimH = S * 0.055, rimY = top - rimH * 0.55;
+            double rimHalf = S * 0.41, rimH = S * 0.055, rimY = top - rimH * 0.55;
             var rim = new Rect(cx - rimHalf, rimY, rimHalf * 2, rimH);
             dc.DrawRoundedRectangle(new LinearGradientBrush(Colors.White, Color.FromRgb(0xE8, 0xE3, 0xFF), 90),
                 new Pen(new SolidColorBrush(TrashRim), S * 0.012), rim, rimH / 2, rimH / 2);

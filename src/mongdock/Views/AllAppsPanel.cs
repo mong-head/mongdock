@@ -18,7 +18,7 @@ namespace Mongdock.Views;
 /// → 모든 앱(가나다순, 접힘) → 숨긴 앱(접힘) → "Windows 시작 메뉴 열기".
 /// 바꾸기는 오른쪽 클릭으로 (맨 위에 고정·독에 고정·묶음 옮기기·숨기기, 묶음 이름·순서). 닫기: 바깥 클릭·Esc·실행·버튼 다시.
 /// </summary>
-internal sealed class AllAppsPanel : DockStackPanel
+internal sealed partial class AllAppsPanel : DockStackPanel
 {
     /// <summary>끄는 앱의 데이터 형식 (값 = 앱 키). 독도 받음 (판 → 독 = 고정).</summary>
     public const string AppFormat = "mongdock.allapps.app";
@@ -93,7 +93,12 @@ internal sealed class AllAppsPanel : DockStackPanel
         Loaded += (_, _) => Dispatcher.BeginInvoke(() => { _search.Focus(); Keyboard.Focus(_search); }, DispatcherPriority.Input);
         SpotlightWindow.CloseIfOpen();
         Current = this;
-        Closed += (_, _) => { if (Current == this) Current = null; };
+        Closed += (_, _) =>
+        {
+            if (Current == this) Current = null;
+            _body.Content = null; // 닫힌 판의 시각 트리를 바로 놓아줌
+            ScheduleTrim();
+        };
         PreviewKeyDown += OnKey;
     }
 
@@ -178,6 +183,7 @@ internal sealed class AllAppsPanel : DockStackPanel
 
     private void OnKey(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape && CancelDragOnEscape()) { e.Handled = true; return; } // 끄는 중 Esc = 원래 자리로 (판은 그대로)
         if (_search.Text.Trim().Length == 0 || _results.Count == 0)
         {
             if (e.Key == Key.Enter && _search.IsKeyboardFocused) e.Handled = true;
@@ -202,6 +208,8 @@ internal sealed class AllAppsPanel : DockStackPanel
     private UIElement BuildHome()
     {
         var root = new StackPanel();
+        _favRow = null;
+        _favCells.Clear();
         var visible = _apps.Where(a => !S.Hidden.Contains(a.Key, StringComparer.OrdinalIgnoreCase)).ToList();
         if (_apps.Count == 0)
         {
@@ -215,8 +223,14 @@ internal sealed class AllAppsPanel : DockStackPanel
         {
             root.Children.Add(SectionTitle("★ " + Loc.T("즐겨찾기")));
             var row = new WrapPanel { Width = Cols * AppCell, Background = Brushes.Transparent };
-            foreach (var (app, pinned) in fav) row.Children.Add(AppCellView(app, pinned: pinned, inFavorites: true));
-            var favBox = new Border { CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1.5), BorderBrush = Brushes.Transparent, Child = row };
+            _favRow = row;
+            foreach (var (app, pinned) in fav)
+            {
+                var c = AppCellView(app, pinned: pinned, inFavorites: true);
+                _favCells.Add(c);
+                row.Children.Add(c);
+            }
+            var favBox = new Border { CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1.5), BorderBrush = Brushes.Transparent, Child = row, Tag = new DropTag("fav", "") };
             DropTarget(favBox, AppFormat, key => !S.Favorites.Contains(key, StringComparer.OrdinalIgnoreCase), PinToTop);
             root.Children.Add(favBox);
         }
@@ -330,7 +344,8 @@ internal sealed class AllAppsPanel : DockStackPanel
         };
         cell.MouseEnter += (_, _) => { if (!selected) cell.Background = P.Tile; };
         cell.MouseLeave += (_, _) => { if (!selected) cell.Background = Brushes.Transparent; };
-        Pressable(cell, () => Launch(app), () =>
+        cell.Tag = new DropTag(inFavorites ? "favapp" : "app", app.Key);
+        Pressable(cell, () => Launch(app), new DragItem(false, app.Key), () =>
         {
             var data = new DataObject();
             data.SetData(AppFormat, app.Key);
@@ -427,7 +442,14 @@ internal sealed class AllAppsPanel : DockStackPanel
                     var queue = new Queue<AppEntry>(targets.DistinctBy(a => a.Key));
                     void Next()
                     {
-                        if (queue.Count == 0) { _warming = false; Log.Info($"앱 모음 판 미리 준비: 앱 {t.Result.Count}개, 아이콘 {SmallIcons.Count}개"); return; }
+                        if (queue.Count == 0)
+                        {
+                            _warming = false;
+                            lock (KeepIcons) { KeepIcons.Clear(); foreach (var a in targets) KeepIcons.Add(style + "|" + a.Key); }
+                            ReleaseTemporaryBitmaps(); // 64px 로 줄이며 만든 256px 임시 그림의 네이티브 메모리를 바로 돌려줌
+                            Log.Info($"앱 모음 판 미리 준비: 앱 {t.Result.Count}개, 아이콘 {SmallIcons.Count}개");
+                            return;
+                        }
                         SmallIcon(services, queue.Dequeue(), style);
                         dispatcher.BeginInvoke(Next, DispatcherPriority.ApplicationIdle);
                     }
@@ -440,6 +462,36 @@ internal sealed class AllAppsPanel : DockStackPanel
                 }
             }, DispatcherPriority.ApplicationIdle);
         }, TaskScheduler.Default);
+    }
+
+    /// <summary>처음 화면 아이콘(★ 줄·묶음 미리 보기) — 판을 닫아도 유지. 나머지(펼친 묶음·모든 앱)는 닫고 2분 뒤 놓아줌.</summary>
+    private static readonly HashSet<string> KeepIcons = new(StringComparer.OrdinalIgnoreCase);
+    private static System.Windows.Threading.DispatcherTimer? _trimTimer;
+
+    /// <summary>판을 닫으면 2분 뒤: 처음 화면 것 말고는 아이콘 캐시를 비우고 임시 그림 메모리를 돌려줌 (다시 열면 그때 다시).</summary>
+    private static void ScheduleTrim()
+    {
+        _trimTimer?.Stop();
+        _trimTimer = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.ApplicationIdle) { Interval = TimeSpan.FromMinutes(2) };
+        _trimTimer.Tick += (_, _) =>
+        {
+            _trimTimer?.Stop();
+            if (Current is not null) return; // 열려 있으면 다음에
+            int before = SmallIcons.Count;
+            lock (KeepIcons)
+                foreach (var k in SmallIcons.Keys.Where(k => !KeepIcons.Contains(k)).ToList()) SmallIcons.Remove(k);
+            ReleaseTemporaryBitmaps();
+            Log.Info($"앱 모음 판 아이콘 정리: {before} → {SmallIcons.Count}개");
+        };
+        _trimTimer.Start();
+    }
+
+    /// <summary>RenderTargetBitmap 등은 GC 가 종료자를 돌릴 때까지 네이티브 메모리를 쥐고 있음 — 관리 힙이 작아 GC 가 드물어 쌓이므로 직접.</summary>
+    private static void ReleaseTemporaryBitmaps()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
     }
 
     private static ImageSource Shrink(ImageSource full)
@@ -502,11 +554,12 @@ internal sealed class AllAppsPanel : DockStackPanel
         };
         cell.MouseEnter += (_, _) => cell.Background = P.Hover;
         cell.MouseLeave += (_, _) => cell.Background = Brushes.Transparent;
+        cell.Tag = new DropTag("group", id);
         Pressable(cell, () =>
         {
             _expanded = open ? null : id;
             Rebuild();
-        }, id == AllAppsCatalog.Other ? null : () => new DataObject(GroupFormat, id));
+        }, id == AllAppsCatalog.Other ? null : new DragItem(true, id), null);
         // 앱을 놓으면 이 묶음으로, 다른 묶음을 놓으면 그 묶음을 이 앞으로
         DropTarget(cell, AppFormat, _ => true, key =>
         {
@@ -741,40 +794,6 @@ internal sealed class AllAppsPanel : DockStackPanel
     }
 
     // ───────────────────────── 끌기 ─────────────────────────
-
-    private Point _pressAt;
-    private UIElement? _pressed;
-
-    /// <summary>누르고 떼면 click, 누른 채 조금 움직이면 drag 의 데이터로 끌기 (drag = null 이면 끌기 없음).</summary>
-    private void Pressable(UIElement el, Action click, Func<DataObject>? drag)
-    {
-        el.MouseLeftButtonDown += (_, e) =>
-        {
-            _pressAt = e.GetPosition(this);
-            _pressed = el;
-            el.CaptureMouse();
-            e.Handled = true;
-        };
-        el.MouseMove += (_, e) =>
-        {
-            if (drag is null || _pressed != el || e.LeftButton != MouseButtonState.Pressed) return;
-            var p = e.GetPosition(this);
-            if (Math.Abs(p.X - _pressAt.X) < SystemParameters.MinimumHorizontalDragDistance
-                && Math.Abs(p.Y - _pressAt.Y) < SystemParameters.MinimumVerticalDragDistance) return;
-            el.ReleaseMouseCapture();
-            _pressed = null;
-            // 복사/링크만 허용 — 바탕 화면·탐색기·휴지통에 놓아도 시작 메뉴 바로 가기를 옮기거나 지우지 않음
-            DragData(el, drag(), DragDropEffects.Copy | DragDropEffects.Link);
-        };
-        el.MouseLeftButtonUp += (_, e) =>
-        {
-            bool pressed = _pressed == el;
-            el.ReleaseMouseCapture();
-            _pressed = null;
-            e.Handled = true;
-            if (pressed) click();
-        };
-    }
 
     /// <summary>놓을 곳: format 데이터가 accept 이면 테두리 강조(번쩍임 없이), 놓으면 drop (끌기가 끝난 뒤 다시 그림).</summary>
     private void DropTarget(Border target, string format, Func<string, bool> accept, Action<string> drop)
