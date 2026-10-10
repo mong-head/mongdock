@@ -7,8 +7,8 @@ internal sealed record AppFolder(string Id, string Name, List<AppEntry> Apps, bo
 
 /// <summary>
 /// 앱 모음 판 폴더 (#24, 2026-10-10 재기획):
-/// - 자동 폴더 = 쓰는 앱만: 분류가 같은 앱 중 최근 30일 안에 실행한 앱 + 독 핀, 실행 많은 순 최대 9개, 2개 이상일 때만 폴더.
-///   하루 한 번(판이 닫혀 있을 때) 다시 계산해 AutoApps 에 적어 둠 — 열려 있는 판은 바뀌지 않음.
+/// - 자동 폴더 = 쓰는 앱만: 분류가 같은 앱 중 최근 30일 안에 실행한 앱 + 독 핀, 최대 9개, 2개 이상일 때만 폴더.
+///   처음 채울 때만 많이 쓴 순. 그 뒤 하루 한 번(판이 닫혀 있을 때) 새로 쓰기 시작한 앱만 끝에 붙임 — 이미 있는 앱의 자리는 절대 안 바뀜.
 /// - 사용자가 손댄 폴더(이름·넣기·빼기)와 새로 만든 폴더는 Apps 목록 그대로 (자동 변경 없음). 앱은 한 폴더에만.
 /// - 안 쓰는 앱은 "모든 앱"에만.
 /// </summary>
@@ -68,7 +68,7 @@ internal static class AppFolders
             .Take(AutoMax).Select(x => x.App.Key).ToList();
     }
 
-    /// <summary>손대지 않은 기본 폴더의 자동 내용을 다시 계산 (하루 한 번, 판이 닫혀 있을 때). 바뀌었으면 true.</summary>
+    /// <summary>손대지 않은 기본 폴더: 처음이면 채우고, 아니면 새로 쓰기 시작한 앱만 끝에 (하루 한 번, 판이 닫혀 있을 때). 계산했으면 true.</summary>
     public static bool RefreshAuto(Settings settings, IReadOnlyList<AppEntry> apps, bool force = false)
     {
         var s = settings.AllApps;
@@ -78,7 +78,16 @@ internal static class AppFolders
         {
             var d = s.Groups.FirstOrDefault(g => g.Id == id);
             if (d is { Touched: true } or { Deleted: true }) continue;
-            Def(s, id).AutoApps = AutoMembers(settings, apps, id);
+            var def = Def(s, id);
+            var now = AutoMembers(settings, apps, id);
+            if (def.AutoApps is null) { def.AutoApps = now; continue; } // 처음 채울 때만 많이 쓴 순
+            // 그 뒤로는 자리 고정: 이미 들어 있는 앱의 자리·순서는 그대로, 새로 쓰기 시작한 앱만 끝에 (9개 꽉 차면 안 붙음).
+            // 빠지는 건 사용자가 빼거나 정리 카드에서 골랐을 때만 (그때는 손댄 폴더가 됨)
+            foreach (var k in now)
+            {
+                if (def.AutoApps.Count >= AutoMax) break;
+                if (!def.AutoApps.Contains(k, StringComparer.OrdinalIgnoreCase)) def.AutoApps.Add(k);
+            }
         }
         s.AutoFoldersDay = today;
         return true;
