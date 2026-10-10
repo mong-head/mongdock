@@ -37,7 +37,9 @@ internal sealed partial class SettingsWindow
             body.Children.Add(card);
         }
 
-        body.Children.Add(LinkButton(Loc.T("GitHub 릴리스 전체 보기 ↗"), () => _services.Launcher.OpenFile(UpdateService.ReleasesPageUrl), HorizontalAlignment.Left));
+        // GitHub 릴리스 페이지는 깃허브판에만 (스토어판은 저장소를 안 보여 줌 — 출시 때 저장소가 비공개로 바뀜)
+        if (!AppInfo.IsPackaged)
+            body.Children.Add(LinkButton(Loc.T("GitHub 릴리스 전체 보기 ↗"), () => _services.Launcher.OpenFile(UpdateService.ReleasesPageUrl), HorizontalAlignment.Left));
     }
 
     /// <summary>변경 내역 페이지의 버전 카드 (주요 업데이트에서 누르면 여기로 스크롤). 다시 그릴 때마다 새로.</summary>

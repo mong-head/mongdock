@@ -27,7 +27,9 @@ internal sealed partial class SettingsWindow : Window
 {
     private enum Page { General, Dock, TopBar, Notifications, Calendar, Search, About, Changelog }
 
-    private const string GitHubUrl = "https://github.com/mong-head/mongdock";
+    /// <summary>홈페이지 (출시 때 공개 — 저장소는 비공개가 되므로 GitHub 주소는 화면에 쓰지 않음). 한국어가 아니면 영어 페이지.</summary>
+    private static string SiteUrl => "https://mong-head.github.io/mongdock-site/" + (Loc.IsKorean ? "" : "en/");
+    private static string PrivacyUrl => SiteUrl + "privacy.html";
     private const double SidebarWidth = 200;
     private const double ControlWidth = 230;
 
@@ -1174,7 +1176,13 @@ internal sealed partial class SettingsWindow : Window
 
         string folder = Path.GetDirectoryName(_services.Settings.SettingsPath) ?? AppInfo.DataDirectory;
         body.Children.Add(Group(
-            Row("GitHub", GitHubUrl, ActionButton(Loc.T("열기"), () => _services.Launcher.OpenFile(GitHubUrl))),
+            Row(Loc.T("홈페이지"), SiteUrl, ActionButton(Loc.T("열기"), () => _services.Launcher.OpenFile(SiteUrl))),
+            Row(Loc.T("개인정보 처리방침"), null, ActionButton(Loc.T("열기"), () => _services.Launcher.OpenFile(PrivacyUrl))),
+            Row(Loc.T("문의 메일"), ReportService.SupportAddress, ActionButton(Loc.T("복사"), () =>
+            {
+                try { Clipboard.SetText(ReportService.SupportAddress); }
+                catch (Exception ex) { Log.Warn($"문의 메일 주소 복사 실패: {ex.Message}"); }
+            })),
             Row(Loc.T("설정 폴더"), folder, ActionButton(Loc.T("폴더 열기"), () => _services.Launcher.OpenFile(folder))),
             Row(Loc.T("설정 파일"), Loc.T("settings.json (직접 편집하면 저장 즉시 반영)"),
                 ActionButton(Loc.T("파일 열기"), () => _services.Launcher.OpenFile(_services.Settings.SettingsPath)))));
