@@ -221,31 +221,25 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             return root;
         }
 
-        // ★ 즐겨찾기 (내가 고른 것) + 추천
-        root.Children.Add(SectionTitle("★ " + Loc.T("즐겨찾기")));
+        // ★ 즐겨찾기 (내가 고른 것) + 줄 끝 추천 칸 (0개면 4개 + 제목 옆 안내, 있으면 2개). 추천 후보도 없고 0개면 점선 안내 칸
         var fav = Favorites(visible);
-        var suggestions = S.ShowSuggestions ? Suggestions(Services.Settings.Current, visible, fav.Count == 0 ? 6 : 2) : new List<AppEntry>();
+        var suggestions = S.ShowSuggestions ? Suggestions(Services.Settings.Current, visible, fav.Count == 0 ? 4 : 2) : new List<AppEntry>();
+        var title = new StackPanel { Orientation = Orientation.Horizontal };
+        title.Children.Add(SectionTitle("★ " + Loc.T("즐겨찾기")));
+        if (fav.Count == 0 && suggestions.Count > 0)
+            title.Children.Add(new TextBlock { Text = Loc.T("＋를 누르거나, 아래 앱을 여기로 끌어다 놓으면 즐겨찾기에 들어가요"), FontSize = 11.5, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 6, 0, 4) });
+        root.Children.Add(title);
         var row = new WrapPanel { Width = Cols * AppCell, Background = Brushes.Transparent };
         _favRow = row;
-        Border favBox;
-        if (fav.Count == 0)
+        foreach (var app in fav)
         {
-            // 0개: 추천이 있으면 고르는 카드, 없으면 끌어다 놓으라는 안내 (그 자리도 놓을 곳)
-            bool snoozed = S.SuggestCardSnoozedUntil is { } until && DateTime.Now < until;
-            var content = suggestions.Count > 0 && !snoozed ? SuggestCard(suggestions) : DropHint();
-            favBox = new Border { CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1.5), BorderBrush = Brushes.Transparent, Child = content, Tag = new DropTag("fav", "") };
+            var c = AppCellView(app, inFavorites: true); // 즐겨찾기는 모두 내가 고른 것 — 핀 표시 없음
+            _favCells.Add(c);
+            row.Children.Add(c);
         }
-        else
-        {
-            foreach (var app in fav)
-            {
-                var c = AppCellView(app, inFavorites: true); // 즐겨찾기는 모두 내가 고른 것 — 핀 표시 없음
-                _favCells.Add(c);
-                row.Children.Add(c);
-            }
-            foreach (var app in suggestions) row.Children.Add(SuggestionCell(app)); // 줄 끝 추천 칸 (최대 2)
-            favBox = new Border { CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1.5), BorderBrush = Brushes.Transparent, Child = row, Tag = new DropTag("fav", "") };
-        }
+        foreach (var app in suggestions) row.Children.Add(SuggestionCell(app));
+        UIElement favContent = fav.Count == 0 && suggestions.Count == 0 ? DropHint() : row;
+        var favBox = new Border { CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1.5), BorderBrush = Brushes.Transparent, Child = favContent, Tag = new DropTag("fav", "") };
         DropTarget(favBox, AppFormat, key => !S.Favorites.Contains(key, StringComparer.OrdinalIgnoreCase), PinToTop);
         root.Children.Add(favBox);
 
@@ -321,48 +315,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         return list;
     }
 
-    /// <summary>즐겨찾기 0개 + 추천 있음: "자주 쓰는 앱을 즐겨찾기에 넣을까요?" + 추천 최대 6개(체크) + [넣기] [다음에].</summary>
-    private UIElement SuggestCard(List<AppEntry> apps)
-    {
-        var chosen = apps.Select(a => a.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var card = new StackPanel { Margin = new Thickness(6, 2, 6, 6) };
-        card.Children.Add(new TextBlock { Text = Loc.T("자주 쓰는 앱을 즐겨찾기에 넣을까요?"), FontSize = 13, FontWeight = FontWeights.SemiBold, Margin = new Thickness(2, 0, 0, 8) });
-        var list = new WrapPanel();
-        foreach (var app in apps)
-        {
-            var image = new Image { Width = 28, Height = 28, Margin = new Thickness(0, 0, 6, 0) };
-            LoadIcon(image, app);
-            var check = new CheckBox { IsChecked = true, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0) };
-            check.Checked += (_, _) => chosen.Add(app.Key);
-            check.Unchecked += (_, _) => chosen.Remove(app.Key);
-            var item = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 18, 6) };
-            item.Children.Add(check);
-            item.Children.Add(image);
-            item.Children.Add(new TextBlock { Text = app.Name, VerticalAlignment = VerticalAlignment.Center, MaxWidth = 150, TextTrimming = TextTrimming.CharacterEllipsis });
-            item.MouseLeftButtonUp += (_, e) => { if (e.OriginalSource is not CheckBox) check.IsChecked = !check.IsChecked; };
-            list.Children.Add(item);
-        }
-        card.Children.Add(list);
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0) };
-        var add = new Button { Style = (Style)Application.Current.FindResource("CardButton"), Content = new TextBlock { Text = Loc.T("넣기"), FontWeight = FontWeights.SemiBold }, Background = P.Accent, Foreground = P.AccentText, Height = 28, Padding = new Thickness(18, 0, 18, 0) };
-        add.Click += (_, _) =>
-        {
-            foreach (var app in apps) if (chosen.Contains(app.Key)) S.Favorites.Add(app.Key);
-            Save();
-        };
-        var later = new Button { Style = (Style)Application.Current.FindResource("CardButton"), Content = new TextBlock { Text = Loc.T("다음에") }, Background = P.Hover, Foreground = P.Text, Height = 28, Padding = new Thickness(18, 0, 18, 0), Margin = new Thickness(8, 0, 0, 0) };
-        later.Click += (_, _) =>
-        {
-            S.SuggestCardSnoozedUntil = DateTime.Now.AddDays(7);
-            Save(false);
-        };
-        buttons.Children.Add(add);
-        buttons.Children.Add(later);
-        card.Children.Add(buttons);
-        return new Border { Background = P.Tile, CornerRadius = new CornerRadius(10), Padding = new Thickness(10), Child = card };
-    }
-
-    /// <summary>즐겨찾기 0개 + 추천 없음: 끌어다 놓으라는 안내 (점선 자리).</summary>
+    /// <summary>즐겨찾기 0개 + 추천 후보도 없음: 끌어다 놓으라는 안내 (점선 자리).</summary>
     private UIElement DropHint()
     {
         var grid = new Grid { Height = 64 };
@@ -376,7 +329,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
 
     /// <summary>
     /// 줄 끝 추천 칸: 점선 테두리, 살짝 흐린 아이콘, 작은 "추천". 마우스를 올리면 [+](즐겨찾기에 넣기)·[×](30일 동안 추천 안 함).
-    /// 클릭은 실행, 즐겨찾기 쪽으로 끌어도 넣기. 추천 칸 위에 놓기는 안 됨(자리 바꾸기 없음).
+    /// 클릭은 실행, 끌기는 없음(넣기는 [+]·오른쪽 클릭). 추천 칸 위에 놓기도 안 됨(자리 바꾸기 없음).
     /// </summary>
     private Border SuggestionCell(AppEntry app)
     {
@@ -438,7 +391,8 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         };
         cell.MouseEnter += (_, _) => overlay.Visibility = Visibility.Visible;
         cell.MouseLeave += (_, _) => overlay.Visibility = Visibility.Hidden;
-        Pressable(cell, () => Launch(app), new DragItem(false, app.Key), null);
+        Pressable(cell, () => Launch(app), null, null); // 추천 칸은 끌기 없음 (내가 넣은 게 아니라서) — 넣기는 [+]·오른쪽 클릭
+        cell.ContextMenu = LazyMenu(m => FillAppMenu(m, app));
         return cell;
     }
 

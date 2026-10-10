@@ -982,5 +982,6 @@
  "휴지통이 비었는지 찼는지 그림으로 보여 줘요.": "Shows whether the Recycle Bin is empty or full.",
  "흐림 없이 반투명 단색. 모서리를 크게 둥글릴 수 있고 원격 접속에서 더 가벼워요.": "Translucent solid color without blur. Allows larger corner rounding and is lighter over remote connections.",
  "흰 아이콘이 안 보일 때 바 색에 맞춰 칠해요.": "Recolors white icons to match the bar when they're hard to see.",
- "흰색": "White"
+ "흰색": "White",
+ "＋를 누르거나, 아래 앱을 여기로 끌어다 놓으면 즐겨찾기에 들어가요": "Click ＋, or drag an app from below here, to add it to Favorites"
 }

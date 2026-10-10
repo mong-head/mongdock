@@ -156,8 +156,7 @@ public sealed class AllAppsSettings
     public bool? LegacyFillFrequent { get => null; set { if (value is bool b) ShowSuggestions = b; } }
     /// <summary>추천에서 뺀 앱 → 뺀 날 (30일 동안 추천 안 함). 이 PC 것 — 설정 옮기기 제외.</summary>
     public Dictionary<string, DateTime> DismissedSuggestions { get; set; } = new();
-    /// <summary>즐겨찾기 0개 카드에서 [다음에] — 이 날까지 카드 안 보임 (7일).</summary>
-    public DateTime? SuggestCardSnoozedUntil { get; set; }
+
     /// <summary>묶음 순서·이름·사용자 묶음. 비어 있으면 기본 순서.</summary>
     public List<AppGroupDef> Groups { get; set; } = new();
     /// <summary>사용자가 옮긴 앱 → 묶음 id (자동 분류보다 우선).</summary>

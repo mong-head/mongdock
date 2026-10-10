@@ -598,7 +598,6 @@ internal static class Program
             var savedPins = settings.Current.Pins.ToList();
             settings.Current.Pins.RemoveAll(pin => pin.Kind is Mongdock.Models.PinKind.Exe or Mongdock.Models.PinKind.Aumid); // 독 핀은 추천에서 빠지므로 그림에선 비움
             settings.Current.AllApps.ShowSuggestions = true;
-            settings.Current.AllApps.SuggestCardSnoozedUntil = null;
             settings.Current.AllApps.DismissedSuggestions.Clear();
             foreach (var mode in new[] { "favcard", "favsuggest" })
             {
