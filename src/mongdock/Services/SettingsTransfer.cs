@@ -44,16 +44,21 @@ public static class SettingsTransfer
         string iconsDir = Path.GetFullPath(settings.IconsDirectory);
         var s = SettingsService.ParseForImport(settings.ExportJson()); // 지금 설정의 사본
         var icons = new List<string>();
+        // 핀 아이콘(IconPath)과 아이콘 바꾸기로 고른 그림(Icon.File) — 몽독 아이콘 폴더 안 것만 묶어 넣고 경로는 토큰으로
+        string? Pack(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return path;
+            string full;
+            try { full = Path.GetFullPath(Environment.ExpandEnvironmentVariables(path)); }
+            catch { return path; }
+            if (!full.StartsWith(iconsDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || !File.Exists(full)) return path;
+            if (!icons.Contains(full, StringComparer.OrdinalIgnoreCase)) icons.Add(full);
+            return IconsToken + "\\" + Path.GetFileName(full);
+        }
         foreach (var pin in s.Pins)
         {
-            if (string.IsNullOrWhiteSpace(pin.IconPath)) continue;
-            string full;
-            try { full = Path.GetFullPath(Environment.ExpandEnvironmentVariables(pin.IconPath)); }
-            catch { continue; }
-            if (!full.StartsWith(iconsDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || !File.Exists(full)) continue;
-            string name = Path.GetFileName(full);
-            pin.IconPath = IconsToken + "\\" + name;
-            if (!icons.Contains(full, StringComparer.OrdinalIgnoreCase)) icons.Add(full);
+            pin.IconPath = Pack(pin.IconPath);
+            if (pin.Icon is { File: not null } icon) icon.File = Pack(icon.File);
         }
         var cals = calendars.Feeds.Select(f => new CalendarEntry(f.Name, f.Color, f.Enabled, includeCalendarUrls && f.Url.Length > 0 ? f.Url : null)).ToList();
         var manifest = new Manifest(Format, FormatVersion, ReportService.AppVersion(), DateTime.Now, includeCalendarUrls && cals.Any(c => c.Url is not null),
@@ -147,10 +152,13 @@ public static class SettingsTransfer
                 icons++;
             }
         }
+        string? Unpack(string? p) => p is not null && p.StartsWith(IconsToken, StringComparison.Ordinal)
+            ? Path.Combine(iconsDir, Path.GetFileName(p[IconsToken.Length..].TrimStart('\\', '/')))
+            : p;
         foreach (var pin in imported.Pins)
         {
-            if (pin.IconPath is { } p && p.StartsWith(IconsToken, StringComparison.Ordinal))
-                pin.IconPath = Path.Combine(iconsDir, Path.GetFileName(p[IconsToken.Length..].TrimStart('\\', '/')));
+            pin.IconPath = Unpack(pin.IconPath);
+            if (pin.Icon is { } icon) icon.File = Unpack(icon.File);
         }
         // 다른 PC 의 모니터 이름이면 주 모니터로 (같은 PC 다시 설치면 그대로)
         if (!string.IsNullOrEmpty(imported.Dock.Monitor) && Monitors.Find(imported.Dock.Monitor) is null) imported.Dock.Monitor = "";

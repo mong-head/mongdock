@@ -343,7 +343,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
                            || pin.Kind == PinKind.Routine && (pin.Routine?.Items is not { Count: > 0 })
                            || pin.Kind == PinKind.Folder && string.IsNullOrWhiteSpace(pin.Target);
                 if (bad) { pins.RemoveAt(pi); fixes.Add($"pins[{pi}]"); continue; }
-                if (pin!.Kind == PinKind.Folder) pin.Folder ??= new FolderOptions();
+                if (pin!.Kind == PinKind.Folder) (pin.Folder ??= new FolderOptions()).LastOpened ??= DateTime.UtcNow;
                 if (pin.Kind is PinKind.Folder or PinKind.Routine) pin.Id ??= Guid.NewGuid().ToString("N");
             }
             KeepFoldersLast(pins);

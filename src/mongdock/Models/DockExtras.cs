@@ -33,16 +33,14 @@ public sealed class PinIcon
 [JsonConverter(typeof(CamelEnumConverter<FolderSort>))]
 public enum FolderSort { Added, Name }
 
-[JsonConverter(typeof(CamelEnumConverter<FolderDisplay>))]
-public enum FolderDisplay { Stack, Folder }
 
 /// <summary>독 폴더 핀(PinKind.Folder)의 옵션. 폴더 경로는 PinItem.Target.</summary>
 public sealed class FolderOptions
 {
     /// <summary>판의 정렬: 추가된 날짜(최근 것 먼저) / 이름.</summary>
     public FolderSort Sort { get; set; } = FolderSort.Added;
-    /// <summary>독 아이콘: 최근 파일 겹치기 / 폴더 아이콘.</summary>
-    public FolderDisplay Display { get; set; } = FolderDisplay.Stack;
+    /// <summary>마지막으로 판을 연(또는 독에 넣은) 시각 (UTC). 그 뒤 추가된 파일이 있으면 아이콘에 새 파일 점. (옛 "display" 값은 읽을 때 무시)</summary>
+    public DateTime? LastOpened { get; set; }
 }
 
 // ───────────────────────── 루틴 (#24-A, spec-routines.md §8) ─────────────────────────

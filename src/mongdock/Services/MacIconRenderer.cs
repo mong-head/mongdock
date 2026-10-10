@@ -14,7 +14,7 @@ namespace Mongdock.Services;
 ///   아니면(원형 로고 등) 밝은 스퀴클 판 위에 본체의 72% 크기로 가운데 배치 (macOS 26 의 비정형 아이콘 처리).
 /// RenderTargetBitmap 을 쓰므로 UI(STA) 스레드에서 호출.
 /// </summary>
-internal static class MacIconRenderer
+internal static partial class MacIconRenderer
 {
     public const int Canvas = 256;
     private const double Scale = Canvas / 1024.0;
