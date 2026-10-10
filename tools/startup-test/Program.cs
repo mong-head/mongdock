@@ -422,6 +422,8 @@ internal static class Program
             Check("휴지통 개수 읽힘", rb.GetMethod("Query")!.Invoke(null, null) is not null, true);
             RecycleInfoTests(rb);
             AllAppsTests();
+            Check("옛 fillFrequent false → 즐겨찾기 추천 끔", SettingsService.ParseForImport("""{ "settingsVersion": 5, "allApps": { "fillFrequent": false, "favorites": ["A"] } }""").AllApps.ShowSuggestions, false);
+            Check("옛 favorites 는 그대로 즐겨찾기", SettingsService.ParseForImport("""{ "settingsVersion": 5, "allApps": { "fillFrequent": true, "favorites": ["A"] } }""").AllApps.Favorites.Count, 1);
             FolderListTests();
 
             // 5: 핀 이름 Finder·Launchpad → 파일 탐색기·앱 모음 (정확히 같은 이름·대상만, 사용자가 바꾼 이름은 그대로)

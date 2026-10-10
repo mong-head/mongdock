@@ -463,10 +463,10 @@ internal sealed partial class SettingsWindow : Window
         // 앱 모음 판 (#24): 새 설정은 이것 하나 — 끄면 이 PC 의 실행 기록도 지움
         body.Children.Add(SectionTitle(Loc.T("앱 모음")));
         body.Children.Add(Group(
-            Row(Loc.T("자주 쓰는 앱으로 채우기"), Loc.T("★ 줄의 빈 칸을 이 PC 에서 자주 연 앱으로 채워요. 끄면 기록도 지워요."),
-                Toggle(_services.Settings.Current.AllApps.FillFrequent, on => Commit(() =>
+            Row(Loc.T("즐겨찾기 추천 보이기"), Loc.T("이 PC 에서 자주 연 앱을 즐겨찾기에 넣자고 추천해요. 끄면 추천과 실행 기록을 지워요."),
+                Toggle(_services.Settings.Current.AllApps.ShowSuggestions, on => Commit(() =>
                 {
-                    _services.Settings.Current.AllApps.FillFrequent = on;
+                    _services.Settings.Current.AllApps.ShowSuggestions = on;
                     if (!on) AppUsage.Clear();
                 })))));
 

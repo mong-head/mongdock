@@ -146,10 +146,18 @@ public sealed class AppGroupDef
 /// </summary>
 public sealed class AllAppsSettings
 {
-    /// <summary>★ 줄 맨 앞에 고정한 앱 (순서대로, 최대 8).</summary>
+    /// <summary>★ 즐겨찾기 — 사용자가 고른 앱만 (순서대로).</summary>
     public List<string> Favorites { get; set; } = new();
-    /// <summary>★ 줄 남은 칸을 자주 쓰는 앱으로 채움 (끄면 실행 횟수 기록도 멈추고 지움).</summary>
-    public bool FillFrequent { get; set; } = true;
+    /// <summary>즐겨찾기 추천 보이기 (이 PC 실행 기록으로 — 끄면 추천 칸·카드 안 보이고 실행 기록도 멈추고 지움).</summary>
+    public bool ShowSuggestions { get; set; } = true;
+    /// <summary>옛 이름 "fillFrequent" 를 읽을 때만 (→ ShowSuggestions). 쓰지 않음.</summary>
+    [JsonPropertyName("fillFrequent")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? LegacyFillFrequent { get => null; set { if (value is bool b) ShowSuggestions = b; } }
+    /// <summary>추천에서 뺀 앱 → 뺀 날 (30일 동안 추천 안 함). 이 PC 것 — 설정 옮기기 제외.</summary>
+    public Dictionary<string, DateTime> DismissedSuggestions { get; set; } = new();
+    /// <summary>즐겨찾기 0개 카드에서 [다음에] — 이 날까지 카드 안 보임 (7일).</summary>
+    public DateTime? SuggestCardSnoozedUntil { get; set; }
     /// <summary>묶음 순서·이름·사용자 묶음. 비어 있으면 기본 순서.</summary>
     public List<AppGroupDef> Groups { get; set; } = new();
     /// <summary>사용자가 옮긴 앱 → 묶음 id (자동 분류보다 우선).</summary>

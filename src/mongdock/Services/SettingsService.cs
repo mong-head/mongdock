@@ -403,6 +403,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
         s.AllApps.Groups.RemoveAll(g => g is null || string.IsNullOrWhiteSpace(g.Id));
         s.AllApps.Overrides ??= new Dictionary<string, string>();
         s.AllApps.Hidden ??= new List<string>();
+        s.AllApps.DismissedSuggestions ??= new Dictionary<string, DateTime>();
         s.Pins ??= new List<PinItem>();
         s.Pins.RemoveAll(p => p is null);
         foreach (var p in s.Pins)
@@ -714,6 +715,8 @@ public sealed class SettingsService : ISettingsService, IDisposable
         imported.StatsAskDay = cur.StatsAskDay;
         imported.NewSince = cur.NewSince; // NEW 배지 기록은 이 PC 것
         imported.NewSeen = cur.NewSeen;
+        imported.AllApps.DismissedSuggestions = cur.AllApps.DismissedSuggestions; // 추천 거절도 이 PC 것
+        imported.AllApps.SuggestCardSnoozedUntil = cur.AllApps.SuggestCardSnoozedUntil;
         imported.StatsAskCount = cur.StatsAskCount;
         // 작업 표시줄 숨기기도 이 PC 의 윈도우를 바꾸는 설정 → 그대로 (숨긴 채면 트레이 아이콘을 볼 곳이 상단바뿐이라 그것도 유지)
         imported.HideWindowsTaskbar = cur.HideWindowsTaskbar;

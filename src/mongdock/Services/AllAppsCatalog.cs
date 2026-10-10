@@ -279,7 +279,7 @@ internal static class AppUsage
 
     public static void Record(string? identity, AllAppsSettings settings)
     {
-        if (identity is null || !settings.FillFrequent) return;
+        if (identity is null || !settings.ShowSuggestions) return;
         lock (Gate)
         {
             var data = Data();
@@ -300,6 +300,22 @@ internal static class AppUsage
             Prune(data);
             return data.Where(kv => kv.Value.Count > 0).OrderByDescending(kv => kv.Value.Count).ThenByDescending(kv => kv.Value.Max())
                 .Take(max).Select(kv => kv.Key).ToList();
+        }
+    }
+
+    /// <summary>즐겨찾기 추천 후보: 최근 14일 동안 2일 이상·3회 이상 실행한 앱, 실행 횟수 많은 순 (같으면 최근 순).</summary>
+    public static List<string> Suggestions(int max)
+    {
+        lock (Gate)
+        {
+            var data = Data();
+            Prune(data);
+            string cutoff = DateTime.Now.AddDays(-14).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            return data
+                .Select(kv => (Key: kv.Key, Days: kv.Value.Where(d => string.CompareOrdinal(d, cutoff) >= 0).ToList()))
+                .Where(x => x.Days.Count >= 3 && x.Days.Distinct().Count() >= 2)
+                .OrderByDescending(x => x.Days.Count).ThenByDescending(x => x.Days.Max())
+                .Take(max).Select(x => x.Key).ToList();
         }
     }
 

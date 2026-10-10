@@ -558,6 +558,7 @@ internal static class Program
                     .Invoke(new object[] { services, palette, new Rect(800, 1000, 52, 52), Mongdock.Models.DockEdge.Bottom, fake });
                 panelType.GetMethod("Rebuild", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(w, null);
                 var content = (FrameworkElement)w.Content;
+                content.Opacity = 1;
                 content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
                 var size = content.DesiredSize;
                 content.Arrange(new Rect(size));
@@ -582,6 +583,60 @@ internal static class Program
                 Console.WriteLine($"  저장  {spath} (판 {size.Width:0}x{size.Height:0})");
                 w.Close();
             }
+            // 즐겨찾기 재기획 그림: 0개 카드 / 즐겨찾기 + 추천 칸(첫 칸 마우스 올림) — 이 PC 앱에서 이름으로 골라 가짜 추천
+            var appList = ((System.Collections.IEnumerable)catalog.GetMethod("Apps")!.Invoke(null, new object[] { false })!).Cast<object>().ToList();
+            var entryType = asm.GetType("Mongdock.Services.AppEntry")!;
+            string NameOf(object a) => (string)entryType.GetProperty("Name")!.GetValue(a)!;
+            string KeyOf(object a) => (string)entryType.GetProperty("Key")!.GetValue(a)!;
+            string IdOf(object a) => (string)catalog.GetMethod("Identity", new[] { entryType })!.Invoke(null, new[] { a })!;
+            object? Pick(string n) => appList.FirstOrDefault(a => NameOf(a).Contains(n, StringComparison.OrdinalIgnoreCase));
+            var suggestIds = new[] { "Visual Studio Code", "Excel", "Steam", "메모장", "Discord", "Spotify", "계산기", "Word" }
+                .Select(Pick).OfType<object>().Select(IdOf).ToList();
+            panelType.GetProperty("SuggestionsOverride", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+                .SetValue(null, (Func<List<string>>)(() => suggestIds));
+            var savedFavs = settings.Current.AllApps.Favorites.ToList();
+            var savedPins = settings.Current.Pins.ToList();
+            settings.Current.Pins.RemoveAll(pin => pin.Kind is Mongdock.Models.PinKind.Exe or Mongdock.Models.PinKind.Aumid); // 독 핀은 추천에서 빠지므로 그림에선 비움
+            settings.Current.AllApps.ShowSuggestions = true;
+            settings.Current.AllApps.SuggestCardSnoozedUntil = null;
+            settings.Current.AllApps.DismissedSuggestions.Clear();
+            foreach (var mode in new[] { "favcard", "favsuggest" })
+            {
+                settings.Current.AllApps.Favorites.Clear();
+                if (mode == "favsuggest")
+                    foreach (var n in new[] { "카카오톡", "Chrome", "Notion" }) if (Pick(n) is { } a) settings.Current.AllApps.Favorites.Add(KeyOf(a));
+                var w = (Window)panelType.GetConstructors(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)[0]
+                    .Invoke(new object[] { services, palette, new Rect(800, 1000, 52, 52), Mongdock.Models.DockEdge.Bottom, monitor });
+                panelType.GetProperty("ShowSuggestionHoverForTest", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, mode == "favsuggest");
+                panelType.GetMethod("Rebuild", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(w, null);
+                var content = (FrameworkElement)w.Content;
+                content.Opacity = 1; // 열릴 때 0.5→1 페이드 시작값
+                foreach (var sv in Descendants(content).OfType<System.Windows.Controls.ScrollViewer>()) { sv.MaxHeight = double.PositiveInfinity; sv.Height = double.NaN; }
+                content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                var size = new Size(content.DesiredSize.Width, Math.Min(content.DesiredSize.Height, 420)); // 위쪽(즐겨찾기·묶음 첫 줄)만
+                content.Arrange(new Rect(content.DesiredSize));
+                content.UpdateLayout();
+                var dv = new DrawingVisual();
+                using (var dc = dv.RenderOpen())
+                {
+                    dc.DrawRectangle(new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x14, 0x16, 0x1C) : Color.FromRgb(0xE9, 0xEC, 0xF4)), null, new Rect(size));
+                    dc.DrawRectangle(new VisualBrush(content) { ViewboxUnits = BrushMappingMode.Absolute, Viewbox = new Rect(size), Stretch = Stretch.None }, null, new Rect(size));
+                }
+                var rtb = new RenderTargetBitmap((int)size.Width, (int)size.Height, 96, 96, PixelFormats.Pbgra32);
+                rtb.Render(dv);
+                string fpath = Path.Combine(dir, $"allapps-{theme}-{mode}.png");
+                var fenc = new PngBitmapEncoder();
+                fenc.Frames.Add(BitmapFrame.Create(rtb));
+                using (var fs = File.Create(fpath)) fenc.Save(fs);
+                Console.WriteLine($"  저장  {fpath}");
+                w.Close();
+            }
+            settings.Current.AllApps.Favorites.Clear();
+            settings.Current.AllApps.Favorites.AddRange(savedFavs);
+            settings.Current.Pins.Clear();
+            settings.Current.Pins.AddRange(savedPins);
+            panelType.GetProperty("SuggestionsOverride", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, null);
+
             foreach (var mode in new[] { "home", "group", "search" })
             {
                 var w = (Window)panelType.GetConstructors(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)[0]
@@ -590,6 +645,7 @@ internal static class Program
                 if (mode == "search") ((System.Windows.Controls.TextBox)panelType.GetField("_search", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(w)!).Text = "ch";
                 panelType.GetMethod("Rebuild", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(w, null);
                 var content = (FrameworkElement)w.Content;
+                content.Opacity = 1;
                 // 그림에는 판 전체가 보이게 (스크롤 높이 제한 풀기)
                 foreach (var sv in Descendants(content).OfType<System.Windows.Controls.ScrollViewer>()) sv.MaxHeight = double.PositiveInfinity;
                 content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));

@@ -218,6 +218,7 @@ internal sealed partial class AllAppsPanel
         {
             for (DependencyObject? o = r.VisualHit; o is not null && o != this; o = VisualTreeHelper.GetParent(o))
             {
+                if (o is FrameworkElement { Tag: DropTag { Kind: "suggest" } }) return HitTestResultBehavior.Stop; // 추천 칸 위 = 놓을 곳 아님 (자리 바꾸기 없음)
                 if (o is not FrameworkElement { Tag: DropTag tag } fe || !Accepts(tag, item)) continue;
                 // 펼친 묶음 안 앱 칸: 가운데(반지름 30%)에 놓으면 둘로 새 묶음, 가장자리면 이 묶음의 빈칸으로
                 if (tag.Kind == "app" && fe is Border cell && _groupCells.Contains(cell) && _groupGridId is { } gid)
@@ -463,10 +464,9 @@ internal sealed partial class AllAppsPanel
         var pinned = S.Favorites.Where(k => !k.Equals(key, StringComparison.OrdinalIgnoreCase)
                                             && (_apps.Count == 0 || _apps.Any(a => a.Key.Equals(k, StringComparison.OrdinalIgnoreCase)))).ToList();
         pinned.Insert(Math.Clamp(index, 0, pinned.Count), key);
-        if (pinned.Count > FavMax) pinned.RemoveRange(FavMax, pinned.Count - FavMax);
         S.Favorites.Clear();
         S.Favorites.AddRange(pinned);
-        Save(false);
+        Save();
     }
 
     private void MakeGroupOf(string a, string b)
