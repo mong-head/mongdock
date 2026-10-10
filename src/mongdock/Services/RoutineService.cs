@@ -104,7 +104,16 @@ internal static class RoutineService
     /// <summary>머문 시간 (초) 더하기·읽기 — RoutineTriggers 가 1초마다.</summary>
     public static double AddSeconds(string id, double s)
     {
-        lock (Runs) return Runs.TryGetValue(id, out var r) ? r.Seconds += s : 0;
+        double now;
+        lock (Runs)
+        {
+            if (!Runs.TryGetValue(id, out var r)) return 0;
+            double before = r.Seconds;
+            now = r.Seconds += s;
+            if ((int)(now / 15) == (int)(before / 15)) return now;
+        }
+        SaveRuns(); // 15초마다 기억 (다시 시작해도 머문 시간이 크게 줄지 않게 — QA: 1:05 → 0:57)
+        return now;
     }
 
     /// <summary>
