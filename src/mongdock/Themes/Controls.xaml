@@ -226,8 +226,8 @@
         <Setter Property="Background">
             <Setter.Value>
                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                    <GradientStop Color="#FF86C6FF" Offset="0" />
-                    <GradientStop Color="#FFA894FF" Offset="1" />
+                    <GradientStop Color="#FF5B8FEE" Offset="0" />
+                    <GradientStop Color="#FF7A6BE0" Offset="1" />
                 </LinearGradientBrush>
             </Setter.Value>
         </Setter>
@@ -270,8 +270,8 @@
                             <Border x:Name="Fill" CornerRadius="4.5" Opacity="0">
                                 <Border.Background>
                                     <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                        <GradientStop Color="#FF86C6FF" Offset="0" />
-                                        <GradientStop Color="#FFA894FF" Offset="1" />
+                                        <GradientStop Color="#FF5B8FEE" Offset="0" />
+                                        <GradientStop Color="#FF7A6BE0" Offset="1" />
                                     </LinearGradientBrush>
                                 </Border.Background>
                             </Border>

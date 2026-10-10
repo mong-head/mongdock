@@ -60,10 +60,10 @@ public sealed class UiPalette
         SubText = F("#8C000000"),
         Disabled = F("#4D000000"),
         Divider = F("#14000000"),
-        Accent = F("#FFE6E0FF"),
+        Accent = F("#FFD9CFFF"),
         AccentText = F("#FF4A3AA8"),
         AccentInk = F("#FF5B4BC4"),
-        AccentFill = Fill(),
+        AccentFill = Fill(0x5B, 0x8F, 0xEE, 0x7A, 0x6B, 0xE0), // 흰 카드 위 3:1 넘게 (QA 대비 측정)
         SoftAccent = F("#FFECE7FF"),
         SoftAccentText = F("#FF4A3AA8"),
         SoftAccentLine = F("#FFB4A3FF"),
@@ -97,7 +97,7 @@ public sealed class UiPalette
         Accent = F("#FF443C70"),
         AccentText = F("#FFE4DEFF"),
         AccentInk = F("#FFC9BEFF"),
-        AccentFill = Fill(),
+        AccentFill = Fill(0x86, 0xC6, 0xFF, 0xA8, 0x94, 0xFF), // 어두운 카드 위엔 밝은 쪽
         SoftAccent = F("#FF3D3763"),
         SoftAccentText = F("#FFD8CFFF"),
         SoftAccentLine = F("#FF8E7EE0"),
@@ -119,10 +119,10 @@ public sealed class UiPalette
 
     private static SolidColorBrush F(string hex) => BrushParser.Frozen(BrushParser.Hex(hex));
 
-    /// <summary>몽독 하늘(#86C6FF) → 연보라(#A894FF) — 몽독 체크·NEW 와 같은 색.</summary>
-    private static Brush Fill()
+    /// <summary>몽독 하늘 → 연보라 채움 (라이트는 한 단계 진하게 — 흰 바탕 위 켜짐이 잘 보이게).</summary>
+    private static Brush Fill(byte r1, byte g1, byte b1, byte r2, byte g2, byte b2)
     {
-        var b = new LinearGradientBrush(Color.FromRgb(0x86, 0xC6, 0xFF), Color.FromRgb(0xA8, 0x94, 0xFF), 0);
+        var b = new LinearGradientBrush(Color.FromRgb(r1, g1, b1), Color.FromRgb(r2, g2, b2), 0);
         b.Freeze();
         return b;
     }

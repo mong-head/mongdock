@@ -45,6 +45,9 @@ internal static class Program
         int iconsAt = Array.FindIndex(args, a => a == "--icons");
         if (iconsAt >= 0 && iconsAt + 1 < args.Length) RenderAllAppsIcons(args[iconsAt + 1]);
 
+        int panelsAt = Array.FindIndex(args, a => a == "--panels");
+        if (panelsAt >= 0 && panelsAt + 1 < args.Length) { RenderStatusPanels(args[panelsAt + 1]); return 0; }
+
         int introAt = Array.FindIndex(args, a => a == "--intro");
         if (introAt >= 0 && introAt + 1 < args.Length) { RenderIntroFrames(args[introAt + 1]); return 0; }
 
@@ -695,6 +698,64 @@ internal static class Program
                 using (var fs = File.Create(path)) enc.Save(fs);
                 Console.WriteLine($"  저장  {path}");
                 w.Close();
+            }
+            settings.Dispose();
+        }
+        GC.KeepAlive(app);
+    }
+
+    // ───────────────────────── 상단바 상태 판 (제어 센터·소리·달력) — 톤·대비 확인 ─────────────────────────
+
+    private static void RenderStatusPanels(string dir)
+    {
+        Directory.CreateDirectory(dir);
+        var app = new Mongdock.App();
+        Mongdock.Loc.Init(_lang);
+        app.InitializeComponent();
+        app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        var asm = typeof(Mongdock.App).Assembly;
+        var kindType = asm.GetType("Mongdock.Views.StatusPanelKind")!;
+        var panelType = asm.GetType("Mongdock.Views.StatusPanelWindow")!;
+        foreach (var theme in new[] { "light", "dark" })
+        {
+            var settings = new SettingsService();
+            settings.Current.Dock.Theme = theme == "dark" ? DockTheme.Dark : DockTheme.Light;
+            Mongdock.ViewModels.UiTheme.Apply(settings.Current);
+            Mongdock.ViewModels.UiFonts.Apply(settings.Current);
+            var tracker = new WindowTracker();
+            var launcher = new AppLauncher(tracker);
+            var status = new StatusService();
+            var services = new AppServices(settings, tracker, launcher, new IconService(), new DesktopWindowService(), new VirtualDesktopService(),
+                new ShellActions(), new ImeService(), status, new MediaService(), new AppMenuService(settings), new StartupService(),
+                new NotificationService(tracker, launcher), new TrayIconService(), new CalendarFeedService(settings));
+            var palette = Mongdock.ViewModels.UiTheme.Palette(settings.Current);
+            foreach (var kind in new[] { "ControlCenter", "Volume", "Calendar" })
+            {
+                try
+                {
+                    var w = (Window)panelType.GetConstructors(Any)[0].Invoke(new object[] { services, Enum.Parse(kindType, kind), palette, 0 });
+                    var content = (FrameworkElement)w.Content;
+                    content.Opacity = 1;
+                    content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                    var size = content.DesiredSize;
+                    content.Arrange(new Rect(size));
+                    content.UpdateLayout();
+                    var dv = new DrawingVisual();
+                    using (var dc = dv.RenderOpen())
+                    {
+                        dc.DrawRectangle(new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x14, 0x16, 0x1C) : Color.FromRgb(0xE9, 0xEC, 0xF4)), null, new Rect(size));
+                        dc.DrawRectangle(new VisualBrush(content) { ViewboxUnits = BrushMappingMode.Absolute, Viewbox = new Rect(size), Stretch = Stretch.None }, null, new Rect(size));
+                    }
+                    var rtb = new RenderTargetBitmap((int)Math.Ceiling(size.Width), (int)Math.Ceiling(size.Height), 96, 96, PixelFormats.Pbgra32);
+                    rtb.Render(dv);
+                    string path = Path.Combine(dir, $"panel-{theme}-{kind.ToLowerInvariant()}.png");
+                    var enc = new PngBitmapEncoder();
+                    enc.Frames.Add(BitmapFrame.Create(rtb));
+                    using (var fs = File.Create(path)) enc.Save(fs);
+                    Console.WriteLine($"  저장  {path}");
+                    w.Close();
+                }
+                catch (Exception ex) { Console.WriteLine($"  {kind} 실패: {ex.GetBaseException().Message}"); }
             }
             settings.Dispose();
         }

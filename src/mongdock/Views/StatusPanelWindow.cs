@@ -412,17 +412,17 @@ internal sealed partial class StatusPanelWindow : Window
     private object FindStyle(string key)
         => TryFindResource(key) ?? Application.Current?.TryFindResource(key) ?? new Style(typeof(Button));
 
-    /// <summary>원형 아이콘 (켜짐 = 파란 원 + 흰 글리프, 꺼짐 = 회색 원).</summary>
+    /// <summary>원형 아이콘 (켜짐 = 몽독 하늘~연보라 원 + 흰 글리프, 꺼짐 = 회색 원 — 연한 틴트면 켜짐·꺼짐이 잘 안 갈려서 채움).</summary>
     private Grid Circle(string glyph, bool on, double size = 30, double glyphSize = 15)
     {
         var g = new Grid { Width = size, Height = size };
-        g.Children.Add(new Ellipse { Fill = on ? _p.Accent : _p.CircleOff });
+        g.Children.Add(new Ellipse { Fill = on ? _p.AccentFill : _p.CircleOff });
         g.Children.Add(new TextBlock
         {
             Text = glyph,
             FontFamily = IconFont,
             FontSize = glyphSize,
-            Foreground = on ? _p.AccentText : _p.CircleOffGlyph,
+            Foreground = on ? Brushes.White : _p.CircleOffGlyph,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         });
@@ -431,10 +431,10 @@ internal sealed partial class StatusPanelWindow : Window
 
     private void SetCircle(Grid circle, string glyph, bool on)
     {
-        ((Ellipse)circle.Children[0]).Fill = on ? _p.Accent : _p.CircleOff;
+        ((Ellipse)circle.Children[0]).Fill = on ? _p.AccentFill : _p.CircleOff;
         var t = (TextBlock)circle.Children[1];
         t.Text = glyph;
-        t.Foreground = on ? _p.AccentText : _p.CircleOffGlyph;
+        t.Foreground = on ? Brushes.White : _p.CircleOffGlyph;
     }
 
     /// <summary>Wi-Fi 끄기는 원격 연결이 끊길 수 있으므로 확인 후에만 (리뷰 H1). 켜기는 즉시. 취소면 null.</summary>
