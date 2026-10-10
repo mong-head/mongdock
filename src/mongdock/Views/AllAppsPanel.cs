@@ -557,6 +557,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
                     var visible = t.Result.Where(a => !settings.AllApps.Hidden.Contains(a.Key, StringComparer.OrdinalIgnoreCase)).ToList();
                     // 자동 폴더는 하루 한 번 (판이 닫혀 있을 때 — 여기는 시작·판을 닫은 뒤)
                     if (Current is null && AppFolders.RefreshAuto(settings, t.Result)) services.Settings.Save();
+                    if (Current is null) PanelIntro.Warm(services); // 나타나기 그림 창도 미리 (첫 열기 지연 없게)
                     var targets = Favorites(settings, visible);
                     if (settings.AllApps.ShowSuggestions) targets.AddRange(Suggestions(settings, visible, 6));
                     foreach (var f in AppFolders.Visible(settings, t.Result)) targets.AddRange(f.Apps.Take(9));

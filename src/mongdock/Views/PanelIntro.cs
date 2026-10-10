@@ -55,21 +55,23 @@ internal static class PanelIntro
         return (new Rect(final.Left + (final.Width - sw) / 2, final.Top + (final.Height - sh) / 2, sw, sh), e);
     }
 
-    /// <summary>판 그림을 움직임. 끝나면 done (진짜 판을 제자리에) — 그 다음 프레임에 그림 창을 닫음.</summary>
-    public static Window Play(AppServices services, string mode, ImageSource picture, Rect final, Rect icon, Action done)
+    // 그림 창은 하나를 만들어 두고 다시 씀 (처음 만들 때 투명 창 준비가 300ms 넘게 걸려 — 몽독 시작 뒤 미리 만들어 숨겨 둠)
+    private static Window? _ghost;
+    private static System.Windows.Controls.Canvas? _canvas;
+    private static Rectangle? _shape;
+    private static int _play; // 지금 움직이는 차례 (먼저 시작한 것은 멈춤)
+
+    private static Window Ghost(AppServices services)
     {
-        var area = final;
-        if (mode == Icon && !icon.IsEmpty) area.Union(icon);
-        area.Inflate(28, 28); // 그림자 자리
-        var shape = new Rectangle
+        if (_ghost is not null) return _ghost;
+        _shape = new Rectangle
         {
-            Fill = new ImageBrush(picture) { Stretch = Stretch.Fill },
             RadiusX = 8,
             RadiusY = 8,
             Effect = new DropShadowEffect { BlurRadius = 24, ShadowDepth = 4, Direction = 270, Opacity = 0.22 },
         };
-        var canvas = new System.Windows.Controls.Canvas { Width = area.Width, Height = area.Height };
-        canvas.Children.Add(shape);
+        _canvas = new System.Windows.Controls.Canvas();
+        _canvas.Children.Add(_shape);
         var ghost = new Window
         {
             WindowStyle = WindowStyle.None,
@@ -82,12 +84,55 @@ internal static class PanelIntro
             Focusable = false,
             IsHitTestVisible = false,
             Title = "mongdock Panel Intro",
-            Left = area.Left,
-            Top = area.Top,
-            Width = area.Width,
-            Height = area.Height,
-            Content = canvas,
+            Left = -32000,
+            Top = -32000,
+            Width = 16,
+            Height = 16,
+            Content = _canvas,
         };
+        ghost.SourceInitialized += (_, _) => services.DesktopWindows.MakeOverlay(ghost);
+        ghost.Closed += (_, _) => { if (_ghost == ghost) _ghost = null; };
+        _ghost = ghost;
+        return ghost;
+    }
+
+    /// <summary>몽독 시작 뒤 한가할 때: 그림 창을 화면 밖에서 한 번 띄웠다 숨김 (첫 열기도 바로 움직이게).</summary>
+    public static void Warm(AppServices services)
+    {
+        try
+        {
+            var g = Ghost(services);
+            if (g.IsVisible) return;
+            g.Show();
+            g.Hide();
+        }
+        catch (Exception ex) { Log.Warn($"판 그림 창 미리 만들기 실패: {ex.GetType().Name}"); }
+    }
+
+    /// <summary>판이 먼저 닫힘 (Esc·바깥 클릭) — 움직이던 그림 창을 바로 숨김.</summary>
+    public static void Stop()
+    {
+        _play++;
+        if (_ghost is { IsVisible: true } g) g.Hide();
+        if (_shape is not null) _shape.Fill = null;
+    }
+
+    /// <summary>판 그림을 움직임. 끝나면 done (진짜 판을 제자리에) — 그 다음 프레임에 그림 창을 숨김.</summary>
+    public static void Play(AppServices services, string mode, ImageSource picture, Rect final, Rect icon, Action done)
+    {
+        var ghost = Ghost(services);
+        var shape = _shape!;
+        int play = ++_play;
+        var area = final;
+        if (mode == Icon && !icon.IsEmpty) area.Union(icon);
+        area.Inflate(28, 28); // 그림자 자리
+        ghost.Left = area.Left;
+        ghost.Top = area.Top;
+        ghost.Width = area.Width;
+        ghost.Height = area.Height;
+        _canvas!.Width = area.Width;
+        _canvas.Height = area.Height;
+        shape.Fill = new ImageBrush(picture) { Stretch = Stretch.Fill };
         void Apply(double t)
         {
             var (r, opacity) = Sample(mode, t, final, icon);
@@ -99,7 +144,6 @@ internal static class PanelIntro
             shape.Opacity = opacity;
         }
         Apply(0);
-        ghost.SourceInitialized += (_, _) => services.DesktopWindows.MakeOverlay(ghost);
         var clock = new Stopwatch();
         var total = Stopwatch.StartNew(); // 보이기 요청부터 (QA 프레임 로그)
         long firstFrame = -1, lastTick = -1, maxGap = 0, placedAt = -1;
@@ -108,8 +152,14 @@ internal static class PanelIntro
         bool finished = false;
         void Frame(object? s, EventArgs e)
         {
-            if (!ghost.IsVisible) { CompositionTarget.Rendering -= Frame; return; } // 판이 먼저 닫힘 (Esc 등)
+            if (play != _play || !ghost.IsVisible)
+            {
+                CompositionTarget.Rendering -= Frame; // 판이 먼저 닫힘 (Esc 등) 또는 새로 열림
+                if (!finished) Log.Info($"앱 모음 판 나타나기({mode}): 도중에 멈춤 ({total.ElapsedMilliseconds}ms, 프레임 {frames}개)");
+                return;
+            }
             long now = total.ElapsedMilliseconds;
+            if (!clock.IsRunning) { firstFrame = now; clock.Start(); } // 보인 첫 프레임부터 시간을 잼
             if (lastTick >= 0) maxGap = Math.Max(maxGap, now - lastTick);
             lastTick = now;
             frames++;
@@ -121,29 +171,22 @@ internal static class PanelIntro
             try { done(); }
             catch (Exception ex) { Log.Error("판 나타나기 끝 처리 실패", ex); }
             placedAt = total.ElapsedMilliseconds;
-            // 진짜 판이 화면에 나간 다음에 그림 창을 닫음 (사이에 빈 프레임 없게)
-            var close = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(34) };
-            close.Tick += (_, _) =>
+            // 진짜 판이 화면에 나간 다음에 그림 창을 숨김 (사이에 빈 프레임 없게)
+            var hide = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(34) };
+            hide.Tick += (_, _) =>
             {
-                close.Stop();
-                if (ghost.IsVisible) ghost.Close();
-                // 프레임 로그 (번쩍임 확인용): 그림 창 첫 프레임 · 움직인 프레임 수 · 가장 긴 프레임 간격 · 진짜 판을 놓은 때 · 그림 창을 닫은 때
+                hide.Stop();
+                if (play == _play)
+                {
+                    if (ghost.IsVisible) ghost.Hide();
+                    shape.Fill = null; // 판 그림을 들고 있지 않게
+                }
+                // 프레임 로그 (번쩍임 확인용): 그림 창 첫 프레임 · 움직인 프레임 수 · 가장 긴 프레임 간격 · 진짜 판을 놓은 때 · 그림 창을 숨긴 때
                 Log.Info($"앱 모음 판 나타나기({mode}): 그림 창 첫 프레임 {firstFrame}ms, 프레임 {frames}개(가장 긴 간격 {maxGap}ms), 진짜 판 제자리 {placedAt}ms, 그림 창 닫음 {total.ElapsedMilliseconds}ms");
             };
-            close.Start();
+            hide.Start();
         }
-        ghost.ContentRendered += (_, _) =>
-        {
-            firstFrame = total.ElapsedMilliseconds;
-            clock.Start();
-            CompositionTarget.Rendering += Frame;
-        };
-        ghost.Closed += (_, _) =>
-        {
-            CompositionTarget.Rendering -= Frame;
-            if (!finished) Log.Info($"앱 모음 판 나타나기({mode}): 도중에 닫힘 ({total.ElapsedMilliseconds}ms, 프레임 {frames}개)");
-        };
+        CompositionTarget.Rendering += Frame;
         ghost.Show();
-        return ghost;
     }
 }

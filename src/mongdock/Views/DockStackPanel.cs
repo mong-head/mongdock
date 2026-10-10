@@ -107,12 +107,10 @@ internal abstract class DockStackPanel : Window
         {
             FirstFrameMs = _showClock.ElapsedMilliseconds;
             if (Layered) return;
-            if (_introHold is { } final)
+            _rendered = true;
+            if (_introHold is not null)
             {
-                // 화면 밖에서 다 그려진 판을 그림으로 떠서 움직이고, 끝나는 순간 진짜 판을 제자리에
-                if (Snapshot() is { } picture)
-                    _introGhost = PanelIntro.Play(Services, _intro, picture, final, _anchor, () => { _introHold = null; Place(); });
-                else { _introHold = null; Place(); }
+                if (_introDone) ReleaseIntro(); // 그림이 먼저 끝났으면 이제 제자리에 (화면 밖에서 다 그려짐)
                 return;
             }
             _card.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0.5, 1, TimeSpan.FromMilliseconds(120)));
@@ -122,9 +120,21 @@ internal abstract class DockStackPanel : Window
             Place();
             if (!Layered && _intro != PanelIntro.Fade)
             {
-                _introHold = new Rect(Left, Top, ActualWidth, ActualHeight); // 제자리는 기억해 두고 그동안 화면 밖에
+                var final = new Rect(Left, Top, ActualWidth, ActualHeight); // 제자리는 기억해 두고 그동안 화면 밖에
+                _introHold = final;
                 Left = -32000;
                 Top = -32000;
+                // 배치가 끝난 지금 바로 그림을 떠서 움직이기 시작 (화면 밖 첫 프레임을 기다리지 않음 — 그새 진짜 판은 화면 밖에서 그려짐)
+                if (Snapshot() is { } picture)
+                {
+                    _introPlaying = true;
+                    PanelIntro.Play(Services, _intro, picture, final, _anchor, () =>
+                    {
+                        _introDone = true;
+                        if (_rendered) ReleaseIntro();
+                    });
+                }
+                else _introDone = true; // 그림을 못 뜨면 첫 프레임 뒤 바로 제자리
             }
             if (Layered)
                 Anim.Appear(_card, 150, fromX: _edge switch { DockEdge.Left => -8, DockEdge.Right => 8, _ => 0 },
@@ -149,7 +159,7 @@ internal abstract class DockStackPanel : Window
         Closed += (_, _) =>
         {
             _watch.Stop();
-            if (_introGhost is { IsVisible: true } g) g.Close();
+            if (_introPlaying) PanelIntro.Stop(); // 나타나는 중에 닫힘 — 그림 창도
         };
     }
 
@@ -163,8 +173,18 @@ internal abstract class DockStackPanel : Window
     private readonly string _intro;
     /// <summary>나타나는 중: 진짜 판의 제자리 (그동안 판은 화면 밖, 그림이 움직임).</summary>
     private Rect? _introHold;
-    /// <summary>나타나는 중인 그림 창 — 판이 그새 닫히면(Esc·바깥 클릭) 같이 닫음.</summary>
-    private Window? _introGhost;
+    /// <summary>나타나기: 그림이 움직이는 중 / 다 움직였음 / 진짜 판의 첫 프레임이 화면 밖에서 그려졌음.</summary>
+    private bool _introPlaying, _introDone, _rendered;
+
+    /// <summary>진짜 판을 제자리에 (그림 창은 PanelIntro 가 다음 프레임에 숨김).</summary>
+    private void ReleaseIntro()
+    {
+        if (_introHold is null) return;
+        _introHold = null;
+        _introPlaying = false;
+        Place();
+        Log.Info($"앱 모음 판: 창 생성→제자리 {_showClock.ElapsedMilliseconds}ms (첫 프레임 {FirstFrameMs}ms)");
+    }
 
     /// <summary>판 전체를 그림으로 (모니터 배율 그대로).</summary>
     private System.Windows.Media.Imaging.BitmapSource? Snapshot()
