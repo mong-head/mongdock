@@ -332,7 +332,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
         }
         var s = parsed ?? throw new JsonException("settings.json 이 null 입니다.");
         // 숫자로 적힌 모르는 핀 종류도 그 핀만 빠짐 (기본값 Exe 로 바꾸지 않음)
-        // 루틴: 대상 없는 항목·빈 루틴은 버림, id 채움(겹치면 새로), 최대 12개·항목 15개
+        // 루틴: 대상 없는 항목은 버림(빈 루틴은 그대로 — 나중에 채울 수 있음), id 채움(겹치면 새로), 최대 12개·항목 15개
         s.Routines ??= new List<RoutineDef>();
         var routineIds = new HashSet<string>();
         s.Routines.RemoveAll(r =>
@@ -344,7 +344,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
             r.Desktop ??= new RoutineDesktop();
             r.Name ??= "";
             if (string.IsNullOrWhiteSpace(r.Id) || !routineIds.Add(r.Id)) { r.Id = Guid.NewGuid().ToString("N"); routineIds.Add(r.Id); }
-            return r.Items.Count == 0;
+            return false;
         });
         if (s.Pins is { } pins)
         {

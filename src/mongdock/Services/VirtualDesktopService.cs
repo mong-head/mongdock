@@ -41,9 +41,23 @@ public sealed class VirtualDesktopService : IVirtualDesktopService, IDisposable
 
     public void Next() => _ = RunGatedAsync("next", async () => { SendStep(+1); await Task.Delay(KeyGapMs); return true; });
 
-    public void New() => _ = RunGatedAsync("new", async () =>
+    public void New() => _ = NewAsync();
+
+    /// <summary>새 데스크톱 (Ctrl+Win+D). 게이트가 사용 중이거나 수식키가 눌려 있어 보내지 못하면 false.</summary>
+    internal static Task<bool> NewAsync() => RunGatedAsync("new", async () =>
     {
         KeyChord.Send("new", User32.VK_LCONTROL, User32.VK_LWIN, User32.VK_D);
+        await Task.Delay(KeyGapMs);
+        return true;
+    });
+
+    /// <summary>지금 데스크톱이 desktop 일 때만 닫기 (Ctrl+Win+F4) — 게이트 안에서 보내기 직전에 다시 확인. 닫았으면 true.</summary>
+    internal static Task<bool> CloseCurrentIfAsync(Guid desktop) => RunGatedAsync("close", async () =>
+    {
+        var ids = ReadDesktopIds();
+        int cur = Read().Current;
+        if (cur <= 0 || cur > ids.Count || ids[cur - 1] != desktop || ids.Count < 2) return false;
+        KeyChord.Send("close desktop", User32.VK_LCONTROL, User32.VK_LWIN, 0x73 /* VK_F4 */);
         await Task.Delay(KeyGapMs);
         return true;
     });

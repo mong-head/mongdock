@@ -22,9 +22,6 @@ internal sealed class RoutineSaveWindow : RoutineCardWindow
     private readonly bool _pinToDock;
     private readonly Button _save;
 
-    /// <summary>시험 그림에서만: 창을 읽는 대신 이 목록.</summary>
-    internal static Func<List<RoutineItem>>? CaptureOverride { get; set; }
-
     public static void Open(AppServices services, bool pinToDock)
     {
         _open?.Close();
@@ -42,7 +39,6 @@ internal sealed class RoutineSaveWindow : RoutineCardWindow
 
     internal static List<RoutineItem> Capture()
     {
-        if (CaptureOverride is { } fake) return fake();
         try { return RoutineService.CaptureScreen().Select(x => x.Item).ToList(); }
         catch (Exception ex)
         {
@@ -118,7 +114,7 @@ internal sealed class RoutineSaveWindow : RoutineCardWindow
         line.MouseLeftButtonUp += (_, e) => { if (e.OriginalSource is not CheckBox) check.IsChecked = check.IsChecked != true; };
         box.Children.Add(line);
         // 브라우저: 탭 주소는 읽지 않음(못 읽음·개인정보) — 열 주소를 직접 넣는 칸
-        if (item.Kind == RoutineItemKind.App && IsBrowser(item))
+        if (item.Kind == RoutineItemKind.App && RoutineService.IsBrowserExe(System.IO.Path.GetFileNameWithoutExtension(item.Target).ToLowerInvariant()))
         {
             var url = Field("");
             url.TextChanged += (_, _) => item.Open = string.IsNullOrWhiteSpace(url.Text) ? null : url.Text.Trim();
@@ -127,12 +123,6 @@ internal sealed class RoutineSaveWindow : RoutineCardWindow
             box.Children.Add(hinted);
         }
         return box;
-    }
-
-    private static bool IsBrowser(RoutineItem item)
-    {
-        string exe = System.IO.Path.GetFileNameWithoutExtension(item.Target).ToLowerInvariant();
-        return exe is "chrome" or "msedge" or "whale" or "firefox" or "brave" or "opera" or "vivaldi";
     }
 
     private void UpdateSave() => _save.IsEnabled = _rows.Any(r => r.Check.IsChecked == true);

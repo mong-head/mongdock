@@ -881,7 +881,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             ? DockMenus.Item(Loc.T("즐겨찾기에서 빼기"), () => { S.Favorites.RemoveAll(k => k.Equals(app.Key, StringComparison.OrdinalIgnoreCase)); Save(false); })
             : DockMenus.Item(Loc.T("즐겨찾기에 넣기"), () => PinToTop(app.Key)));
         menu.Items.Add(DockMenus.Item(Loc.T("독에 고정"), () => { CloseAnimated(); PinToDockRequested?.Invoke(app); }));
-        menu.Items.Add(RoutineUi.AddToRoutineMenu(Services, () => RoutineUi.ItemFromApp(app), CloseAnimated));
+        menu.Items.Add(RoutineUi.AddToRoutineMenu(Services, () => RoutineUi.ItemFromApp(Services, app), CloseAnimated));
         menu.Items.Add(new Separator());
 
         string? current = _groupOf.GetValueOrDefault(app.Key);

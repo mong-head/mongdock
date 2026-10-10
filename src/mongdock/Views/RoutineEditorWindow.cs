@@ -442,7 +442,7 @@ internal sealed class RoutineEditorWindow : RoutineCardWindow
                 var field = Field(item.Target);
                 field.TextChanged += (_, _) => { item.Target = field.Text.Trim(); Changed(); };
                 box.Children.Add(LabeledRow(Loc.T("주소"), Hinted(field, "https://"), lw, 8));
-                if (item.Target.Length == 0) Loaded += (_, _) => { field.Focus(); Keyboard.Focus(field); };
+                if (item.Target.Length == 0) Dispatcher.BeginInvoke(() => { field.Focus(); Keyboard.Focus(field); }, System.Windows.Threading.DispatcherPriority.Input);
                 break;
             }
             default:
@@ -584,7 +584,7 @@ internal sealed class RoutineEditorWindow : RoutineCardWindow
         close.Click += (_, _) => _picker.Visibility = Visibility.Collapsed;
         add.Click += (_, _) =>
         {
-            foreach (var a in chosen.Take(RoutineDef.MaxItems - _r.Items.Count)) _r.Items.Add(RoutineUi.ItemFromApp(a));
+            foreach (var a in chosen.Take(RoutineDef.MaxItems - _r.Items.Count)) _r.Items.Add(RoutineUi.ItemFromApp(Services, a));
             _picker.Visibility = Visibility.Collapsed;
             Rebuild();
         };
@@ -647,6 +647,10 @@ internal sealed class RoutineEditorWindow : RoutineCardWindow
         {
             if (!RoutineUi.Add(Services, _r)) return;
             if (_pinToDock) RoutineUi.PinToDock(Services, _r);
+        }
+        else if (!Services.Settings.Current.Routines.Contains(_original))
+        {
+            Log.Info("루틴 편집 저장 안 함: 그새 지워짐");
         }
         else
         {

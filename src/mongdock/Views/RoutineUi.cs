@@ -185,16 +185,33 @@ internal static class RoutineUi
         return parent;
     }
 
-    /// <summary>앱 모음 판의 앱 → 루틴 항목 (시작 메뉴 바로 가기 대상 exe 가 있으면 그것, 없으면 AppsFolder 키로 실행).</summary>
-    public static RoutineItem ItemFromApp(AppEntry app)
+    /// <summary>
+    /// 앱 모음 판의 앱 → 루틴 항목. 시작 메뉴 바로 가기가 있으면 독 고정과 같이 바로 가기를 읽어(대상 exe + 인자 — Update.exe --processStart 같은 앱·크롬 프로필),
+    /// 없으면 AppsFolder 키로 실행.
+    /// </summary>
+    public static RoutineItem ItemFromApp(AppServices services, AppEntry app)
     {
-        bool exe = app.TargetPath is { Length: > 0 } t && t.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && File.Exists(t);
-        return new RoutineItem { Kind = RoutineItemKind.App, Target = exe ? app.TargetPath! : "", Aumid = exe ? null : app.Key, Name = app.Name };
+        if (app.Shortcut is { } lnk && File.Exists(lnk))
+        {
+            try
+            {
+                if (PinFactory.CreatePin(lnk, services.Settings) is { } pin && ItemFromPin(pin) is { Kind: RoutineItemKind.App } item)
+                {
+                    item.Name = app.Name;
+                    return item;
+                }
+            }
+            catch (Exception ex) { Log.Warn($"루틴: 바로 가기 읽기 실패 {ex.GetType().Name}"); }
+        }
+        return new RoutineItem { Kind = RoutineItemKind.App, Aumid = app.Key, Name = app.Name };
     }
 
     /// <summary>독 핀 → 루틴 항목 (exe·스토어 앱만).</summary>
     public static RoutineItem? ItemFromPin(PinItem pin) => pin.Kind switch
     {
+        // 독의 Exe 종류 핀이 폴더·일반 파일·바로 가기이면 파일·폴더 항목 (연결된 앱으로 엶)
+        PinKind.Exe when pin.Target.Length > 0 && !pin.Target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            => new RoutineItem { Kind = RoutineItemKind.Path, Target = pin.Target, Name = pin.Name },
         PinKind.Exe when pin.Target.Length > 0 => new RoutineItem { Kind = RoutineItemKind.App, Target = pin.Target, Args = string.IsNullOrWhiteSpace(pin.Arguments) ? null : pin.Arguments, Name = pin.Name },
         PinKind.Aumid when pin.Target.Length > 0 => new RoutineItem { Kind = RoutineItemKind.App, Aumid = pin.Target, Name = pin.Name },
         _ => null,

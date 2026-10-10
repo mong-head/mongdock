@@ -24,9 +24,16 @@ internal static class RoutineService
 
     private sealed class RunState
     {
+        /// <summary>이번 실행에 연 창 (끝내기 대상).</summary>
         public readonly List<IntPtr> Windows = new();
+        /// <summary>이번 실행의 항목들이 이미 잡은 창 (같은 창을 두 항목이 잡지 않게).</summary>
+        public readonly HashSet<IntPtr> Claimed = new();
         public Guid? Desktop;
         public bool CreatedDesktop;
+        /// <summary>루틴 데스크톱을 만들기 전 데스크톱 (끝내기로 닫은 뒤 돌아갈 곳).</summary>
+        public Guid? ReturnTo;
+        /// <summary>여는 중 (다시 눌러도 두 벌 열지 않음).</summary>
+        public bool Running;
     }
 
     private static AppServices? _services;
@@ -45,7 +52,7 @@ internal static class RoutineService
             bool any = false;
             lock (Runs)
                 foreach (var r in Runs.Values)
-                    any |= r.Windows.RemoveAll(h => !User32.IsWindow(h)) > 0;
+                    any |= r.Windows.RemoveAll(h => !Alive(h)) > 0; // 닫힘·트레이로 숨음
             if (any) RaiseChanged();
         };
     }
@@ -59,12 +66,12 @@ internal static class RoutineService
     /// <summary>이번 실행에 연 창이 하나라도 살아 있음.</summary>
     public static bool IsRunning(string id)
     {
-        lock (Runs) return Runs.TryGetValue(id, out var r) && r.Windows.Any(User32.IsWindow);
+        lock (Runs) return Runs.TryGetValue(id, out var r) && r.Windows.Any(Alive);
     }
 
     public static int OpenWindowCount(string id)
     {
-        lock (Runs) return Runs.TryGetValue(id, out var r) ? r.Windows.Count(User32.IsWindow) : 0;
+        lock (Runs) return Runs.TryGetValue(id, out var r) ? r.Windows.Count(Alive) : 0;
     }
 
     /// <summary>몽독을 켠 뒤 이 루틴을 실행한 적 있음 (없으면 끝내기를 회색으로 — 다시 시작하면 창 목록을 잊음).</summary>
@@ -95,81 +102,114 @@ internal static class RoutineService
 
     // ───────────────────────── 실행 ─────────────────────────
 
+    /// <summary>창이 살아 있고 보임 — 닫으면 트레이로 숨는 앱(디스코드·팀즈 등)은 "닫힌" 것으로 봄.</summary>
+    private static bool Alive(IntPtr h) => User32.IsWindow(h) && User32.IsWindowVisible(h);
+
     public static void Run(RoutineDef routine)
     {
         var services = _services;
         if (services is null || routine.Items.Count == 0) return;
-        // 전체 화면(게임·영상) 중엔 데스크톱 키를 보내지 않음 — 작은 안내만
+        // 전체 화면(게임·영상) 중엔 데스크톱 키를 보내지 않음 — 작은 안내만 (다시 누르면 열림)
         if (Monitors.GetAll().Any(m => services.DesktopWindows.IsFullscreenOn(m.IsPrimary ? "" : m.DeviceName)))
         {
-            Log.Info("루틴 실행 미룸: 전체 화면 앱");
+            Log.Info("루틴 실행 안 함: 전체 화면 앱");
             Notify(Loc.T("지금은 루틴을 열 수 없어요 (전체 화면)"));
             return;
         }
-        services.Settings.Current.RoutineRunsSinceSignal++;
-        services.Settings.Save();
-        _ = RunAsync(services, routine);
-    }
-
-    private static async Task RunAsync(AppServices services, RoutineDef routine)
-    {
-        Log.Info($"루틴 실행: 항목 {routine.Items.Count}개, 데스크톱 {routine.Desktop.Mode}");
         RunState state;
         lock (Runs)
         {
             if (!Runs.TryGetValue(routine.Id, out state!)) Runs[routine.Id] = state = new RunState();
+            // 여는 중에 또 누름(더블클릭·늦은 반응): 데스크톱·앱이 두 벌 생기지 않게 무시
+            if (state.Running)
+            {
+                Log.Info("루틴 실행 중 — 다시 누름 무시");
+                return;
+            }
+            state.Running = true;
         }
+        services.Settings.Current.RoutineRunsSinceSignal++;
+        services.Settings.Save();
+        _ = RunAsync(services, routine, state);
+    }
+
+    private static async Task RunAsync(AppServices services, RoutineDef routine, RunState state)
+    {
         try
         {
-            await PrepareDesktopAsync(services, routine, state);
-        }
-        catch (Exception ex)
-        {
-            Log.Error("루틴 데스크톱 준비 실패", ex);
-        }
-
-        var elsewhere = new List<(string Name, IntPtr Hwnd)>();
-        foreach (var item in routine.Items.ToList())
-        {
+            Log.Info($"루틴 실행: 항목 {routine.Items.Count}개, 데스크톱 {routine.Desktop.Mode}");
+            var items = routine.Items.ToList();
+            // 열 것이 하나도 없으면(전부 이미 켜져 있음) 빈 데스크톱을 만들지 않음
+            bool anyToOpen = items.Any(i => !(SkipsIfRunning(i) && services.Windows.Windows.Any(w => Matches(i, w))));
             try
             {
-                // 이미 켜져 있으면 앞으로 (다른 데스크톱의 창은 옮기지 않음 — 한 번 알림)
-                if (item.IfRunning == RoutineIfRunning.Focus && item.Kind == RoutineItemKind.App && string.IsNullOrEmpty(item.Open))
-                {
-                    var running = services.Windows.Windows.Where(w => Matches(item, w)).ToList();
-                    // 방금 새 데스크톱으로 옮겼으면 창 목록의 "지금 데스크톱" 값이 아직 옛것일 수 있어 직접 물어봄 (옛 데스크톱 창을 앞으로 가져오면 그리로 되돌아감)
-                    if (running.FirstOrDefault(w => VirtualDesktopHelper.IsOnCurrentDesktop(w.Hwnd) ?? w.OnCurrentDesktop) is { } here)
-                    {
-                        services.Launcher.Activate(here.Hwnd);
-                        await Task.Delay(GapMs + Math.Clamp(item.DelayMs, 0, 10_000));
-                        continue;
-                    }
-                    if (running.Count > 0)
-                    {
-                        // 다른 데스크톱의 창은 옮기지 않음(공식 방법 없음) — 새로 열지 않고, 다 연 뒤 안내 카드 한 번
-                        elsewhere.Add((ItemName(item), running[0].Hwnd));
-                        await Task.Delay(GapMs);
-                        continue;
-                    }
-                }
-
-                var before = new HashSet<IntPtr>(services.Windows.Windows.Select(w => w.Hwnd));
-                long started = Environment.TickCount64;
-                if (!Launch(services, item)) continue;
-                _ = PlaceWhenShownAsync(services, item, before, started, state);
+                if (anyToOpen) await PrepareDesktopAsync(services, routine, state);
             }
             catch (Exception ex)
             {
-                Log.Error("루틴 항목 실행 실패", ex);
+                Log.Error("루틴 데스크톱 준비 실패", ex);
             }
-            await Task.Delay(GapMs + Math.Clamp(item.DelayMs, 0, 10_000));
+            // 이번 실행의 데스크톱 (새 창은 이 데스크톱에 뜬 것만 루틴 창으로 봄)
+            var ids = VirtualDesktopService.ReadDesktopIds();
+            int cur = VirtualDesktopService.Read().Current;
+            Guid? target = cur > 0 && cur <= ids.Count ? ids[cur - 1] : null;
+
+            var elsewhere = new List<(string Name, IntPtr Hwnd)>();
+            var placing = new List<Task>();
+            foreach (var item in items)
+            {
+                try
+                {
+                    // 이미 켜져 있으면 앞으로 (다른 데스크톱의 창은 옮기지 않음 — 다 연 뒤 안내 카드 한 번)
+                    if (SkipsIfRunning(item))
+                    {
+                        var running = services.Windows.Windows.Where(w => Matches(item, w)).ToList();
+                        // 방금 새 데스크톱으로 옮겼으면 창 목록의 "지금 데스크톱" 값이 아직 옛것일 수 있어 직접 물어봄 (옛 데스크톱 창을 앞으로 가져오면 그리로 되돌아감)
+                        if (running.FirstOrDefault(w => VirtualDesktopHelper.IsOnCurrentDesktop(w.Hwnd) ?? w.OnCurrentDesktop) is { } here)
+                        {
+                            services.Launcher.Activate(here.Hwnd);
+                            await Task.Delay(GapMs + Math.Clamp(item.DelayMs, 0, 10_000));
+                            continue;
+                        }
+                        if (running.Count > 0)
+                        {
+                            elsewhere.Add((ItemName(item), running[0].Hwnd));
+                            await Task.Delay(GapMs);
+                            continue;
+                        }
+                    }
+
+                    var before = new HashSet<IntPtr>(services.Windows.Windows.Select(w => w.Hwnd));
+                    long started = Environment.TickCount64;
+                    if (!Launch(services, item)) continue;
+                    placing.Add(PlaceWhenShownAsync(services, item, before, started, state, target));
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("루틴 항목 실행 실패", ex);
+                }
+                await Task.Delay(GapMs + Math.Clamp(item.DelayMs, 0, 10_000));
+            }
+            if (elsewhere.Count > 0)
+            {
+                Log.Info($"루틴: 이미 다른 데스크톱에 켜진 앱 {elsewhere.Count}개 — 새로 열지 않음");
+                _dispatcher?.BeginInvoke(() => ElsewhereShown?.Invoke(elsewhere));
+            }
+            await Task.WhenAll(placing); // 창 찾기가 끝날 때까지는 "여는 중"
         }
-        if (elsewhere.Count > 0)
+        catch (Exception ex)
         {
-            Log.Info($"루틴: 이미 다른 데스크톱에 켜진 앱 {elsewhere.Count}개 — 새로 열지 않음");
-            _dispatcher?.BeginInvoke(() => ElsewhereShown?.Invoke(elsewhere));
+            Log.Error("루틴 실행 실패", ex);
+        }
+        finally
+        {
+            lock (Runs) state.Running = false;
         }
     }
+
+    /// <summary>"이미 켜져 있으면 앞으로 가져오기"인 앱 항목 (함께 열 것이 있으면 앱에 넘겨야 하므로 그냥 실행).</summary>
+    private static bool SkipsIfRunning(RoutineItem item) =>
+        item.IfRunning == RoutineIfRunning.Focus && item.Kind == RoutineItemKind.App && string.IsNullOrEmpty(item.Open);
 
     /// <summary>이미 다른 데스크톱에 켜져 있어 열지 않은 앱들 (이름, 첫 창) — 안내 카드를 띄움. UI 스레드.</summary>
     public static event Action<List<(string Name, IntPtr Hwnd)>>? ElsewhereShown;
@@ -201,18 +241,30 @@ internal static class RoutineService
                     return;
                 }
                 var before = ids.ToHashSet();
-                services.VirtualDesktops.New(); // Ctrl+Win+D — 새 데스크톱을 만들고 그리로 감
-                for (int i = 0; i < 25; i++)
+                int cur = VirtualDesktopService.Read().Current;
+                Guid? from = cur > 0 && cur <= ids.Count ? ids[cur - 1] : null;
+                bool sent = await VirtualDesktopService.NewAsync(); // Ctrl+Win+D — 새 데스크톱을 만들고 그리로 감
+                for (int i = 0; sent && i < 25; i++)
                 {
                     await Task.Delay(80);
                     var now = VirtualDesktopService.ReadDesktopIds();
                     var added = now.Where(g => !before.Contains(g)).ToList();
                     if (added.Count > 0 && now.Count > Math.Max(before.Count, 1))
                     {
-                        state.Desktop = added[^1];
-                        state.CreatedDesktop = true;
+                        lock (Runs)
+                        {
+                            state.Desktop = added[^1];
+                            state.CreatedDesktop = true;
+                            state.ReturnTo = from ?? (now.Count > 0 ? now[0] : null);
+                        }
                         break;
                     }
+                }
+                if (!state.CreatedDesktop)
+                {
+                    Log.Warn("루틴: 새 데스크톱을 확인하지 못해 지금 데스크톱에서 엶");
+                    Notify(Loc.T("새 데스크톱을 만들지 못해 지금 데스크톱에서 열어요"));
+                    return;
                 }
                 await Task.Delay(250); // 전환 애니메이션 뒤에 창을 열어야 새 데스크톱에 뜸
                 break;
@@ -222,10 +274,10 @@ internal static class RoutineService
                 int target = Math.Max(1, routine.Desktop.Index);
                 for (int guard = 0; guard < 10 && VirtualDesktopService.Read().Count < target; guard++)
                 {
-                    services.VirtualDesktops.New();
+                    if (!await VirtualDesktopService.NewAsync()) break;
                     await Task.Delay(400);
                 }
-                await VirtualDesktopService.MoveToAsync(target);
+                await VirtualDesktopService.MoveToAsync(Math.Min(target, Math.Max(1, VirtualDesktopService.Read().Count)));
                 await Task.Delay(200);
                 break;
             }
@@ -293,27 +345,55 @@ internal static class RoutineService
 
     // ───────────────────────── 창 찾기·자리 잡기 ─────────────────────────
 
-    /// <summary>새로 뜬 창(실행 전 목록에 없던 것)을 찾아 자리 잡기: 15초까지, 1초 뒤 한 번 더. 찾은 창은 이번 실행 목록에.</summary>
-    private static async Task PlaceWhenShownAsync(AppServices services, RoutineItem item, HashSet<IntPtr> before, long started, RunState state)
+    /// <summary>
+    /// 새로 뜬 창을 찾아 자리 잡기 (15초까지, 1초 뒤 한 번 더). 루틴 창으로 보는 건 보수적으로:
+    /// 실행 전 목록에 없고, 이번 실행의 데스크톱에 있고, 이번 실행의 다른 항목이 이미 잡지 않은 창만 (사용자가 그사이 다른 데스크톱에서 연 창은 아님).
+    /// exe 이름으로만 맞는 창(탐색기·브라우저 — 같은 프로세스가 여러 창)은 후보가 딱 하나일 때만.
+    /// </summary>
+    private static async Task PlaceWhenShownAsync(AppServices services, RoutineItem item, HashSet<IntPtr> before, long started, RunState state, Guid? desktop)
     {
         string? exe = ExpectedExe(item);
         AppWindowInfo? found = null;
+        bool OnRunDesktop(AppWindowInfo w)
+        {
+            if (desktop is not { } g) return VirtualDesktopHelper.IsOnCurrentDesktop(w.Hwnd) ?? w.OnCurrentDesktop;
+            var ids = VirtualDesktopService.ReadDesktopIds();
+            int index = VirtualDesktopHelper.GetDesktopIndex(w.Hwnd, ids);
+            return index > 0 ? ids[index - 1] == g : VirtualDesktopHelper.IsOnCurrentDesktop(w.Hwnd) == true;
+        }
         while (Environment.TickCount64 - started < FindTimeoutMs)
         {
             await Task.Delay(200);
-            var fresh = services.Windows.Windows.Where(w => !before.Contains(w.Hwnd)).ToList();
-            found = fresh.FirstOrDefault(w => Matches(item, w) || (exe is not null && ExeName(w.ProcessPath) == exe));
-            // 런처가 다른 프로세스를 띄우는 앱(스팀·디스코드 등): 5초 뒤부터는 같은 이름의 새 창도
+            List<AppWindowInfo> fresh;
+            lock (Runs) fresh = services.Windows.Windows.Where(w => !before.Contains(w.Hwnd) && !state.Claimed.Contains(w.Hwnd)).ToList();
+            fresh = fresh.Where(OnRunDesktop).ToList();
+            found = fresh.FirstOrDefault(w => Matches(item, w));
+            if (found is null && exe is not null)
+            {
+                var byExe = fresh.Where(w => ExeName(w.ProcessPath) == exe).ToList();
+                if (byExe.Count == 1) found = byExe[0];
+            }
+            // 런처가 다른 프로세스를 띄우는 앱(스팀·디스코드 등): 5초 뒤부터는 같은 이름의 새 창도 (딱 하나일 때)
             if (found is null && Environment.TickCount64 - started > 5000 && item.Name is { Length: > 0 } name)
-                found = fresh.FirstOrDefault(w => AppNames.Get(w).Equals(name, StringComparison.CurrentCultureIgnoreCase));
-            if (found is not null) break;
+            {
+                var byName = fresh.Where(w => AppNames.Get(w).Equals(name, StringComparison.CurrentCultureIgnoreCase)).ToList();
+                if (byName.Count == 1) found = byName[0];
+            }
+            if (found is not null)
+            {
+                lock (Runs)
+                {
+                    if (!state.Claimed.Add(found.Hwnd)) { found = null; continue; } // 다른 항목이 막 잡음
+                    state.Windows.Add(found.Hwnd);
+                }
+                break;
+            }
         }
         if (found is null)
         {
             Log.Info("루틴: 새 창을 찾지 못해 앱이 정한 자리에 둠");
             return;
         }
-        lock (Runs) state.Windows.Add(found.Hwnd);
         RaiseChanged();
         if (!NeedsPlacement(item)) return;
         await Task.Delay(300); // 창이 처음 자리를 잡은 뒤에
@@ -339,7 +419,12 @@ internal static class RoutineService
         }
     }
 
-    /// <summary>창을 정한 모니터·위치로 (보이는 테두리 기준, 순간 이동 — 애니메이션 없음). 옮길 수 없는 창(관리자 권한 등)은 그대로.</summary>
+    private const uint SWP_ASYNCWINDOWPOS = 0x4000;
+
+    /// <summary>
+    /// 창을 정한 모니터·위치로 (보이는 테두리 기준, 순간 이동 — 애니메이션 없음). 옮길 수 없는 창(관리자 권한 등)은 그대로.
+    /// 남의 창이라 모두 비동기(ShowWindowAsync·SWP_ASYNCWINDOWPOS) — 응답 없는 앱 때문에 몽독이 멈추지 않게.
+    /// </summary>
     internal static void Place(IntPtr hwnd, RoutineItem item)
     {
         try
@@ -353,11 +438,22 @@ internal static class RoutineService
                 User32.ShowWindowAsync(hwnd, User32.SW_MINIMIZE);
                 return;
             }
-            if (WindowPosApi.IsZoomed(hwnd) || User32.IsIconic(hwnd)) ShowWindow(hwnd, User32.SW_RESTORE);
-
-            RECT target;
+            bool wasMax = WindowPosApi.IsZoomed(hwnd);
             if (!WindowPosApi.TryGetFrameBounds(hwnd, out var frame)) return;
             int w = work.Right - work.Left, h = work.Bottom - work.Top;
+            if (wasMax && mode is RoutinePlacementMode.Keep or RoutinePlacementMode.Max)
+            {
+                // 최대화된 창: 대상 모니터로 옮긴 뒤 다시 최대화 ("그대로"여도 최대화는 유지)
+                if (Monitors.FromHwnd(hwnd).DeviceName.Equals(monitor.DeviceName, StringComparison.OrdinalIgnoreCase)) return;
+                User32.ShowWindowAsync(hwnd, User32.SW_RESTORE);
+                User32.SetWindowPos(hwnd, IntPtr.Zero, work.Left + w / 8, work.Top + h / 8, w * 3 / 4, h * 3 / 4,
+                    0x0004 /* NOZORDER */ | 0x0010 /* NOACTIVATE */ | WindowPosApi.SWP_NOOWNERZORDER | SWP_ASYNCWINDOWPOS);
+                User32.ShowWindowAsync(hwnd, 3 /* SW_MAXIMIZE */);
+                return;
+            }
+            if (wasMax || User32.IsIconic(hwnd)) User32.ShowWindowAsync(hwnd, User32.SW_RESTORE);
+
+            RECT target;
             switch (mode)
             {
                 case RoutinePlacementMode.Max:
@@ -388,9 +484,10 @@ internal static class RoutineService
             // 보이지 않는 크기 조절 테두리(GetWindowRect - DWM 테두리)만큼 바깥으로
             User32.GetWindowRect(hwnd, out var outer);
             int l = frame.Left - outer.Left, t = frame.Top - outer.Top, rgt = outer.Right - frame.Right, b = outer.Bottom - frame.Bottom;
+            if (wasMax) l = t = rgt = b = 0; // 최대화였던 창은 테두리 값을 믿을 수 없음
             User32.SetWindowPos(hwnd, IntPtr.Zero, target.Left - l, target.Top - t, target.Right - target.Left + l + rgt, target.Bottom - target.Top + t + b,
-                0x0004 /* NOZORDER */ | 0x0010 /* NOACTIVATE */ | WindowPosApi.SWP_NOOWNERZORDER);
-            if (mode == RoutinePlacementMode.Max) ShowWindow(hwnd, 3 /* SW_MAXIMIZE */);
+                0x0004 /* NOZORDER */ | 0x0010 /* NOACTIVATE */ | WindowPosApi.SWP_NOOWNERZORDER | SWP_ASYNCWINDOWPOS);
+            if (mode == RoutinePlacementMode.Max) User32.ShowWindowAsync(hwnd, 3 /* SW_MAXIMIZE */);
         }
         catch (Exception ex)
         {
@@ -400,33 +497,46 @@ internal static class RoutineService
 
     // ───────────────────────── 끝내기 ─────────────────────────
 
-    /// <summary>이번 실행에 연 창을 WM_CLOSE 로만 닫음. closeDesktop 이면 창이 다 닫힌 뒤(최대 15초) 그 데스크톱도 닫음.</summary>
+    /// <summary>
+    /// 이번 실행에 연 창을 WM_CLOSE 로만 닫음. closeDesktop 이면 창이 다 닫힌 뒤(최대 15초) 그 데스크톱으로 가서 닫고,
+    /// 사용자가 있던 데스크톱(루틴 데스크톱이었으면 루틴을 열기 전 데스크톱)으로 돌아감.
+    /// </summary>
     public static void End(RoutineDef routine, bool closeDesktop)
     {
         RunState? state;
         lock (Runs) Runs.TryGetValue(routine.Id, out state);
         if (state is null) return;
         List<IntPtr> windows;
-        lock (Runs) windows = state.Windows.Where(User32.IsWindow).ToList();
+        lock (Runs) windows = state.Windows.Where(Alive).ToList();
         foreach (var h in windows) User32.PostMessage(h, 0x0010 /* WM_CLOSE */, IntPtr.Zero, IntPtr.Zero);
         Log.Info($"루틴 끝내기: 창 {windows.Count}개에 닫기 요청");
         if (!closeDesktop || !state.CreatedDesktop || state.Desktop is not { } desktop) return;
+        var returnTo = state.ReturnTo;
         _ = Task.Run(async () =>
         {
-            for (int i = 0; i < 75 && windows.Any(User32.IsWindow); i++) await Task.Delay(200);
-            if (windows.Any(User32.IsWindow))
+            for (int i = 0; i < 75 && windows.Any(Alive); i++) await Task.Delay(200);
+            if (windows.Any(Alive))
             {
                 Log.Info("루틴 끝내기: 닫지 않은 창이 있어 데스크톱은 그대로");
                 return;
             }
-            int index = VirtualDesktopService.ReadDesktopIds().IndexOf(desktop);
+            var ids = VirtualDesktopService.ReadDesktopIds();
+            int index = ids.IndexOf(desktop);
             if (index < 0) return;
-            if (!await VirtualDesktopService.MoveToAsync(index + 1)) return;
+            int cur = VirtualDesktopService.Read().Current;
+            Guid? back = cur > 0 && cur <= ids.Count && ids[cur - 1] != desktop ? ids[cur - 1] : returnTo;
+            if (cur != index + 1 && !await VirtualDesktopService.MoveToAsync(index + 1)) return;
             await Task.Delay(200);
-            if (VirtualDesktopService.ReadDesktopIds().IndexOf(desktop) + 1 != VirtualDesktopService.Read().Current) return; // 다른 데스크톱이면 닫지 않음
-            KeyChord.Send("close desktop", User32.VK_LCONTROL, User32.VK_LWIN, 0x73 /* VK_F4 */);
+            if (!await VirtualDesktopService.CloseCurrentIfAsync(desktop)) return; // 그새 다른 데스크톱이면 닫지 않음
             lock (Runs) { state.Desktop = null; state.CreatedDesktop = false; }
             Log.Info("루틴 끝내기: 데스크톱 닫음");
+            RaiseChanged();
+            if (back is { } g)
+            {
+                await Task.Delay(400);
+                int to = VirtualDesktopService.ReadDesktopIds().IndexOf(g);
+                if (to >= 0 && VirtualDesktopService.Read().Current != to + 1) await VirtualDesktopService.MoveToAsync(to + 1);
+            }
         });
     }
 
@@ -457,16 +567,19 @@ internal static class RoutineService
             }
             else
             {
-                bool packaged = AppsFolder.IsPackagedAumid(w.Aumid);
+                PinItem? pin = null;
+                try { pin = services.Windows.CreatePin(w); } catch (Exception ex) { Log.Warn($"루틴 화면 읽기: 핀 만들기 실패 {ex.GetType().Name}"); }
+                bool packaged = pin?.Kind == PinKind.Aumid;
+                if (pin is null || string.IsNullOrWhiteSpace(pin.Target)) continue;
                 item = new RoutineItem
                 {
                     Kind = RoutineItemKind.App,
-                    Target = packaged ? "" : w.ProcessPath,
-                    Aumid = packaged ? w.Aumid : null,
+                    Target = packaged ? "" : pin.Target,
+                    Aumid = packaged ? pin.Target : null,
                     Name = AppNames.Get(w),
                     Open = packaged ? null : OpenTargetFromCommandLine(w.Hwnd, w.ProcessPath),
                 };
-                if (item.Open is null && !packaged && !IsBrowser(exe)) item.Open = OpenFromRecent(w.Title, recent ??= RecentDocuments());
+                if (item.Open is null && !packaged && !IsBrowserExe(exe)) item.Open = OpenFromRecent(w.Title, exe, recent ??= RecentDocuments());
             }
             ReadPlacement(w.Hwnd, item);
             list.Add((item, w.Hwnd));
@@ -536,7 +649,8 @@ internal static class RoutineService
         return map;
     }
 
-    private static bool IsBrowser(string exe) => exe is "chrome" or "msedge" or "whale" or "firefox" or "brave" or "opera" or "vivaldi" || exe == ExeName(DefaultBrowser());
+    /// <summary>브라우저 exe 이름(소문자, 확장자 없이) — 탭 주소는 읽지 않고 "열 웹사이트 주소" 칸을 둠.</summary>
+    internal static bool IsBrowserExe(string exe) => exe is "chrome" or "msedge" or "whale" or "firefox" or "brave" or "opera" or "vivaldi" || exe == ExeName(DefaultBrowser());
 
     /// <summary>최근 문서(윈도우 Recent 폴더의 바로 가기) — 이름(예 "주간보고.hwp")과 바로 가기 경로, 최근 것 300개. 이 PC 안에서만 읽음.</summary>
     private static List<(string Name, string Lnk)> RecentDocuments()
@@ -560,13 +674,16 @@ internal static class RoutineService
     /// 창 제목에 최근 문서 이름이 그대로 들어 있고(예 "주간보고.hwp - 한글", "보고서 - Word"는 확장자 없이 " - " 앞이 이름), 그런 문서가 딱 하나일 때만
     /// 그 바로 가기가 가리키는 파일(실제로 있을 때). 확실하지 않으면 null.
     /// </summary>
-    private static string? OpenFromRecent(string? title, List<(string Name, string Lnk)> recent)
+    private static string? OpenFromRecent(string? title, string exe, List<(string Name, string Lnk)> recent)
     {
         if (string.IsNullOrWhiteSpace(title) || recent.Count == 0) return null;
+        // 그 확장자를 이 앱이 여는 것만 (VS Code 제목의 README.md 가 다른 앱의 README.md 로 잡히지 않게)
+        bool Opens(string name) => ExeName(AssociatedExe(Path.GetExtension(name))) == exe;
         string head = title.Split(new[] { " - ", " — ", " – " }, StringSplitOptions.None)[0].Trim().TrimStart('*').Trim();
         var hits = recent.Where(r =>
-                title.Contains(r.Name, StringComparison.OrdinalIgnoreCase)
-                || head.Length > 0 && Path.GetFileNameWithoutExtension(r.Name).Equals(head, StringComparison.OrdinalIgnoreCase))
+                (title.Contains(r.Name, StringComparison.OrdinalIgnoreCase)
+                 || head.Length > 0 && Path.GetFileNameWithoutExtension(r.Name).Equals(head, StringComparison.OrdinalIgnoreCase))
+                && Opens(r.Name))
             .Select(r => PinFactory.ShortcutTarget(r.Lnk))
             .Where(t => !string.IsNullOrEmpty(t) && File.Exists(t))
             .Distinct(StringComparer.OrdinalIgnoreCase)

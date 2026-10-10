@@ -1026,7 +1026,7 @@ public partial class DockWindow : Window
         {
             if (item.IsSeparator) continue;
             item.IsRunning = item.Pin is { Kind: PinKind.Routine } rp ? RoutineService.IsRunning(rp.Target) : item.Windows.Count > 0;
-            item.RunningElsewhereOnly = item.IsRunning && item.Windows.All(w => !w.OnCurrentDesktop);
+            item.RunningElsewhereOnly = item.Pin is not { Kind: PinKind.Routine } && item.IsRunning && item.Windows.All(w => !w.OnCurrentDesktop);
             item.HasNotification = item.Pin is { Kind: PinKind.Folder } folder
                 ? (_folders?.NewFiles(folder) ?? 0) > 0 // 독 폴더: 마지막으로 연 뒤 새 파일
                 : item.Windows.Any(w => _flashed.Contains(w.Hwnd));
@@ -1810,9 +1810,11 @@ public partial class DockWindow : Window
         var pins = _services.Settings.Current.Pins;
         int at = pins.IndexOf(pin);
         bool vertical = _layout.IsVertical;
-        menu.Items.Insert(menu.Items.Count - 2, new Separator());
-        menu.Items.Insert(menu.Items.Count - 2, Item(vertical ? Loc.T("위로 이동") : Loc.T("왼쪽으로 이동"), () => MovePin(pin, -1), enabled: at > 0));
-        menu.Items.Insert(menu.Items.Count - 2, Item(vertical ? Loc.T("아래로 이동") : Loc.T("오른쪽으로 이동"), () => MovePin(pin, +1), enabled: at >= 0 && at < pins.Count - 1));
+        // 맨 끝 두 줄(독에서 빼기·루틴 지우기) 앞에: 이동 두 줄 + 구분선
+        int insertAt = menu.Items.Count - 2;
+        menu.Items.Insert(insertAt, new Separator());
+        menu.Items.Insert(insertAt, Item(vertical ? Loc.T("아래로 이동") : Loc.T("오른쪽으로 이동"), () => MovePin(pin, +1), enabled: at >= 0 && at < pins.Count - 1));
+        menu.Items.Insert(insertAt, Item(vertical ? Loc.T("위로 이동") : Loc.T("왼쪽으로 이동"), () => MovePin(pin, -1), enabled: at > 0));
     }
 
     private static string IconKey(PinIcon? i) => i is null ? "" : $"{i.Mode}|{i.Color}|{i.Glyph}|{i.Text}|{i.File}";
