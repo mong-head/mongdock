@@ -400,7 +400,9 @@ internal static class Program
             Check("옛 폴더 핀: 마지막 연 시각 채움 (새 파일 점은 지금부터)", dl.Folder?.LastOpened is not null, true);
             Check("폴더 옵션 없으면 기본값", extras.Pins.First(p => p.Name == "문서").Folder?.Sort, Mongdock.Models.FolderSort.Added);
             Check("폴더 id 채움", string.IsNullOrEmpty(dl.Id), false);
-            var morning = extras.Pins.First(p => p.Name == "아침").Routine!;
+            var morningPin = extras.Pins.First(p => p.Name == "아침");
+            Check("옛 루틴 핀 → 루틴 목록으로 옮김 (핀은 Id 만)", morningPin.Routine is null && extras.Routines.Any(r => r.Id == morningPin.Target), true);
+            var morning = extras.Routines.First(r => r.Id == morningPin.Target);
             Check("루틴: 대상 없는 항목 빠짐", morning.Items.Count, 1);
             Check("루틴: 데스크톱·모니터·배치·지연", $"{morning.Desktop?.Mode}/{morning.Items[0].Monitor?.Mode}{morning.Items[0].Monitor?.Index}/{morning.Items[0].Placement?.Mode}/{morning.Items[0].DelayMs}", "New/Index1/Left/500");
             var again = SettingsService.ParseForImport(System.Text.Json.JsonSerializer.Serialize(extras, (System.Text.Json.JsonSerializerOptions)typeof(SettingsService).GetField("JsonOptions", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!));

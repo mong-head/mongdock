@@ -50,7 +50,8 @@ public enum RoutineDesktopMode { Current, New, Index }
 
 public sealed class RoutineDesktop
 {
-    public RoutineDesktopMode Mode { get; set; } = RoutineDesktopMode.Current;
+    /// <summary>기본 = 새 데스크톱 (2026-10-10 사용자 결정 — 끝내기 때 그 데스크톱도 같이 닫음).</summary>
+    public RoutineDesktopMode Mode { get; set; } = RoutineDesktopMode.New;
     /// <summary>Mode=Index 일 때 데스크톱 번호 (1부터).</summary>
     public int Index { get; set; } = 1;
 }
@@ -104,11 +105,30 @@ public sealed class RoutineItem
     public RoutineDesktop? Desktop { get; set; }
 }
 
-/// <summary>루틴 핀(PinKind.Routine)의 내용. 이름은 PinItem.Name.</summary>
+/// <summary>옛 모양: 루틴 핀 안에 들어 있던 내용 (읽을 때 Settings.Routines 로 옮김).</summary>
 public sealed class RoutineData
 {
     public RoutineDesktop Desktop { get; set; } = new();
     public List<RoutineItem> Items { get; set; } = new();
+}
+
+/// <summary>
+/// 루틴 하나 (settings.json "routines"). 모든 루틴은 앱 모음 판 맨 위 "루틴" 줄에 있고, 독에는 고정한 것만
+/// (PinKind.Routine 핀, Target = 이 Id). 최대 12개, 항목 최대 15개.
+/// </summary>
+public sealed class RoutineDef
+{
+    public const int MaxRoutines = 12, MaxItems = 15;
+
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    /// <summary>아이콘 고르기 (null·auto = 담긴 항목 아이콘 2x2).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PinIcon? Icon { get; set; }
+    public RoutineDesktop Desktop { get; set; } = new();
+    public List<RoutineItem> Items { get; set; } = new();
+    /// <summary>"지금 화면 저장"으로 만든 루틴인지 (사용 통계 savedFromScreen 용).</summary>
+    public bool FromScreen { get; set; }
 }
 
 // ───────────────────────── 앱 모음 판 (#24) ─────────────────────────

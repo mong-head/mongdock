@@ -332,19 +332,45 @@ public sealed class SettingsService : ISettingsService, IDisposable
         }
         var s = parsed ?? throw new JsonException("settings.json 이 null 입니다.");
         // 숫자로 적힌 모르는 핀 종류도 그 핀만 빠짐 (기본값 Exe 로 바꾸지 않음)
+        // 루틴: 대상 없는 항목·빈 루틴은 버림, id 채움(겹치면 새로), 최대 12개·항목 15개
+        s.Routines ??= new List<RoutineDef>();
+        var routineIds = new HashSet<string>();
+        s.Routines.RemoveAll(r =>
+        {
+            if (r is null) return true;
+            r.Items ??= new List<RoutineItem>();
+            r.Items.RemoveAll(i => i is null || string.IsNullOrWhiteSpace(i.Target) && string.IsNullOrWhiteSpace(i.Aumid));
+            if (r.Items.Count > RoutineDef.MaxItems) r.Items.RemoveRange(RoutineDef.MaxItems, r.Items.Count - RoutineDef.MaxItems);
+            r.Desktop ??= new RoutineDesktop();
+            r.Name ??= "";
+            if (string.IsNullOrWhiteSpace(r.Id) || !routineIds.Add(r.Id)) { r.Id = Guid.NewGuid().ToString("N"); routineIds.Add(r.Id); }
+            return r.Items.Count == 0;
+        });
         if (s.Pins is { } pins)
         {
             for (int pi = pins.Count - 1; pi >= 0; pi--)
             {
                 var pin = pins[pi];
-                if (pin?.Kind == PinKind.Routine) pin.Routine?.Items?.RemoveAll(i => i is null || string.IsNullOrWhiteSpace(i.Target) && string.IsNullOrWhiteSpace(i.Aumid));
+                // 옛 모양(핀 안에 루틴 내용) → 루틴 목록으로 옮기고 핀은 Id 만
+                if (pin?.Kind == PinKind.Routine && pin.Routine is { } legacy)
+                {
+                    legacy.Items?.RemoveAll(i => i is null || string.IsNullOrWhiteSpace(i.Target) && string.IsNullOrWhiteSpace(i.Aumid));
+                    if (legacy.Items is { Count: > 0 })
+                    {
+                        string id = !string.IsNullOrWhiteSpace(pin.Id) && !routineIds.Contains(pin.Id) ? pin.Id : Guid.NewGuid().ToString("N");
+                        routineIds.Add(id);
+                        s.Routines.Add(new RoutineDef { Id = id, Name = pin.Name, Icon = pin.Icon, Desktop = legacy.Desktop ?? new RoutineDesktop(), Items = legacy.Items });
+                        pin.Target = id;
+                    }
+                    pin.Routine = null;
+                }
                 bool bad = pin is null || !Enum.IsDefined(pin.Kind)
-                           // 루틴은 항목이 하나는 있어야 (빈 루틴·잘못된 항목은 버림), 폴더는 경로가 있어야
-                           || pin.Kind == PinKind.Routine && (pin.Routine?.Items is not { Count: > 0 })
+                           // 루틴 핀은 있는 루틴을 가리켜야, 폴더는 경로가 있어야
+                           || pin.Kind == PinKind.Routine && !routineIds.Contains(pin.Target ?? "")
                            || pin.Kind == PinKind.Folder && string.IsNullOrWhiteSpace(pin.Target);
                 if (bad) { pins.RemoveAt(pi); fixes.Add($"pins[{pi}]"); continue; }
                 if (pin!.Kind == PinKind.Folder) (pin.Folder ??= new FolderOptions()).LastOpened ??= DateTime.UtcNow;
-                if (pin.Kind is PinKind.Folder or PinKind.Routine) pin.Id ??= Guid.NewGuid().ToString("N");
+                if (pin.Kind == PinKind.Folder) pin.Id ??= Guid.NewGuid().ToString("N");
             }
             KeepTrashLast(pins);
         }
@@ -365,6 +391,12 @@ public sealed class SettingsService : ISettingsService, IDisposable
         s.SeenHints ??= new List<string>();
         s.NewSince ??= new Dictionary<string, DateTime>();
         s.NewSeen ??= new List<string>();
+        if (s.Routines.Count > RoutineDef.MaxRoutines)
+        {
+            var keep = s.Routines.Take(RoutineDef.MaxRoutines).Select(r => r.Id).ToHashSet();
+            s.Routines.RemoveRange(RoutineDef.MaxRoutines, s.Routines.Count - RoutineDef.MaxRoutines);
+            s.Pins?.RemoveAll(p => p.Kind == PinKind.Routine && !keep.Contains(p.Target));
+        }
         s.AllApps ??= new AllAppsSettings();
         s.AllApps.Favorites ??= new List<string>();
         s.AllApps.Groups ??= new List<AppGroupDef>();
