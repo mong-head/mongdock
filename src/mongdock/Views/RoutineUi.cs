@@ -61,7 +61,45 @@ internal static class RoutineUi
         return RoutineService.Run(routine) ? Click.Started : Click.NotStarted;
     }
 
-    public static void Run(AppServices services, RoutineDef routine) => _ = RunOrFocusAsync(services, routine);
+    /// <summary>판 칸·메뉴 "열기"·설정에서 누름: 이미 열려 있거나 여는 중이면 마우스 옆에 짧은 말풍선 (독은 아이콘 위 말풍선을 따로 씀).</summary>
+    public static void Run(AppServices services, RoutineDef routine) => _ = RunWithNoteAsync(services, routine);
+
+    private static async Task RunWithNoteAsync(AppServices services, RoutineDef routine)
+    {
+        try
+        {
+            var result = await RunOrFocusAsync(services, routine);
+            string? note = result switch
+            {
+                Click.AlreadyHere => Loc.T("이미 열려 있어요"),
+                Click.Opening => Loc.T("여는 중이에요"),
+                _ => null,
+            };
+            if (note is not null) NoteAtCursor(services, note);
+        }
+        catch (Exception ex) { Log.Error("루틴 누름 실패", ex); }
+    }
+
+    private static DockLabelWindow? _note;
+
+    /// <summary>마우스 바로 위에 1.2초 동안 작은 말풍선 (독 이름 말풍선과 같은 모양).</summary>
+    internal static void NoteAtCursor(AppServices services, string text)
+    {
+        try
+        {
+            if (services.DesktopWindows.GetCursorPosition() is not System.Windows.Point at) return;
+            var p = ViewModels.UiTheme.Palette(services.Settings.Current);
+            _note?.Close();
+            var label = new DockLabelWindow(services);
+            _note = label;
+            label.SetColors(p.CardBackground, p.Text, p.CardBorder);
+            label.ShowAt(text, new System.Windows.Point(at.X, at.Y - 6), DockEdge.Bottom);
+            var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
+            t.Tick += (_, _) => { t.Stop(); label.Close(); if (_note == label) _note = null; };
+            t.Start();
+        }
+        catch (Exception ex) { Log.Warn($"루틴 말풍선 실패: {ex.GetType().Name}"); }
+    }
 
     /// <summary>끝내기 확인: "업무 시작 — 창 4개를 닫을까요?" + (이 루틴이 데스크톱을 만들었으면) "데스크톱도 닫기"(기본 켬).</summary>
     public static async void AskEnd(AppServices services, RoutineDef routine)

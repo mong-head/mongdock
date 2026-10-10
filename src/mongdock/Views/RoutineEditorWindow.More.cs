@@ -310,6 +310,7 @@ internal sealed partial class RoutineEditorWindow
             {
                 if (!on) More.Change = new RoutineChange();
                 else if (!(c.Dnd || c.DockHide || c.OutputDevice is not null || c.Volume is not null)) More.Change.Dnd = true;
+                Dispatcher.BeginInvoke(RebuildMore); // 방해 금지가 켜지고 꺼짐에 따라 "예외 앱" 묶음도 (QA: 껐다 켜야 활성화됨)
             }, ChangeDetail);
     }
 

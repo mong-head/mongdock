@@ -698,6 +698,17 @@ internal sealed class CoachSession
     {
         _keepOnTop.Tick += (_, _) => { if (!_closed && !_away) BringToFront(); };
         _keepOnTop.Start();
+        // 가리키는 버튼의 크기·자리가 바뀌면(데스크톱 알약에 루틴 이름이 붙음 등) 링·말풍선을 다시 맞춤 (QA: 링이 알약과 어긋남)
+        var anchorWatch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+        anchorWatch.Tick += (_, _) =>
+        {
+            if (_closed) { anchorWatch.Stop(); return; }
+            if (_away || _anchorRect is not Rect old || _index >= _pages.Count) return;
+            if (SafeResolve(_pages[_index].Anchor) is not { } now) return;
+            if (Math.Abs(now.Rect.Left - old.Left) > 1 || Math.Abs(now.Rect.Width - old.Width) > 1 || Math.Abs(now.Rect.Top - old.Top) > 1 || Math.Abs(now.Rect.Height - old.Height) > 1)
+                ShowCurrent(animate: false);
+        };
+        anchorWatch.Start();
         _services.Windows.WindowActivated += OnWindowActivated;
         UiFonts.Apply(_services.Settings.Current);
         AppState.Changed += OnPausedChanged;

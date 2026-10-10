@@ -45,7 +45,15 @@ internal abstract class RoutineCardWindow : Window
             BorderBrush = P.CardBorder,
             BorderThickness = new Thickness(0.75),
             Padding = new Thickness(20, 16, 20, 16),
-            Child = Body,
+            Child = _scroll = new ScrollViewer
+            {
+                Content = Body,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Style = (Style)Application.Current.FindResource("OverlayScrollViewer"),
+                Focusable = false,
+                MaxHeight = Usable().Height - 80, // 카드 여백·그림자 자리
+            },
         };
         var root = new Grid { Margin = new Thickness(24, 16, 24, 32) };
         root.Children.Add(new Border
@@ -72,18 +80,37 @@ internal abstract class RoutineCardWindow : Window
     /// <summary>화면 높이의 이 비율까지 (넘치면 목록이 스크롤).</summary>
     protected double MaxListHeight => SystemParameters.WorkArea.Height * 0.5;
 
-    private void Center()
-    {
-        var screen = Services.DesktopWindows.GetPrimaryScreenBounds();
-        Left = Math.Round(screen.Left + (screen.Width - ActualWidth) / 2);
-        Top = Math.Round(screen.Top + Math.Max(16, (screen.Height - ActualHeight) * 0.4));
-    }
+    private readonly ScrollViewer _scroll;
 
-    /// <summary>세부를 펼쳐 길어졌을 때 아래가 화면 밖으로 나가지 않게 (위로만 당김 — 순간 이동).</summary>
-    private void KeepOnScreen()
+    /// <summary>
+    /// 카드를 둘 수 있는 곳: 주 모니터 작업 영역에서 화면에 보이는 독을 뺀 부분 (독이 작업 영역을 예약하지 않는 겹침 모드라
+    /// 작업 영역만 보면 길어진 카드가 아래 독과 겹침 — QA 1080p·아래 독·크기 52).
+    /// </summary>
+    private static Rect Usable()
     {
         var work = SystemParameters.WorkArea;
-        if (Top + ActualHeight > work.Bottom) Top = Math.Max(work.Top, work.Bottom - ActualHeight);
+        var dock = DockState.VisiblePanel;
+        if (!dock.IsEmpty && dock.Width > 0 && dock.Height > 0)
+        {
+            const double gap = 8;
+            if (dock.Top > work.Top + work.Height / 2 && dock.Top < work.Bottom) work = new Rect(work.Left, work.Top, work.Width, Math.Max(200, dock.Top - gap - work.Top)); // 아래 독
+            else if (dock.Bottom < work.Top + work.Height / 2 && dock.Bottom > work.Top) work = new Rect(work.Left, dock.Bottom + gap, work.Width, Math.Max(200, work.Bottom - dock.Bottom - gap)); // 위 독
+        }
+        return work;
+    }
+
+    private void Center()
+    {
+        var area = Usable();
+        Left = Math.Round(area.Left + (area.Width - ActualWidth) / 2);
+        Top = Math.Round(area.Top + Math.Max(8, (area.Height - ActualHeight) * 0.4));
+    }
+
+    /// <summary>세부·더 보기를 펼쳐 길어졌을 때 아래가 독·화면 밖으로 나가지 않게 (위로만 당김 — 순간 이동). 그래도 넘치면 카드 안 스크롤.</summary>
+    private void KeepOnScreen()
+    {
+        var area = Usable();
+        if (Top + ActualHeight > area.Bottom) Top = Math.Max(area.Top, area.Bottom - ActualHeight);
     }
 
     // ───────────────────────── 작은 부품 ─────────────────────────
