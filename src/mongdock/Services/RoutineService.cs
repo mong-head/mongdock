@@ -440,6 +440,12 @@ internal static class RoutineService
                 }
                 await Task.Delay(GapMs + Math.Clamp(item.DelayMs, 0, 10_000));
             }
+            if (!anyToOpen && elsewhere.Count == 0)
+            {
+                // 전부 이 데스크톱에 이미 켜져 있어 앞으로만 가져옴 — 누른 반응이 보이게 (사용자: "끌로드2"를 눌러도 아무 표시 없음)
+                Log.Info("루틴: 앱이 전부 이 데스크톱에 이미 켜져 있음 — 앞으로만");
+                _dispatcher?.BeginInvoke(() => AlreadyAllHere?.Invoke(routine));
+            }
             if (elsewhere.Count > 0)
             {
                 Log.Info($"루틴: 이미 다른 데스크톱에 켜진 앱 {elsewhere.Count}개 — 새로 열지 않음");
@@ -481,6 +487,8 @@ internal static class RoutineService
 
     /// <summary>이미 다른 데스크톱에 켜져 있어 열지 않은 앱들 (이름, 첫 창) — 안내 카드를 띄움. UI 스레드.</summary>
     public static event Action<List<(string Name, IntPtr Hwnd)>>? ElsewhereShown;
+    /// <summary>열 것이 없고 루틴 앱이 전부 이 데스크톱에 있어 앞으로만 가져옴 (짧은 "이미 열려 있어요"). UI 스레드.</summary>
+    public static event Action<RoutineDef>? AlreadyAllHere;
 
     /// <summary>"그 데스크톱으로 가기": 창이 있는 데스크톱으로 이동한 뒤 그 창을 앞으로. UI 스레드에서 부름(COM).</summary>
     public static async Task GoToWindowAsync(IntPtr hwnd)

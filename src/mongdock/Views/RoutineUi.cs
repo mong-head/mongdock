@@ -27,6 +27,7 @@ internal static class RoutineUi
         }
         RoutineTriggers.Init(services); // 더 보기: 시작·끝 조건, 함께 바꿀 것, 비슷하게 열면 묻기, 머문 시간
         RoutineService.ElsewhereShown += list => _ = ShowElsewhereAsync(services, list);
+        RoutineService.AlreadyAllHere += _ => NoteAtCursor(services, Loc.T("이미 열려 있어요"));
     }
 
     public static RoutineDef? Find(AppServices services, string? id) =>
