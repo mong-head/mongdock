@@ -48,6 +48,9 @@ internal static class Program
         int allApps = Array.FindIndex(args, a => a == "--allapps");
         if (allApps >= 0 && allApps + 1 < args.Length) RenderAllAppsPanel(args[allApps + 1]);
 
+        int trashIcons = Array.FindIndex(args, a => a == "--trash-icons");
+        if (trashIcons >= 0 && trashIcons + 1 < args.Length) RenderTrashIcons(args[trashIcons + 1]);
+
         int folderIcons = Array.FindIndex(args, a => a == "--folder-icons");
         if (folderIcons >= 0 && folderIcons + 1 < args.Length) RenderFolderIcons(args[folderIcons + 1]);
 
@@ -376,6 +379,63 @@ internal static class Program
         string path = Path.Combine(dir, "icon-picker-samples.png");
         SavePng(rtb, path);
         Console.WriteLine($"  저장  {path}");
+    }
+
+    /// <summary>
+    /// 판 없는 휴지통 시안 (--trash-icons DIR): A 유리·메시 / B 흰 통 + 줄무늬 × 빈·찬. 라이트·다크 독 위에서
+    /// 앱 모음·다운로드 폴더 옆 52px, 확대 94px, 그리고 256 낱장.
+    /// </summary>
+    private static void RenderTrashIcons(string dir)
+    {
+        Directory.CreateDirectory(dir);
+        var mac = typeof(Mongdock.App).Assembly.GetType("Mongdock.Services.MacIconRenderer")!;
+        var glyphType = typeof(Mongdock.App).Assembly.GetType("Mongdock.Services.FolderGlyph")!;
+        ImageSource Trash(bool full, bool glass) => (ImageSource)mac.GetMethod("TrashStandalone")!.Invoke(null, new object[] { full, glass })!;
+        var allApps = (ImageSource)mac.GetMethod("AllApps")!.Invoke(null, null)!;
+        var downloads = (ImageSource)mac.GetMethod("Folder")!.Invoke(null, new object?[] { Enum.Parse(glyphType, "Downloads"), false, null })!;
+        var variants = new[] { ("A 유리 통", true), ("B 흰 통 + 줄무늬", false) };
+        foreach (var (label, glass) in variants)
+            foreach (bool full in new[] { false, true })
+                SavePng((BitmapSource)Trash(full, glass), Path.Combine(dir, $"{(glass ? "A" : "B")}-{(full ? "full" : "empty")}-256.png"));
+        foreach (var (theme, bg, dock, ink) in new[]
+        {
+            ("light", Color.FromRgb(0xE9, 0xEC, 0xF4), Color.FromArgb(0xC8, 0xFF, 0xFF, 0xFF), Color.FromRgb(0x22, 0x22, 0x28)),
+            ("dark", Color.FromRgb(0x14, 0x16, 0x1C), Color.FromArgb(0xC8, 0x2C, 0x2C, 0x33), Color.FromRgb(0xEE, 0xEE, 0xF2)),
+        })
+        {
+            const int pad = 18, rowH = 150, labelW = 190;
+            int width = labelW + (52 + pad) * 5 + 94 * 2 + pad * 4;
+            int height = rowH * 2;
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen())
+            {
+                dc.DrawRectangle(new SolidColorBrush(bg), null, new Rect(0, 0, width, height));
+                for (int i = 0; i < variants.Length; i++)
+                {
+                    var (label, glass) = variants[i];
+                    double y0 = i * rowH, baseY = y0 + rowH - pad - 20;
+                    dc.DrawText(new System.Windows.Media.FormattedText(label, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+                        new Typeface("Malgun Gothic"), 15, new SolidColorBrush(ink), 1.0), new Point(pad, y0 + rowH / 2 - 10));
+                    // 독: 앱 모음 · 다운로드 · | · 빈 휴지통 · 찬 휴지통
+                    double x = labelW;
+                    double dockW = (52 + pad) * 4 + pad * 2;
+                    dc.DrawRoundedRectangle(new SolidColorBrush(dock), null, new Rect(x - pad, baseY - 52 - 10, dockW, 72), 16, 16);
+                    dc.DrawImage(Downscale(allApps, 52), new Rect(x, baseY - 52, 52, 52)); x += 52 + pad;
+                    dc.DrawImage(Downscale(downloads, 52), new Rect(x, baseY - 52, 52, 52)); x += 52 + pad;
+                    dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(0x50, ink.R, ink.G, ink.B)), null, new Rect(x - pad / 2 - 1, baseY - 46, 1.5, 40));
+                    dc.DrawImage(Downscale(Trash(false, glass), 52), new Rect(x, baseY - 52, 52, 52)); x += 52 + pad;
+                    dc.DrawImage(Downscale(Trash(true, glass), 52), new Rect(x, baseY - 52, 52, 52)); x += 52 + pad * 3;
+                    // 확대(1.8배)
+                    dc.DrawImage(Downscale(Trash(false, glass), 94), new Rect(x, baseY - 94 + 10, 94, 94)); x += 94 + pad;
+                    dc.DrawImage(Downscale(Trash(true, glass), 94), new Rect(x, baseY - 94 + 10, 94, 94));
+                }
+            }
+            var rtb = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+            rtb.Render(dv);
+            string path = Path.Combine(dir, $"trash-icons-{theme}.png");
+            SavePng(rtb, path);
+            Console.WriteLine($"  저장  {path}");
+        }
     }
 
     private static void SavePng(BitmapSource img, string path)
