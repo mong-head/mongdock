@@ -12,6 +12,11 @@ public static class DefaultPins
     public static string ExplorerName => Loc.T("파일 탐색기");
     public static string AllAppsName => Loc.T("앱 모음");
 
+    /// <summary>독 휴지통 핀의 Target (PinKind.Special).</summary>
+    public const string RecycleBinTarget = "recyclebin";
+
+    public static PinItem RecycleBinPin() => new() { Kind = PinKind.Special, Target = RecycleBinTarget, Name = "" };
+
     /// <summary>독에 처음 넣을 앱 수 상한 (파일 탐색기·앱 모음 제외).</summary>
     private const int MaxApps = 8;
 
@@ -32,13 +37,14 @@ public static class DefaultPins
         return AddDownloads(pins);
     }
 
-    /// <summary>새 설치: 오른쪽 끝에 다운로드 독 폴더 (#24-B). 다운로드 폴더를 못 찾으면 그냥 둠.</summary>
+    /// <summary>새 설치: 핀 끝에 다운로드 독 폴더 (#24-B, 못 찾으면 그냥 둠), 맨 끝에 휴지통 (#24-C).</summary>
     private static List<PinItem> AddDownloads(List<PinItem> pins)
     {
+        if (!pins.Any(p => p.Kind == PinKind.Special && p.Target == RecycleBinTarget)) pins.Add(RecycleBinPin());
         try
         {
             if (DockFolderService.DownloadsFolder() is { } dl && !pins.Any(p => p.Kind == PinKind.Folder))
-                pins.Add(new PinItem { Kind = PinKind.Folder, Target = dl, Name = Loc.T("다운로드"), Id = Guid.NewGuid().ToString("N"), Folder = new FolderOptions { LastOpened = DateTime.UtcNow } });
+                pins.Insert(pins.Count - 1, new PinItem { Kind = PinKind.Folder, Target = dl, Name = Loc.T("다운로드"), Id = Guid.NewGuid().ToString("N"), Folder = new FolderOptions { LastOpened = DateTime.UtcNow } });
         }
         catch (Exception ex) { Log.Error("다운로드 독 폴더 추가 실패", ex); }
         return pins;

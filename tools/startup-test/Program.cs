@@ -256,6 +256,19 @@ internal static class Program
             Check("루틴: 데스크톱·모니터·배치·지연", $"{morning.Desktop?.Mode}/{morning.Items[0].Monitor?.Mode}{morning.Items[0].Monitor?.Index}/{morning.Items[0].Placement?.Mode}/{morning.Items[0].DelayMs}", "New/Index1/Left/500");
             var again = SettingsService.ParseForImport(System.Text.Json.JsonSerializer.Serialize(extras, (System.Text.Json.JsonSerializerOptions)typeof(SettingsService).GetField("JsonOptions", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!));
             Check("다시 저장·읽어도 그대로", string.Join(",", again.Pins.Select(p => p.Name + ":" + p.Id)), string.Join(",", extras.Pins.Select(p => p.Name + ":" + p.Id)));
+            // 독 휴지통 (#24-C): 하나만, 늘 목록 끝
+            var trash = SettingsService.ParseForImport("""
+                { "settingsVersion": 5, "pins": [
+                  { "name": "", "kind": "Special", "target": "recyclebin" },
+                  { "name": "메모장", "kind": "Exe", "target": "notepad.exe" },
+                  { "name": "", "kind": "Special", "target": "recyclebin" },
+                  { "name": "문서", "kind": "Folder", "target": "C:/docs" } ] }
+                """);
+            Check("휴지통: 하나만 남고 맨 끝", string.Join(",", trash.Pins.Select(p => p.Target)), "notepad.exe,C:/docs,recyclebin");
+            var rb = typeof(SettingsService).Assembly.GetType("Mongdock.Services.RecycleBin")!;
+            Check("용량 표시 340MB", rb.GetMethod("FormatSize")!.Invoke(null, new object[] { 340L * 1024 * 1024 }), "340MB");
+            Check("용량 표시 1.5GB", rb.GetMethod("FormatSize")!.Invoke(null, new object[] { 1536L * 1024 * 1024 }), "1.5GB");
+            Check("휴지통 개수 읽힘", rb.GetMethod("Query")!.Invoke(null, null) is not null, true);
             FolderListTests();
 
             // 5: 핀 이름 Finder·Launchpad → 파일 탐색기·앱 모음 (정확히 같은 이름·대상만, 사용자가 바꾼 이름은 그대로)

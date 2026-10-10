@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -135,6 +135,7 @@ public partial class DockWindow : Window
         _closed = true;
         _folderPanel?.Close();
         _folders?.Dispose();
+        _recycle?.Dispose();
         _pollTimer.Stop();
         _launchTimer?.Stop();
         UnhookRender();
@@ -889,10 +890,16 @@ public partial class DockWindow : Window
         var list = new List<DockItemViewModel>();
         var matched = new HashSet<IntPtr>();
 
-        // 1) 핀
+        // 1) 핀 (휴지통은 맨 끝에 따로 — 아래 3)
+        PinItem? trashPin = null;
         for (int i = 0; i < settings.Pins.Count; i++)
         {
             var pin = settings.Pins[i];
+            if (IsTrash(pin))
+            {
+                trashPin ??= pin;
+                continue;
+            }
             if (pin.Kind == PinKind.Separator)
             {
                 string sid = $"sep:{i}";
@@ -967,6 +974,19 @@ public partial class DockWindow : Window
 
         _folders?.SetWatched(settings.Pins.Where(p => p.Kind == PinKind.Folder).Select(p => p.Target));
 
+        // 3) 휴지통 (#24-C): 독 맨 오른쪽 끝, 구분선 뒤 (옮기기 불가)
+        if (trashPin != null)
+        {
+            const string trashSepId = "sep:trash";
+            if (list.Count > 0) list.Add(old.GetValueOrDefault(trashSepId) ?? new DockItemViewModel(trashSepId, null, isSeparator: true, "", null));
+            list.Add(TrashItem(trashPin, old));
+        }
+        else
+        {
+            _recycle?.Dispose();
+            _recycle = null;
+        }
+
         // 사라진 창 정리
         var alive = new HashSet<IntPtr>(windows.Select(w => w.Hwnd));
         _flashed.RemoveWhere(h => !alive.Contains(h));
@@ -1032,6 +1052,7 @@ public partial class DockWindow : Window
     {
         if (!string.IsNullOrWhiteSpace(pin.Name)) return pin.Name;
         if (pin.Kind == PinKind.Folder) return System.IO.Path.GetFileName(System.IO.Path.TrimEndingDirectorySeparator(pin.Target));
+        if (IsTrash(pin)) return Loc.T("휴지통");
         if (pin.Kind == PinKind.Exe) return System.IO.Path.GetFileNameWithoutExtension(pin.Target);
         return pin.Target;
     }
@@ -1080,6 +1101,11 @@ public partial class DockWindow : Window
         if (item.Pin is { Kind: PinKind.Folder } folderPin)
         {
             ToggleFolderPanel(sender as DockItemView, item, folderPin);
+            return;
+        }
+        if (IsTrash(item.Pin))
+        {
+            ToggleTrashPanel(sender as DockItemView, item.Pin!);
             return;
         }
         if (item.Pin is { Kind: PinKind.Routine })
@@ -1165,7 +1191,7 @@ public partial class DockWindow : Window
     // ───────────────────────── 독 폴더 판 (#24-B) ─────────────────────────
 
     private DockFolderService? _folders;
-    private FolderStackPanel? _folderPanel;
+    private DockStackPanel? _folderPanel; // 독 폴더·휴지통 판 (한 번에 하나)
     private PinItem? _folderPanelPin;
 
     private DockFolderService CreateFolderService()
@@ -1437,6 +1463,7 @@ public partial class DockWindow : Window
 
         var view = FindItemView(e.OriginalSource as DependencyObject);
         if (view == null || view.Item.IsAutoSeparator) BuildEmptyAreaMenu(menu);
+        else if (IsTrash(view.Item.Pin)) BuildTrashMenu(menu, view.Item.Pin!);
         else if (view.Item.Pin is { Kind: PinKind.Folder }) BuildFolderMenu(menu, view.Item);
         else if (view.Item.Pin != null) BuildPinMenu(menu, view.Item);
         else BuildRunningMenu(menu, view.Item);
@@ -1590,6 +1617,7 @@ public partial class DockWindow : Window
         menu.Items.Add(new Separator());
         menu.Items.Add(Item(Loc.T("구분선 추가"), () => ModifyPins(p => p.Add(new PinItem { Kind = PinKind.Separator, Name = "" }))));
         menu.Items.Add(Item(Loc.T("폴더 추가…"), AddFolderFromDialog));
+        if (!_services.Settings.Current.Pins.Any(IsTrash)) menu.Items.Add(Item(Loc.T("휴지통 보이기"), ShowTrash));
         menu.Items.Add(new Separator());
         menu.Items.Add(DockMenus.DockPosition(_services));
         menu.Items.Add(DockMenus.DockBehavior(_services));
@@ -1652,7 +1680,7 @@ public partial class DockWindow : Window
     {
         var pins = _services.Settings.Current.Pins;
         change(pins);
-        _services.Settings.Save();
+        _services.Settings.Save(); // 저장하며 휴지통을 목록 끝으로 (화면 맨 끝과 같게)
     }
 
     /// <summary>독 폴더 메뉴: 열기 / 탐색기에서 열기 / 정렬 / 모양 / 왼쪽·오른쪽 / 독에서 빼기.</summary>
@@ -1684,8 +1712,8 @@ public partial class DockWindow : Window
     private void EditFolderIcon(PinItem pin)
     {
         var kind = DockFolderService.GlyphFor(pin.Target);
-        IconPickerWindow.Open(_services, pin.Icon, keepDefaultGlyph: true,
-            preview: icon => PinIconRenderer.Render(icon, kind) ?? MacIconRenderer.Folder(kind),
+        IconPickerWindow.Open(_services, pin.Icon, keepDefaultGlyph: true, Loc.T("폴더 종류에 맞는 기본 그림을 써요."),
+            preview: icon => PinIconRenderer.Render(icon, c => MacIconRenderer.Folder(kind, false, c), $"folder:{kind}") ?? MacIconRenderer.Folder(kind),
             done: icon => ModifyPins(_ => pin.Icon = icon));
     }
 

@@ -136,6 +136,7 @@ public sealed class UsageStatsService : IDisposable
             ["hideTaskbar"] = s.HideWindowsTaskbar,
             ["lightMode"] = PerfMode.IsOn(s),
             ["folders"] = s.Pins.Count(p => p.Kind == PinKind.Folder),
+            ["recycleBin"] = s.Pins.Any(p => p.Kind == PinKind.Special && p.Target == DefaultPins.RecycleBinTarget),
             ["errors"] = errors,
             ["nonce"] = Guid.NewGuid().ToString("N"),
         };

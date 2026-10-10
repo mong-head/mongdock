@@ -149,6 +149,7 @@ public partial class DockWindow
         if (!_itemDragging)
         {
             if (Math.Abs(p.X - _itemStart.X) < DragThreshold && Math.Abs(p.Y - _itemStart.Y) < DragThreshold) return;
+            if (IsTrash(_pressView.Item.Pin)) return; // 휴지통은 맨 끝 고정 — 끌지 않음 (누르면 판)
             BeginItemDrag();
         }
         UpdateItemDrag(p, e);
@@ -220,8 +221,9 @@ public partial class DockWindow
             int pins = others.Count(InPinSection);
             bool pinnable = InPinSection(view) || (view.Item.Pin == null && view.Item.Windows.Count > 0 && CanPin(view.Item.Windows[0]));
             bool running = view.Item.Pin == null;
+            bool trashLast = others.Count > 0 && IsTrash(others[^1].Item.Pin);
             target = NearestSlot(others, view.BaseLength, AlongInBase(e),
-                k => (pinnable && k <= pins) || (running && k > pins));
+                k => (pinnable && k <= pins) || (running && k > pins && !(trashLast && k >= others.Count - 1)));
             if (target < 0) target = from;
         }
 
@@ -233,7 +235,7 @@ public partial class DockWindow
     }
 
     /// <summary>핀 영역(왼쪽, 끌어서 순서 바꾸는 곳)의 항목인지 — 앱·독 폴더·구분선 핀. 실행 중 앱은 아님.</summary>
-    private static bool InPinSection(DockItemView v) => v.Item.Pin != null;
+    private static bool InPinSection(DockItemView v) => v.Item.Pin != null && !IsTrash(v.Item.Pin);
 
     /// <summary>드래그 항목을 뺀 나머지 뷰 (화면 순서).</summary>
     private List<DockItemView> Others(DockItemView? dragged)
@@ -457,6 +459,24 @@ public partial class DockWindow
             _dropDataSeen = e.Data;
             _dropAllFolders = DraggedPaths(e) is { Length: > 0 } dragged && dragged.All(Directory.Exists);
         }
+        // 휴지통 위: 빈 자리 대신 휴지통만 눌린 모양으로 강조 → 놓으면 휴지통으로
+        var trash = TrashViewUnder(e);
+        if (trash != _dropTrash)
+        {
+            _dropTrash?.PressUp();
+            _dropTrash = trash;
+            trash?.PressDown();
+        }
+        if (trash != null)
+        {
+            e.Effects = (e.AllowedEffects & DragDropEffects.Move) != 0 ? DragDropEffects.Move : e.Effects;
+            if (_dropTarget != -1)
+            {
+                _dropTarget = -1;
+                foreach (var v in others) v.AnimateShift(0, animate: true);
+            }
+            return;
+        }
         int target = NearestSlot(others, _dropGapLength, AlongInBase(e), k => k <= pins);
         if (target >= 0 && target != _dropTarget)
         {
@@ -490,8 +510,14 @@ public partial class DockWindow
         }
         catch (Exception ex) { Log.Error("끌어 놓은 파일 읽기 실패", ex); }
         bool allFolders = _dropAllFolders;
+        bool onTrash = _dropTrash != null;
         _dropDataSeen = null;
         EndFileDrag();
+        if (paths.Length > 0 && onTrash)
+        {
+            RecycleBin.SendInBackground(paths); // 되돌릴 수 있게만 (FOF_ALLOWUNDO)
+            return;
+        }
         if (paths.Length == 0 || target < 0) return;
         if (allFolders)
         {
@@ -534,6 +560,7 @@ public partial class DockWindow
 
     private object? _dropDataSeen;
     private bool _dropAllFolders;
+    private DockItemView? _dropTrash;
 
     private static string[]? DraggedPaths(DragEventArgs e)
     {
@@ -544,6 +571,8 @@ public partial class DockWindow
     /// <summary>파일 드래그 표시 정리 (빈 슬롯 제거, 이동 원위치, 창 길이 복구).</summary>
     private void EndFileDrag()
     {
+        _dropTrash?.PressUp();
+        _dropTrash = null;
         if (!_fileDragOver) return;
         _fileDragOver = false;
         _dropTarget = -1;
