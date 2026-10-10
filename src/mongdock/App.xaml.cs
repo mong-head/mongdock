@@ -211,6 +211,7 @@ public partial class App : Application
         CoachMarks.ScheduleStartup(settings.CreatedThisRun, forceTour: tour);
         NewBadges.Init(settings, settings.CreatedThisRun); // 새 기능 NEW 배지 (업데이트 받은 기존 사용자만)
         RoutineUi.Init(_services); // 루틴 실행·끝내기 (#24-A)
+        TaskbarOverlapHint.Init(_services); // 윈도우 작업 표시줄 자동 숨김이 독을 덮는 조합이면 한 번 물음
         IconFiles.Cleanup(settings); // 어떤 핀·루틴도 안 쓰는 루틴·독 폴더 그림
     }
 

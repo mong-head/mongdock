@@ -384,6 +384,8 @@ public sealed class Settings
     /// 일시 정지·종료·크래시 시 원래대로 복원. 속성 기본값은 false(키 없는 기존 파일 호환) — 새 설치는 SettingsService 가 켬.
     /// </summary>
     public bool HideWindowsTaskbar { get; set; }
+    /// <summary>"작업 표시줄이 독을 가릴 수 있어요" 안내를 이미 함 (다시 묻지 않음). 이 PC 것.</summary>
+    public bool TaskbarOverlapAsked { get; set; }
 
     /// <summary>가벼운 모드 (저사양 PC): 애니메이션·블러·독 호버 확대를 끄고 확인 주기를 2배로 (ViewModels/PerfMode).</summary>
     public bool PerformanceMode { get; set; }

@@ -764,6 +764,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
         imported.StatsAskCount = cur.StatsAskCount;
         // 작업 표시줄 숨기기도 이 PC 의 윈도우를 바꾸는 설정 → 그대로 (숨긴 채면 트레이 아이콘을 볼 곳이 상단바뿐이라 그것도 유지)
         imported.HideWindowsTaskbar = cur.HideWindowsTaskbar;
+        imported.TaskbarOverlapAsked = cur.TaskbarOverlapAsked; // 이 PC 작업 표시줄 안내
         if (cur.HideWindowsTaskbar && cur.TopBar.ShowTrayIcons) imported.TopBar.ShowTrayIcons = true;
         imported.Language = cur.Language;
         imported.CrashPromptDisabled = cur.CrashPromptDisabled;

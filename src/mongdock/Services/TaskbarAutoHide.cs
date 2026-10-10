@@ -116,6 +116,9 @@ internal static class TaskbarAutoHide
 
     // ───────────────────────── SHAppBarMessage ─────────────────────────
 
+    /// <summary>윈도우 작업 표시줄 자동 숨김이 켜져 있는지 (작업 표시줄이 없으면 null).</summary>
+    public static bool? WindowsAutoHideOn => GetState() is uint s ? (s & 0x1 /* ABS_AUTOHIDE */) != 0 : null;
+
     /// <summary>ABM_GETSTATE. 탐색기 작업 표시줄이 없으면 null (그때 0 은 "꺼짐" 과 구분이 안 됨).</summary>
     private static uint? GetState()
     {
