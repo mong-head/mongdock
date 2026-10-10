@@ -61,8 +61,12 @@ internal static class PanelIntro
     private static Rectangle? _shape;
     private static int _play; // 지금 움직이는 차례 (먼저 시작한 것은 멈춤)
 
+    private static AppServices? _services;
+    private static bool _warmLogged;
+
     private static Window Ghost(AppServices services)
     {
+        _services = services;
         if (_ghost is not null) return _ghost;
         _shape = new Rectangle
         {
@@ -118,15 +122,22 @@ internal static class PanelIntro
             g.Left = -32000;
             g.Top = -32000;
             int warm = _play;
-            g.Show();
-            // 한 번 그려진 뒤 숨김 (ContentRendered 는 창마다 한 번뿐이라 다음 렌더 차례로)
-            g.Dispatcher.BeginInvoke(() =>
+            // 새 장면이 창에 실제로 들어간 뒤 숨김: 렌더 차례 두 번 + 한가할 때 (먼저 숨기면 옛 장면이 남아 다음에 번쩍)
+            int frames = 0;
+            void Rendered(object? s, EventArgs e)
             {
-                if (_play != warm) return; // 그새 판을 열었으면(움직이는 중) 건드리지 않음
-                if (g.IsVisible) g.Hide();
-                if (_shape is not null) _shape.Fill = null;
-                Log.Info("판 그림 창 미리 그림");
-            }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+                if (++frames < 2) return;
+                CompositionTarget.Rendering -= Rendered;
+                g.Dispatcher.BeginInvoke(() =>
+                {
+                    if (_play != warm) return; // 그새 판을 열었으면(움직이는 중) 건드리지 않음
+                    if (g.IsVisible) g.Hide();
+                    if (_shape is not null) _shape.Fill = null;
+                    if (!_warmLogged) { _warmLogged = true; Log.Info("판 그림 창 미리 그림"); }
+                }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+            }
+            CompositionTarget.Rendering += Rendered;
+            g.Show();
         }
         catch (Exception ex) { Log.Warn($"판 그림 창 미리 만들기 실패: {ex.GetType().Name}"); }
     }
@@ -138,6 +149,21 @@ internal static class PanelIntro
         _play++;
         if (_ghost is { IsVisible: true } g) g.Hide();
         if (_shape is not null) _shape.Fill = null;
+        BlankSoon();
+    }
+
+    /// <summary>
+    /// 투명 창은 숨겨도 마지막 장면(다 펼친 판)을 들고 있어, 다음에 띄울 때 새 장면이 그려지기 전에 그 장면이 한 프레임 보일 수 있음
+    /// (QA: 아이콘에서 방식, 쉰 뒤 열기에서 판 전체가 한 번 번쩍한 뒤 다시 커짐). 숨긴 뒤 한가할 때 화면 밖에서 빈 장면으로 한 번 다시 그려 둠.
+    /// </summary>
+    private static void BlankSoon()
+    {
+        var g = _ghost;
+        if (g is null) return;
+        g.Dispatcher.BeginInvoke(() =>
+        {
+            if (_services is not null && _ghost == g && !g.IsVisible) Warm(_services);
+        }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
     }
 
     /// <summary>판 그림을 움직임. 끝나면 done (진짜 판을 제자리에) — 그 다음 프레임에 그림 창을 숨김.</summary>
@@ -210,6 +236,7 @@ internal static class PanelIntro
         if (play != _play) return;
         if (_ghost is { IsVisible: true } g) g.Hide();
         if (_shape is not null) _shape.Fill = null; // 판 그림을 들고 있지 않게
+        BlankSoon();
     }
 
     /// <summary>지금 움직이는 차례 번호 (Swap 에 넘김).</summary>
