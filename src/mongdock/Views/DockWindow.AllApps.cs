@@ -40,6 +40,9 @@ public partial class DockWindow
 
         // 목록이 아직이면 준비될 때까지(최대 300ms) 기다렸다 다 그린 판을 한 번에 — 검색 칸만 있는 빈 판을 보이지 않게
         var clock = System.Diagnostics.Stopwatch.StartNew();
+        // 실제 클릭(독에서 뗀) 시각부터 — 클릭과 이 코드 사이에 멈춤이 있으면 그것도 포함
+        long sinceClick = _clickTimestamp != 0 ? (long)((System.Diagnostics.Stopwatch.GetTimestamp() - _clickTimestamp) * 1000.0 / System.Diagnostics.Stopwatch.Frequency) : 0;
+        if (sinceClick > 150) Log.Info($"앱 모음 클릭 처리까지 {sinceClick}ms 걸림");
         long waited = 0;
         if (AllAppsCatalog.Cached is null)
         {
@@ -75,7 +78,7 @@ public partial class DockWindow
         Interlocked.Increment(ref AllAppsCatalog.OpenedSinceSignal);
         int nth = ++_allAppsOpens;
         long requested = 0;
-        panel.ContentRendered += (_, _) => Log.Info($"앱 모음 판 열기 {nth}번째: 클릭→첫 프레임 {clock.ElapsedMilliseconds}ms (목록 기다림 {waited}ms, 보이기 요청→첫 프레임 {clock.ElapsedMilliseconds - requested}ms, 창 생성→첫 프레임 {panel.FirstFrameMs}ms, 앱 {AllAppsCatalog.Cached?.Count ?? 0}개)");
+        panel.ContentRendered += (_, _) => Log.Info($"앱 모음 판 열기 {nth}번째: 클릭→첫 프레임 {sinceClick + clock.ElapsedMilliseconds}ms (클릭 처리까지 {sinceClick}ms) (목록 기다림 {waited}ms, 보이기 요청→첫 프레임 {clock.ElapsedMilliseconds - requested}ms, 창 생성→첫 프레임 {panel.FirstFrameMs}ms, 앱 {AllAppsCatalog.Cached?.Count ?? 0}개)");
         panel.Closed += (_, _) => { if (!_closed && AllAppsCatalog.IsStale) AllAppsPanel.Warm(_services); }; // 앱 설치·삭제 반영 (다음 열기)
         requested = clock.ElapsedMilliseconds;
         panel.Show();

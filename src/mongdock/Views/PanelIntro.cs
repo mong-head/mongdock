@@ -193,22 +193,24 @@ internal static class PanelIntro
             try { done(); }
             catch (Exception ex) { Log.Error("판 나타나기 끝 처리 실패", ex); }
             placedAt = total.ElapsedMilliseconds;
-            // 진짜 판이 화면에 나간 다음에 그림 창을 숨김 (사이에 빈 프레임 없게)
-            var hide = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(34) };
-            hide.Tick += (_, _) =>
-            {
-                hide.Stop();
-                if (play == _play)
-                {
-                    if (ghost.IsVisible) ghost.Hide();
-                    shape.Fill = null; // 판 그림을 들고 있지 않게
-                }
-                // 프레임 로그 (번쩍임 확인용): 그림 창 첫 프레임 · 움직인 프레임 수 · 가장 긴 프레임 간격 · 진짜 판을 놓은 때 · 그림 창을 숨긴 때
-                Log.Info($"앱 모음 판 나타나기({mode}): 그림 창 첫 프레임 {firstFrame}ms, 프레임 {frames}개(가장 긴 간격 {maxGap}ms), 진짜 판 제자리 {placedAt}ms, 그림 창 닫음 {total.ElapsedMilliseconds}ms");
-            };
-            hide.Start();
+            // 프레임 로그 (번쩍임 확인용): 그림 창 첫 프레임 · 움직인 프레임 수 · 가장 긴 프레임 간격 · 끝(진짜 판 놓고 그림 창 숨김)
+            Log.Info($"앱 모음 판 나타나기({mode}): 그림 창 첫 프레임 {firstFrame}ms, 프레임 {frames}개(가장 긴 간격 {maxGap}ms), 끝 {placedAt}ms");
         }
         CompositionTarget.Rendering += Frame;
         ghost.Show();
     }
+
+    /// <summary>
+    /// 진짜 판을 제자리에 놓은 바로 그 차례에 그림 창을 숨김 (DWM 이 같은 프레임에 합성 — 두 판이 겹치거나 판이 두 번 뜨는 것처럼 보이지 않게).
+    /// 진짜 판은 이미 화면 밖에서 다 그려진 불투명 창이라 놓는 순간 그대로 보임.
+    /// </summary>
+    public static void Swap(int play)
+    {
+        if (play != _play) return;
+        if (_ghost is { IsVisible: true } g) g.Hide();
+        if (_shape is not null) _shape.Fill = null; // 판 그림을 들고 있지 않게
+    }
+
+    /// <summary>지금 움직이는 차례 번호 (Swap 에 넘김).</summary>
+    public static int CurrentPlay => _play;
 }

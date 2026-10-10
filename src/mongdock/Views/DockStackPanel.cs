@@ -89,6 +89,8 @@ internal abstract class DockStackPanel : Window
         {
             LogName = title, // 닫는 이유(바깥 클릭 위치·활성화된 창)를 로그에
             ActivationGraceMs = 600,
+            // 다른 창이 활성화된 것만으로는 닫지 않음 (사용자 "켜지다 말고 닫힘" — 2026-10-10). 닫기 = 바깥 클릭·Esc·앱 실행·버튼 다시 누르기
+            CloseOnActivation = false,
         };
         SourceInitialized += (_, _) =>
         {
@@ -125,7 +127,10 @@ internal abstract class DockStackPanel : Window
                 Left = -32000;
                 Top = -32000;
                 // 배치가 끝난 지금 바로 그림을 떠서 움직이기 시작 (화면 밖 첫 프레임을 기다리지 않음 — 그새 진짜 판은 화면 밖에서 그려짐)
-                if (Snapshot() is { } picture)
+                var snapClock = System.Diagnostics.Stopwatch.StartNew();
+                var picture = Snapshot();
+                Log.Info($"앱 모음 판: 그림 뜨기 {snapClock.ElapsedMilliseconds}ms");
+                if (picture is not null)
                 {
                     _introPlaying = true;
                     PanelIntro.Play(Services, _intro, picture, final, _anchor, () =>
@@ -133,6 +138,7 @@ internal abstract class DockStackPanel : Window
                         _introDone = true;
                         if (_rendered) ReleaseIntro();
                     });
+                    _introPlay = PanelIntro.CurrentPlay;
                 }
                 else _introDone = true; // 그림을 못 뜨면 첫 프레임 뒤 바로 제자리
             }
@@ -141,20 +147,12 @@ internal abstract class DockStackPanel : Window
                     fromY: _edge switch { DockEdge.Bottom => 8, DockEdge.Top => -8, _ => 0 });
             Activate();
             Keyboard.Focus(this);
+            EnsureForeground(retry: true);
             _watch.Start();
         };
-        Deactivated += (_, _) =>
-        {
-            if (Dragging || KeepOpenOnDeactivate) return;
-            // 열린 직후 잠깐의 활성화 변화(누른 독·이전 창이 포커스를 다시 가져가는 것)로는 닫지 않음 — 바깥 클릭은 OutsideClickWatcher 가
-            if (_showClock.ElapsedMilliseconds < 600)
-            {
-                Log.Info($"{title}: 열린 직후 비활성화 무시 ({_showClock.ElapsedMilliseconds}ms)");
-                return;
-            }
-            Log.Info($"{title}: 닫음 — 비활성화");
-            CloseAnimated();
-        };
+        // 비활성화(포커스를 다른 창이 가져감)만으로는 닫지 않음 — 독 클릭·알림·백그라운드 창이 잠깐 포커스를 가져가도 판이 그대로.
+        // 닫기는 바깥 클릭(OutsideClickWatcher — 마우스 훅으로 판 밖 누름), Esc, 앱 실행, 버튼 다시 누르기, 다른 몽독 판 열기.
+        Deactivated += (_, _) => Log.Info($"{title}: 비활성화 (닫지 않음, {_showClock.ElapsedMilliseconds}ms)");
         KeyDown += (_, e) => { if (e.Key == Key.Escape) { e.Handled = true; CloseAnimated(); } };
         Closed += (_, _) =>
         {
@@ -173,8 +171,25 @@ internal abstract class DockStackPanel : Window
     private readonly string _intro;
     /// <summary>나타나는 중: 진짜 판의 제자리 (그동안 판은 화면 밖, 그림이 움직임).</summary>
     private Rect? _introHold;
+    /// <summary>판이 포그라운드가 아니면 SetForegroundWindow (독을 누른 직후라 허용됨). retry 면 50ms 뒤 한 번 더.</summary>
+    private void EnsureForeground(bool retry)
+    {
+        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero || _closing) return;
+        if (Native.User32.GetForegroundWindow() == hwnd) return;
+        bool ok = Native.User32.SetForegroundWindow(hwnd);
+        Log.Info($"판 포그라운드 {(ok ? "가져옴" : "실패")}{(retry ? "" : " (다시)")}");
+        if (retry)
+        {
+            var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
+            t.Tick += (_, _) => { t.Stop(); EnsureForeground(retry: false); if (IsActive) Keyboard.Focus(this); };
+            t.Start();
+        }
+    }
+
     /// <summary>나타나기: 그림이 움직이는 중 / 다 움직였음 / 진짜 판의 첫 프레임이 화면 밖에서 그려졌음.</summary>
     private bool _introPlaying, _introDone, _rendered;
+    private int _introPlay;
 
     /// <summary>진짜 판을 제자리에 (그림 창은 PanelIntro 가 다음 프레임에 숨김).</summary>
     private void ReleaseIntro()
@@ -183,6 +198,8 @@ internal abstract class DockStackPanel : Window
         _introHold = null;
         _introPlaying = false;
         Place();
+        PanelIntro.Swap(_introPlay); // 같은 차례에 그림 창 숨김
+        EnsureForeground(retry: false);
         Log.Info($"앱 모음 판: 창 생성→제자리 {_showClock.ElapsedMilliseconds}ms (첫 프레임 {FirstFrameMs}ms)");
     }
 
