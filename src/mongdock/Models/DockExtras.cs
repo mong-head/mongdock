@@ -41,8 +41,8 @@ public sealed class FolderOptions
 {
     /// <summary>판의 정렬: 추가된 날짜(최근 것 먼저) / 이름.</summary>
     public FolderSort Sort { get; set; } = FolderSort.Added;
-    /// <summary>독 아이콘: 최근 파일 겹치기 / 폴더 아이콘.</summary>
-    public FolderDisplay Display { get; set; } = FolderDisplay.Stack;
+    /// <summary>독 아이콘: 폴더 아이콘(기본) / 최근 파일 겹치기.</summary>
+    public FolderDisplay Display { get; set; } = FolderDisplay.Folder;
 }
 
 // ───────────────────────── 루틴 (#24-A, spec-routines.md §8) ─────────────────────────

@@ -45,6 +45,9 @@ internal static class Program
         int iconsAt = Array.FindIndex(args, a => a == "--icons");
         if (iconsAt >= 0 && iconsAt + 1 < args.Length) RenderAllAppsIcons(args[iconsAt + 1]);
 
+        int folderIcons = Array.FindIndex(args, a => a == "--folder-icons");
+        if (folderIcons >= 0 && folderIcons + 1 < args.Length) RenderFolderIcons(args[folderIcons + 1]);
+
         int png = Array.FindIndex(args, a => a == "--png");
         if (png >= 0 && png + 1 < args.Length) RenderPngs(args[png + 1]);
         return _failed == 0 ? 0 : 1;
@@ -258,6 +261,98 @@ internal static class Program
             using (var fs = File.Create(path)) enc.Save(fs);
             Console.WriteLine($"  저장  {path}");
         }
+    }
+
+    /// <summary>
+    /// 독 폴더 아이콘 시안 (#24-B): 지금 것(겹친 파일·폴더 아이콘) + A(흰 폴더) + B(파일이 비어져 나온 폴더, 견본·실제 그림) + C(종류별).
+    /// 라이트·다크 독 위에 52px·확대(94px)·2배 화면(104·188px) 으로 한 장씩, 그리고 시안마다 256 원본.
+    /// </summary>
+    private static void RenderFolderIcons(string dir)
+    {
+        Directory.CreateDirectory(dir);
+        var asm = typeof(Mongdock.App).Assembly;
+        var mac = asm.GetType("Mongdock.Services.MacIconRenderer")!;
+        var svc = asm.GetType("Mongdock.Services.DockFolderService")!;
+        var glyphType = asm.GetType("Mongdock.Services.FolderGlyph")!;
+        BitmapSource? Thumb(string p) => (BitmapSource?)svc.GetMethod("Thumbnail")!.Invoke(null, new object[] { p, 160 });
+        BitmapSource Folder(string g) => (BitmapSource)mac.GetMethod("Folder")!.Invoke(null, new[] { Enum.Parse(glyphType, g) })!;
+        BitmapSource Stack(IReadOnlyList<ImageSource?> recent) => (BitmapSource)mac.GetMethod("FolderStack")!.Invoke(null, new object[] { recent })!;
+
+        // 지금 아이콘: 시험 폴더(C:\dev\mongdock-tmp\dockfolder2) 파일 셸 썸네일 겹치기 / 폴더 셸 아이콘을 맥 판에
+        string sample = @"C:\dev\mongdock-tmp\dockfolder2";
+        var sampleFiles = Directory.Exists(sample) ? Directory.GetFiles(sample).Take(3).Select(Thumb).ToList() : new List<BitmapSource?>();
+        var nowStack = (BitmapSource)svc.GetMethod("ComposeStack", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.Invoke(null, new object[] { sampleFiles })!;
+        var shellFolder = Thumb(Environment.GetFolderPath(Environment.SpecialFolder.Windows));
+        var nowFolder = shellFolder is null ? null : (BitmapSource?)mac.GetMethod("Normalize")!.Invoke(null, new object[] { shellFolder });
+
+        // B 실제 그림 예: 윈도우 기본 배경 그림 3장
+        var wallpapers = new[] { @"C:\Windows\Web\Wallpaper\ThemeA\img20.jpg", @"C:\Windows\Web\Wallpaper\ThemeB\img24.jpg", @"C:\Windows\Web\Wallpaper\Spotlight\img50.jpg", @"C:\Windows\Web\Wallpaper\Windows\img0.jpg" }
+            .Where(File.Exists).Take(3).Select(p => (ImageSource?)Thumb(p)).ToList();
+
+        var rows = new List<(string Label, BitmapSource? Img, string File)>
+        {
+            ("지금: 파일 겹쳐 보기", nowStack, "now-stack"),
+            ("지금: 폴더 아이콘으로 보기", nowFolder, "now-folder"),
+            ("A  흰 폴더", Folder("None"), "A-folder"),
+            ("B  비어져 나온 파일 (견본)", Stack(new ImageSource?[0]), "B-stack-sample"),
+            ("B  비어져 나온 파일 (사진 폴더 예)", Stack(wallpapers), "B-stack-photos"),
+            ("C  다운로드", Folder("Downloads"), "C-downloads"),
+            ("C  문서", Folder("Documents"), "C-documents"),
+            ("C  사진", Folder("Pictures"), "C-pictures"),
+        };
+        foreach (var (_, img, file) in rows)
+            if (img is not null) SavePng(img, Path.Combine(dir, $"{file}-256.png"));
+
+        int[] sizes = { 52, 94, 104, 188 };
+        var allApps = (ImageSource)mac.GetMethod("AllApps")!.Invoke(null, null)!;
+        foreach (var (name, bg, dock, ink) in new[]
+        {
+            ("light", Color.FromRgb(0xE9, 0xEC, 0xF4), Color.FromArgb(0xC8, 0xFF, 0xFF, 0xFF), Color.FromRgb(0x22, 0x22, 0x28)),
+            ("dark", Color.FromRgb(0x14, 0x16, 0x1C), Color.FromArgb(0xC8, 0x2C, 0x2C, 0x33), Color.FromRgb(0xEE, 0xEE, 0xF2)),
+        })
+        {
+            const int pad = 18, labelW = 290;
+            int rowH = sizes.Max() + pad * 2;
+            int width = labelW + sizes.Sum(s => s + pad) + 52 + pad * 3;
+            int height = rows.Count * rowH;
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen())
+            {
+                dc.DrawRectangle(new SolidColorBrush(bg), null, new Rect(0, 0, width, height));
+                for (int i = 0; i < rows.Count; i++)
+                {
+                    var (label, img, _) = rows[i];
+                    double y0 = i * rowH, baseY = y0 + rowH - pad;
+                    var text = new FormattedText(label, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+                        new Typeface("Malgun Gothic"), 15, new SolidColorBrush(ink), 1.0);
+                    dc.DrawText(text, new Point(pad, y0 + (rowH - text.Height) / 2));
+                    // 독 판 (앱 모음 아이콘 옆에 놓아 비교)
+                    double dockW = 52 * 2 + pad * 3, dockX = labelW - pad;
+                    dc.DrawRoundedRectangle(new SolidColorBrush(dock), null, new Rect(dockX, baseY - 52 - 10, dockW, 52 + 20), 16, 16);
+                    dc.DrawImage(Downscale(allApps, 52), new Rect(dockX + pad, baseY - 52, 52, 52));
+                    double x = dockX + pad * 2 + 52;
+                    if (img is null) continue;
+                    foreach (int s in sizes)
+                    {
+                        dc.DrawImage(Downscale(img, s), new Rect(x, baseY - s, s, s));
+                        x += s + pad;
+                    }
+                }
+            }
+            var rtb = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+            rtb.Render(dv);
+            string path = Path.Combine(dir, $"folder-icons-{name}.png");
+            SavePng(rtb, path);
+            Console.WriteLine($"  저장  {path}");
+        }
+    }
+
+    private static void SavePng(BitmapSource img, string path)
+    {
+        var enc = new PngBitmapEncoder();
+        enc.Frames.Add(BitmapFrame.Create(img));
+        using var fs = File.Create(path);
+        enc.Save(fs);
     }
 
     /// <summary>그림을 size x size 픽셀로 고품질 축소 (독 슬롯에 그리는 것과 같게).</summary>

@@ -156,7 +156,14 @@ internal sealed class DockFolderService : IDisposable
         string key = string.Join("|", l.Items.Select(f => f.FullName + ":" + Added(f).Ticks)) + "|" + style;
         if (_stackCache.TryGetValue(Normalize(path), out var cached) && cached.Key == key) return cached.Image;
 
-        var images = l.Items.Select(f => Thumbnail(f.FullName, 160)).ToList();
+        var rtb = ComposeStack(l.Items.Select(f => (BitmapSource?)Thumbnail(f.FullName, 160)).ToList());
+        _stackCache[Normalize(path)] = (key, rtb);
+        return rtb;
+    }
+
+    /// <summary>썸네일(최근 것 먼저) 최대 3장을 오른쪽 위로 조금씩 어긋나게 겹친 256 그림.</summary>
+    internal static BitmapSource ComposeStack(IList<BitmapSource?> images)
+    {
         var dv = new DrawingVisual();
         using (var dc = dv.RenderOpen())
         {
@@ -179,7 +186,6 @@ internal sealed class DockFolderService : IDisposable
         var rtb = new RenderTargetBitmap(StackPx, StackPx, 96, 96, PixelFormats.Pbgra32);
         rtb.Render(dv);
         rtb.Freeze();
-        _stackCache[Normalize(path)] = (key, rtb);
         return rtb;
     }
 
