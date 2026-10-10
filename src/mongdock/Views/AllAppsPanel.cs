@@ -333,7 +333,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     private UIElement DropHint()
     {
         var grid = new Grid { Height = 64 };
-        grid.Children.Add(new System.Windows.Shapes.Rectangle { Stroke = P.Divider, StrokeThickness = 1.5, StrokeDashArray = new DoubleCollection { 4, 3 }, RadiusX = 10, RadiusY = 10 });
+        grid.Children.Add(DashedRect(10));
         grid.Children.Add(new TextBlock { Text = Loc.T("앱을 여기로 끌어다 놓으면 즐겨찾기에 들어가요"), Foreground = P.SubText, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
         return grid;
     }
@@ -386,7 +386,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         var content = new Grid();
         content.Children.Add(stack);
         content.Children.Add(overlay);
-        var dashed = new System.Windows.Shapes.Rectangle { Stroke = P.Divider, StrokeThickness = 1.2, StrokeDashArray = new DoubleCollection { 3, 3 }, RadiusX = 8, RadiusY = 8, IsHitTestVisible = false };
+        var dashed = DashedRect(8);
         var host = new Grid();
         host.Children.Add(dashed);
         host.Children.Add(content);
@@ -1105,14 +1105,44 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     }
 
     /// <summary>폴더 줄 끝 [+ 새 폴더] (늘 보임).</summary>
+    /// <summary>"추가"·"추천" 칸 공통 점선 (2026-10-10 사용자: 실선·진한 보라는 구림) — 연한 회보라 1.5px, 대시 4/3.</summary>
+    internal Brush DashBrush => P.IsLight ? DashLight : DashDark;
+    private static readonly Brush DashLight = Frozen(Color.FromRgb(0xC9, 0xC3, 0xDC)), DashDark = Frozen(Color.FromRgb(0x5E, 0x59, 0x74));
+    private static Brush Frozen(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
+
+    internal System.Windows.Shapes.Rectangle DashedRect(double radius) => new()
+    {
+        Stroke = DashBrush,
+        StrokeThickness = 1.5,
+        StrokeDashArray = new DoubleCollection { 4, 3 },
+        RadiusX = radius,
+        RadiusY = radius,
+        Fill = Brushes.Transparent,
+        IsHitTestVisible = false,
+    };
+
+    /// <summary>점선 칸 가운데 "+" — 중간 회색, 마우스를 올리면 연보라.</summary>
+    internal TextBlock PlusGlyph(double size) => new()
+    {
+        Text = "\uE710",
+        FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),
+        FontSize = size,
+        Foreground = P.SubText,
+        HorizontalAlignment = HorizontalAlignment.Center,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+
     private Border NewFolderTile()
     {
+        // 폴더 칸과 같은 크기·모서리, 이름도 폴더 이름과 같은 글자 (점선·회색 "+"만 다름)
         var plus = new Grid { Width = GroupTile, Height = GroupTile, HorizontalAlignment = HorizontalAlignment.Center };
-        plus.Children.Add(new System.Windows.Shapes.Rectangle { Stroke = P.Divider, StrokeThickness = 1.5, StrokeDashArray = new DoubleCollection { 4, 3 }, RadiusX = 14, RadiusY = 14 });
-        plus.Children.Add(new TextBlock { Text = "\uE710", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 18, Foreground = P.SubText, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
+        plus.Children.Add(DashedRect(14));
+        var glyph = PlusGlyph(18);
+        plus.Children.Add(glyph);
         var stack = new StackPanel();
         stack.Children.Add(plus);
-        stack.Children.Add(new TextBlock { Text = Loc.T("새 폴더"), TextAlignment = TextAlignment.Center, FontSize = 12, Foreground = P.SubText, Margin = new Thickness(0, 5, 0, 0) });
+        stack.Children.Add(new TextBlock { Text = Loc.T("새 폴더"), TextAlignment = TextAlignment.Center, FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 5, 0, 0) });
+        stack.Children.Add(new TextBlock { Text = " ", FontSize = 11 }); // 폴더 칸의 "n개" 줄 자리
         var cell = new Border
         {
             Width = Cols * AppCell / GroupCols - 4,
@@ -1125,8 +1155,8 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             ToolTip = Loc.T("새 폴더 — 앱을 여기로 끌어다 놓아도 돼요"),
             Tag = new DropTag("newfolder", ""),
         };
-        cell.MouseEnter += (_, _) => cell.Background = P.Hover;
-        cell.MouseLeave += (_, _) => cell.Background = Brushes.Transparent;
+        cell.MouseEnter += (_, _) => { cell.Background = P.Hover; glyph.Foreground = P.SoftAccentText; };
+        cell.MouseLeave += (_, _) => { cell.Background = Brushes.Transparent; glyph.Foreground = P.SubText; };
         cell.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;

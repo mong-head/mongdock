@@ -115,23 +115,27 @@ internal sealed partial class AllAppsPanel
         return cell;
     }
 
-    /// <summary>줄 끝 [+ 루틴 추가]: 누르면 "지금 화면 그대로 저장 / 직접 만들기 / 루틴이 뭔가요?".</summary>
+    /// <summary>
+    /// 줄 끝 [+ 루틴 추가]: 루틴 칸과 똑같은 자리 — 아이콘 본체(44px 그림 안의 둥근 사각 ≈ 80%)와 같은 크기·모서리의 연한 회보라 점선,
+    /// 그 아래 점 자리와 이름 기준선도 같게. "+"는 회색(마우스를 올리면 연보라), 글자는 다른 칸 이름과 같은 색·굵기.
+    /// 누르면 "지금 화면 그대로 저장 / 직접 만들기 / 루틴이 뭔가요?".
+    /// </summary>
     private Border AddRoutineCell()
     {
-        var plus = new Border
-        {
-            Width = AppIcon,
-            Height = AppIcon,
-            CornerRadius = new CornerRadius(10),
-            BorderBrush = P.SoftAccentLine,
-            BorderThickness = new Thickness(1.5),
-            Background = P.SoftAccent,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Child = new TextBlock { Text = "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 16, Foreground = P.SoftAccentText, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
-        };
+        double body = Math.Round(AppIcon * 0.805); // 맥 아이콘 그리드: 256 캔버스 안 본체 206 (MacIconRenderer)
+        var slot = new Grid { Width = AppIcon, Height = AppIcon, HorizontalAlignment = HorizontalAlignment.Center };
+        var dashed = DashedRect(body * 0.225);
+        dashed.Width = body;
+        dashed.Height = body;
+        dashed.HorizontalAlignment = HorizontalAlignment.Center;
+        dashed.VerticalAlignment = VerticalAlignment.Center;
+        slot.Children.Add(dashed);
+        var glyph = PlusGlyph(14);
+        slot.Children.Add(glyph);
         var stack = new StackPanel();
-        stack.Children.Add(plus);
-        stack.Children.Add(new TextBlock { Text = Loc.T("루틴 추가"), TextAlignment = TextAlignment.Center, FontSize = 11.5, Foreground = P.SoftAccentText, Margin = new Thickness(0, 7, 0, 0) });
+        stack.Children.Add(slot);
+        stack.Children.Add(new Ellipse { Width = 4, Height = 4, Fill = Brushes.Transparent, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 2, 0, 0) }); // 루틴 칸의 실행 점 자리
+        stack.Children.Add(new TextBlock { Text = Loc.T("루틴 추가"), TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 11.5, Margin = new Thickness(0, 1, 0, 0) });
         var cell = new Border
         {
             Width = AppCell - 4,
@@ -139,11 +143,13 @@ internal sealed partial class AllAppsPanel
             Padding = new Thickness(2, 6, 2, 4),
             CornerRadius = new CornerRadius(8),
             Background = Brushes.Transparent,
+            BorderBrush = Brushes.Transparent,
+            BorderThickness = new Thickness(1.5), // 루틴 칸과 같은 테두리 자리 (위치가 어긋나지 않게)
             Child = stack,
             Cursor = Cursors.Hand,
         };
-        cell.MouseEnter += (_, _) => cell.Background = P.Tile;
-        cell.MouseLeave += (_, _) => cell.Background = Brushes.Transparent;
+        cell.MouseEnter += (_, _) => { cell.Background = P.Tile; glyph.Foreground = P.SoftAccentText; };
+        cell.MouseLeave += (_, _) => { cell.Background = Brushes.Transparent; glyph.Foreground = P.SubText; };
         cell.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;
