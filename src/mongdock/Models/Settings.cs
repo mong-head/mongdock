@@ -420,6 +420,8 @@ public sealed class Settings
     public List<RoutineDef> Routines { get; set; } = new();
     /// <summary>루틴 실행 횟수 (사용 통계 routineRuns — 하루치 신호를 만들 때 0으로).</summary>
     public int RoutineRunsSinceSignal { get; set; }
+    /// <summary>옛 빌드(602a63a 전)가 이미 열린 루틴을 누를 때마다 센 실행 횟수를 한 번 버렸음 (통계에 나가지 않게).</summary>
+    public bool RoutineRunsReset { get; set; }
     /// <summary>새 기능 NEW 배지 (Services/NewBadges): 기존 사용자가 그 기능을 처음 받은 때 (UTC). 이 PC 것 — 설정 옮기기 제외.</summary>
     public Dictionary<string, DateTime> NewSince { get; set; } = new();
     /// <summary>NEW 배지를 다 본(써 본·새 설치) 기능.</summary>

@@ -334,6 +334,12 @@ public sealed class SettingsService : ISettingsService, IDisposable
         // 숫자로 적힌 모르는 핀 종류도 그 핀만 빠짐 (기본값 Exe 로 바꾸지 않음)
         // 루틴: 대상 없는 항목은 버림(빈 루틴은 그대로 — 나중에 채울 수 있음), id 채움(겹치면 새로), 최대 12개·항목 15개
         s.Routines ??= new List<RoutineDef>();
+        // 이관 (한 번): 옛 빌드가 다시 누를 때마다 센 루틴 실행 횟수는 버림
+        if (!s.RoutineRunsReset)
+        {
+            s.RoutineRunsSinceSignal = 0;
+            s.RoutineRunsReset = true;
+        }
         var routineIds = new HashSet<string>();
         s.Routines.RemoveAll(r =>
         {
