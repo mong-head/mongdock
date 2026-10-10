@@ -57,6 +57,8 @@ public static class SettingsTransfer
         s.NewSince.Clear(); // NEW 배지 기록은 이 PC 것 — 옮기지 않음
         s.NewSeen.Clear();
         s.AllApps.DismissedSuggestions.Clear(); // 추천 거절도
+        s.RoutineRestores.Clear(); // 루틴이 바꾼 소리 설정의 되돌릴 값·시작 조건을 물은 날도 이 PC 것
+        s.RoutineAsked.Clear();
         // 실행 기록에서 나온 자동 폴더 내용과 기록 날짜도 — 사용 기록은 이 PC 밖으로 안 나감
         s.AllApps.UsageSeededAt = null;
         s.AllApps.AutoFoldersDay = null;

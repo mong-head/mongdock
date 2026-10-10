@@ -103,7 +103,7 @@ public sealed class DockLayout
         return new DockLayout
         {
             Edge = s.Edge,
-            Mode = s.Mode,
+            Mode = Services.RoutineTriggers.DockHideActive ? DockMode.AutoHide : s.Mode, // 루틴 "독 자동 숨김" (루틴 데스크톱에 있는 동안만)
             IsLight = light,
             Blur = blur,
             Wave = s.WaveMagnification && !lightweight,

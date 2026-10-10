@@ -129,6 +129,80 @@ public sealed class RoutineDef
     public List<RoutineItem> Items { get; set; } = new();
     /// <summary>"지금 화면 저장"으로 만든 루틴인지 (사용 통계 savedFromScreen 용).</summary>
     public bool FromScreen { get; set; }
+    /// <summary>"▸ 더 보기" (spec-routines §14) — 없으면 전부 꺼짐.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public RoutineMore? More { get; set; }
+}
+
+[JsonConverter(typeof(CamelEnumConverter<RoutineStartKind>))]
+public enum RoutineStartKind { Login, Monitor, Audio, Time, App }
+
+/// <summary>시작 조건 하나 (직접 누르기는 늘 됨 — 조건이 없으면 "직접"만).</summary>
+public sealed class RoutineStart
+{
+    public RoutineStartKind Kind { get; set; }
+    /// <summary>Monitor: 장치 이름 (null = 외부 모니터 아무거나). Audio: 출력 장치 id.</summary>
+    public string? Device { get; set; }
+    /// <summary>표시 이름 (장치·앱).</summary>
+    public string? Name { get; set; }
+    /// <summary>Time: "HH:mm".</summary>
+    public string? Time { get; set; }
+    /// <summary>Time: 요일 (0 = 일요일 … 6). 비면 매일.</summary>
+    public List<int>? Days { get; set; }
+    /// <summary>App: exe 이름(소문자, 확장자 없이) 또는 AUMID.</summary>
+    public string? App { get; set; }
+}
+
+public sealed class RoutineEnd
+{
+    /// <summary>이 출력 장치를 빼면 끝낼지 묻기 (장치 id).</summary>
+    public string? AudioRemoved { get; set; }
+    public string? AudioName { get; set; }
+    /// <summary>이 시각(HH:mm)이 되면 끝낼지 묻기.</summary>
+    public string? Time { get; set; }
+    /// <summary>루틴으로 연 앱을 다 닫으면 (묻지 않고) 끝 — 데스크톱 닫기·설정 되돌리기.</summary>
+    public bool AllAppsClosed { get; set; }
+}
+
+public sealed class RoutineChange
+{
+    /// <summary>방해 금지 (몽독 배너 — 루틴 데스크톱에 있는 동안만).</summary>
+    public bool Dnd { get; set; }
+    /// <summary>독 자동 숨김 (루틴 데스크톱에 있는 동안만).</summary>
+    public bool DockHide { get; set; }
+    /// <summary>소리 출력 장치 id (루틴 전체, 끝내면 되돌림).</summary>
+    public string? OutputDevice { get; set; }
+    public string? OutputName { get; set; }
+    /// <summary>볼륨 0~100 (루틴 전체, 끝내면 되돌림).</summary>
+    public int? Volume { get; set; }
+}
+
+/// <summary>루틴 "▸ 더 보기" — 모두 기본 꺼짐.</summary>
+public sealed class RoutineMore
+{
+    public List<RoutineStart> Start { get; set; } = new();
+    /// <summary>묻지 않고 바로 열기 (시간 조건에는 쓰지 않음 — 시간은 늘 묻기).</summary>
+    public bool AutoOpen { get; set; }
+    public RoutineEnd End { get; set; } = new();
+    public RoutineChange Change { get; set; } = new();
+    /// <summary>방해 금지 중에도 배너를 띄울 앱 (AUMID 또는 exe 이름).</summary>
+    public List<string> DndExceptions { get; set; } = new();
+    /// <summary>비슷하게 열면 물어보기 (그 데스크톱에 루틴 앱 70% 이상·2개 이상).</summary>
+    public bool AskSimilar { get; set; }
+    /// <summary>상단바에 머문 시간 보이기.</summary>
+    public bool ShowTime { get; set; }
+}
+
+/// <summary>루틴이 바꾼 소리 설정의 "열기 직전 값" (몽독을 다시 시작해도 끝내기 때 되돌릴 수 있게 settings 에).</summary>
+public sealed class RoutineRestore
+{
+    public string RoutineId { get; set; } = "";
+    public string? OutputDevice { get; set; }
+    /// <summary>루틴이 바꾼 값 (끝낼 때 지금 값이 이것과 다르면 사용자가 바꾼 것 → 되돌리지 않음).</summary>
+    public string? AppliedDevice { get; set; }
+    public int? Volume { get; set; }
+    public int? AppliedVolume { get; set; }
+    public DateTime At { get; set; }
 }
 
 // ───────────────────────── 앱 모음 판 (#24) ─────────────────────────

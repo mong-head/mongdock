@@ -108,11 +108,16 @@ var STATS_COLUMNS = [
   ['allAppsCleanup', bool_], // 안 쓰는 앱 정리를 써 봤는지
   ['routines', int_(0, 12)], // 루틴 수 (#24-A)
   ['routineRuns', int_(0, 10000)], // 지난 신호 뒤 루틴 실행 횟수
-  ['routineSavedFromScreen', bool_] // "지금 화면 저장"으로 만든 루틴이 있음
+  ['routineSavedFromScreen', bool_], // "지금 화면 저장"으로 만든 루틴이 있음
+  ['routineTriggers', kinds_], // 시작 조건 종류별 개수 "login:1,time:2" (#24-A §14)
+  ['routineEndTriggers', kinds_], // 끝 조건 종류별 개수
+  ['routineSettingSteps', int_(0, 12)] // 함께 바꿀 것을 쓰는 루틴 수
 ];
 
 function oneOf_(list) { return function (v) { v = String(v); return list.indexOf(v) >= 0 ? v : null; }; }
 function bool_(v) { return v === true || v === false ? v : null; }
+// 종류별 개수 "login:1,time:2" (영문 소문자 종류 + 개수만, 200자 안) — 다른 글은 버림
+function kinds_(v) { return typeof v === 'string' && v.length <= 200 && /^([a-z]{1,12}:[0-9]{1,3})?(,[a-z]{1,12}:[0-9]{1,3})*$/.test(v) ? v : null; }
 function int_(min, max) {
   return function (v) { return typeof v === 'number' && Math.floor(v) === v && v >= min && v <= max ? v : null; };
 }

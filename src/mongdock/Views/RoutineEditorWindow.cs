@@ -15,7 +15,7 @@ namespace Mongdock.Views;
 /// ≡ 를 끌어 여는 순서, × 로 빼기. [+ 앱] [+ 웹사이트] [+ 파일·폴더] [지금 화면에서 다시 읽기], [루틴 지우기] [취소] [저장].
 /// 고치는 동안은 사본 — [저장]을 눌러야 반영.
 /// </summary>
-internal sealed class RoutineEditorWindow : RoutineCardWindow
+internal sealed partial class RoutineEditorWindow : RoutineCardWindow
 {
     private static RoutineEditorWindow? _open;
 
@@ -114,6 +114,7 @@ internal sealed class RoutineEditorWindow : RoutineCardWindow
         _status = Muted("", 11.5);
         _status.Margin = new Thickness(76, 0, 0, 0);
         Body.Children.Add(_status);
+        Body.Children.Add(BuildMore()); // ▸ 더 보기 (RoutineEditorWindow.More.cs)
 
         // 아래 버튼
         var bottom = new DockPanel { Margin = new Thickness(0, 14, 0, 0), LastChildFill = false };
@@ -633,6 +634,7 @@ internal sealed class RoutineEditorWindow : RoutineCardWindow
         string name = _name.Text.Trim();
         _r.Name = name.Length > 0 ? name : _original?.Name ?? RoutineUi.NextName(Services);
         _r.Items.RemoveAll(i => i.Kind != RoutineItemKind.App && string.IsNullOrWhiteSpace(i.Target)); // 빈 웹 주소·경로
+        if (!AnyMore(_r.More)) _r.More = null; // 더 보기를 하나도 안 켰으면 저장하지 않음
         if (_original is null)
         {
             if (!RoutineUi.Add(Services, _r)) return;
@@ -647,6 +649,7 @@ internal sealed class RoutineEditorWindow : RoutineCardWindow
             _original.Name = _r.Name;
             _original.Icon = _r.Icon;
             _original.Items = _r.Items;
+            _original.More = _r.More;
             foreach (var pin in Services.Settings.Current.Pins.Where(p => p.Kind == PinKind.Routine && p.Target == _original.Id)) pin.Name = _r.Name;
             Services.Settings.Save();
             Log.Info($"루틴 편집 저장: 항목 {_r.Items.Count}개");

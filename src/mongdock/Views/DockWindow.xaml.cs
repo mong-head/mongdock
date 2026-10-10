@@ -128,6 +128,7 @@ public partial class DockWindow : Window
         AppState.Changed += OnSettingsChanged; // 일시 정지/해제
         DockState.CoachPinChanged += OnCoachPinChanged;
         RoutineService.Changed += OnRoutinesChanged;
+        RoutineTriggers.FocusChanged += OnRoutineFocusChanged;
         _subscribed = true;
 
         ApplyAll();
@@ -154,6 +155,7 @@ public partial class DockWindow : Window
             AppState.Changed -= OnSettingsChanged;
             DockState.CoachPinChanged -= OnCoachPinChanged;
             RoutineService.Changed -= OnRoutinesChanged;
+            RoutineTriggers.FocusChanged -= OnRoutineFocusChanged;
             _subscribed = false;
         }
         DockState.VisiblePanel = Rect.Empty;
@@ -173,6 +175,9 @@ public partial class DockWindow : Window
 
     /// <summary>루틴으로 연 창이 열림·닫힘 → 루틴 아이콘 점.</summary>
     private void OnRoutinesChanged() { if (!_closed) UpdateStates(); }
+
+    /// <summary>루틴 데스크톱에 들어가고 나옴 → "독 자동 숨김" 다시 적용.</summary>
+    private void OnRoutineFocusChanged() { if (!_closed) ApplyAll(); }
 
     private void OnWindowFlashed(object? sender, IntPtr hwnd)
     {

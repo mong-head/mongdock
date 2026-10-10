@@ -422,6 +422,10 @@ public sealed class Settings
     public int RoutineRunsSinceSignal { get; set; }
     /// <summary>옛 빌드(602a63a 전)가 이미 열린 루틴을 누를 때마다 센 실행 횟수를 한 번 버렸음 (통계에 나가지 않게).</summary>
     public bool RoutineRunsReset { get; set; }
+    /// <summary>열린 루틴이 바꾼 소리 설정의 열기 직전 값 (끝내기·"설정만 되돌리기" 때 되돌림). 이 PC 것.</summary>
+    public List<RoutineRestore> RoutineRestores { get; set; } = new();
+    /// <summary>시작 조건 "같은 날 같은 조건으로 한 번만" 기록: "루틴id|조건번호" → 날짜(yyyy-MM-dd). 이 PC 것.</summary>
+    public Dictionary<string, string> RoutineAsked { get; set; } = new();
     /// <summary>새 기능 NEW 배지 (Services/NewBadges): 기존 사용자가 그 기능을 처음 받은 때 (UTC). 이 PC 것 — 설정 옮기기 제외.</summary>
     public Dictionary<string, DateTime> NewSince { get; set; } = new();
     /// <summary>NEW 배지를 다 본(써 본·새 설치) 기능.</summary>

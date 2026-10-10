@@ -334,6 +334,20 @@ public sealed class SettingsService : ISettingsService, IDisposable
         // 숫자로 적힌 모르는 핀 종류도 그 핀만 빠짐 (기본값 Exe 로 바꾸지 않음)
         // 루틴: 대상 없는 항목은 버림(빈 루틴은 그대로 — 나중에 채울 수 있음), id 채움(겹치면 새로), 최대 12개·항목 15개
         s.Routines ??= new List<RoutineDef>();
+        s.RoutineRestores ??= new List<RoutineRestore>();
+        s.RoutineRestores.RemoveAll(r => r is null);
+        s.RoutineAsked ??= new Dictionary<string, string>();
+        foreach (var r in s.Routines.Where(r => r?.More is not null))
+        {
+            var m = r.More!;
+            m.Start ??= new List<RoutineStart>();
+            m.Start.RemoveAll(x => x is null);
+            m.End ??= new RoutineEnd();
+            m.Change ??= new RoutineChange();
+            if (m.Change.Volume is int v) m.Change.Volume = Math.Clamp(v, 0, 100);
+            m.DndExceptions ??= new List<string>();
+            m.DndExceptions.RemoveAll(string.IsNullOrWhiteSpace);
+        }
         // 이관 (한 번): 옛 빌드가 다시 누를 때마다 센 루틴 실행 횟수는 버림
         if (!s.RoutineRunsReset)
         {
@@ -727,6 +741,8 @@ public sealed class SettingsService : ISettingsService, IDisposable
         imported.NewSince = cur.NewSince; // NEW 배지 기록은 이 PC 것
         imported.NewSeen = cur.NewSeen;
         imported.AllApps.DismissedSuggestions = cur.AllApps.DismissedSuggestions; // 추천 거절도 이 PC 것
+        imported.RoutineRestores = cur.RoutineRestores; // 루틴이 바꾼 소리 설정의 되돌릴 값·물은 날도
+        imported.RoutineAsked = cur.RoutineAsked;
         // 실행 기록에서 나온 것(자동 폴더 내용, 씨앗·갱신·정리 띠 날짜)도 이 PC 것 — 다른 PC 의 날짜가 오면 독 핀 유예가 꺼지거나 씨앗을 안 읽음
         imported.AllApps.UsageSeededAt = cur.AllApps.UsageSeededAt;
         imported.AllApps.CleanupPromptMonth = cur.AllApps.CleanupPromptMonth;

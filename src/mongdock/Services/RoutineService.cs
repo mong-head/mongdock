@@ -34,6 +34,10 @@ internal static class RoutineService
         public Guid? ReturnTo;
         /// <summary>여는 중 (다시 눌러도 두 벌 열지 않음).</summary>
         public bool Running;
+        /// <summary>이번 실행 창이 한 번이라도 있었음 ("앱을 다 닫으면 끝" 판정).</summary>
+        public bool HadWindows;
+        /// <summary>상단바 머문 시간 (초, 그 데스크톱을 보는 동안만).</summary>
+        public double Seconds;
     }
 
     private static AppServices? _services;
@@ -50,11 +54,86 @@ internal static class RoutineService
         services.Windows.WindowsChanged += (_, _) =>
         {
             bool any = false;
+            var emptied = new List<string>();
             lock (Runs)
-                foreach (var r in Runs.Values)
-                    any |= r.Windows.RemoveAll(h => !Alive(h)) > 0; // 닫힘·트레이로 숨음
+                foreach (var (id, r) in Runs)
+                {
+                    bool removed = r.Windows.RemoveAll(h => !Alive(h)) > 0; // 닫힘·트레이로 숨음
+                    any |= removed;
+                    if (removed && r.HadWindows && r.Windows.Count == 0 && !r.Running) emptied.Add(id);
+                }
             if (any) RaiseChanged();
+            foreach (var id in emptied) _ = AllClosedLaterAsync(id);
         };
+    }
+
+    /// <summary>루틴이 열렸다 (새로 열기·"이 루틴인가요?"로 지정) — 함께 바꿀 것 적용. UI 스레드.</summary>
+    public static event Action<RoutineDef>? Started;
+    /// <summary>루틴을 끝냄 — 바꾼 설정 되돌리기. UI 스레드.</summary>
+    public static event Action<RoutineDef>? Ended;
+    /// <summary>루틴으로 연 앱이 다 닫혀 5초가 지남 (끝 조건 "앱을 다 닫으면"). UI 스레드.</summary>
+    public static event Action<string>? AllClosed;
+
+    private static async Task AllClosedLaterAsync(string id)
+    {
+        await Task.Delay(5000); // 앱이 다시 시작하는 경우(업데이트 등) — 5초 뒤에도 0개면
+        bool still;
+        lock (Runs) still = Runs.TryGetValue(id, out var r) && r.HadWindows && r.Windows.Count == 0 && !r.Running;
+        if (still) _dispatcher?.BeginInvoke(() => AllClosed?.Invoke(id));
+    }
+
+    private static void RaiseStarted(RoutineDef routine) => _dispatcher?.BeginInvoke(() =>
+    {
+        try { Started?.Invoke(routine); }
+        catch (Exception ex) { Log.Error("루틴 시작 처리 실패", ex); }
+    });
+
+    /// <summary>실행 중(창이 살아 있음)인 루틴 id 들.</summary>
+    public static List<string> RunningIds()
+    {
+        lock (Runs) return Runs.Where(r => r.Value.Windows.Any(Alive)).Select(r => r.Key).ToList();
+    }
+
+    /// <summary>실행 중 루틴의 데스크톱 (새로 만든 것 또는 열 때·지정할 때의 데스크톱). 모르면 null.</summary>
+    public static Guid? DesktopOf(string id)
+    {
+        lock (Runs) return Runs.TryGetValue(id, out var r) && r.Windows.Any(Alive) ? r.Desktop : null;
+    }
+
+    /// <summary>머문 시간 (초) 더하기·읽기 — RoutineTriggers 가 1초마다.</summary>
+    public static double AddSeconds(string id, double s)
+    {
+        lock (Runs) return Runs.TryGetValue(id, out var r) ? r.Seconds += s : 0;
+    }
+
+    /// <summary>
+    /// "이 루틴인가요? [맞아요]": 그 데스크톱을 이 루틴의 데스크톱으로, 그때 떠 있던 루틴 앱 창을 이번 실행 창으로 (데스크톱은 루틴이 만든 게 아니라 닫지 않음).
+    /// </summary>
+    public static void Adopt(RoutineDef routine, Guid desktop, IEnumerable<IntPtr> windows)
+    {
+        lock (Runs)
+        {
+            if (!Runs.TryGetValue(routine.Id, out var state)) Runs[routine.Id] = state = new RunState();
+            state.Desktop = desktop;
+            state.CreatedDesktop = false;
+            state.ReturnTo = null;
+            foreach (var h in windows)
+                if (state.Claimed.Add(h)) state.Windows.Add(h);
+            state.HadWindows = state.Windows.Count > 0;
+            state.Seconds = 0;
+        }
+        Log.Info($"루틴 지정: 이 데스크톱의 창 {windows.Count()}개");
+        RaiseChanged();
+        RaiseStarted(routine);
+    }
+
+    /// <summary>루틴 앱과 같은 앱인 창 (비슷하게 열면 물어보기). 앱 항목만.</summary>
+    internal static bool IsItemWindow(RoutineItem item, AppWindowInfo w)
+    {
+        if (item.Kind != RoutineItemKind.App) return false;
+        if (Matches(item, w)) return true;
+        string? exe = ExpectedExe(item);
+        return exe is not null && ExeName(w.ProcessPath) == exe;
     }
 
     private static void RaiseChanged() => _dispatcher?.BeginInvoke(() =>
@@ -80,6 +159,16 @@ internal static class RoutineService
         lock (Runs) return Runs.ContainsKey(id);
     }
 
+    /// <summary>데스크톱 번호(1부터)가 실행 중 루틴의 데스크톱이면 그 루틴 id. 아니면 null.</summary>
+    public static string? DesktopRoutineId(int index)
+    {
+        if (index <= 0) return null;
+        var ids = VirtualDesktopService.ReadDesktopIds();
+        if (index > ids.Count) return null;
+        var g = ids[index - 1];
+        lock (Runs) return Runs.FirstOrDefault(r => r.Value.Desktop == g && r.Value.Windows.Any(Alive)).Key;
+    }
+
     /// <summary>데스크톱 번호(1부터)가 실행 중인 루틴이 만든 데스크톱이면 그 루틴 이름 (상단바 데스크톱 표시용). 아니면 null.</summary>
     public static string? DesktopRoutineName(int index)
     {
@@ -89,7 +178,7 @@ internal static class RoutineService
         if (index > ids.Count) return null;
         var g = ids[index - 1];
         string? id;
-        lock (Runs) id = Runs.FirstOrDefault(r => r.Value.CreatedDesktop && r.Value.Desktop == g).Key;
+        lock (Runs) id = Runs.FirstOrDefault(r => r.Value.Desktop == g && r.Value.Windows.Any(Alive)).Key;
         return id is null ? null : services.Settings.Current.Routines.FirstOrDefault(r => r.Id == id)?.Name;
     }
 
@@ -256,7 +345,24 @@ internal static class RoutineService
 
     /// <summary>"이미 켜져 있으면 앞으로 가져오기"인 앱 항목 (함께 열 것이 있으면 앱에 넘겨야 하므로 그냥 실행).</summary>
     private static bool SkipsIfRunning(RoutineItem item) =>
-        item.IfRunning == RoutineIfRunning.Focus && item.Kind == RoutineItemKind.App && string.IsNullOrEmpty(item.Open);
+        item.IfRunning == RoutineIfRunning.Focus && item.Kind == RoutineItemKind.App && string.IsNullOrEmpty(item.Open) && NewWindowArg(item) is null;
+
+    /// <summary>
+    /// 새 창을 열 수 있는 앱 (spec §14 "여러 루틴에 같은 앱"): 이미 켜져 있어도 새 창으로 열어 루틴 데스크톱에 뜨게.
+    /// 브라우저 --new-window(파이어폭스 -new-window), VS Code -n, 탐색기는 열 때마다 새 창이라 "". 그 밖(한 번에 하나만 켜지는 앱)은 null.
+    /// </summary>
+    internal static string? NewWindowArg(RoutineItem item)
+    {
+        if (item.Kind != RoutineItemKind.App) return null;
+        return ExeName(item.Target) switch
+        {
+            "chrome" or "msedge" or "whale" or "brave" or "vivaldi" or "opera" => "--new-window",
+            "firefox" => "-new-window",
+            "code" or "cursor" => "-n",
+            "explorer" => "",
+            _ => null,
+        };
+    }
 
     /// <summary>이미 다른 데스크톱에 켜져 있어 열지 않은 앱들 (이름, 첫 창) — 안내 카드를 띄움. UI 스레드.</summary>
     public static event Action<List<(string Name, IntPtr Hwnd)>>? ElsewhereShown;
@@ -306,6 +412,7 @@ internal static class RoutineService
         }
         if (!state.CreatedDesktop)
         {
+            lock (Runs) state.Desktop = from;
             Log.Warn("루틴: 새 데스크톱을 확인하지 못해 지금 데스크톱에서 엶");
             Notify(Loc.T("새 데스크톱을 만들지 못해 지금 데스크톱에서 열어요"));
             return;
@@ -320,7 +427,10 @@ internal static class RoutineService
         {
             case RoutineItemKind.App:
             {
-                string args = string.Join(" ", new[] { item.Args, Quote(item.Open) }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                // 새 창을 열 수 있는 앱이 이미 켜져 있으면 새 창 인자를 붙임 (안 붙이면 원래 데스크톱의 창이 앞으로 옴)
+                string? newWindow = NewWindowArg(item) is { Length: > 0 } nw && services.Windows.Windows.Any(w => IsItemWindow(item, w))
+                    && !(item.Args ?? "").Contains(nw, StringComparison.OrdinalIgnoreCase) ? nw : null;
+                string args = string.Join(" ", new[] { newWindow, item.Args, Quote(item.Open) }.Where(s => !string.IsNullOrWhiteSpace(s)));
                 if (!string.IsNullOrWhiteSpace(item.Aumid))
                     services.Launcher.Launch(new PinItem { Kind = PinKind.Aumid, Target = item.Aumid, Arguments = args.Length > 0 ? args : null, Name = item.Name ?? "" });
                 else if (File.Exists(Environment.ExpandEnvironmentVariables(item.Target)))
@@ -414,6 +524,7 @@ internal static class RoutineService
                 {
                     if (!state.Claimed.Add(found.Hwnd)) { found = null; continue; } // 다른 항목이 막 잡음
                     state.Windows.Add(found.Hwnd);
+                    state.HadWindows = true;
                 }
                 break;
             }
@@ -536,9 +647,23 @@ internal static class RoutineService
         lock (Runs) Runs.TryGetValue(routine.Id, out state);
         if (state is null) return;
         List<IntPtr> windows;
-        lock (Runs) windows = state.Windows.Where(Alive).ToList();
+        lock (Runs)
+        {
+            // 아직 실행 중인 다른 루틴도 쓰는 창은 닫지 않음 (같은 앱이 여러 루틴에 있을 때)
+            var shared = Runs.Where(r => r.Key != routine.Id && r.Value.Windows.Any(Alive)).SelectMany(r => r.Value.Windows).ToHashSet();
+            windows = state.Windows.Where(h => Alive(h) && !shared.Contains(h)).ToList();
+            state.Windows.Clear(); // 이 실행은 끝 (닫기를 거부한 창이 남아도 루틴 창으로 보지 않음)
+            state.HadWindows = false;
+            state.Seconds = 0;
+        }
         foreach (var h in windows) User32.PostMessage(h, 0x0010 /* WM_CLOSE */, IntPtr.Zero, IntPtr.Zero);
         Log.Info($"루틴 끝내기: 창 {windows.Count}개에 닫기 요청");
+        RaiseChanged();
+        _dispatcher?.BeginInvoke(() =>
+        {
+            try { Ended?.Invoke(routine); }
+            catch (Exception ex) { Log.Error("루틴 끝 처리 실패", ex); }
+        });
         if (!closeDesktop || !state.CreatedDesktop || state.Desktop is not { } desktop) return;
         var returnTo = state.ReturnTo;
         _ = Task.Run(async () =>

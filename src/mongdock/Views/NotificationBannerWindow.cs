@@ -48,7 +48,8 @@ internal sealed class NotificationBannerWindow : Window
     }
 
     /// <summary>배너 아래 버튼 하나 (Primary = 강조색).</summary>
-    public sealed record BannerButton(string Text, Action Run, bool Primary = false);
+    /// <param name="Small">버튼 줄 아래 작은 글자 링크 (예: "다시 묻지 않기").</param>
+    public sealed record BannerButton(string Text, Action Run, bool Primary = false, bool Small = false);
 
     // ───────────────────────── 연결 (App.xaml.cs) ─────────────────────────
 
@@ -85,7 +86,12 @@ internal sealed class NotificationBannerWindow : Window
             _host = this;
         }
 
-        private void OnArrived(object? sender, NotificationItem item) => Show(item, null, null);
+        private void OnArrived(object? sender, NotificationItem item)
+        {
+            // 루틴 방해 금지 (루틴 데스크톱에 있는 동안): 예외 앱만 배너
+            if (!RoutineTriggers.AllowedDuringDnd(item.Aumid, item.AppName)) return;
+            Show(item, null, null);
+        }
 
         public bool Show(NotificationItem item, ImageSource? icon, Action? onClick,
             IReadOnlyList<BannerButton>? buttons = null, TimeSpan? life = null, Action? onIgnored = null, bool ignoreBannerSetting = false)
@@ -288,6 +294,8 @@ internal sealed class NotificationBannerWindow : Window
     {
         var panel = new StackPanel();
         panel.Children.Add(content);
+        var links = buttons.Where(b => b.Small).ToList();
+        buttons = buttons.Where(b => !b.Small).ToList();
         var row = new Grid { Margin = new Thickness(0, 10, 0, 0) };
         for (int i = 0; i < buttons.Count; i++)
         {
@@ -316,6 +324,19 @@ internal sealed class NotificationBannerWindow : Window
             row.Children.Add(button);
         }
         panel.Children.Add(row);
+        foreach (var l in links)
+        {
+            var link = new TextBlock { Text = l.Text, FontSize = 11.5, Foreground = _p.SubText, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 7, 0, -2), Cursor = System.Windows.Input.Cursors.Hand, TextDecorations = TextDecorations.Underline };
+            link.MouseLeftButtonUp += (_, e) =>
+            {
+                e.Handled = true;
+                entry.Answered = true;
+                Dismiss(entry, fast: true);
+                try { l.Run(); }
+                catch (Exception ex) { Log.Error("배너 링크 처리 실패", ex); }
+            };
+            panel.Children.Add(link);
+        }
         return panel;
     }
 

@@ -20,6 +20,7 @@ internal static class RoutineUi
     {
         _services = services;
         RoutineService.Init(services);
+        RoutineTriggers.Init(services); // 더 보기: 시작·끝 조건, 함께 바꿀 것, 비슷하게 열면 묻기, 머문 시간
         RoutineService.ElsewhereShown += list => _ = ShowElsewhereAsync(services, list);
     }
 
@@ -153,6 +154,8 @@ internal static class RoutineUi
             ToolTipService.SetShowOnDisabled(end, true);
         }
         menu.Items.Add(end);
+        if (!RoutineService.IsRunning(routine.Id) && RoutineTriggers.HasRestore(routine.Id))
+            menu.Items.Add(DockMenus.Item(Loc.T("설정만 되돌리기"), () => RoutineTriggers.Restore(routine.Id)));
         menu.Items.Add(new Separator());
         menu.Items.Add(DockMenus.Item(Loc.T("루틴 편집…"), () => Do(() => RoutineEditorWindow.Open(services, routine))));
         menu.Items.Add(DockMenus.Item(Loc.T("지금 화면으로 위치 다시 저장"), () => Do(() => RereadPositions(services, routine)), enabled: routine.Items.Count > 0));

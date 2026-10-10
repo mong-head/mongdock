@@ -179,6 +179,8 @@ public partial class TopBarWindow : Window
         _services.Status.Changed += OnStatusChanged;
         _services.VirtualDesktops.Changed += OnDesktopChanged;
         RoutineService.Changed += OnRoutinesChanged;
+        RoutineTriggers.Tick += OnRoutinesChanged;
+        RoutineTriggers.FocusChanged += OnRoutinesChanged;
         AppState.Changed += OnSettingsChanged; // 일시 정지/해제
         _services.TrayIcons.Changed += OnTrayIconsChanged;
         HookUpdates(); // TopBarWindow.Update.cs
@@ -214,6 +216,8 @@ public partial class TopBarWindow : Window
             _services.Status.Changed -= OnStatusChanged;
             _services.VirtualDesktops.Changed -= OnDesktopChanged;
             RoutineService.Changed -= OnRoutinesChanged;
+            RoutineTriggers.Tick -= OnRoutinesChanged;
+            RoutineTriggers.FocusChanged -= OnRoutinesChanged;
             AppState.Changed -= OnSettingsChanged;
             _services.TrayIcons.Changed -= OnTrayIconsChanged;
             _subscribed = false;
@@ -974,8 +978,8 @@ public partial class TopBarWindow : Window
         bool single = known && count == 1;
         DesktopIndex.Text = !known ? "" : single ? "1" : $"{index} / {count}";
         // 루틴이 만든 데스크톱이면 루틴 이름도 ("업무 시작 · 2 / 3") — 데스크톱 이름은 바꾸지 않으므로 여기서만 보임
-        if (known && !single && RoutineService.DesktopRoutineName(index) is { Length: > 0 } routine)
-            DesktopIndex.Text = $"{(routine.Length > 14 ? routine[..13] + "…" : routine)} · {index} / {count}";
+        if (known && RoutineService.DesktopRoutineId(index) is { } rid && RoutineService.DesktopRoutineName(index) is { Length: > 0 } routine)
+            DesktopIndex.Text = $"{(routine.Length > 14 ? routine[..13] + "…" : routine)} · {index}/{count}{RoutineTriggers.DesktopSuffix(rid)}";
         DesktopIndexButton.Visibility = known ? Visibility.Visible : Visibility.Collapsed;
         DesktopIndexButton.ToolTip = single ? Loc.T("데스크톱 보기 · 새 데스크톱 추가") : Loc.T("데스크톱 보기");
         PrevDesktopButton.Visibility = single ? Visibility.Collapsed : Visibility.Visible;

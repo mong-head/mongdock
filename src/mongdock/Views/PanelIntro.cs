@@ -103,8 +103,30 @@ internal static class PanelIntro
         {
             var g = Ghost(services);
             if (g.IsVisible) return;
+            // 판 크기만 한 투명 표면을 한 번 실제로 그려 둠 (16px 로 띄우면 첫 열기 때 큰 표면을 만드느라 0.6초 멈춤 — QA 측정)
+            var work = Monitors.GetPrimary().WorkArea;
+            g.Width = Math.Min(1200, work.Width * 0.6) + 56;
+            g.Height = Math.Max(480, work.Height * 0.75) + 56;
+            _canvas!.Width = g.Width;
+            _canvas.Height = g.Height;
+            _shape!.Width = g.Width - 56;
+            _shape.Height = g.Height - 56;
+            _shape.Fill = Brushes.White;
+            _shape.Opacity = 0.01;
+            g.Left = -32000;
+            g.Top = -32000;
+            void Rendered(object? s, EventArgs e)
+            {
+                g.ContentRendered -= Rendered;
+                g.Dispatcher.BeginInvoke(() =>
+                {
+                    if (_play == 0 && g.IsVisible) g.Hide(); // 그새 판을 열었으면(움직이는 중) 건드리지 않음
+                    if (_play == 0 && _shape is not null) _shape.Fill = null;
+                    Log.Info("판 그림 창 미리 그림");
+                }, System.Windows.Threading.DispatcherPriority.Background);
+            }
+            g.ContentRendered += Rendered;
             g.Show();
-            g.Hide();
         }
         catch (Exception ex) { Log.Warn($"판 그림 창 미리 만들기 실패: {ex.GetType().Name}"); }
     }

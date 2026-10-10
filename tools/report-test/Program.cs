@@ -954,6 +954,80 @@ internal static class Program
                 editor.Close();
             }
 
+            // 2-1) 편집 창 "▸ 더 보기" 펼침 (시작 조건 2개·끝 조건·함께 바꿀 것·예외 앱·물어보기·머문 시간)
+            {
+                var more = new RoutineDef
+                {
+                    Id = "r-test3",
+                    Name = "게임",
+                    Items = { App(notepad, "Steam", RoutinePlacementMode.Max), App(chrome, "Discord", RoutinePlacementMode.Right, 2) },
+                    More = new RoutineMore
+                    {
+                        Start =
+                        {
+                            new RoutineStart { Kind = RoutineStartKind.Audio, Device = "dev-headset", Name = "헤드셋 (Galaxy Buds)" },
+                            new RoutineStart { Kind = RoutineStartKind.Time, Time = "21:00", Days = new List<int> { 5, 6 } },
+                        },
+                        End = new RoutineEnd { AudioRemoved = "dev-headset", AudioName = "헤드셋 (Galaxy Buds)", AllAppsClosed = true },
+                        Change = new RoutineChange { Dnd = true, DockHide = true, OutputDevice = "dev-headset", OutputName = "헤드셋 (Galaxy Buds)", Volume = 40 },
+                        DndExceptions = { "slack", "kakaotalk" },
+                        AskSimilar = true,
+                        ShowTime = true,
+                    },
+                };
+                var editor = New("Mongdock.Views.RoutineEditorWindow", services, more, more, false);
+                editor.GetType().GetMethod("OpenMoreForTest", Any)!.Invoke(editor, null);
+                Save((FrameworkElement)editor.Content, "editor-more");
+                editor.Close();
+            }
+
+            // 2-2) 묻기 배너: 시작 조건 / 끝 조건 / 비슷하게 열면
+            {
+                var bannerType = T("Mongdock.Views.NotificationBannerWindow");
+                var buttonType = bannerType.GetNestedType("BannerButton", Any)!;
+                object Btn(string text, bool primary = false, bool small = false) => Activator.CreateInstance(buttonType, text, (Action)(() => { }), primary, small)!;
+                var listType = typeof(List<>).MakeGenericType(buttonType);
+                var icons2 = T("Mongdock.Services.RoutineIcons");
+                var gameR = new RoutineDef { Name = "게임", Icon = new PinIcon { Mode = PinIconMode.Glyph, Color = "blue", Glyph = "\uE7FC" } };
+                var gameIcon = (ImageSource)icons2.GetMethod("Icon", Any)!.Invoke(null, new object[] { services, gameR, settings.Current.Dock.IconStyle })!;
+                foreach (var (name, title, body, buttons) in new[]
+                {
+                    ("ask", "게임 루틴을 열까요?", "헤드셋 (Galaxy Buds)를 연결하면", new[] { Btn("열기", true), Btn("오늘은 안 함"), Btn("다시 묻지 않기", small: true) }),
+                    ("askend", "게임 루틴을 끝낼까요?", "헤드셋 (Galaxy Buds) 연결이 끊겼어요.", new[] { Btn("끝내기", true), Btn("계속") }),
+                    ("similar", "업무 시작 루틴인가요?", "맞으면 함께 바꿀 것을 적용하고 끝내기도 쓸 수 있어요.", new[] { Btn("맞아요", true), Btn("아니요") }),
+                })
+                {
+                    var banner = (Window)bannerType.GetConstructors(Any)[0].Invoke(new object[] { services, palette });
+                    var list = (System.Collections.IList)Activator.CreateInstance(listType)!;
+                    foreach (var b in buttons) list.Add(b);
+                    var item = new NotificationItem(0, "", "mongdock", Mongdock.Loc.T(title), new[] { Mongdock.Loc.T(body) }, DateTime.Now, null, null, false, null);
+                    bannerType.GetMethod("Add", Any)!.Invoke(banner, new object?[] { item, gameIcon, null, list, TimeSpan.FromSeconds(10), null });
+                    var root = (FrameworkElement)banner.Content;
+                    foreach (var fe in Descendants(root).OfType<UIElement>()) { fe.BeginAnimation(UIElement.OpacityProperty, null); fe.Opacity = fe.Opacity < 0.99 && fe is not System.Windows.Controls.TextBlock ? 1 : fe.Opacity; if (fe.RenderTransform is TranslateTransform tt) { tt.BeginAnimation(TranslateTransform.XProperty, null); tt.BeginAnimation(TranslateTransform.YProperty, null); tt.X = 0; tt.Y = 0; } }
+                    Save(root, "banner-" + name);
+                    banner.Close();
+                }
+            }
+
+            // 2-3) 상단바 데스크톱 표시 (모형): "게임 · 2/3 · 1:24 ☾"
+            {
+                var dv = new DrawingVisual();
+                var size = new Size(420, 44);
+                using (var dc = dv.RenderOpen())
+                {
+                    dc.DrawRectangle(new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x1E, 0x1E, 0x22) : Color.FromRgb(0xF4, 0xF4, 0xF7)), null, new Rect(size));
+                    var ft = new FormattedText("‹   게임 · 2/3 · 1:24 \u263E   ›", System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+                        new Typeface("Segoe UI Variable Text, Malgun Gothic"), 13, theme == "dark" ? Brushes.White : Brushes.Black, 1.0);
+                    dc.DrawRoundedRectangle(new SolidColorBrush(theme == "dark" ? Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x0D, 0, 0, 0)), null, new Rect((size.Width - ft.Width) / 2 - 12, 9, ft.Width + 24, 26), 13, 13);
+                    dc.DrawText(ft, new Point((size.Width - ft.Width) / 2, 13));
+                }
+                var rtb = new RenderTargetBitmap((int)size.Width, (int)size.Height, 96, 96, PixelFormats.Pbgra32);
+                rtb.Render(dv);
+                var enc = new PngBitmapEncoder();
+                enc.Frames.Add(BitmapFrame.Create(rtb));
+                using (var fs = File.Create(Path.Combine(dir, $"routine-{theme}-topbar.png"))) enc.Save(fs);
+            }
+
             // 3) 앱 모음 판 루틴 줄 (루틴 2개 · NEW 없이) / 0개 설명 카드
             var panelType = T("Mongdock.Views.AllAppsPanel");
             panelType.GetProperty("LoadIconsNow", Any)!.SetValue(null, true);
