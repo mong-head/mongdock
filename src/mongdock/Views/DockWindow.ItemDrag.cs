@@ -109,7 +109,11 @@ public partial class DockWindow
         // 끌기가 아니면 뗀 자리가 아이콘 밖(이웃과의 틈·흔들림)이어도 누른 아이콘의 클릭 — 예전엔 조용히 무시돼 "가끔 안 눌림"
         bool click = !dragged && view != null && !WasTouchHold;
         if (view != null && !dragged && !click) Log.Info("독 클릭 무시: 터치로 길게 누름");
-        else if (view != null && click) Log.Info($"독 클릭: {(view.Item.Pin?.Kind.ToString() ?? "실행 중 앱")}");
+        else if (view != null && click)
+        {
+            var at = e.GetPosition(view);
+            Log.Info($"독 클릭: {(view.Item.Pin?.Kind.ToString() ?? "실행 중 앱")} (뗀 자리 x={at.X:0}/{view.ActualWidth:0})");
+        }
 
         EndItemDrag(animateBack: false);
         if (view == null) return;

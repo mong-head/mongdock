@@ -1349,9 +1349,25 @@ public partial class DockWindow : Window
         return source?.CompositionTarget?.TransformFromDevice.Transform(p) ?? p;
     }
 
+    private void LogEmptyPress(MouseButtonEventArgs e)
+    {
+        try
+        {
+            var near = ItemsHost.Children.OfType<DockItemView>()
+                .Select(v => (View: v, P: e.GetPosition(v)))
+                .OrderBy(x => Math.Abs(x.P.X - x.View.ActualWidth / 2) + Math.Abs(x.P.Y - x.View.ActualHeight / 2))
+                .FirstOrDefault();
+            if (near.View is null) { Log.Info("독 빈자리 누름"); return; }
+            Log.Info($"독 빈자리 누름: 가까운 아이콘({near.View.Item.Pin?.Kind.ToString() ?? "실행 중 앱"}) 기준 x={near.P.X:0}/{near.View.ActualWidth:0}, y={near.P.Y:0}/{near.View.ActualHeight:0}");
+        }
+        catch { /* 기록만 */ }
+    }
+
     private void OnPanelMouseDown(object sender, MouseButtonEventArgs e)
     {
         // 아이콘·핀 구분선은 자체 처리(e.Handled, 순서 바꾸기 드래그) → 여기 오는 건 빈 영역/패딩/자동 구분선
+        // (클릭이 "안 눌린다"면 여기로 온 것 — 가장 가까운 아이콘 기준 위치를 남김)
+        LogEmptyPress(e);
         _dragStart = ToScreenDip(e.GetPosition(this));
         var panelCenter = ToScreenDip(PanelBorder.TranslatePoint(
             new Point(PanelBorder.ActualWidth / 2, PanelBorder.ActualHeight / 2), this));
