@@ -159,7 +159,6 @@ public partial class DockWindow
         {
             if (Math.Abs(p.X - _itemStart.X) < DragThreshold && Math.Abs(p.Y - _itemStart.Y) < DragThreshold) return;
             if (Environment.TickCount64 - _itemPressTicks < DragMinHoldMs) return; // 짧게 누른 건 흔들려도 클릭
-            if (IsTrash(_pressView.Item.Pin)) return; // 휴지통은 맨 끝 고정 — 끌지 않음 (누르면 판)
             BeginItemDrag();
         }
         UpdateItemDrag(p, e);
@@ -231,9 +230,8 @@ public partial class DockWindow
             int pins = others.Count(InPinSection);
             bool pinnable = InPinSection(view) || (view.Item.Pin == null && view.Item.Windows.Count > 0 && CanPin(view.Item.Windows[0]));
             bool running = view.Item.Pin == null;
-            bool trashLast = others.Count > 0 && IsTrash(others[^1].Item.Pin);
             target = NearestSlot(others, view.BaseLength, AlongInBase(e),
-                k => (pinnable && k <= pins) || (running && k > pins && !(trashLast && k >= others.Count - 1)));
+                k => (pinnable && k <= pins) || (running && k > pins));
             if (target < 0) target = from;
         }
 
@@ -245,7 +243,7 @@ public partial class DockWindow
     }
 
     /// <summary>핀 영역(왼쪽, 끌어서 순서 바꾸는 곳)의 항목인지 — 앱·독 폴더·구분선 핀. 실행 중 앱은 아님.</summary>
-    private static bool InPinSection(DockItemView v) => v.Item.Pin != null && !IsTrash(v.Item.Pin);
+    private static bool InPinSection(DockItemView v) => v.Item.Pin != null;
 
     /// <summary>드래그 항목을 뺀 나머지 뷰 (화면 순서).</summary>
     private List<DockItemView> Others(DockItemView? dragged)

@@ -8,7 +8,7 @@ using Mongdock.ViewModels;
 namespace Mongdock.Views;
 
 /// <summary>
-/// 독 휴지통 (#24-C): 독 맨 오른쪽 끝 고정(옮기기 불가). 빔/참 그림, 이름 말풍선 "휴지통 · 파일 12개 (340MB)",
+/// 독 휴지통 (#24-C): 다른 핀처럼 어디든 옮길 수 있음 (켤 때만 맨 끝에). 빔/참 그림, 이름 말풍선 "휴지통 · 파일 12개 (340MB)",
 /// 클릭 = 최근 버린 20개 판, 파일을 끌어 놓으면 휴지통으로(되돌릴 수 있게), 오른쪽 클릭 = 열기 / 비우기… / 아이콘 바꾸기… / 독에서 빼기.
 /// </summary>
 public partial class DockWindow
@@ -91,6 +91,12 @@ public partial class DockWindow
         menu.Items.Add(new Separator());
         menu.Items.Add(Item(Loc.T("아이콘 바꾸기…"), () => EditTrashIcon(pin)));
         menu.Items.Add(new Separator());
+        // 다른 핀처럼 어디든 (끌어서도)
+        var pins = _services.Settings.Current.Pins;
+        int at = pins.IndexOf(pin);
+        bool vertical = _layout.IsVertical;
+        menu.Items.Add(Item(vertical ? Loc.T("위로 이동") : Loc.T("왼쪽으로 이동"), () => MovePin(pin, -1), enabled: at > 0));
+        menu.Items.Add(Item(vertical ? Loc.T("아래로 이동") : Loc.T("오른쪽으로 이동"), () => MovePin(pin, +1), enabled: at >= 0 && at < pins.Count - 1));
         menu.Items.Add(Item(Loc.T("독에서 빼기"), () => ModifyPins(p => p.Remove(pin))));
     }
 

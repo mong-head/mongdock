@@ -372,7 +372,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
                 if (pin!.Kind == PinKind.Folder) (pin.Folder ??= new FolderOptions()).LastOpened ??= DateTime.UtcNow;
                 if (pin.Kind == PinKind.Folder) pin.Id ??= Guid.NewGuid().ToString("N");
             }
-            KeepTrashLast(pins);
+            KeepOneTrash(pins);
         }
         FixUndefinedEnums(s, "", fixes); // 숫자로 적은 없는 enum 값(예 "colorMode": 7)은 예외 없이 들어오므로 따로
         // 수동 편집으로 null 이 들어와도 UI 가 죽지 않게 보정.
@@ -440,7 +440,6 @@ public sealed class SettingsService : ISettingsService, IDisposable
         ImportTaskbarPinsIfRequested();
         lock (_gate)
         {
-            KeepTrashLast(Current.Pins); // 독 휴지통은 화면 맨 끝 — 핀을 바로 더하는 곳이 있어도 목록 끝에 (핀 위치 = 화면 위치)
             string text = JsonSerializer.Serialize(Current, JsonOptions);
             string tmp = SettingsPath + ".tmp";
             try
@@ -549,15 +548,13 @@ public sealed class SettingsService : ISettingsService, IDisposable
         });
     }
 
-    /// <summary>독 휴지통(Special "recyclebin")은 하나만, 목록 맨 끝에.</summary>
-    public static void KeepTrashLast(List<PinItem> pins)
+    /// <summary>독 휴지통(Special "recyclebin")은 하나만 (처음 것의 자리 그대로 — 다른 핀처럼 어디든 옮길 수 있음).</summary>
+    public static void KeepOneTrash(List<PinItem> pins)
     {
         int first = pins.FindIndex(IsTrashPin);
         if (first < 0) return;
-        var trash = pins[first];
-        if (first == pins.Count - 1) return;
-        pins.RemoveAll(IsTrashPin);
-        pins.Add(trash);
+        for (int i = pins.Count - 1; i > first; i--)
+            if (IsTrashPin(pins[i])) pins.RemoveAt(i);
     }
 
     private static bool IsTrashPin(PinItem? p) =>

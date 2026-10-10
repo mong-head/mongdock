@@ -894,14 +894,15 @@ public partial class DockWindow : Window
         var list = new List<DockItemViewModel>();
         var matched = new HashSet<IntPtr>();
 
-        // 1) 핀 (휴지통은 맨 끝에 따로 — 아래 3)
-        PinItem? trashPin = null;
+        // 1) 핀 (휴지통·폴더·특수 핀도 모두 핀 순서대로 — 어디든 옮길 수 있음)
+        bool hasTrash = false;
         for (int i = 0; i < settings.Pins.Count; i++)
         {
             var pin = settings.Pins[i];
             if (IsTrash(pin))
             {
-                trashPin ??= pin;
+                if (!hasTrash) list.Add(TrashItem(pin, old));
+                hasTrash = true;
                 continue;
             }
             if (pin.Kind == PinKind.Separator)
@@ -978,14 +979,7 @@ public partial class DockWindow : Window
 
         _folders?.SetWatched(settings.Pins.Where(p => p.Kind == PinKind.Folder).Select(p => p.Target));
 
-        // 3) 휴지통 (#24-C): 독 맨 오른쪽 끝, 구분선 뒤 (옮기기 불가)
-        if (trashPin != null)
-        {
-            const string trashSepId = "sep:trash";
-            if (list.Count > 0) list.Add(old.GetValueOrDefault(trashSepId) ?? new DockItemViewModel(trashSepId, null, isSeparator: true, "", null));
-            list.Add(TrashItem(trashPin, old));
-        }
-        else
+        if (!hasTrash)
         {
             _recycle?.Dispose();
             _recycle = null;
@@ -1574,7 +1568,7 @@ public partial class DockWindow : Window
         bool vertical = _layout.IsVertical;
         menu.Items.Add(DockMenus.Item(vertical ? Loc.T("위로 이동") : Loc.T("왼쪽으로 이동"), () => MovePin(pin, -1), enabled: index > 0));
         menu.Items.Add(DockMenus.Item(vertical ? Loc.T("아래로 이동") : Loc.T("오른쪽으로 이동"), () => MovePin(pin, +1),
-            enabled: index >= 0 && index < pins.Count - 1 && !IsTrash(pins[index + 1]))); // 휴지통은 늘 맨 끝
+            enabled: index >= 0 && index < pins.Count - 1));
         menu.Items.Add(new Separator());
         menu.Items.Add(Item(item.IsSeparator ? Loc.T("구분선 제거") : Loc.T("독에서 제거"), () => ModifyPins(p => p.Remove(pin))));
     }
@@ -1772,7 +1766,7 @@ public partial class DockWindow : Window
         int at = pins.IndexOf(pin);
         bool vertical = _layout.IsVertical;
         menu.Items.Add(Item(vertical ? Loc.T("위로 이동") : Loc.T("왼쪽으로 이동"), () => MovePin(pin, -1), enabled: at > 0));
-        menu.Items.Add(Item(vertical ? Loc.T("아래로 이동") : Loc.T("오른쪽으로 이동"), () => MovePin(pin, +1), enabled: at >= 0 && at < pins.Count - 1 && !IsTrash(pins[at + 1])));
+        menu.Items.Add(Item(vertical ? Loc.T("아래로 이동") : Loc.T("오른쪽으로 이동"), () => MovePin(pin, +1), enabled: at >= 0 && at < pins.Count - 1));
         menu.Items.Add(Item(Loc.T("독에서 빼기"), () => ModifyPins(p => p.Remove(pin))));
     }
 

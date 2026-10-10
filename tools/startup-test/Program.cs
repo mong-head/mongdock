@@ -415,7 +415,7 @@ internal static class Program
                   { "name": "", "kind": "Special", "target": "recyclebin" },
                   { "name": "문서", "kind": "Folder", "target": "C:/docs" } ] }
                 """);
-            Check("휴지통: 하나만 남고 맨 끝", string.Join(",", trash.Pins.Select(p => p.Target)), "notepad.exe,C:/docs,recyclebin");
+            Check("휴지통: 하나만 남고 처음 자리 그대로", string.Join(",", trash.Pins.Select(p => p.Target)), "recyclebin,notepad.exe,C:/docs");
             var rb = typeof(SettingsService).Assembly.GetType("Mongdock.Services.RecycleBin")!;
             Check("용량 표시 340MB", rb.GetMethod("FormatSize")!.Invoke(null, new object[] { 340L * 1024 * 1024 }), "340MB");
             Check("용량 표시 1.5GB", rb.GetMethod("FormatSize")!.Invoke(null, new object[] { 1536L * 1024 * 1024 }), "1.5GB");
