@@ -56,7 +56,7 @@ internal static class PanelIntro
     }
 
     /// <summary>판 그림을 움직임. 끝나면 done (진짜 판을 제자리에) — 그 다음 프레임에 그림 창을 닫음.</summary>
-    public static void Play(AppServices services, string mode, ImageSource picture, Rect final, Rect icon, Action done)
+    public static Window Play(AppServices services, string mode, ImageSource picture, Rect final, Rect icon, Action done)
     {
         var area = final;
         if (mode == Icon && !icon.IsEmpty) area.Union(icon);
@@ -105,6 +105,7 @@ internal static class PanelIntro
         bool finished = false;
         void Frame(object? s, EventArgs e)
         {
+            if (!ghost.IsVisible) { CompositionTarget.Rendering -= Frame; return; } // 판이 먼저 닫힘 (Esc 등)
             double t = clock.ElapsedMilliseconds / (double)duration;
             Apply(t);
             if (t < 1 || finished) return;
@@ -114,7 +115,7 @@ internal static class PanelIntro
             catch (Exception ex) { Log.Error("판 나타나기 끝 처리 실패", ex); }
             // 진짜 판이 화면에 나간 다음에 그림 창을 닫음 (사이에 빈 프레임 없게)
             var close = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(34) };
-            close.Tick += (_, _) => { close.Stop(); ghost.Close(); };
+            close.Tick += (_, _) => { close.Stop(); if (ghost.IsVisible) ghost.Close(); };
             close.Start();
         }
         ghost.ContentRendered += (_, _) =>
@@ -122,6 +123,8 @@ internal static class PanelIntro
             clock.Start();
             CompositionTarget.Rendering += Frame;
         };
+        ghost.Closed += (_, _) => CompositionTarget.Rendering -= Frame;
         ghost.Show();
+        return ghost;
     }
 }

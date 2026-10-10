@@ -111,7 +111,7 @@ internal abstract class DockStackPanel : Window
             {
                 // 화면 밖에서 다 그려진 판을 그림으로 떠서 움직이고, 끝나는 순간 진짜 판을 제자리에
                 if (Snapshot() is { } picture)
-                    PanelIntro.Play(Services, _intro, picture, final, _anchor, () => { _introHold = null; Place(); });
+                    _introGhost = PanelIntro.Play(Services, _intro, picture, final, _anchor, () => { _introHold = null; Place(); });
                 else { _introHold = null; Place(); }
                 return;
             }
@@ -146,7 +146,11 @@ internal abstract class DockStackPanel : Window
             CloseAnimated();
         };
         KeyDown += (_, e) => { if (e.Key == Key.Escape) { e.Handled = true; CloseAnimated(); } };
-        Closed += (_, _) => _watch.Stop();
+        Closed += (_, _) =>
+        {
+            _watch.Stop();
+            if (_introGhost is { IsVisible: true } g) g.Close();
+        };
     }
 
     /// <summary>true 면 독 버튼 옆이 아니라 모니터 작업 영역 정가운데 (앱 모음 판).</summary>
@@ -159,6 +163,8 @@ internal abstract class DockStackPanel : Window
     private readonly string _intro;
     /// <summary>나타나는 중: 진짜 판의 제자리 (그동안 판은 화면 밖, 그림이 움직임).</summary>
     private Rect? _introHold;
+    /// <summary>나타나는 중인 그림 창 — 판이 그새 닫히면(Esc·바깥 클릭) 같이 닫음.</summary>
+    private Window? _introGhost;
 
     /// <summary>판 전체를 그림으로 (모니터 배율 그대로).</summary>
     private System.Windows.Media.Imaging.BitmapSource? Snapshot()
