@@ -159,7 +159,8 @@ internal static class Program
         // 보이는 정도: 다 열린 마지막 화면과 얼마나 같은지 (1 = 같음). 열기 전 바탕과 비교하면 판 뒤에 밝은 창이 있을 때 판정이 안 됨(4분 쉰 뒤 시험)
         var last = frames.Count > 0 ? frames[^1].Px : before;
         var shown = frames.Select(f => 1 - Diff(last, f.Px)).ToList();
-        double final = 1 - Diff(last, before) < 0.9 ? 1 : 0; // 열기 전과 마지막이 다르면 판이 떴음
+        // 열기 전과 마지막이 다르면 판이 떴음. 판 뒤가 판과 비슷한 밝은 창이면 글자만 달라 차이가 몇 % 뿐 — 2% 넘으면 뜬 것으로
+        double final = Diff(last, before) > 0.02 ? 1 : 0;
         double peak = 0;
         int dips = 0;
         foreach (var s in shown)
