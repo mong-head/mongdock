@@ -56,14 +56,21 @@ internal static class RoutineTriggers
         RoutineService.Started += OnStarted;
         RoutineService.Ended += OnEnded;
         RoutineService.AllClosed += OnAllClosed;
-        Microsoft.Win32.SystemEvents.SessionSwitch += (_, e) => _locked = e.Reason is Microsoft.Win32.SessionSwitchReason.SessionLock or Microsoft.Win32.SessionSwitchReason.ConsoleDisconnect or Microsoft.Win32.SessionSwitchReason.RemoteDisconnect;
+        Microsoft.Win32.SystemEvents.SessionSwitch += (_, e) =>
+        {
+            _locked = e.Reason is Microsoft.Win32.SessionSwitchReason.SessionLock or Microsoft.Win32.SessionSwitchReason.ConsoleDisconnect or Microsoft.Win32.SessionSwitchReason.RemoteDisconnect;
+            if (e.Reason == Microsoft.Win32.SessionSwitchReason.SessionUnlock) Post(OnWake); // 아침에 잠금 해제로 시작하는 경우도 "켜면"
+        };
+        Microsoft.Win32.SystemEvents.PowerModeChanged += (_, e) => { if (e.Mode == Microsoft.Win32.PowerModes.Resume) Post(OnWake); };
 
         // 컴퓨터를 켜면: 몽독 시작 10초 뒤 (로그인 직후 시작이면 그게 "켜면")
         var login = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
         login.Tick += (_, _) =>
         {
             login.Stop();
-            foreach (var (r, i, s) in Starts(RoutineStartKind.Login)) Fire(r, i, s);
+            // 부팅·로그인 직후 시작한 몽독일 때만 "켜면" (낮에 업데이트로 다시 켜진 몽독이 묻지 않게)
+            if (Environment.TickCount64 < TimeSpan.FromMinutes(10).TotalMilliseconds)
+                foreach (var (r, i, s) in Starts(RoutineStartKind.Login)) Fire(r, i, s);
             CheckMissedTimes();
         };
         login.Start();
@@ -82,6 +89,9 @@ internal static class RoutineTriggers
     });
 
     private static IEnumerable<RoutineDef> Routines => _s?.Settings.Current.Routines ?? Enumerable.Empty<RoutineDef>();
+
+    /// <summary>일시 정지(체험 만료 잠김 포함) — 시작·끝 조건, 묻기, 자동 끝내기 모두 쉼.</summary>
+    private static bool Paused => AppState.Paused;
 
     private static IEnumerable<(RoutineDef R, int I, RoutineStart S)> Starts(RoutineStartKind kind) =>
         Routines.Where(r => r.More is not null && r.Items.Count > 0)
@@ -118,7 +128,7 @@ internal static class RoutineTriggers
             if (st.Device is not null && added.Contains(st.Device, StringComparer.OrdinalIgnoreCase)) Fire(r, i, st);
         // 끝 조건: 오디오 장치를 빼면
         foreach (var r in Routines.Where(r => r.More?.End.AudioRemoved is { } dev && removed.Contains(dev, StringComparer.OrdinalIgnoreCase) && RoutineService.IsRunning(r.Id)))
-            AskEnd(r, Loc.F($"{r.More!.End.AudioName ?? Loc.T("오디오 장치")} 연결이 끊겼어요."));
+            if (_askedEnd.Add($"{r.Id}|audio|{Today}")) AskEnd(r, Loc.F($"{r.More!.End.AudioName ?? Loc.T("오디오 장치")} 연결이 끊겼어요."));
     }
 
     private static void OnWindows()
@@ -161,6 +171,13 @@ internal static class RoutineTriggers
         RetryPending();
     }
 
+    /// <summary>잠금 해제·절전에서 깨어남: 그날 처음이면 "켜면"(같은 날 한 번 규칙), 놓친 시각(30분 안)도.</summary>
+    private static void OnWake()
+    {
+        foreach (var (r, i, s) in Starts(RoutineStartKind.Login)) Fire(r, i, s);
+        CheckMissedTimes();
+    }
+
     private static bool DayOk(RoutineStart s, DateTime now) => s.Days is not { Count: > 0 } days || days.Contains((int)now.DayOfWeek);
 
     /// <summary>그 시각에 몽독이 꺼져 있었으면, 켠 뒤 30분 안일 때만 한 번 묻기.</summary>
@@ -179,7 +196,7 @@ internal static class RoutineTriggers
     private static void Fire(RoutineDef routine, int index, RoutineStart start)
     {
         var s = _s;
-        if (s is null || RoutineService.IsRunning(routine.Id) || RoutineService.IsOpening(routine.Id)) return;
+        if (s is null || Paused || RoutineService.IsRunning(routine.Id) || RoutineService.IsOpening(routine.Id)) return;
         string key = $"{routine.Id}|{index}|{start.Kind}";
         if (s.Settings.Current.RoutineAsked.TryGetValue(key, out var day) && day == Today) return;
         if (Busy())
@@ -188,12 +205,16 @@ internal static class RoutineTriggers
             Log.Info("루틴 시작 조건: 전체 화면·방해 금지라 나중에 물음");
             return;
         }
-        s.Settings.Current.RoutineAsked[key] = Today;
-        foreach (var k in s.Settings.Current.RoutineAsked.Where(kv => kv.Value != Today).Select(kv => kv.Key).ToList()) s.Settings.Current.RoutineAsked.Remove(k);
-        s.Settings.Save();
+        void MarkAsked()
+        {
+            s.Settings.Current.RoutineAsked[key] = Today;
+            foreach (var k in s.Settings.Current.RoutineAsked.Where(kv => kv.Value != Today).Select(kv => kv.Key).ToList()) s.Settings.Current.RoutineAsked.Remove(k);
+            s.Settings.Save();
+        }
         Log.Info($"루틴 시작 조건 맞음: {start.Kind}");
         if (routine.More!.AutoOpen && start.Kind != RoutineStartKind.Time)
         {
+            MarkAsked();
             RoutineUi.Run(s, routine);
             return;
         }
@@ -203,7 +224,8 @@ internal static class RoutineTriggers
             new(Loc.T("오늘은 안 함"), () => { }),
             new(Loc.T("다시 묻지 않기"), () => StopAsking(routine, start), Small: true),
         };
-        Ask(routine, Loc.F($"{routine.Name} 루틴을 열까요?"), Describe(start), buttons);
+        if (Ask(routine, Loc.F($"{routine.Name} 루틴을 열까요?"), Describe(start), buttons)) MarkAsked();
+        else if (_pending.All(p => p.Key != key)) _pending.Add((key, routine, index, DateTime.Now)); // 못 띄웠으면 나중에 (30분 안)
     }
 
     private static bool Busy()
@@ -220,7 +242,8 @@ internal static class RoutineTriggers
         var list = _pending.ToList();
         _pending.Clear();
         foreach (var p in list)
-            if (p.Routine.More is { } m && p.Index < m.Start.Count) Fire(p.Routine, p.Index, m.Start[p.Index]);
+            if (Routines.FirstOrDefault(r => r.Id == p.Routine.Id) is { More: { } m } r2 && p.Index < m.Start.Count && p.Key == $"{r2.Id}|{p.Index}|{m.Start[p.Index].Kind}")
+                Fire(r2, p.Index, m.Start[p.Index]); // 편집으로 지워졌거나 순서가 바뀐 조건은 버림
     }
 
     /// <summary>배너 "다시 묻지 않기": 그 시작 조건을 끔.</summary>
@@ -231,21 +254,22 @@ internal static class RoutineTriggers
         Log.Info("루틴 시작 조건 끔 (다시 묻지 않기)");
     }
 
-    private static void Ask(RoutineDef routine, string title, string body, List<NotificationBannerWindow.BannerButton> buttons)
+    private static bool Ask(RoutineDef routine, string title, string body, List<NotificationBannerWindow.BannerButton> buttons)
     {
         var s = _s!;
         var item = new NotificationItem(0, "", AppInfo.Name, title, new[] { body }, DateTime.Now, null, null, false, null);
         System.Windows.Media.ImageSource? icon = null;
         try { icon = RoutineIcons.Icon(s, routine, s.Settings.Current.Dock.IconStyle); } catch { /* 아이콘 없이 */ }
-        if (!NotificationBannerWindow.ShowQuestion(item, icon, buttons, TimeSpan.FromSeconds(10), () => { }))
-            Log.Info("루틴 묻기 배너를 띄우지 못함 (일시 정지·전체 화면)");
+        if (NotificationBannerWindow.ShowQuestion(item, icon, buttons, TimeSpan.FromSeconds(10), () => { })) return true;
+        Log.Info("루틴 묻기 배너를 띄우지 못함 (일시 정지·전체 화면)");
+        return false;
     }
 
     // ───────────────────────── 끝 조건 ─────────────────────────
 
     private static void AskEnd(RoutineDef routine, string why)
     {
-        var s = _s!;
+        if (Paused) return;
         Log.Info("루틴 끝 조건 맞음 — 끝낼지 물음");
         Ask(routine, Loc.F($"{routine.Name} 루틴을 끝낼까요?"), why, new List<NotificationBannerWindow.BannerButton>
         {
@@ -257,9 +281,22 @@ internal static class RoutineTriggers
     private static void OnAllClosed(string id)
     {
         var s = _s;
-        if (s is null || RoutineUi.Find(s, id) is not { More.End.AllAppsClosed: true } routine) return;
-        Log.Info("루틴 끝 조건: 루틴으로 연 앱을 다 닫음 — 끝냄");
-        RoutineService.End(routine, closeDesktop: true);
+        if (s is null || Paused || RoutineUi.Find(s, id) is not { } routine) return;
+        if (routine.More?.End.AllAppsClosed != true)
+        {
+            // 끝 조건이 없어도 루틴 창이 다 닫혔으면 바꾼 소리 설정은 되돌림 (바뀐 채 남지 않게)
+            Restore(id);
+            UpdateFocus();
+            return;
+        }
+        // 데스크톱은 지금 보고 있을 때만 닫음 — 다른 데스크톱(게임 등)에서 일하는 중이면 화면을 끌고 가지 않음
+        var ids = VirtualDesktopService.ReadDesktopIds();
+        int cur = VirtualDesktopService.Read().Current;
+        Guid? here = cur > 0 && cur <= ids.Count ? ids[cur - 1] : null;
+        bool fullscreen = Monitors.GetAll().Any(m => s.DesktopWindows.IsFullscreenOn(m.IsPrimary ? "" : m.DeviceName));
+        bool closeDesktop = RoutineService.OwnDesktopIs(id, here) && !fullscreen;
+        Log.Info($"루틴 끝 조건: 루틴으로 연 앱을 다 닫음 — 끝냄 (데스크톱 {(closeDesktop ? "닫음" : "그대로")})");
+        RoutineService.End(routine, closeDesktop);
     }
 
     // ───────────────────────── 함께 바꿀 것 ─────────────────────────
@@ -271,26 +308,34 @@ internal static class RoutineTriggers
         if (c.OutputDevice is null && c.Volume is null) { UpdateFocus(); return; }
         var restores = s.Settings.Current.RoutineRestores;
         var rec = restores.FirstOrDefault(x => x.RoutineId == routine.Id);
-        if (rec is null)
-        {
-            rec = new RoutineRestore { RoutineId = routine.Id, At = DateTime.Now };
-            rec.OutputDevice = s.Status.OutputDevices.FirstOrDefault(d => d.IsDefault)?.Id;
-            rec.Volume = (int)Math.Round(s.Status.Volume * 100);
-            restores.Add(rec);
-        }
+        bool fresh = rec is null;
+        rec ??= new RoutineRestore { RoutineId = routine.Id };
+        string? before = s.Status.OutputDevices.FirstOrDefault(d => d.IsDefault)?.Id;
         bool failed = false;
-        if (c.OutputDevice is { } dev)
+        if (c.OutputDevice is { } dev && dev != before)
         {
-            if (s.Status.OutputDevices.Any(d => d.Id == dev) && s.Status.SetDefaultOutput(dev)) rec.AppliedDevice = dev;
+            if (s.Status.OutputDevices.Any(d => d.Id == dev) && s.Status.SetDefaultOutput(dev))
+            {
+                if (fresh || rec.AppliedDevice is null) rec.OutputDevice = before;
+                rec.AppliedDevice = dev;
+            }
             else failed = true;
         }
         if (c.Volume is int v)
         {
-            // 장치를 바꿨으면 새 장치에 걸리게 잠깐 뒤에
-            Post(() => { s.Status.SetVolume(v / 100.0); });
-            rec.AppliedVolume = v;
+            // 볼륨은 장치를 직접 열어 그 장치에 (기본 장치를 막 바꿨으면 몽독 소리 판이 아직 옛 장치를 쥐고 있음)
+            string? target = rec.AppliedDevice ?? before;
+            if (target is not null && DeviceVolume(target) is float old && DeviceVolume(target, v / 100f) is not null)
+            {
+                if (fresh || rec.AppliedVolume is null) { rec.Volume = (int)Math.Round(old * 100); rec.VolumeDevice = target; }
+                rec.AppliedVolume = v;
+            }
         }
-        s.Settings.Save();
+        if (rec.AppliedDevice is not null || rec.AppliedVolume is not null)
+        {
+            if (fresh) restores.Add(rec);
+            s.Settings.Save();
+        }
         if (failed)
         {
             Log.Warn("루틴: 소리 출력 장치를 바꾸지 못함");
@@ -301,6 +346,7 @@ internal static class RoutineTriggers
 
     private static void OnEnded(RoutineDef routine)
     {
+        _endedAt[routine.Id] = DateTime.Now;
         Restore(routine.Id);
         UpdateFocus();
     }
@@ -314,24 +360,74 @@ internal static class RoutineTriggers
         var rec = restores.FirstOrDefault(x => x.RoutineId == routineId);
         if (rec is null) return;
         restores.Remove(rec);
-        var others = RoutineService.RunningIds().Where(id => id != routineId).Select(id => RoutineUi.Find(s, id)?.More?.Change).OfType<RoutineChange>().ToList();
-        if (rec.AppliedDevice is not null && rec.OutputDevice is { } back && !others.Any(o => o.OutputDevice is not null))
+        // 아직 실행 중인 다른 루틴의 되돌릴 값 (그 루틴이 같은 항목을 바꾸고 있으면 되돌리지 않고, 우리가 기억한 원래 값을 넘겨 줌)
+        var running = RoutineService.RunningIds().Where(id => id != routineId).ToList();
+        var otherRecs = restores.Where(x => running.Contains(x.RoutineId)).ToList();
+        // 볼륨 먼저 (그 장치에서 — 장치를 먼저 되돌리면 비교·적용이 엇갈림)
+        if (rec.AppliedVolume is int applied && rec.Volume is int vol && rec.VolumeDevice is { } vdev)
         {
-            string? now = s.Status.OutputDevices.FirstOrDefault(d => d.IsDefault)?.Id;
-            if (now == rec.AppliedDevice && s.Status.OutputDevices.Any(d => d.Id == back))
+            if (otherRecs.FirstOrDefault(o => o.AppliedVolume is not null && o.VolumeDevice == vdev) is { } o)
             {
-                if (!s.Status.SetDefaultOutput(back)) Notify(Loc.T("소리 장치는 되돌리지 못했어요"));
+                if (o.Volume == applied) o.Volume = vol; // 그 루틴은 우리 값 위에서 열렸음 → 진짜 원래 값을 넘김
+                Log.Info("루틴 되돌리기: 볼륨은 다른 루틴이 쓰는 중이라 그대로");
             }
-            else Log.Info("루틴 되돌리기: 소리 장치는 그새 바뀌어 그대로");
-        }
-        if (rec.AppliedVolume is int applied && rec.Volume is int vol && !others.Any(o => o.Volume is not null))
-        {
-            if (Math.Abs(s.Status.Volume * 100 - applied) <= 1.5) s.Status.SetVolume(vol / 100.0);
+            else if (DeviceVolume(vdev) is float now && Math.Abs(now * 100 - applied) <= 1.5) DeviceVolume(vdev, vol / 100f);
             else Log.Info("루틴 되돌리기: 볼륨은 그새 바뀌어 그대로");
+        }
+        if (rec.AppliedDevice is not null && rec.OutputDevice is { } back)
+        {
+            if (otherRecs.FirstOrDefault(o => o.AppliedDevice is not null) is { } o)
+            {
+                if (o.OutputDevice == rec.AppliedDevice) o.OutputDevice = back;
+                Log.Info("루틴 되돌리기: 소리 장치는 다른 루틴이 쓰는 중이라 그대로");
+            }
+            else
+            {
+                string? now = s.Status.OutputDevices.FirstOrDefault(d => d.IsDefault)?.Id;
+                if (now == rec.AppliedDevice && s.Status.OutputDevices.Any(d => d.Id == back))
+                {
+                    if (!s.Status.SetDefaultOutput(back)) Notify(Loc.T("소리 장치는 되돌리지 못했어요"));
+                }
+                else Log.Info("루틴 되돌리기: 소리 장치는 그새 바뀌어 그대로");
+            }
         }
         s.Settings.Save();
         Log.Info("루틴 되돌리기 끝");
     }
+
+    /// <summary>장치 하나의 볼륨(0~1) 읽기·쓰기 — 기본 장치가 아니어도. 실패면 null.</summary>
+    private static float? DeviceVolume(string deviceId, float? set = null)
+    {
+        object? en = null, dev = null, ep = null;
+        try
+        {
+            var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorClass();
+            en = enumerator;
+            if (enumerator.GetDevice(deviceId, out var d) != 0 || d is null) return null;
+            dev = d;
+            var iid = typeof(IAudioEndpointVolume).GUID;
+            if (d.Activate(ref iid, CoreAudio.CLSCTX_ALL, IntPtr.Zero, out var o) != 0 || o is not IAudioEndpointVolume v) return null;
+            ep = o;
+            if (set is float value)
+            {
+                var ctx = Guid.Empty;
+                if (v.SetMasterVolumeLevelScalar(Math.Clamp(value, 0f, 1f), ref ctx) != 0) return null;
+            }
+            return v.GetMasterVolumeLevelScalar(out float level) == 0 ? level : null;
+        }
+        catch (Exception ex) when (ex is COMException or InvalidCastException)
+        {
+            Log.Warn($"루틴 볼륨 실패: {ex.GetType().Name}");
+            return null;
+        }
+        finally
+        {
+            foreach (var c in new[] { ep, dev, en }) if (c is not null && Marshal.IsComObject(c)) Marshal.ReleaseComObject(c);
+        }
+    }
+
+    /// <summary>편집 창 저장 뒤: 방해 금지·독 숨김을 바로 다시 적용.</summary>
+    public static void Refresh() => UpdateFocus();
 
     /// <summary>되돌릴 값이 남아 있음 (몽독을 다시 시작해 창 목록을 잊었어도 "설정만 되돌리기").</summary>
     public static bool HasRestore(string routineId) => _s?.Settings.Current.RoutineRestores.Any(x => x.RoutineId == routineId) == true;
@@ -346,7 +442,7 @@ internal static class RoutineTriggers
         Guid? here = cur > 0 && cur <= ids.Count ? ids[cur - 1] : null;
         bool dnd = false, hide = false;
         var exceptions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var id in RoutineService.RunningIds())
+        foreach (var id in Paused ? new List<string>() : RoutineService.RunningIds())
         {
             if (RoutineUi.Find(s, id) is not { More: { } m }) continue;
             var desk = RoutineService.DesktopOf(id);
@@ -377,15 +473,21 @@ internal static class RoutineTriggers
 
     // ───────────────────────── 비슷하게 열면 물어보기 ─────────────────────────
 
+    private static long _similarAt;
+    private static readonly Dictionary<string, DateTime> _endedAt = new();
+
     private static void OnSimilarTick(object? sender, EventArgs e)
     {
         _similarTimer?.Stop();
         var s = _s;
-        if (s is null) return;
+        if (s is null || Paused) return;
+        if (Environment.TickCount64 - _similarAt < 10_000) { _similarTimer?.Start(); return; } // 창이 자주 바뀌어도 10초에 한 번
+        _similarAt = Environment.TickCount64;
         var ids = VirtualDesktopService.ReadDesktopIds();
         if (ids.Count == 0) return;
         var windows = s.Windows.Windows.ToList();
-        foreach (var r in Routines.Where(r => r.More?.AskSimilar == true && !RoutineService.IsRunning(r.Id) && !RoutineService.IsOpening(r.Id)))
+        foreach (var r in Routines.Where(r => r.More?.AskSimilar == true && !RoutineService.IsRunning(r.Id) && !RoutineService.IsOpening(r.Id)
+                     && !(_endedAt.TryGetValue(r.Id, out var ended) && DateTime.Now - ended < TimeSpan.FromMinutes(1)))) // 끝낸 직후 남은 창(저장 묻기 등)으로 다시 묻지 않게
         {
             var apps = r.Items.Where(i => i.Kind == RoutineItemKind.App).ToList();
             if (apps.Count < 2) continue;
@@ -439,6 +541,8 @@ internal static class RoutineTriggers
     {
         var s = _s;
         if (s is null) return;
+        var timed = RoutineService.RunningIds().Where(id => RoutineUi.Find(s, id) is { More.ShowTime: true }).ToList();
+        if (timed.Count == 0) return;
         bool any = false;
         var ids = VirtualDesktopService.ReadDesktopIds();
         int cur = VirtualDesktopService.Read().Current;

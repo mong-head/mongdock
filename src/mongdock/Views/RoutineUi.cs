@@ -103,6 +103,7 @@ internal static class RoutineUi
     public static void Delete(AppServices services, RoutineDef routine)
     {
         var s = services.Settings.Current;
+        RoutineTriggers.Restore(routine.Id); // 바꾼 소리 설정이 남아 있으면 되돌림 (지우면 되돌릴 버튼이 없어지므로)
         s.Routines.RemoveAll(r => r.Id == routine.Id);
         s.Pins.RemoveAll(p => p.Kind == PinKind.Routine && p.Target == routine.Id);
         services.Settings.Save();

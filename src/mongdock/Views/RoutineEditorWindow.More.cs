@@ -119,8 +119,7 @@ internal sealed partial class RoutineEditorWindow
     private UIElement StartGroup() => Switch(Loc.T("시작 조건"), Loc.T("조건이 맞으면 열지 물어봐요. 직접 누르기는 늘 돼요."),
         More.Start.Count > 0, on =>
         {
-            if (!on) { More.Start.Clear(); More.AutoOpen = false; }
-            else if (More.Start.Count == 0) More.Start.Add(new RoutineStart { Kind = RoutineStartKind.Login });
+            if (!on) { More.Start.Clear(); More.AutoOpen = false; } // 켜면 [+ 조건 추가]로 고름 (저절로 넣지 않음)
         }, StartDetail);
 
     private UIElement StartDetail()

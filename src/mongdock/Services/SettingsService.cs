@@ -341,7 +341,9 @@ public sealed class SettingsService : ISettingsService, IDisposable
         {
             var m = r.More!;
             m.Start ??= new List<RoutineStart>();
-            m.Start.RemoveAll(x => x is null);
+            m.Start.RemoveAll(x => x is null || x.Kind is null); // 모르는 종류는 그 조건만 버림 ("컴퓨터를 켜면"으로 바뀌지 않게)
+            foreach (var st in m.Start) st.Time = NormalizeTime(st.Time); // "9:00" → "09:00" (분 비교가 문자열)
+            if (m.End is { } e0) e0.Time = NormalizeTime(e0.Time);
             m.End ??= new RoutineEnd();
             m.Change ??= new RoutineChange();
             if (m.Change.Volume is int v) m.Change.Volume = Math.Clamp(v, 0, 100);
@@ -438,6 +440,11 @@ public sealed class SettingsService : ISettingsService, IDisposable
         }
         return s;
     }
+
+    /// <summary>"9:0"·"9:00" 같은 시각 → "HH:mm". 못 읽으면 null.</summary>
+    private static string? NormalizeTime(string? t) =>
+        t is not null && TimeSpan.TryParse(t.Trim(), System.Globalization.CultureInfo.InvariantCulture, out var v) && v >= TimeSpan.Zero && v < TimeSpan.FromDays(1)
+            ? $"{v.Hours:00}:{v.Minutes:00}" : null;
 
     private static string ReadAllTextShared(string path)
     {

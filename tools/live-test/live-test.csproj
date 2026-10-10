@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 앱 모음 판 실제 창 시험: 시험용 데이터 폴더로 진짜 판을 화면에 열고 닫으며(열기·닫기·연타·다른 창 활성화·Esc 도중) 화면을 찍어 확인.
+       설치된 몽독과 따로 돎 (App.OnStartup 을 타지 않음). 외부 NuGet 없음. 사용법은 Program.cs 머리 주석 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <AssemblyName>live-test</AssemblyName>
+    <RootNamespace>LiveTest</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\mongdock\mongdock.csproj" />
+  </ItemGroup>
+
+</Project>

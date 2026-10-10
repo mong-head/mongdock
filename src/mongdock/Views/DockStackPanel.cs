@@ -157,7 +157,7 @@ internal abstract class DockStackPanel : Window
         Closed += (_, _) =>
         {
             _watch.Stop();
-            if (_introPlaying) PanelIntro.Stop(); // 나타나는 중에 닫힘 — 그림 창도
+            if (_introPlaying) PanelIntro.Stop(_introPlay); // 나타나는 중에 닫힘 — 그림 창도 (그 판의 차례만)
         };
     }
 

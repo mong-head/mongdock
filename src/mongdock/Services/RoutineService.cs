@@ -111,9 +111,11 @@ internal static class RoutineService
     /// </summary>
     public static void Adopt(RoutineDef routine, Guid desktop, IEnumerable<IntPtr> windows)
     {
+        if (IsRunning(routine.Id) || IsOpening(routine.Id)) { Log.Info("루틴 지정 안 함: 그새 열렸음"); return; } // 배너가 떠 있는 사이 직접 엶
         lock (Runs)
         {
             if (!Runs.TryGetValue(routine.Id, out var state)) Runs[routine.Id] = state = new RunState();
+            state.Claimed.Clear();
             state.Desktop = desktop;
             state.CreatedDesktop = false;
             state.ReturnTo = null;
@@ -180,6 +182,12 @@ internal static class RoutineService
         string? id;
         lock (Runs) id = Runs.FirstOrDefault(r => r.Value.Desktop == g && r.Value.Windows.Any(Alive)).Key;
         return id is null ? null : services.Settings.Current.Routines.FirstOrDefault(r => r.Id == id)?.Name;
+    }
+
+    /// <summary>이 루틴이 만든 데스크톱이 desktop 임 ("앱을 다 닫으면 끝"이 지금 보고 있는 그 데스크톱만 닫게).</summary>
+    public static bool OwnDesktopIs(string id, Guid? desktop)
+    {
+        lock (Runs) return desktop is not null && Runs.TryGetValue(id, out var r) && r.CreatedDesktop && r.Desktop == desktop;
     }
 
     /// <summary>이 루틴이 새 데스크톱을 만들었고 그 데스크톱이 아직 있음 (끝내기 카드의 "데스크톱도 닫기").</summary>
@@ -274,6 +282,7 @@ internal static class RoutineService
         {
             Log.Info($"루틴 실행: 항목 {routine.Items.Count}개");
             var items = routine.Items.ToList();
+            lock (Runs) { state.Claimed.Clear(); state.Seconds = 0; }
             // 열 것이 하나도 없으면(전부 이미 켜져 있음) 빈 데스크톱을 만들지 않음
             bool anyToOpen = items.Any(i => !(SkipsIfRunning(i) && services.Windows.Windows.Any(w => Matches(i, w))));
             try
@@ -284,6 +293,7 @@ internal static class RoutineService
             {
                 Log.Error("루틴 데스크톱 준비 실패", ex);
             }
+            if (anyToOpen) RaiseStarted(routine); // 함께 바꿀 것 (소리 장치·볼륨·방해 금지·독 숨김)
             // 이번 실행의 데스크톱 (새 창은 이 데스크톱에 뜬 것만 루틴 창으로 봄)
             var ids = VirtualDesktopService.ReadDesktopIds();
             int cur = VirtualDesktopService.Read().Current;
@@ -650,8 +660,14 @@ internal static class RoutineService
         lock (Runs)
         {
             // 아직 실행 중인 다른 루틴도 쓰는 창은 닫지 않음 (같은 앱이 여러 루틴에 있을 때)
-            var shared = Runs.Where(r => r.Key != routine.Id && r.Value.Windows.Any(Alive)).SelectMany(r => r.Value.Windows).ToHashSet();
-            windows = state.Windows.Where(h => Alive(h) && !shared.Contains(h)).ToList();
+            var others = Runs.Where(r => r.Key != routine.Id && r.Value.Windows.Any(Alive)).Select(r => r.Key).ToList();
+            var shared = Runs.Where(r => others.Contains(r.Key)).SelectMany(r => r.Value.Windows).ToHashSet();
+            // 같은 앱이 실행 중인 다른 루틴에도 들어 있으면 그 앱 창도 (한 번에 하나만 켜지는 앱은 창을 한 루틴만 잡고 있음)
+            var otherItems = _services?.Settings.Current.Routines.Where(r => others.Contains(r.Id)).SelectMany(r => r.Items).ToList() ?? new List<RoutineItem>();
+            var byHwnd = _services?.Windows.Windows.ToDictionary(w => w.Hwnd) ?? new Dictionary<IntPtr, AppWindowInfo>();
+            windows = state.Windows.Where(h => Alive(h) && !shared.Contains(h)
+                && !(byHwnd.TryGetValue(h, out var w) && otherItems.Any(i => IsItemWindow(i, w)))).ToList();
+            state.Claimed.Clear();
             state.Windows.Clear(); // 이 실행은 끝 (닫기를 거부한 창이 남아도 루틴 창으로 보지 않음)
             state.HadWindows = false;
             state.Seconds = 0;

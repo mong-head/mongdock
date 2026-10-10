@@ -115,25 +115,24 @@ internal static class PanelIntro
             _shape.Opacity = 0.01;
             g.Left = -32000;
             g.Top = -32000;
-            void Rendered(object? s, EventArgs e)
-            {
-                g.ContentRendered -= Rendered;
-                g.Dispatcher.BeginInvoke(() =>
-                {
-                    if (_play == 0 && g.IsVisible) g.Hide(); // 그새 판을 열었으면(움직이는 중) 건드리지 않음
-                    if (_play == 0 && _shape is not null) _shape.Fill = null;
-                    Log.Info("판 그림 창 미리 그림");
-                }, System.Windows.Threading.DispatcherPriority.Background);
-            }
-            g.ContentRendered += Rendered;
+            int warm = _play;
             g.Show();
+            // 한 번 그려진 뒤 숨김 (ContentRendered 는 창마다 한 번뿐이라 다음 렌더 차례로)
+            g.Dispatcher.BeginInvoke(() =>
+            {
+                if (_play != warm) return; // 그새 판을 열었으면(움직이는 중) 건드리지 않음
+                if (g.IsVisible) g.Hide();
+                if (_shape is not null) _shape.Fill = null;
+                Log.Info("판 그림 창 미리 그림");
+            }, System.Windows.Threading.DispatcherPriority.ContextIdle);
         }
         catch (Exception ex) { Log.Warn($"판 그림 창 미리 만들기 실패: {ex.GetType().Name}"); }
     }
 
-    /// <summary>판이 먼저 닫힘 (Esc·바깥 클릭) — 움직이던 그림 창을 바로 숨김.</summary>
-    public static void Stop()
+    /// <summary>판이 먼저 닫힘 (Esc·바깥 클릭) — 움직이던 그림 창을 바로 숨김. 그 판의 차례일 때만 (그새 새 판이 열렸으면 그대로).</summary>
+    public static void Stop(int play)
     {
+        if (play != _play) return;
         _play++;
         if (_ghost is { IsVisible: true } g) g.Hide();
         if (_shape is not null) _shape.Fill = null;

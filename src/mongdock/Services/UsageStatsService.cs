@@ -145,12 +145,12 @@ public sealed class UsageStatsService : IDisposable
             ["routines"] = s.Routines.Count,
             ["routineRuns"] = TakeRoutineRuns(s),
             ["routineSavedFromScreen"] = s.Routines.Any(r => r.FromScreen),
-            ["routineTriggers"] = string.Join(",", s.Routines.Where(r => r.More is not null).SelectMany(r => r.More!.Start).GroupBy(x => x.Kind.ToString().ToLowerInvariant()).OrderBy(g => g.Key).Select(g => $"{g.Key}:{g.Count()}")),
+            ["routineTriggers"] = string.Join(",", s.Routines.Where(r => r.More is not null).SelectMany(r => r.More!.Start).Where(x => x.Kind is not null).GroupBy(x => x.Kind!.Value.ToString().ToLowerInvariant()).OrderBy(g => g.Key).Select(g => $"{g.Key}:{g.Count()}")),
             ["routineEndTriggers"] = string.Join(",", new[]
                 {
                     ("audio", s.Routines.Count(r => r.More?.End.AudioRemoved is not null)),
                     ("time", s.Routines.Count(r => r.More?.End.Time is not null)),
-                    ("allClosed", s.Routines.Count(r => r.More?.End.AllAppsClosed == true)),
+                    ("allclosed", s.Routines.Count(r => r.More?.End.AllAppsClosed == true)), // 소문자만 (Code.gs kinds_ 검증)
                 }.Where(x => x.Item2 > 0).Select(x => $"{x.Item1}:{x.Item2}")),
             ["routineSettingSteps"] = s.Routines.Count(r => r.More?.Change is { } c && (c.Dnd || c.DockHide || c.OutputDevice is not null || c.Volume is not null)),
             ["errors"] = errors,

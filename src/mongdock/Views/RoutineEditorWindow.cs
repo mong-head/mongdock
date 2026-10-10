@@ -653,6 +653,7 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
             foreach (var pin in Services.Settings.Current.Pins.Where(p => p.Kind == PinKind.Routine && p.Target == _original.Id)) pin.Name = _r.Name;
             Services.Settings.Save();
             Log.Info($"루틴 편집 저장: 항목 {_r.Items.Count}개");
+            RoutineTriggers.Refresh(); // 실행 중 루틴의 방해 금지·독 숨김을 바로
         }
         Close();
     }

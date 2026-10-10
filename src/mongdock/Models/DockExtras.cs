@@ -140,7 +140,8 @@ public enum RoutineStartKind { Login, Monitor, Audio, Time, App }
 /// <summary>시작 조건 하나 (직접 누르기는 늘 됨 — 조건이 없으면 "직접"만).</summary>
 public sealed class RoutineStart
 {
-    public RoutineStartKind Kind { get; set; }
+    /// <summary>null = 모르는 종류(새 판에서 만든 것) — 읽을 때 그 조건만 버림.</summary>
+    public RoutineStartKind? Kind { get; set; }
     /// <summary>Monitor: 장치 이름 (null = 외부 모니터 아무거나). Audio: 출력 장치 id.</summary>
     public string? Device { get; set; }
     /// <summary>표시 이름 (장치·앱).</summary>
@@ -202,7 +203,8 @@ public sealed class RoutineRestore
     public string? AppliedDevice { get; set; }
     public int? Volume { get; set; }
     public int? AppliedVolume { get; set; }
-    public DateTime At { get; set; }
+    /// <summary>볼륨을 건 장치 id (기본 장치가 바뀌어도 그 장치의 볼륨을 되돌림).</summary>
+    public string? VolumeDevice { get; set; }
 }
 
 // ───────────────────────── 앱 모음 판 (#24) ─────────────────────────
