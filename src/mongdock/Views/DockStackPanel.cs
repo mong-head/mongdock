@@ -98,6 +98,9 @@ internal abstract class DockStackPanel : Window
             var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
             _watch.IgnoreHwnd = hwnd; // 열면서 Activate 한 자기 자신으로 닫히지 않게
             if (!Layered) DwmCard(hwnd);
+            // 나타나기(그림이 움직이는 동안): 진짜 판은 제자리에 두되 DWM 으로 가려 둠 — 화면 밖에 두었다 옮기면 옮긴 뒤 다시 그리느라
+            // 판 자리가 잠깐 비어 "두 번 켜지는" 것처럼 보였음 (실제 창 시험). 가린 창도 DWM 이 그림을 들고 있어 풀면 바로 보임
+            if (!Layered && _intro != PanelIntro.Fade) Cloak(hwnd, true);
         };
         SizeChanged += (_, _) => Place();
         _showClock = System.Diagnostics.Stopwatch.StartNew();
@@ -122,11 +125,9 @@ internal abstract class DockStackPanel : Window
             Place();
             if (!Layered && _intro != PanelIntro.Fade)
             {
-                var final = new Rect(Left, Top, ActualWidth, ActualHeight); // 제자리는 기억해 두고 그동안 화면 밖에
+                var final = new Rect(Left, Top, ActualWidth, ActualHeight); // 진짜 판은 제자리에 (가려진 채 — SourceInitialized)
                 _introHold = final;
-                Left = -32000;
-                Top = -32000;
-                // 배치가 끝난 지금 바로 그림을 떠서 움직이기 시작 (화면 밖 첫 프레임을 기다리지 않음 — 그새 진짜 판은 화면 밖에서 그려짐)
+                // 배치가 끝난 지금 바로 그림을 떠서 움직이기 시작 (첫 프레임을 기다리지 않음 — 그새 진짜 판은 가려진 채 그려짐)
                 var snapClock = System.Diagnostics.Stopwatch.StartNew();
                 var picture = Snapshot();
                 Log.Info($"앱 모음 판: 그림 뜨기 {snapClock.ElapsedMilliseconds}ms");
@@ -171,6 +172,22 @@ internal abstract class DockStackPanel : Window
     private readonly string _intro;
     /// <summary>나타나는 중: 진짜 판의 제자리 (그동안 판은 화면 밖, 그림이 움직임).</summary>
     private Rect? _introHold;
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    private static extern int DwmFlush();
+
+    /// <summary>DWMWA_CLOAK (13): 창을 가림/풂 — 가려진 창도 그려지고 위치·크기는 그대로.</summary>
+    private static void Cloak(IntPtr hwnd, bool on)
+    {
+        if (hwnd == IntPtr.Zero) return;
+        try
+        {
+            int v = on ? 1 : 0;
+            int hr = DwmSetWindowAttribute(hwnd, 13 /* DWMWA_CLOAK */, ref v, sizeof(int));
+            if (hr != 0) Log.Warn($"판 가리기 실패 hr=0x{hr:X8}");
+        }
+        catch (Exception ex) { Log.Warn($"판 가리기 실패: {ex.GetType().Name}"); }
+    }
+
     /// <summary>판이 포그라운드가 아니면 SetForegroundWindow (독을 누른 직후라 허용됨). retry 면 50ms 뒤 한 번 더.</summary>
     private void EnsureForeground(bool retry)
     {
@@ -191,14 +208,17 @@ internal abstract class DockStackPanel : Window
     private bool _introPlaying, _introDone, _rendered;
     private int _introPlay;
 
-    /// <summary>진짜 판을 제자리에 (그림 창은 PanelIntro 가 다음 프레임에 숨김).</summary>
+    /// <summary>진짜 판을 보이게 (가림을 풂) → DWM 이 그 모습을 화면에 낸 뒤 그림 창을 숨김 — 둘이 같은 그림이라 바뀌는 순간이 안 보임.</summary>
     private void ReleaseIntro()
     {
         if (_introHold is null) return;
         _introHold = null;
         _introPlaying = false;
         Place();
-        PanelIntro.Swap(_introPlay); // 같은 차례에 그림 창 숨김
+        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        Cloak(hwnd, false);
+        try { DwmFlush(); } catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException) { } // 진짜 판이 한 번 합성될 때까지
+        PanelIntro.Swap(_introPlay);
         EnsureForeground(retry: false);
         Log.Info($"앱 모음 판: 창 생성→제자리 {_showClock.ElapsedMilliseconds}ms (첫 프레임 {FirstFrameMs}ms)");
     }
