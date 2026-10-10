@@ -14,6 +14,7 @@ public partial class DockWindow
         pin is { Kind: PinKind.Special } && pin.Target.Equals("launchpad", StringComparison.OrdinalIgnoreCase);
 
     private bool _allAppsOpening;
+    private long _allAppsClosedAt;
     private int _allAppsOpens;
 
     /// <summary>몽독 시작 5초 뒤 유휴 때 앱 모음 판 준비 (앱 목록·분류·처음 보이는 아이콘). 그 뒤 판을 닫을 때마다 다음 열기를 위해 다시.</summary>
@@ -30,7 +31,8 @@ public partial class DockWindow
 
     private async void ToggleAllAppsPanel(DockItemView? view, PinItem pin)
     {
-        bool same = _folderPanel is AllAppsPanel;
+        // 판이 열린 채 독 버튼을 누르면, 누르는 순간 판이 먼저 닫힘(비활성화·바깥 클릭) → 떼는 순간 이 클릭이 다시 여는 일이 없게
+        bool same = _folderPanel is AllAppsPanel || Environment.TickCount64 - _allAppsClosedAt < 400;
         if (same || view == null || _allAppsOpening)
             Log.Info($"앱 모음 클릭: {(same ? "열린 판 닫기" : view == null ? "아이콘 없음" : "여는 중")}");
         _folderPanel?.CloseAnimated();
@@ -62,6 +64,7 @@ public partial class DockWindow
         panel.PinToDockRequested += PinAppToDock;
         panel.Closed += (_, _) =>
         {
+            _allAppsClosedAt = Environment.TickCount64;
             if (_folderPanel != panel) return;
             _folderPanel = null;
             _folderPanelPin = null;

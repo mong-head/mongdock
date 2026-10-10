@@ -86,7 +86,11 @@ internal sealed partial class AllAppsPanel
         };
         el.LostMouseCapture += (_, _) =>
         {
-            if (_drag is not null && _pressedCell == el) EndDrag(drop: false);
+            if (_drag is not null && _pressedCell == el)
+            {
+                Log.Info("앱 모음 판: 끌기 중 마우스 캡처 잃음 → 원래 자리로");
+                EndDrag(drop: false);
+            }
         };
     }
 
@@ -279,6 +283,7 @@ internal sealed partial class AllAppsPanel
     /// <summary>판 밖으로: 판 안 끌기를 접고 윈도우 끌기로 (독에 놓으면 고정, 바탕 화면엔 바로 가기 복사). 복사/링크만.</summary>
     private void HandOffToWindows(Func<DataObject> ole)
     {
+        Log.Info("앱 모음 판: 판 밖으로 → 윈도우 끌기로 넘김");
         var d = _drag!;
         _drag = null;
         d.Ghost.Close();
@@ -341,6 +346,7 @@ internal sealed partial class AllAppsPanel
             to = new Rect(d.Source.TranslatePoint(new Point(0, 0), this), new Size(d.Source.ActualWidth, d.Source.ActualHeight)); // 원래 자리로
         }
         SetHighlightOff(d);
+        Log.Info($"앱 모음 판: 끌기 끝 — {(apply is null ? (drop ? "놓을 곳 없음, 원래 자리로" : "취소, 원래 자리로") : $"{target!.Kind} 에 놓음{(target.Kind is "fav" or "favapp" ? $" (자리 {d.FavIndex})" : "")}")}");
         SlideGhost(d.Ghost, new Point(Left + to.X - 12, Top + to.Y - 12), () =>
         {
             d.Ghost.Close();

@@ -179,9 +179,11 @@ internal abstract class DockStackPanel : Window
 
     protected void SetBody(UIElement body) => _card.Child = body;
 
+    /// <summary>독 버튼 자리: 확대된 아이콘은 칸보다 크게(화면 안쪽으로) 그려지므로 아이콘 크기만큼 넉넉히 — 그 버튼을 다시 눌러 닫을 때 바깥 클릭으로 먼저 닫히지 않게.</summary>
     private static Rect Inflate(Rect r)
     {
-        r.Inflate(2, 2);
+        double grow = Math.Max(r.Width, r.Height);
+        r.Inflate(grow, grow);
         return r;
     }
 
