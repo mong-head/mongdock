@@ -23,6 +23,7 @@ internal static class Program
         if (args.Contains("--transfer")) return TransferTests();
         if (args.Contains("--pins")) return PinsPreview();
         if (args.Contains("--repair")) return RepairTests();
+        if (args.Contains("--recycle")) return RecycleTests();
 
         Check("패키지 아님", AppInfo.IsPackaged, false);
         Check("설치 방식", AppInfo.InstallKind, "zip·개발 빌드");
@@ -200,6 +201,77 @@ internal static class Program
         {
             try { Directory.Delete(dir, true); } catch { }
         }
+    }
+
+    /// <summary>
+    /// 휴지통 실제 시험 (--recycle, 따로 실행): 시험이 만든 임시 파일 하나만 휴지통으로 보내고 → 변경 알림으로 개수가 바뀌는지 →
+    /// 목록에 보이는지 → 복원해서 원래 이름(확장자 포함) 그대로 돌아오는지. 끝나면 임시 파일도 지움 (휴지통엔 남기지 않음).
+    /// </summary>
+    private static int RecycleTests()
+    {
+        var asm = typeof(SettingsService).Assembly;
+        var rb = asm.GetType("Mongdock.Services.RecycleBin")!;
+        var watcherType = asm.GetType("Mongdock.Services.RecycleBinWatcher")!;
+        var dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
+        void Pump(Func<bool> until, int ms)
+        {
+            var end = DateTime.UtcNow.AddMilliseconds(ms);
+            while (!until() && DateTime.UtcNow < end)
+            {
+                var frame = new System.Windows.Threading.DispatcherFrame();
+                dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, () => frame.Continue = false);
+                System.Windows.Threading.Dispatcher.PushFrame(frame);
+                Thread.Sleep(50);
+            }
+        }
+
+        var watcher = (IDisposable)Activator.CreateInstance(watcherType)!;
+        long Count() => (long)watcherType.GetProperty("Count")!.GetValue(watcher)!;
+        bool Known() => (bool)watcherType.GetProperty("Known")!.GetValue(watcher)!;
+        string dir = Path.Combine(Path.GetTempPath(), "mongdock-rb-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        string file = Path.Combine(dir, "몽독 휴지통 시험.txt");
+        try
+        {
+            Pump(Known, 5000);
+            Check("시작 때 한 번 확인", Known(), true);
+            long before = Count();
+            File.WriteAllText(file, "mongdock recycle test");
+            // RecycleBin.Send 직접 (Touched 없이) → 셸 변경 알림만으로 바뀌는지
+            bool sent = (bool)rb.GetMethod("Send")!.Invoke(null, new object[] { new[] { file } })!;
+            Check("휴지통으로 보냄", sent, true);
+            Pump(() => Count() == before + 1, 8000);
+            Check("변경 알림으로 개수 +1", Count(), before + 1);
+
+            object? found = null;
+            var t = new Thread(() =>
+            {
+                var list = (System.Collections.IEnumerable)rb.GetMethod("List")!.Invoke(null, new object[] { 20 })!;
+                foreach (var item in list)
+                    if ((string)item.GetType().GetProperty("OriginalFolder")!.GetValue(item)! is var from
+                        && string.Equals(Path.TrimEndingDirectorySeparator(from), Path.TrimEndingDirectorySeparator(dir), StringComparison.OrdinalIgnoreCase))
+                    { found = item; break; }
+            });
+            t.SetApartmentState(ApartmentState.STA);
+            t.Start();
+            t.Join();
+            Check("최근 목록에 보임", found is not null, true);
+            if (found is not null)
+            {
+                bool restored = (bool)rb.GetMethod("Restore")!.Invoke(null, new[] { found })!;
+                Check("복원됨", restored, true);
+                Check("원래 이름 그대로 (확장자 포함)", File.Exists(file), true);
+                Pump(() => Count() == before, 8000);
+                Check("복원 뒤 개수 원래대로", Count(), before);
+            }
+        }
+        finally
+        {
+            watcher.Dispose();
+            try { Directory.Delete(dir, true); } catch { }
+        }
+        Console.WriteLine(_failed == 0 ? "휴지통 시험: 모두 통과" : $"휴지통 시험: {_failed}개 실패");
+        return _failed == 0 ? 0 : 1;
     }
 
     private static int RepairTests()
