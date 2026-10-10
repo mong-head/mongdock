@@ -38,6 +38,7 @@ public partial class DockWindow
     /// <summary>창이 없는 핀을 눌렀을 때: 반응 시작 + 실행.</summary>
     private void LaunchFromDock(DockItemViewModel item, PinItem pin)
     {
+        AppUsage.Record(AllAppsCatalog.Identity(pin), _services.Settings.Current.AllApps); // ★ 줄 "자주 쓰는 앱" (이 PC 안에서만)
         string key = LaunchKey(pin);
         if (_launching.ContainsKey(key))
         {

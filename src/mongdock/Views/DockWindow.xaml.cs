@@ -1110,6 +1110,11 @@ public partial class DockWindow : Window
             ToggleTrashPanel(sender as DockItemView, item.Pin!);
             return;
         }
+        if (IsAllApps(item.Pin))
+        {
+            ToggleAllAppsPanel(sender as DockItemView, item.Pin!); // 시작 메뉴 대신 몽독 앱 모음 판 (#24)
+            return;
+        }
         if (item.Pin is { Kind: PinKind.Routine })
         {
             Log.Info("루틴 실행은 아직 준비 중"); // #24-A 실행은 다음 단계

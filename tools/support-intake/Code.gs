@@ -102,7 +102,9 @@ var STATS_COLUMNS = [
   ['lightMode', bool_],
   ['errors', int_(0, 1000000)],
   ['folders', int_(0, 200)], // 독 폴더 수 (#24) — 새 칸은 시트 칸이 밀리지 않게 맨 끝에
-  ['recycleBin', bool_] // 독 휴지통 보임 (#24-C)
+  ['recycleBin', bool_], // 독 휴지통 보임 (#24-C)
+  ['allAppsOpened', int_(0, 10000)], // 앱 모음 판 연 횟수 (#24)
+  ['allAppsCustomized', bool_] // 앱 모음 묶음을 직접 바꾼 적 있음
 ];
 
 function oneOf_(list) { return function (v) { v = String(v); return list.indexOf(v) >= 0 ? v : null; }; }
@@ -262,7 +264,7 @@ function statsPage_() {
   });
   h.push('<table><tr><th colspan="2">켜짐 비율</th></tr>');
   [['laptop', '노트북'], ['dockAutoHide', '독 자동 숨김'], ['topBar', '상단바'], ['calendar', '캘린더 연결'],
-    ['searchButton', '검색 버튼'], ['hideTaskbar', '작업 표시줄 숨기기'], ['lightMode', '가벼운 모드'], ['recycleBin', '독 휴지통']].forEach(function (p) {
+    ['searchButton', '검색 버튼'], ['hideTaskbar', '작업 표시줄 숨기기'], ['lightMode', '가벼운 모드'], ['recycleBin', '독 휴지통'], ['allAppsCustomized', '앱 모음 묶음 바꿈']].forEach(function (p) {
     h.push('<tr><td>' + esc_(p[1]) + '</td><td>' + onRate(p[0]) + '</td></tr>');
   });
   h.push('</table>');

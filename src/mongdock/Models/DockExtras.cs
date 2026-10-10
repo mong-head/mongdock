@@ -110,3 +110,32 @@ public sealed class RoutineData
     public RoutineDesktop Desktop { get; set; } = new();
     public List<RoutineItem> Items { get; set; } = new();
 }
+
+// ───────────────────────── 앱 모음 판 (#24) ─────────────────────────
+
+/// <summary>앱 모음 판의 묶음 하나 (화면 순서 = 목록 순서). 기본 묶음 id: work·chat·web·media·music·games·dev·tools·other, 사용자 묶음은 "g-…".</summary>
+public sealed class AppGroupDef
+{
+    public string Id { get; set; } = "";
+    /// <summary>사용자가 바꾼 이름. null 이면 기본 이름(번역).</summary>
+    public string? Name { get; set; }
+}
+
+/// <summary>
+/// 앱 모음 판 (settings.json "allApps"). 앱 키 = shell:AppsFolder 파싱 이름. 설정 옮기기에 포함 (실행 횟수는 usage-local.json — 제외).
+/// </summary>
+public sealed class AllAppsSettings
+{
+    /// <summary>★ 줄 맨 앞에 고정한 앱 (순서대로, 최대 8).</summary>
+    public List<string> Favorites { get; set; } = new();
+    /// <summary>★ 줄 남은 칸을 자주 쓰는 앱으로 채움 (끄면 실행 횟수 기록도 멈추고 지움).</summary>
+    public bool FillFrequent { get; set; } = true;
+    /// <summary>묶음 순서·이름·사용자 묶음. 비어 있으면 기본 순서.</summary>
+    public List<AppGroupDef> Groups { get; set; } = new();
+    /// <summary>사용자가 옮긴 앱 → 묶음 id (자동 분류보다 우선).</summary>
+    public Dictionary<string, string> Overrides { get; set; } = new();
+    /// <summary>숨긴 앱.</summary>
+    public List<string> Hidden { get; set; } = new();
+    /// <summary>묶음을 직접 바꾼 적 있음 (사용 통계 "allAppsCustomized" 용).</summary>
+    public bool Customized { get; set; }
+}

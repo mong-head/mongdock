@@ -137,6 +137,9 @@ public sealed class UsageStatsService : IDisposable
             ["lightMode"] = PerfMode.IsOn(s),
             ["folders"] = s.Pins.Count(p => p.Kind == PinKind.Folder),
             ["recycleBin"] = s.Pins.Any(p => p.Kind == PinKind.Special && p.Target == DefaultPins.RecycleBinTarget),
+            // 앱 모음 판: 연 횟수와 묶음을 직접 바꾼 적 있는지만 (앱 이름은 보내지 않음)
+            ["allAppsOpened"] = Interlocked.Exchange(ref AllAppsCatalog.OpenedSinceSignal, 0),
+            ["allAppsCustomized"] = s.AllApps.Customized,
             ["errors"] = errors,
             ["nonce"] = Guid.NewGuid().ToString("N"),
         };

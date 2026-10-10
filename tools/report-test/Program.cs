@@ -45,6 +45,9 @@ internal static class Program
         int iconsAt = Array.FindIndex(args, a => a == "--icons");
         if (iconsAt >= 0 && iconsAt + 1 < args.Length) RenderAllAppsIcons(args[iconsAt + 1]);
 
+        int allApps = Array.FindIndex(args, a => a == "--allapps");
+        if (allApps >= 0 && allApps + 1 < args.Length) RenderAllAppsPanel(args[allApps + 1]);
+
         int folderIcons = Array.FindIndex(args, a => a == "--folder-icons");
         if (folderIcons >= 0 && folderIcons + 1 < args.Length) RenderFolderIcons(args[folderIcons + 1]);
 
@@ -450,6 +453,67 @@ internal static class Program
             Console.WriteLine($"  저장  {path}");
         }
         w.Close();
+        GC.KeepAlive(app);
+    }
+
+    /// <summary>
+    /// 앱 모음 판 그림 (--allapps DIR): 이 PC 의 실제 앱 목록으로 처음 화면 · 묶음 하나 펼침 · 검색 결과 3장 (라이트·다크).
+    /// 설정은 기본값(사본) — 사용자 settings.json 은 쓰지 않음. 디스패처를 돌리지 않음(돌리면 App.OnStartup 이 실행됨).
+    /// </summary>
+    private static void RenderAllAppsPanel(string dir)
+    {
+        Directory.CreateDirectory(dir);
+        var app = new Mongdock.App();
+        Mongdock.Loc.Init(_lang);
+        app.InitializeComponent();
+        app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        var asm = typeof(Mongdock.App).Assembly;
+        var catalog = asm.GetType("Mongdock.Services.AllAppsCatalog")!;
+        var apps = (System.Collections.ICollection)catalog.GetMethod("Apps")!.Invoke(null, new object[] { false })!;
+        Console.WriteLine($"  앱 {apps.Count}개");
+        var panelType = asm.GetType("Mongdock.Views.AllAppsPanel")!;
+        panelType.GetField("LoadIconsNow", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, true);
+        foreach (var theme in new[] { "light", "dark" })
+        {
+            var settings = new SettingsService(); // 읽기만 (저장하지 않음 — 이 셸의 %APPDATA% 는 가상화된 사본)
+            settings.Current.Dock.Theme = theme == "dark" ? Mongdock.Models.DockTheme.Dark : Mongdock.Models.DockTheme.Light;
+            Mongdock.ViewModels.UiFonts.Apply(settings.Current);
+            var tracker = new WindowTracker();
+            var launcher = new AppLauncher(tracker);
+            var services = new AppServices(settings, tracker, launcher, new IconService(), new DesktopWindowService(), new VirtualDesktopService(),
+                new ShellActions(), new ImeService(), new StatusService(), new MediaService(), new AppMenuService(settings), new StartupService(),
+                new NotificationService(tracker, launcher), new TrayIconService(), new CalendarFeedService(settings));
+            var palette = Mongdock.ViewModels.UiTheme.Palette(settings.Current);
+            var monitor = Monitors.GetPrimary();
+            foreach (var mode in new[] { "home", "group", "search" })
+            {
+                var w = (Window)panelType.GetConstructors(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)[0]
+                    .Invoke(new object[] { services, palette, new Rect(800, 1000, 52, 52), Mongdock.Models.DockEdge.Bottom, monitor });
+                if (mode == "group") panelType.GetField("_expanded", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(w, "work");
+                if (mode == "search") ((System.Windows.Controls.TextBox)panelType.GetField("_search", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(w)!).Text = "ch";
+                panelType.GetMethod("Rebuild", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(w, null);
+                var content = (FrameworkElement)w.Content;
+                content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                var size = content.DesiredSize;
+                content.Arrange(new Rect(size));
+                content.UpdateLayout();
+                var dv = new DrawingVisual();
+                using (var dc = dv.RenderOpen())
+                {
+                    dc.DrawRectangle(new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x14, 0x16, 0x1C) : Color.FromRgb(0xE9, 0xEC, 0xF4)), null, new Rect(size));
+                    dc.DrawRectangle(new VisualBrush(content) { ViewboxUnits = BrushMappingMode.Absolute, Viewbox = new Rect(size), Stretch = Stretch.None }, null, new Rect(size));
+                }
+                var rtb = new RenderTargetBitmap((int)size.Width, (int)size.Height, 96, 96, PixelFormats.Pbgra32);
+                rtb.Render(dv);
+                string path = Path.Combine(dir, $"allapps-{theme}-{mode}.png");
+                var enc = new PngBitmapEncoder();
+                enc.Frames.Add(BitmapFrame.Create(rtb));
+                using (var fs = File.Create(path)) enc.Save(fs);
+                Console.WriteLine($"  저장  {path}");
+                w.Close();
+            }
+            settings.Dispose();
+        }
         GC.KeepAlive(app);
     }
 

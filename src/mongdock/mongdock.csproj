@@ -50,6 +50,7 @@
     <EmbeddedResource Include="i18n\es.json" LogicalName="mongdock.i18n.es.json" Condition="Exists('i18n\es.json')" />
     <!-- 앱 전용 메뉴 규칙 (저장소 루트 menus/). 오프라인·첫 실행 기본값 — 실행 중엔 GitHub 의 같은 파일로 갱신 (Services/MenuRulesService) -->
     <EmbeddedResource Include="..\..\menus\app-menus.json" LogicalName="mongdock.app-menus.json" Link="menus\app-menus.json" />
+    <EmbeddedResource Include="..\..\menus\app-categories.json" LogicalName="mongdock.app-categories.json" Link="menus\app-categories.json" />
   </ItemGroup>
 
 </Project>

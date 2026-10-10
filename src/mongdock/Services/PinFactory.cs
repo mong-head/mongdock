@@ -113,6 +113,10 @@ public static class PinFactory
         return pin;
     }
 
+    /// <summary>바로 가기(.lnk)의 대상 경로 (앱 모음 판의 분류·파일 위치). 못 읽으면 null.</summary>
+    internal static string? ShortcutTarget(string lnk) =>
+        TryReadShortcut(lnk, out string target, out _, out _) ? Environment.ExpandEnvironmentVariables(target) : null;
+
     /// <summary>IShellLinkW + IPersistFile 로 바로 가기 읽기 (ShellLink 는 STA·MTA 모두 가능, 보통 UI 스레드).</summary>
     private static bool TryReadShortcut(string lnk, out string target, out string args, out string iconPath)
     {

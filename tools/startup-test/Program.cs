@@ -274,6 +274,47 @@ internal static class Program
         return _failed == 0 ? 0 : 1;
     }
 
+    /// <summary>앱 모음 판 자동 분류 (#24): 실행 파일 → 스토어 앱 → 이름 낱말 → 시작 메뉴 폴더 → 기타, 사용자가 옮긴 것 우선. 이 PC 앱 분포도 찍음.</summary>
+    private static void AllAppsTests()
+    {
+        var asm = typeof(SettingsService).Assembly;
+        var entry = asm.GetType("Mongdock.Services.AppEntry")!;
+        var cat = asm.GetType("Mongdock.Services.AllAppsCatalog")!;
+        object E(string key, string name, string? exe = null, string? family = null, string? folder = null) =>
+            Activator.CreateInstance(entry, key, name, exe, family, folder, null, null)!;
+        string C(object e) => (string)cat.GetMethod("Classify")!.Invoke(null, new[] { e })!;
+        Check("카카오톡 exe → 소통", C(E(@"{X}\Kakao\KakaoTalk.exe", "카카오톡", "kakaotalk")), "chat");
+        Check("계산기 스토어 앱 → 도구", C(E("Microsoft.WindowsCalculator_8wekyb3d8bbwe!App", "계산기", null, "Microsoft.WindowsCalculator_8wekyb3d8bbwe")), "tools");
+        Check("이름 '미디어 플레이어' → 음악", C(E("X.Y_123!App", "미디어 플레이어")), "music");
+        Check("모르는 exe + 폴더 Games → 게임", C(E(@"{X}\Foo\foo.exe", "Foo Quest", "foo", null, "Games\\Foo")), "games");
+        Check("이름 낱말은 낱말 단위 ('Outline' 은 line 아님)", C(E(@"{X}\o.exe", "Outline Tool", "outlinetool")), "other");
+        Check("모르는 앱 → 기타", C(E(@"{X}\zz.exe", "Zz", "zz")), "other");
+
+        var settings = new Mongdock.Models.AllAppsSettings();
+        var kakao = E(@"{X}\Kakao\KakaoTalk.exe", "카카오톡", "kakaotalk");
+        settings.Overrides[@"{X}\Kakao\KakaoTalk.exe"] = "work";
+        Check("사용자가 옮긴 묶음이 이김", cat.GetMethod("GroupOf")!.Invoke(null, new[] { settings, kakao }), "work");
+        settings.Overrides[@"{X}\Kakao\KakaoTalk.exe"] = "g-gone";
+        Check("지워진 사용자 묶음 → 자동 분류", cat.GetMethod("GroupOf")!.Invoke(null, new[] { settings, kakao }), "chat");
+        var order = (List<string>)cat.GetMethod("GroupOrder")!.Invoke(null, new object[] { settings })!;
+        Check("묶음 순서: 기타는 늘 끝", order[^1], "other");
+        Check("독 경로 핀과 판 앱이 같은 실행 기록", cat.GetMethod("Identity", new[] { typeof(Mongdock.Models.PinItem) })!.Invoke(null, new object[] { new Mongdock.Models.PinItem { Kind = Mongdock.Models.PinKind.Exe, Target = @"C:\Program Files\Kakao\KakaoTalk.exe" } }),
+            cat.GetMethod("Identity", new[] { entry })!.Invoke(null, new[] { kakao }));
+
+        // 이 PC 의 실제 앱 분포 (참고용 — 실패 조건 아님)
+        var apps = (System.Collections.IEnumerable)cat.GetMethod("Apps")!.Invoke(null, new object[] { false })!;
+        var dist = new Dictionary<string, int>();
+        var others = new List<string>();
+        foreach (var a in apps)
+        {
+            string g = C(a);
+            dist[g] = dist.GetValueOrDefault(g) + 1;
+            if (g == "other") others.Add((string)entry.GetProperty("Name")!.GetValue(a)!);
+        }
+        Console.WriteLine("  (참고) 이 PC 앱 분류: " + string.Join(", ", dist.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key} {kv.Value}")));
+        Console.WriteLine("  (참고) 기타: " + string.Join(" | ", others.Take(60)));
+    }
+
     private static int RepairTests()
     {
         string root = Path.Combine(Path.GetTempPath(), "mongdock-repair-test-" + Guid.NewGuid().ToString("N"));
@@ -378,6 +419,7 @@ internal static class Program
             Check("용량 표시 1.5GB", rb.GetMethod("FormatSize")!.Invoke(null, new object[] { 1536L * 1024 * 1024 }), "1.5GB");
             Check("휴지통 개수 읽힘", rb.GetMethod("Query")!.Invoke(null, null) is not null, true);
             RecycleInfoTests(rb);
+            AllAppsTests();
             FolderListTests();
 
             // 5: 핀 이름 Finder·Launchpad → 파일 탐색기·앱 모음 (정확히 같은 이름·대상만, 사용자가 바꾼 이름은 그대로)

@@ -365,6 +365,12 @@ public sealed class SettingsService : ISettingsService, IDisposable
         s.SeenHints ??= new List<string>();
         s.NewSince ??= new Dictionary<string, DateTime>();
         s.NewSeen ??= new List<string>();
+        s.AllApps ??= new AllAppsSettings();
+        s.AllApps.Favorites ??= new List<string>();
+        s.AllApps.Groups ??= new List<AppGroupDef>();
+        s.AllApps.Groups.RemoveAll(g => g is null || string.IsNullOrWhiteSpace(g.Id));
+        s.AllApps.Overrides ??= new Dictionary<string, string>();
+        s.AllApps.Hidden ??= new List<string>();
         s.Pins ??= new List<PinItem>();
         s.Pins.RemoveAll(p => p is null);
         foreach (var p in s.Pins)
