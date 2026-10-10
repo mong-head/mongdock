@@ -20,6 +20,10 @@ namespace Mongdock.Views;
 /// </summary>
 internal sealed class AllAppsPanel : DockStackPanel
 {
+    /// <summary>끄는 앱의 데이터 형식 (값 = 앱 키). 독도 받음 (판 → 독 = 고정).</summary>
+    public const string AppFormat = "mongdock.allapps.app";
+    private const string GroupFormat = "mongdock.allapps.group";
+
     private const int Cols = 6, FavMax = 8, GroupCols = 4;
     private const double AppCell = 88, AppIcon = 44, GroupTile = 72;
 
@@ -181,9 +185,11 @@ internal sealed class AllAppsPanel : DockStackPanel
         if (fav.Count > 0)
         {
             root.Children.Add(SectionTitle("★ " + Loc.T("즐겨찾기")));
-            var row = new WrapPanel { Width = Cols * AppCell };
+            var row = new WrapPanel { Width = Cols * AppCell, Background = Brushes.Transparent };
             foreach (var (app, pinned) in fav) row.Children.Add(AppCellView(app, pinned: pinned));
-            root.Children.Add(row);
+            var favBox = new Border { CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1.5), BorderBrush = Brushes.Transparent, Child = row };
+            DropTarget(favBox, AppFormat, key => !S.Favorites.Contains(key, StringComparer.OrdinalIgnoreCase), PinToTop);
+            root.Children.Add(favBox);
         }
 
         // 묶음 (앱이 없는 묶음은 숨김) — 누르면 그 줄 아래에 펼침
@@ -292,7 +298,23 @@ internal sealed class AllAppsPanel : DockStackPanel
         };
         cell.MouseEnter += (_, _) => { if (!selected) cell.Background = P.Tile; };
         cell.MouseLeave += (_, _) => { if (!selected) cell.Background = Brushes.Transparent; };
-        cell.MouseLeftButtonUp += (_, e) => { e.Handled = true; Launch(app); };
+        Pressable(cell, () => Launch(app), () =>
+        {
+            var data = new DataObject();
+            data.SetData(AppFormat, app.Key);
+            if (app.Shortcut is { } lnk && File.Exists(lnk)) data.SetData(DataFormats.FileDrop, new[] { lnk }); // 독·바탕 화면에 놓으면 바로 가기
+            return data;
+        });
+        // 다른 앱을 이 앱 위에 놓으면 둘로 새 묶음
+        DropTarget(cell, AppFormat, key => key != app.Key, key =>
+        {
+            var other = _apps.FirstOrDefault(a => a.Key == key);
+            if (other is null) return;
+            string id = NewGroup();
+            S.Overrides[app.Key] = id;
+            S.Overrides[other.Key] = id;
+            Save();
+        });
         return cell;
     }
 
@@ -361,12 +383,17 @@ internal sealed class AllAppsPanel : DockStackPanel
         };
         cell.MouseEnter += (_, _) => cell.Background = P.Hover;
         cell.MouseLeave += (_, _) => cell.Background = Brushes.Transparent;
-        cell.MouseLeftButtonUp += (_, e) =>
+        Pressable(cell, () =>
         {
-            e.Handled = true;
             _expanded = open ? null : id;
             Rebuild();
-        };
+        }, id == AllAppsCatalog.Other ? null : () => new DataObject(GroupFormat, id));
+        // 앱을 놓으면 이 묶음으로, 다른 묶음을 놓으면 그 묶음을 이 앞으로
+        DropTarget(cell, AppFormat, _ => true, key =>
+        {
+            if (_apps.FirstOrDefault(a => a.Key == key) is { } moved) MoveTo(moved, id);
+        });
+        DropTarget(cell, GroupFormat, other => other != id, other => MoveGroupBefore(other, id));
         return cell;
     }
 
@@ -502,7 +529,7 @@ internal sealed class AllAppsPanel : DockStackPanel
         bool fav = S.Favorites.Contains(app.Key, StringComparer.OrdinalIgnoreCase);
         menu.Items.Add(fav
             ? DockMenus.Item(Loc.T("고정 해제"), () => { S.Favorites.RemoveAll(k => k.Equals(app.Key, StringComparison.OrdinalIgnoreCase)); Save(false); })
-            : DockMenus.Item(Loc.T("맨 위에 고정"), () => { S.Favorites.Add(app.Key); if (S.Favorites.Count > FavMax) S.Favorites.RemoveAt(0); Save(false); }));
+            : DockMenus.Item(Loc.T("맨 위에 고정"), () => PinToTop(app.Key)));
         menu.Items.Add(DockMenus.Item(Loc.T("독에 고정"), () => { CloseAnimated(); PinToDockRequested?.Invoke(app); }));
         menu.Items.Add(new Separator());
 
@@ -583,6 +610,97 @@ internal sealed class AllAppsPanel : DockStackPanel
         };
         menu.Items.Add(new MenuItem()); // 열릴 때 채움
         return menu;
+    }
+
+    // ───────────────────────── 끌기 ─────────────────────────
+
+    private Point _pressAt;
+    private UIElement? _pressed;
+
+    /// <summary>누르고 떼면 click, 누른 채 조금 움직이면 drag 의 데이터로 끌기 (drag = null 이면 끌기 없음).</summary>
+    private void Pressable(UIElement el, Action click, Func<DataObject>? drag)
+    {
+        el.MouseLeftButtonDown += (_, e) =>
+        {
+            _pressAt = e.GetPosition(this);
+            _pressed = el;
+            el.CaptureMouse();
+            e.Handled = true;
+        };
+        el.MouseMove += (_, e) =>
+        {
+            if (drag is null || _pressed != el || e.LeftButton != MouseButtonState.Pressed) return;
+            var p = e.GetPosition(this);
+            if (Math.Abs(p.X - _pressAt.X) < SystemParameters.MinimumHorizontalDragDistance
+                && Math.Abs(p.Y - _pressAt.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+            el.ReleaseMouseCapture();
+            _pressed = null;
+            DragData(el, drag());
+        };
+        el.MouseLeftButtonUp += (_, e) =>
+        {
+            bool pressed = _pressed == el;
+            el.ReleaseMouseCapture();
+            _pressed = null;
+            e.Handled = true;
+            if (pressed) click();
+        };
+    }
+
+    /// <summary>놓을 곳: format 데이터가 accept 이면 테두리 강조(번쩍임 없이), 놓으면 drop (끌기가 끝난 뒤 다시 그림).</summary>
+    private void DropTarget(Border target, string format, Func<string, bool> accept, Action<string> drop)
+    {
+        target.AllowDrop = true;
+        string? Data(DragEventArgs e)
+        {
+            try { return e.Data.GetDataPresent(format) ? e.Data.GetData(format) as string : null; }
+            catch { return null; }
+        }
+        Brush? before = null;
+        void Over(object? s, DragEventArgs e)
+        {
+            if (Data(e) is not { } v || !accept(v)) return; // 다른 형식은 다른 처리기(같은 칸의 묶음/앱)가
+            e.Effects = DragDropEffects.Move;
+            e.Handled = true;
+            if (before is null) { before = target.BorderBrush ?? Brushes.Transparent; target.BorderBrush = P.Accent; }
+        }
+        void Leave()
+        {
+            if (before is null) return;
+            target.BorderBrush = before;
+            before = null;
+        }
+        target.DragEnter += Over;
+        target.DragOver += Over;
+        target.DragLeave += (_, _) => Leave();
+        target.Drop += (_, e) =>
+        {
+            Leave();
+            if (Data(e) is not { } v || !accept(v)) return;
+            e.Effects = DragDropEffects.Move;
+            e.Handled = true;
+            Dispatcher.BeginInvoke(() => drop(v)); // 끌기 중엔 칸을 지우지 않음
+        };
+    }
+
+    private void PinToTop(string key)
+    {
+        S.Favorites.RemoveAll(k => k.Equals(key, StringComparison.OrdinalIgnoreCase));
+        S.Favorites.Add(key);
+        if (S.Favorites.Count > FavMax) S.Favorites.RemoveAt(0);
+        Save(false);
+    }
+
+    private void MoveGroupBefore(string moving, string target)
+    {
+        EnsureGroupList();
+        var g = S.Groups.FirstOrDefault(x => x.Id == moving);
+        if (g is null || moving == AllAppsCatalog.Other) return;
+        S.Groups.Remove(g);
+        int at = S.Groups.FindIndex(x => x.Id == target);
+        S.Groups.Insert(at < 0 ? Math.Max(0, S.Groups.Count - 1) : at, g);
+        EnsureGroupList(); // "기타"는 끝
+        Save();
     }
 
     private void MoveTo(AppEntry app, string group)

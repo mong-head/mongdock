@@ -248,12 +248,14 @@ internal abstract class DockStackPanel : Window
     }
 
     /// <summary>다른 앱·바탕 화면으로 끌어 놓기 (복사·이동은 놓는 쪽과 윈도우가 정함). 끄는 동안 판은 닫지 않음.</summary>
-    private void DragOut(DependencyObject source, string path)
+    private void DragOut(DependencyObject source, string path) => DragData(source, new DataObject(DataFormats.FileDrop, new[] { path }));
+
+    /// <summary>끌기 시작 (끝날 때까지 돌아오지 않음). 끄는 동안 판은 닫지 않음.</summary>
+    protected void DragData(DependencyObject source, DataObject data)
     {
         Dragging = true;
         try
         {
-            var data = new DataObject(DataFormats.FileDrop, new[] { path });
             DragDrop.DoDragDrop(source, data, DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link);
         }
         catch (Exception ex)

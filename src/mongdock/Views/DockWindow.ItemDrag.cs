@@ -406,8 +406,15 @@ public partial class DockWindow
 
     private static bool HasFiles(DragEventArgs e)
     {
-        try { return e.Data.GetDataPresent(DataFormats.FileDrop); }
+        try { return e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent(AllAppsPanel.AppFormat); }
         catch { return false; }
+    }
+
+    /// <summary>앱 모음 판에서 끌어 온 앱의 키 (shell:AppsFolder 파싱 이름). 아니면 null.</summary>
+    private static string? DraggedAppKey(DragEventArgs e)
+    {
+        try { return e.Data.GetDataPresent(AllAppsPanel.AppFormat) ? e.Data.GetData(AllAppsPanel.AppFormat) as string : null; }
+        catch { return null; }
     }
 
     private void OnFileDragOver(object sender, DragEventArgs e)
@@ -460,7 +467,8 @@ public partial class DockWindow
             _dropAllFolders = DraggedPaths(e) is { Length: > 0 } dragged && dragged.All(Directory.Exists);
         }
         // 휴지통 위: 빈 자리 대신 휴지통만 눌린 모양으로 강조 → 놓으면 휴지통으로
-        var trash = TrashViewUnder(e);
+        // 앱 모음 판에서 끈 앱(시작 메뉴 바로 가기)은 휴지통에 버리지 않음 — 휴지통 강조도 안 함
+        var trash = DraggedAppKey(e) is null ? TrashViewUnder(e) : null;
         if (trash != _dropTrash)
         {
             _dropTrash?.PressUp();
@@ -510,8 +518,21 @@ public partial class DockWindow
         catch (Exception ex) { Log.Error("끌어 놓은 파일 읽기 실패", ex); }
         bool allFolders = _dropAllFolders;
         bool onTrash = _dropTrash != null;
+        string? appKey = DraggedAppKey(e);
         _dropDataSeen = null;
         EndFileDrag();
+        if (appKey != null && target >= 0 && paths.Length == 0)
+        {
+            // 바로 가기가 없는 앱(스토어 앱 등): 앱 모음 항목 그대로 핀으로
+            var appPin = new PinItem { Kind = PinKind.Aumid, Target = appKey, Name = AllAppsCatalog.Cached?.FirstOrDefault(a => a.Key == appKey)?.Name ?? "" };
+            ModifyPins(list =>
+            {
+                if (list.Any(x => x.Kind == PinKind.Aumid && string.Equals(x.Target, appKey, StringComparison.OrdinalIgnoreCase))) return;
+                list.Insert(Math.Clamp(target, 0, list.Count), appPin);
+            });
+            Log.Info("앱 모음 판 → 독에 끌어 고정");
+            return;
+        }
         if (paths.Length > 0 && onTrash)
         {
             // 끈 쪽(탐색기)에는 "복사/링크"로 알림 — Move 면 끈 쪽이 원본을 직접 지울 수 있음. 지우기는 우리가 되돌릴 수 있게만
