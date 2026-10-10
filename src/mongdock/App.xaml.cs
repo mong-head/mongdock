@@ -210,6 +210,7 @@ public partial class App : Application
         bool tour = Environment.GetCommandLineArgs().Any(a => string.Equals(a, "--tour", StringComparison.OrdinalIgnoreCase));
         CoachMarks.ScheduleStartup(settings.CreatedThisRun, forceTour: tour);
         NewBadges.Init(settings, settings.CreatedThisRun); // 새 기능 NEW 배지 (업데이트 받은 기존 사용자만)
+        RoutineUi.Init(_services); // 루틴 실행·끝내기 (#24-A)
     }
 
     /// <summary>코치마크 앵커 위치: 독은 독 창, 나머지는 주 모니터 상단바 (안 보이면 null).</summary>

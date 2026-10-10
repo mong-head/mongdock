@@ -67,6 +67,25 @@ internal static class RoutineService
         lock (Runs) return Runs.TryGetValue(id, out var r) ? r.Windows.Count(User32.IsWindow) : 0;
     }
 
+    /// <summary>몽독을 켠 뒤 이 루틴을 실행한 적 있음 (없으면 끝내기를 회색으로 — 다시 시작하면 창 목록을 잊음).</summary>
+    public static bool HasRunState(string id)
+    {
+        lock (Runs) return Runs.ContainsKey(id);
+    }
+
+    /// <summary>데스크톱 번호(1부터)가 실행 중인 루틴이 만든 데스크톱이면 그 루틴 이름 (상단바 데스크톱 표시용). 아니면 null.</summary>
+    public static string? DesktopRoutineName(int index)
+    {
+        var services = _services;
+        if (services is null || index <= 0) return null;
+        var ids = VirtualDesktopService.ReadDesktopIds();
+        if (index > ids.Count) return null;
+        var g = ids[index - 1];
+        string? id;
+        lock (Runs) id = Runs.FirstOrDefault(r => r.Value.CreatedDesktop && r.Value.Desktop == g).Key;
+        return id is null ? null : services.Settings.Current.Routines.FirstOrDefault(r => r.Id == id)?.Name;
+    }
+
     /// <summary>이 루틴이 새 데스크톱을 만들었고 그 데스크톱이 아직 있음 (끝내기 카드의 "데스크톱도 닫기").</summary>
     public static bool HasOwnDesktop(string id)
     {
@@ -80,6 +99,13 @@ internal static class RoutineService
     {
         var services = _services;
         if (services is null || routine.Items.Count == 0) return;
+        // 전체 화면(게임·영상) 중엔 데스크톱 키를 보내지 않음 — 작은 안내만
+        if (Monitors.GetAll().Any(m => services.DesktopWindows.IsFullscreenOn(m.IsPrimary ? "" : m.DeviceName)))
+        {
+            Log.Info("루틴 실행 미룸: 전체 화면 앱");
+            Notify(Loc.T("지금은 루틴을 열 수 없어요 (전체 화면)"));
+            return;
+        }
         services.Settings.Current.RoutineRunsSinceSignal++;
         services.Settings.Save();
         _ = RunAsync(services, routine);
@@ -102,7 +128,7 @@ internal static class RoutineService
             Log.Error("루틴 데스크톱 준비 실패", ex);
         }
 
-        bool toldOtherDesktop = false;
+        var elsewhere = new List<(string Name, IntPtr Hwnd)>();
         foreach (var item in routine.Items.ToList())
         {
             try
@@ -111,7 +137,8 @@ internal static class RoutineService
                 if (item.IfRunning == RoutineIfRunning.Focus && item.Kind == RoutineItemKind.App && string.IsNullOrEmpty(item.Open))
                 {
                     var running = services.Windows.Windows.Where(w => Matches(item, w)).ToList();
-                    if (running.FirstOrDefault(w => w.OnCurrentDesktop) is { } here)
+                    // 방금 새 데스크톱으로 옮겼으면 창 목록의 "지금 데스크톱" 값이 아직 옛것일 수 있어 직접 물어봄 (옛 데스크톱 창을 앞으로 가져오면 그리로 되돌아감)
+                    if (running.FirstOrDefault(w => VirtualDesktopHelper.IsOnCurrentDesktop(w.Hwnd) ?? w.OnCurrentDesktop) is { } here)
                     {
                         services.Launcher.Activate(here.Hwnd);
                         await Task.Delay(GapMs + Math.Clamp(item.DelayMs, 0, 10_000));
@@ -119,8 +146,8 @@ internal static class RoutineService
                     }
                     if (running.Count > 0)
                     {
-                        if (!toldOtherDesktop) Notify(Loc.F($"{ItemName(item)} — 이미 다른 데스크톱에 있어요"));
-                        toldOtherDesktop = true;
+                        // 다른 데스크톱의 창은 옮기지 않음(공식 방법 없음) — 새로 열지 않고, 다 연 뒤 안내 카드 한 번
+                        elsewhere.Add((ItemName(item), running[0].Hwnd));
                         await Task.Delay(GapMs);
                         continue;
                     }
@@ -137,6 +164,28 @@ internal static class RoutineService
             }
             await Task.Delay(GapMs + Math.Clamp(item.DelayMs, 0, 10_000));
         }
+        if (elsewhere.Count > 0)
+        {
+            Log.Info($"루틴: 이미 다른 데스크톱에 켜진 앱 {elsewhere.Count}개 — 새로 열지 않음");
+            _dispatcher?.BeginInvoke(() => ElsewhereShown?.Invoke(elsewhere));
+        }
+    }
+
+    /// <summary>이미 다른 데스크톱에 켜져 있어 열지 않은 앱들 (이름, 첫 창) — 안내 카드를 띄움. UI 스레드.</summary>
+    public static event Action<List<(string Name, IntPtr Hwnd)>>? ElsewhereShown;
+
+    /// <summary>"그 데스크톱으로 가기": 창이 있는 데스크톱으로 이동한 뒤 그 창을 앞으로. UI 스레드에서 부름(COM).</summary>
+    public static async Task GoToWindowAsync(IntPtr hwnd)
+    {
+        var services = _services;
+        if (services is null || !User32.IsWindow(hwnd)) return;
+        int index = VirtualDesktopHelper.GetDesktopIndex(hwnd, VirtualDesktopService.ReadDesktopIds());
+        if (index > 0 && index != VirtualDesktopService.Read().Current)
+        {
+            await VirtualDesktopService.MoveToAsync(index);
+            await Task.Delay(150);
+        }
+        services.Launcher.Activate(hwnd);
     }
 
     private static async Task PrepareDesktopAsync(AppServices services, RoutineDef routine, RunState state)
@@ -393,6 +442,7 @@ internal static class RoutineService
         var list = new List<(RoutineItem, IntPtr)>();
         if (services is null) return list;
         var explorerFolders = ExplorerFolders();
+        List<(string Name, string Lnk)>? recent = null;
         foreach (var w in services.Windows.Windows.Where(w => w.OnCurrentDesktop && !w.IsMinimized))
         {
             if (list.Count >= RoutineDef.MaxItems) break;
@@ -416,6 +466,7 @@ internal static class RoutineService
                     Name = AppNames.Get(w),
                     Open = packaged ? null : OpenTargetFromCommandLine(w.Hwnd, w.ProcessPath),
                 };
+                if (item.Open is null && !packaged && !IsBrowser(exe)) item.Open = OpenFromRecent(w.Title, recent ??= RecentDocuments());
             }
             ReadPlacement(w.Hwnd, item);
             list.Add((item, w.Hwnd));
@@ -483,6 +534,45 @@ internal static class RoutineService
             if (shell is not null && Marshal.IsComObject(shell)) Marshal.ReleaseComObject(shell);
         }
         return map;
+    }
+
+    private static bool IsBrowser(string exe) => exe is "chrome" or "msedge" or "whale" or "firefox" or "brave" or "opera" or "vivaldi" || exe == ExeName(DefaultBrowser());
+
+    /// <summary>최근 문서(윈도우 Recent 폴더의 바로 가기) — 이름(예 "주간보고.hwp")과 바로 가기 경로, 최근 것 300개. 이 PC 안에서만 읽음.</summary>
+    private static List<(string Name, string Lnk)> RecentDocuments()
+    {
+        var list = new List<(string, string)>();
+        try
+        {
+            string dir = Environment.GetFolderPath(Environment.SpecialFolder.Recent);
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return list;
+            foreach (var f in new DirectoryInfo(dir).EnumerateFiles("*.lnk").OrderByDescending(f => f.LastWriteTimeUtc).Take(300))
+            {
+                string name = Path.GetFileNameWithoutExtension(f.Name);
+                if (Path.HasExtension(name)) list.Add((name, f.FullName)); // 파일(확장자 있음)만 — 폴더 바로 가기는 뺌
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException) { }
+        return list;
+    }
+
+    /// <summary>
+    /// 창 제목에 최근 문서 이름이 그대로 들어 있고(예 "주간보고.hwp - 한글", "보고서 - Word"는 확장자 없이 " - " 앞이 이름), 그런 문서가 딱 하나일 때만
+    /// 그 바로 가기가 가리키는 파일(실제로 있을 때). 확실하지 않으면 null.
+    /// </summary>
+    private static string? OpenFromRecent(string? title, List<(string Name, string Lnk)> recent)
+    {
+        if (string.IsNullOrWhiteSpace(title) || recent.Count == 0) return null;
+        string head = title.Split(new[] { " - ", " — ", " – " }, StringSplitOptions.None)[0].Trim().TrimStart('*').Trim();
+        var hits = recent.Where(r =>
+                title.Contains(r.Name, StringComparison.OrdinalIgnoreCase)
+                || head.Length > 0 && Path.GetFileNameWithoutExtension(r.Name).Equals(head, StringComparison.OrdinalIgnoreCase))
+            .Select(r => PinFactory.ShortcutTarget(r.Lnk))
+            .Where(t => !string.IsNullOrEmpty(t) && File.Exists(t))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(2)
+            .ToList();
+        return hits.Count == 1 ? hits[0] : null;
     }
 
     /// <summary>프로세스 실행 인자에 있는 파일·폴더 (예 code C:\dev\mongdock). 확실할 때만 (실제로 있는 경로).</summary>
@@ -576,6 +666,35 @@ internal static class RoutineService
         RoutineItemKind.Url => ExeName(DefaultBrowser()),
         _ => Directory.Exists(item.Target) ? "explorer" : ExeName(AssociatedExe(Path.GetExtension(item.Target))),
     };
+
+    /// <summary>"지금 화면으로 위치 다시 저장"·편집 창의 "지금 화면에서 다시 읽기": 지금 데스크톱에 그 앱 창이 있으면 모니터·위치만 다시 채움 (항목은 그대로). 바꾼 수.</summary>
+    public static int RereadPlacements(IEnumerable<RoutineItem> items)
+    {
+        var services = _services;
+        if (services is null) return 0;
+        var windows = services.Windows.Windows.Where(w => w.OnCurrentDesktop && !w.IsMinimized).ToList();
+        var used = new HashSet<IntPtr>();
+        int n = 0;
+        foreach (var item in items)
+        {
+            string? exe = ExpectedExe(item);
+            var w = windows.FirstOrDefault(x => !used.Contains(x.Hwnd) && (Matches(item, x) || item.Kind == RoutineItemKind.App && exe is not null && ExeName(x.ProcessPath) == exe));
+            if (w is null) continue;
+            used.Add(w.Hwnd);
+            ReadPlacement(w.Hwnd, item);
+            n++;
+        }
+        return n;
+    }
+
+    /// <summary>지금 그 앱 창이 떠 있으면 그 창 (루틴에 넣을 때 위치도 같이 저장).</summary>
+    public static IntPtr WindowOf(RoutineItem item)
+    {
+        var services = _services;
+        if (services is null) return IntPtr.Zero;
+        string? exe = ExpectedExe(item);
+        return services.Windows.Windows.FirstOrDefault(w => w.OnCurrentDesktop && !w.IsMinimized && (Matches(item, w) || exe is not null && ExeName(w.ProcessPath) == exe))?.Hwnd ?? IntPtr.Zero;
+    }
 
     private static bool Matches(RoutineItem item, AppWindowInfo w)
     {

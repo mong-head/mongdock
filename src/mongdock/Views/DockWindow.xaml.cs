@@ -127,6 +127,7 @@ public partial class DockWindow : Window
         SystemTheme.Changed += OnSystemThemeChanged;
         AppState.Changed += OnSettingsChanged; // 일시 정지/해제
         DockState.CoachPinChanged += OnCoachPinChanged;
+        RoutineService.Changed += OnRoutinesChanged;
         _subscribed = true;
 
         ApplyAll();
@@ -152,6 +153,7 @@ public partial class DockWindow : Window
             SystemTheme.Changed -= OnSystemThemeChanged;
             AppState.Changed -= OnSettingsChanged;
             DockState.CoachPinChanged -= OnCoachPinChanged;
+            RoutineService.Changed -= OnRoutinesChanged;
             _subscribed = false;
         }
         DockState.VisiblePanel = Rect.Empty;
@@ -168,6 +170,9 @@ public partial class DockWindow : Window
     // ───────────────────────── 서비스 이벤트 ─────────────────────────
 
     private void OnWindowsChanged(object? sender, EventArgs e) => RefreshItems();
+
+    /// <summary>루틴으로 연 창이 열림·닫힘 → 루틴 아이콘 점.</summary>
+    private void OnRoutinesChanged() { if (!_closed) UpdateStates(); }
 
     private void OnWindowFlashed(object? sender, IntPtr hwnd)
     {
@@ -914,6 +919,21 @@ public partial class DockWindow : Window
                 continue;
             }
 
+            if (pin.Kind == PinKind.Routine)
+            {
+                // 루틴 (#24-A): 담긴 항목 아이콘 2x2(또는 고른 아이콘). 아이콘이 바뀌는 값이 id 에 들어가 다시 그림. 점 = 루틴으로 연 창이 살아 있음
+                var routine = RoutineUi.Find(_services, pin.Target);
+                if (routine is null) continue;
+                string rid = $"routine:{i}:{pin.Target}:{RoutineIcons.Key(routine)}";
+                var rvm = old.GetValueOrDefault(rid);
+                if (rvm == null || !ReferenceEquals(rvm.Pin, pin))
+                    rvm = new DockItemViewModel(rid, pin, false, routine.Name, SafeIcon(() => RoutineIcons.Icon(_services, routine, style)));
+                rvm.Windows = Array.Empty<AppWindowInfo>();
+                rvm.Name = RoutineIcons.Tooltip(routine); // "업무 시작 · 4개 · 새 데스크톱"
+                list.Add(rvm);
+                continue;
+            }
+
             if (pin.Kind == PinKind.Folder)
             {
                 // 독 폴더 (#24-B): 앱 핀처럼 아무 자리에. 있는지·고른 아이콘이 바뀌면 id 가 바뀌어 아이콘을 다시 만듦
@@ -1005,7 +1025,7 @@ public partial class DockWindow : Window
         foreach (var item in _items)
         {
             if (item.IsSeparator) continue;
-            item.IsRunning = item.Windows.Count > 0;
+            item.IsRunning = item.Pin is { Kind: PinKind.Routine } rp ? RoutineService.IsRunning(rp.Target) : item.Windows.Count > 0;
             item.RunningElsewhereOnly = item.IsRunning && item.Windows.All(w => !w.OnCurrentDesktop);
             item.HasNotification = item.Pin is { Kind: PinKind.Folder } folder
                 ? (_folders?.NewFiles(folder) ?? 0) > 0 // 독 폴더: 마지막으로 연 뒤 새 파일
@@ -1111,9 +1131,13 @@ public partial class DockWindow : Window
             ToggleAllAppsPanel(sender as DockItemView, item.Pin!); // 시작 메뉴 대신 몽독 앱 모음 판 (#24)
             return;
         }
-        if (item.Pin is { Kind: PinKind.Routine })
+        if (item.Pin is { Kind: PinKind.Routine } routinePin)
         {
-            Log.Info("루틴 실행은 아직 준비 중"); // #24-A 실행은 다음 단계
+            if (RoutineUi.Find(_services, routinePin.Target) is { } routine)
+            {
+                if (routine.Items.Count == 0) RoutineEditorWindow.Open(_services, routine); // 빈 루틴은 편집 창으로
+                else RoutineUi.Run(_services, routine);
+            }
             return;
         }
 
@@ -1529,6 +1553,7 @@ public partial class DockWindow : Window
         if (view == null || view.Item.IsAutoSeparator) BuildEmptyAreaMenu(menu);
         else if (IsTrash(view.Item.Pin)) BuildTrashMenu(menu, view.Item.Pin!);
         else if (view.Item.Pin is { Kind: PinKind.Folder }) BuildFolderMenu(menu, view.Item);
+        else if (view.Item.Pin is { Kind: PinKind.Routine } routinePin) BuildRoutineMenu(menu, routinePin);
         else if (view.Item.Pin != null) BuildPinMenu(menu, view.Item);
         else BuildRunningMenu(menu, view.Item);
 
@@ -1559,6 +1584,7 @@ public partial class DockWindow : Window
             AddNewWindowItem(menu, pin);
             if (item.IsRunning)
                 menu.Items.Add(Item(Loc.T("창 닫기"), () => CloseAll(item)));
+            if (RoutineUi.ItemFromPin(pin) is not null) menu.Items.Add(RoutineUi.AddToRoutineMenu(_services, () => RoutineUi.ItemFromPin(pin)));
             menu.Items.Add(new Separator());
             menu.Items.Add(Item(Loc.T("아이콘 변경…"), () => ChangeIcon(pin)));
             menu.Items.Add(DockMenus.Item(Loc.T("기본 아이콘으로"), () => ModifyPins(_ => pin.IconPath = null), enabled: pin.IconPath != null));
@@ -1677,6 +1703,12 @@ public partial class DockWindow : Window
     private void BuildEmptyAreaMenu(ContextMenu menu)
     {
         var dock = _services.Settings.Current.Dock;
+        bool canAddRoutine = RoutineUi.CanAdd(_services);
+        var saveRoutine = DockMenus.ItemNew(_services, Loc.T("지금 화면을 루틴으로 저장…"), RoutineUi.Badge, () => RoutineSaveWindow.Open(_services, pinToDock: true));
+        saveRoutine.IsEnabled = canAddRoutine;
+        menu.Items.Add(saveRoutine);
+        menu.Items.Add(Item(Loc.T("새 루틴…"), () => RoutineEditorWindow.OpenNew(_services, pinToDock: true), enabled: canAddRoutine));
+        menu.Items.Add(new Separator());
         menu.Items.Add(DockMenus.SettingsWindow(_services, Loc.F($"{AppInfo.Name} 설정…")));
         menu.Items.Add(new Separator());
         menu.Items.Add(Item(Loc.T("구분선 추가"), () => ModifyPins(p => p.Add(new PinItem { Kind = PinKind.Separator, Name = "" }))));
@@ -1768,6 +1800,19 @@ public partial class DockWindow : Window
         menu.Items.Add(Item(vertical ? Loc.T("위로 이동") : Loc.T("왼쪽으로 이동"), () => MovePin(pin, -1), enabled: at > 0));
         menu.Items.Add(Item(vertical ? Loc.T("아래로 이동") : Loc.T("오른쪽으로 이동"), () => MovePin(pin, +1), enabled: at >= 0 && at < pins.Count - 1));
         menu.Items.Add(Item(Loc.T("독에서 빼기"), () => ModifyPins(p => p.Remove(pin))));
+    }
+
+    /// <summary>루틴 아이콘 메뉴: 루틴 공용 메뉴 + 왼쪽·오른쪽 이동.</summary>
+    private void BuildRoutineMenu(ContextMenu menu, PinItem pin)
+    {
+        if (RoutineUi.Find(_services, pin.Target) is not { } routine) return;
+        RoutineUi.FillMenu(menu, _services, routine);
+        var pins = _services.Settings.Current.Pins;
+        int at = pins.IndexOf(pin);
+        bool vertical = _layout.IsVertical;
+        menu.Items.Insert(menu.Items.Count - 2, new Separator());
+        menu.Items.Insert(menu.Items.Count - 2, Item(vertical ? Loc.T("위로 이동") : Loc.T("왼쪽으로 이동"), () => MovePin(pin, -1), enabled: at > 0));
+        menu.Items.Insert(menu.Items.Count - 2, Item(vertical ? Loc.T("아래로 이동") : Loc.T("오른쪽으로 이동"), () => MovePin(pin, +1), enabled: at >= 0 && at < pins.Count - 1));
     }
 
     private static string IconKey(PinIcon? i) => i is null ? "" : $"{i.Mode}|{i.Color}|{i.Glyph}|{i.Text}|{i.File}";

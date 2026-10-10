@@ -23,9 +23,11 @@ internal sealed class ConfirmCardWindow : Window
     private bool _cancelClicked;
     /// <summary>아래 작은 글자 버튼(예: "다시 묻지 않기")으로 닫힘.</summary>
     private bool _extraClicked;
+    /// <summary>체크 줄(예: 루틴 끝내기의 "데스크톱도 닫기")이 있으면 그 값.</summary>
+    private CheckBox? _check;
 
     public ConfirmCardWindow(AppServices services, UiPalette p, string title, string message, string confirmText, Action onConfirm,
-        string? cancelText = null, string? extraText = null)
+        string? cancelText = null, string? extraText = null, string? checkText = null, bool checkDefault = true)
     {
         _onConfirm = onConfirm;
         cancelText ??= Loc.T("취소");
@@ -64,6 +66,19 @@ internal sealed class ConfirmCardWindow : Window
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 16),
         });
+
+        if (checkText is not null)
+        {
+            _check = new CheckBox
+            {
+                Content = new TextBlock { Text = checkText, Foreground = p.Text },
+                IsChecked = checkDefault,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, -6, 0, 14),
+                Focusable = false,
+            };
+            body.Children.Add(_check);
+        }
 
         var buttons = new Grid();
         buttons.ColumnDefinitions.Add(new ColumnDefinition());
@@ -190,6 +205,18 @@ internal sealed class ConfirmCardWindow : Window
         var p = UiTheme.Palette(services.Settings.Current);
         var card = new ConfirmCardWindow(services, p, title, message, confirmText, () => tcs.TrySetResult(Choice.Confirm), cancelText, extraText);
         card._onCancel = () => tcs.TrySetResult(card._extraClicked ? Choice.Extra : card._cancelClicked ? Choice.Cancel : Choice.Dismissed);
+        card.Show();
+        return tcs.Task;
+    }
+
+    /// <summary>체크 줄 하나가 있는 확인 카드: (확인했는지, 체크 값). 취소·바깥 클릭이면 (false, …).</summary>
+    public static Task<(bool Ok, bool Checked)> AskWithCheckAsync(AppServices services, string title, string message, string confirmText, string checkText, bool checkDefault)
+    {
+        var tcs = new TaskCompletionSource<(bool, bool)>();
+        var p = UiTheme.Palette(services.Settings.Current);
+        ConfirmCardWindow? card = null;
+        card = new ConfirmCardWindow(services, p, title, message, confirmText, () => tcs.TrySetResult((true, card!._check?.IsChecked == true)), checkText: checkText, checkDefault: checkDefault);
+        card._onCancel = () => tcs.TrySetResult((false, false));
         card.Show();
         return tcs.Task;
     }

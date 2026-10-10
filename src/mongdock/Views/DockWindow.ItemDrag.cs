@@ -414,7 +414,7 @@ public partial class DockWindow
 
     private static bool HasFiles(DragEventArgs e)
     {
-        try { return e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent(AllAppsPanel.AppFormat); }
+        try { return e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent(AllAppsPanel.AppFormat) || e.Data.GetDataPresent(AllAppsPanel.RoutineFormat); }
         catch { return false; }
     }
 
@@ -527,8 +527,16 @@ public partial class DockWindow
         bool allFolders = _dropAllFolders;
         bool onTrash = _dropTrash != null;
         string? appKey = DraggedAppKey(e);
+        string? routineId = null;
+        try { routineId = e.Data.GetDataPresent(AllAppsPanel.RoutineFormat) ? e.Data.GetData(AllAppsPanel.RoutineFormat) as string : null; }
+        catch (Exception ex) { Log.Warn($"끌어 놓은 루틴 읽기 실패: {ex.GetType().Name}"); }
         _dropDataSeen = null;
         EndFileDrag();
+        if (routineId != null && target >= 0 && RoutineUi.Find(_services, routineId) is { } droppedRoutine)
+        {
+            RoutineUi.PinToDock(_services, droppedRoutine, target); // 앱 모음 판 루틴 칸을 독에 놓음 → 그 자리에 고정
+            return;
+        }
         if (appKey != null && target >= 0 && paths.Length == 0)
         {
             // 바로 가기가 없는 앱(스토어 앱 등): 앱 모음 항목 그대로 핀으로

@@ -470,6 +470,31 @@ internal sealed partial class SettingsWindow : Window
                     if (!on) AppUsage.Clear();
                 })))));
 
+        // 루틴 (#24-A): 새 전역 설정은 없음 — 목록과 만들기 버튼만 (모든 루틴은 앱 모음 판 맨 위에도 있음)
+        body.Children.Add(SectionTitle(Loc.T("루틴")));
+        var routineRows = new List<UIElement>();
+        foreach (var r in _services.Settings.Current.Routines)
+        {
+            var routine = r;
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+            buttons.Children.Add(ActionButton(Loc.T("열기"), () => RoutineUi.Run(_services, routine)));
+            var edit = ActionButton(Loc.T("편집…"), () => RoutineEditorWindow.Open(_services, routine));
+            edit.Margin = new Thickness(6, 0, 0, 0);
+            buttons.Children.Add(edit);
+            routineRows.Add(Row(routine.Name, $"{Loc.F($"{routine.Items.Count}개")} · {RoutineIcons.DesktopText(routine.Desktop)}", buttons));
+        }
+        var make = new StackPanel { Orientation = Orientation.Horizontal };
+        bool canAdd = RoutineUi.CanAdd(_services);
+        var fromScreen = ActionButton(Loc.T("지금 화면 저장"), () => RoutineSaveWindow.Open(_services, pinToDock: false));
+        fromScreen.IsEnabled = canAdd;
+        var blank = ActionButton(Loc.T("새 루틴"), () => RoutineEditorWindow.OpenNew(_services));
+        blank.IsEnabled = canAdd;
+        blank.Margin = new Thickness(6, 0, 0, 0);
+        make.Children.Add(fromScreen);
+        make.Children.Add(blank);
+        routineRows.Add(Row(Loc.T("루틴 만들기"), Loc.F($"자주 쓰는 앱·웹사이트·파일을 정해 둔 모니터와 자리에 한꺼번에 열어요. 앱 모음 판 맨 위에도 있어요. (최대 {RoutineDef.MaxRoutines}개)"), make));
+        body.Children.Add(Group(routineRows.ToArray()));
+
         // 독 모양: 유리(블러) = DWM 둥근 모서리 8px 고정 / 단색 반투명 = 모서리 둥글기 자유 (세부 설정)
         body.Children.Add(SectionTitle(Loc.T("독 모양")));
         body.Children.Add(Group(

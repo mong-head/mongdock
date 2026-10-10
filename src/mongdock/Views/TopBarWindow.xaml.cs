@@ -178,6 +178,7 @@ public partial class TopBarWindow : Window
         _services.DesktopWindows.FullscreenAppChanged += OnFullscreenChanged;
         _services.Status.Changed += OnStatusChanged;
         _services.VirtualDesktops.Changed += OnDesktopChanged;
+        RoutineService.Changed += OnRoutinesChanged;
         AppState.Changed += OnSettingsChanged; // 일시 정지/해제
         _services.TrayIcons.Changed += OnTrayIconsChanged;
         HookUpdates(); // TopBarWindow.Update.cs
@@ -212,6 +213,7 @@ public partial class TopBarWindow : Window
             _services.DesktopWindows.FullscreenAppChanged -= OnFullscreenChanged;
             _services.Status.Changed -= OnStatusChanged;
             _services.VirtualDesktops.Changed -= OnDesktopChanged;
+            RoutineService.Changed -= OnRoutinesChanged;
             AppState.Changed -= OnSettingsChanged;
             _services.TrayIcons.Changed -= OnTrayIconsChanged;
             _subscribed = false;
@@ -954,6 +956,8 @@ public partial class TopBarWindow : Window
 
     private void OnDesktopChanged(object? sender, EventArgs e) => UpdateDesktopIndex();
 
+    private void OnRoutinesChanged() => UpdateDesktopIndex();
+
     /// <summary>"2 / 3" 표시, 첫 데스크톱이면 ‹ 흐리게. 마지막 데스크톱의 › 는 새 데스크톱 만들기.</summary>
     private void UpdateDesktopIndex()
     {
@@ -969,6 +973,9 @@ public partial class TopBarWindow : Window
         // 데스크톱이 하나뿐이면 ‹ › 없이 "1" 만 (누르면 작업 보기 — 데스크톱 현황·새 데스크톱) (#21)
         bool single = known && count == 1;
         DesktopIndex.Text = !known ? "" : single ? "1" : $"{index} / {count}";
+        // 루틴이 만든 데스크톱이면 루틴 이름도 ("업무 시작 · 2 / 3") — 데스크톱 이름은 바꾸지 않으므로 여기서만 보임
+        if (known && !single && RoutineService.DesktopRoutineName(index) is { Length: > 0 } routine)
+            DesktopIndex.Text = $"{(routine.Length > 14 ? routine[..13] + "…" : routine)} · {index} / {count}";
         DesktopIndexButton.Visibility = known ? Visibility.Visible : Visibility.Collapsed;
         DesktopIndexButton.ToolTip = single ? Loc.T("데스크톱 보기 · 새 데스크톱 추가") : Loc.T("데스크톱 보기");
         PrevDesktopButton.Visibility = single ? Visibility.Collapsed : Visibility.Visible;

@@ -105,7 +105,10 @@ var STATS_COLUMNS = [
   ['recycleBin', bool_], // 독 휴지통 보임 (#24-C)
   ['allAppsOpened', int_(0, 10000)], // 앱 모음 판 연 횟수 (#24)
   ['allAppsCustomized', bool_], // 앱 모음 폴더·즐겨찾기를 직접 바꾼 적 있음
-  ['allAppsCleanup', bool_] // 안 쓰는 앱 정리를 써 봤는지
+  ['allAppsCleanup', bool_], // 안 쓰는 앱 정리를 써 봤는지
+  ['routines', int_(0, 12)], // 루틴 수 (#24-A)
+  ['routineRuns', int_(0, 10000)], // 지난 신호 뒤 루틴 실행 횟수
+  ['routineSavedFromScreen', bool_] // "지금 화면 저장"으로 만든 루틴이 있음
 ];
 
 function oneOf_(list) { return function (v) { v = String(v); return list.indexOf(v) >= 0 ? v : null; }; }
@@ -258,14 +261,14 @@ function statsPage_() {
 
   h.push('<h2>최근 7일</h2><div class="grid">');
   [['appVersion', '앱 버전'], ['install', '설치 방식'], ['windows', '윈도우'], ['lang', '언어'], ['monitors', '모니터 수'],
-    ['scale', '주 모니터 배율'], ['notifications', '알림 표시'], ['folders', '독 폴더 수']].forEach(function (p) {
+    ['scale', '주 모니터 배율'], ['notifications', '알림 표시'], ['folders', '독 폴더 수'], ['routines', '루틴 수']].forEach(function (p) {
     h.push('<table><tr><th colspan="2">' + esc_(p[1]) + '</th></tr>');
     dist(p[0]).forEach(function (kv) { h.push('<tr><td>' + esc_(kv[0]) + '</td><td>' + kv[1] + '</td></tr>'); });
     h.push('</table>');
   });
   h.push('<table><tr><th colspan="2">켜짐 비율</th></tr>');
   [['laptop', '노트북'], ['dockAutoHide', '독 자동 숨김'], ['topBar', '상단바'], ['calendar', '캘린더 연결'],
-    ['searchButton', '검색 버튼'], ['hideTaskbar', '작업 표시줄 숨기기'], ['lightMode', '가벼운 모드'], ['recycleBin', '독 휴지통'], ['allAppsCustomized', '앱 모음 폴더 바꿈'], ['allAppsCleanup', '안 쓰는 앱 정리']].forEach(function (p) {
+    ['searchButton', '검색 버튼'], ['hideTaskbar', '작업 표시줄 숨기기'], ['lightMode', '가벼운 모드'], ['recycleBin', '독 휴지통'], ['allAppsCustomized', '앱 모음 폴더 바꿈'], ['allAppsCleanup', '안 쓰는 앱 정리'], ['routineSavedFromScreen', '지금 화면 루틴 저장']].forEach(function (p) {
     h.push('<tr><td>' + esc_(p[1]) + '</td><td>' + onRate(p[0]) + '</td></tr>');
   });
   h.push('</table>');

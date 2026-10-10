@@ -25,7 +25,7 @@ internal sealed partial class AllAppsPanel
     private long _pressTicks;
 
     /// <summary>끌 수 있는 것: 앱 또는 묶음.</summary>
-    private sealed record DragItem(bool IsGroup, string Key);
+    private sealed record DragItem(bool IsGroup, string Key, bool IsRoutine = false);
 
     /// <summary>놓을 곳 표시 (칸의 Tag).</summary>
     private sealed record DropTag(string Kind, string Key);
@@ -235,7 +235,10 @@ internal sealed partial class AllAppsPanel
         return found;
     }
 
-    private bool Accepts(DropTag tag, DragItem item) => item.IsGroup
+    private bool Accepts(DropTag tag, DragItem item) => item.IsRoutine
+        ? tag.Kind == "routine" && tag.Key != item.Key // 루틴은 루틴 줄 안에서 순서만 (판 밖 = 독에 고정)
+        : tag.Kind == "routine" ? false
+        : item.IsGroup
         ? tag.Kind == "group" && tag.Key != item.Key && item.Key != AllAppsCatalog.Other
         : tag.Kind switch
         {
@@ -423,6 +426,7 @@ internal sealed partial class AllAppsPanel
             to = new Rect(cell.TranslatePoint(new Point(0, 0), this), new Size(cell.ActualWidth, cell.ActualHeight));
             apply = target.Kind switch
             {
+                "routine" => () => MoveRoutineBefore(d.Item.Key, target.Key),
                 "group" when d.Item.IsGroup => () => MoveGroupBefore(d.Item.Key, target.Key),
                 "group" => () => { if (_apps.FirstOrDefault(a => a.Key == d.Item.Key) is { } app) MoveTo(app, target.Key); },
                 "app" => () => MakeGroupOf(target.Key, d.Item.Key),

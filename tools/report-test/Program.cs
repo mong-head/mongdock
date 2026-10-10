@@ -45,6 +45,9 @@ internal static class Program
         int iconsAt = Array.FindIndex(args, a => a == "--icons");
         if (iconsAt >= 0 && iconsAt + 1 < args.Length) RenderAllAppsIcons(args[iconsAt + 1]);
 
+        int routinesAt = Array.FindIndex(args, a => a == "--routines");
+        if (routinesAt >= 0 && routinesAt + 1 < args.Length) { RenderRoutines(args[routinesAt + 1]); return _failed == 0 ? 0 : 1; }
+
         int allApps = Array.FindIndex(args, a => a == "--allapps");
         if (allApps >= 0 && allApps + 1 < args.Length) RenderAllAppsPanel(args[allApps + 1]);
 
@@ -685,6 +688,172 @@ internal static class Program
                 Console.WriteLine($"  저장  {path}");
                 w.Close();
             }
+            settings.Dispose();
+        }
+        GC.KeepAlive(app);
+    }
+
+    // ───────────────────────── 루틴 (#24-A) 화면 그림 ─────────────────────────
+
+    private const System.Reflection.BindingFlags Any = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Instance;
+
+    /// <summary>
+    /// --routines DIR: 지금 화면 저장 카드, 편집 창(크게 / 세부 펼침 + 고급), 앱 모음 판 루틴 줄·0개 설명 카드, 독 루틴 아이콘(자동 2x2·기호, 툴팁·점),
+    /// 끝내기 확인 카드("데스크톱도 닫기"), 다른 데스크톱 안내 카드 — 라이트/다크. 가짜 항목은 이 PC 에 있는 exe 로.
+    /// </summary>
+    private static void RenderRoutines(string dir)
+    {
+        Directory.CreateDirectory(dir);
+        var app = new Mongdock.App();
+        Mongdock.Loc.Init(_lang);
+        app.InitializeComponent();
+        app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        var asm = typeof(Mongdock.App).Assembly;
+        Type T(string name) => asm.GetType(name)!;
+        string Exe(params string[] candidates) => candidates.Select(Environment.ExpandEnvironmentVariables).FirstOrDefault(File.Exists) ?? @"C:\Windows\System32\notepad.exe";
+        string chrome = Exe(@"C:\Program Files\Google\Chrome\Application\chrome.exe", @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe");
+        string code = Exe(@"%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe", @"C:\Program Files\Microsoft VS Code\Code.exe");
+        string edge = Exe(@"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe");
+        string notepad = Exe(@"C:\Windows\System32\notepad.exe");
+        RoutineItem App(string exe, string name, RoutinePlacementMode place, int monitor = 1, string? open = null) => new()
+        {
+            Kind = RoutineItemKind.App, Target = exe, Name = name, Open = open,
+            Monitor = new RoutineMonitor { Mode = RoutineMonitorMode.Index, Index = monitor },
+            Placement = new RoutinePlacement { Mode = place },
+        };
+        List<RoutineItem> Work() => new()
+        {
+            App(edge, "Outlook (웹)", RoutinePlacementMode.Max, 1, "https://outlook.office.com"),
+            App(chrome, "Chrome", RoutinePlacementMode.Left, 2, "https://mail.company.com"),
+            App(code, "VS Code", RoutinePlacementMode.Right, 1, @"C:\dev\mongdock"),
+            new() { Kind = RoutineItemKind.Path, Target = @"C:\Windows", Name = "Windows", Placement = new RoutinePlacement { Mode = RoutinePlacementMode.Saved, Rect = new[] { 0.55, 0.3, 0.35, 0.5 } } },
+        };
+
+        foreach (var theme in new[] { "light", "dark" })
+        {
+            var settings = new SettingsService(); // 읽기만 (저장하지 않음)
+            settings.Current.Dock.Theme = theme == "dark" ? DockTheme.Dark : DockTheme.Light;
+            Mongdock.ViewModels.UiFonts.Apply(settings.Current);
+            var tracker = new WindowTracker();
+            var launcher = new AppLauncher(tracker);
+            var services = new AppServices(settings, tracker, launcher, new IconService(), new DesktopWindowService(), new VirtualDesktopService(),
+                new ShellActions(), new ImeService(), new StatusService(), new MediaService(), new AppMenuService(settings), new StartupService(),
+                new NotificationService(tracker, launcher), new TrayIconService(), new CalendarFeedService(settings));
+            var palette = Mongdock.ViewModels.UiTheme.Palette(settings.Current);
+            T("Mongdock.Services.RoutineService").GetMethod("Init", Any)!.Invoke(null, new object[] { services });
+            var bg = theme == "dark" ? Color.FromRgb(0x14, 0x16, 0x1C) : Color.FromRgb(0xE9, 0xEC, 0xF4);
+            void Save(FrameworkElement content, string name, double maxHeight = double.PositiveInfinity)
+            {
+                content.Opacity = 1;
+                foreach (var sv in Descendants(content).OfType<System.Windows.Controls.ScrollViewer>()) sv.MaxHeight = double.PositiveInfinity;
+                content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                var full = content.DesiredSize;
+                content.Arrange(new Rect(full));
+                content.UpdateLayout();
+                var size = new Size(full.Width, Math.Min(full.Height, maxHeight));
+                var dv = new DrawingVisual();
+                using (var dc = dv.RenderOpen())
+                {
+                    dc.DrawRectangle(new SolidColorBrush(bg), null, new Rect(size));
+                    dc.DrawRectangle(new VisualBrush(content) { ViewboxUnits = BrushMappingMode.Absolute, Viewbox = new Rect(size), Stretch = Stretch.None }, null, new Rect(size));
+                }
+                var rtb = new RenderTargetBitmap((int)Math.Ceiling(size.Width), (int)Math.Ceiling(size.Height), 96, 96, PixelFormats.Pbgra32);
+                rtb.Render(dv);
+                string path = Path.Combine(dir, $"routine-{theme}-{name}.png");
+                var enc = new PngBitmapEncoder();
+                enc.Frames.Add(BitmapFrame.Create(rtb));
+                using (var fs = File.Create(path)) enc.Save(fs);
+                Console.WriteLine($"  저장  {path}");
+            }
+            Window New(string type, params object?[] args) => (Window)T(type).GetConstructors(Any)[0].Invoke(args);
+
+            // 1) 지금 화면 저장 카드 (가짜로 읽은 창 4개, 카카오톡 줄은 체크 풀림)
+            var captured = Work();
+            captured.Insert(3, App(Exe(@"C:\Program Files (x86)\Kakao\KakaoTalk\KakaoTalk.exe", notepad), "카카오톡", RoutinePlacementMode.Saved, 2));
+            var save = New("Mongdock.Views.RoutineSaveWindow", services, false, captured);
+            var rows = (System.Collections.IList)save.GetType().GetField("_rows", Any)!.GetValue(save)!;
+            var last = rows[3]!;
+            ((System.Windows.Controls.CheckBox)last.GetType().GetField("Item2")!.GetValue(last)!).IsChecked = false;
+            Save((FrameworkElement)save.Content, "save");
+            save.Close();
+
+            // 2) 편집 창: 크게 / Chrome 세부 펼침(+ 고급)
+            var work = new RoutineDef { Id = "r-test1", Name = "업무 시작", Items = Work() };
+            foreach (var expand in new[] { -1, 1 })
+            {
+                var editor = New("Mongdock.Views.RoutineEditorWindow", services, work, work, false);
+                if (expand >= 0) editor.GetType().GetMethod("ExpandForTest", Any)!.Invoke(editor, new object[] { expand, true });
+                Save((FrameworkElement)editor.Content, expand < 0 ? "editor" : "editor-detail");
+                editor.Close();
+            }
+
+            // 3) 앱 모음 판 루틴 줄 (루틴 2개 · NEW 없이) / 0개 설명 카드
+            var panelType = T("Mongdock.Views.AllAppsPanel");
+            panelType.GetProperty("LoadIconsNow", Any)!.SetValue(null, true);
+            T("Mongdock.Services.AllAppsCatalog").GetMethod("Apps")!.Invoke(null, new object[] { false }); // 판이 앱 목록을 바로 쓰게
+            var savedRoutines = settings.Current.Routines.ToList();
+            foreach (var mode in new[] { "panel", "panel-empty" })
+            {
+                settings.Current.Routines.Clear();
+                if (mode == "panel")
+                {
+                    settings.Current.Routines.Add(work);
+                    settings.Current.Routines.Add(new RoutineDef { Id = "r-test2", Name = "게임", Icon = new PinIcon { Mode = PinIconMode.Glyph, Color = "blue", Glyph = "\uE7FC" }, Items = { App(notepad, "Steam", RoutinePlacementMode.Max) } });
+                }
+                var w = New("Mongdock.Views.AllAppsPanel", services, palette, new Rect(800, 1000, 52, 52), DockEdge.Bottom, Monitors.GetPrimary());
+                panelType.GetMethod("Rebuild", Any)!.Invoke(w, null);
+                Save((FrameworkElement)w.Content, mode, 360);
+                w.Close();
+            }
+            settings.Current.Routines.Clear();
+            settings.Current.Routines.AddRange(savedRoutines);
+
+            // 4) 독 루틴 아이콘: 자동 2x2 · 기호 — 독 판 위에, 첫 아이콘은 실행 중 점 + 툴팁
+            var icons = T("Mongdock.Services.RoutineIcons");
+            ImageSource Icon(RoutineDef r) => (ImageSource)icons.GetMethod("Icon", Any)!.Invoke(null, new object[] { services, r, settings.Current.Dock.IconStyle })!;
+            string Tip(RoutineDef r) => (string)icons.GetMethod("Tooltip", Any)!.Invoke(null, new object[] { r })!;
+            var game = new RoutineDef { Name = "게임", Icon = new PinIcon { Mode = PinIconMode.Glyph, Color = "blue", Glyph = "\uE7FC" }, Items = { App(notepad, "Steam", RoutinePlacementMode.Max) } };
+            var study = new RoutineDef { Name = "공부", Icon = new PinIcon { Mode = PinIconMode.Glyph, Color = "green", Text = "공" } };
+            var two = new RoutineDef { Name = "메모", Items = { App(notepad, "메모장", RoutinePlacementMode.Left), App(chrome, "Chrome", RoutinePlacementMode.Right) } };
+            {
+                var dv = new DrawingVisual();
+                var size = new Size(420, 150);
+                using (var dc = dv.RenderOpen())
+                {
+                    dc.DrawRectangle(new SolidColorBrush(bg), null, new Rect(size));
+                    dc.DrawRoundedRectangle(new SolidColorBrush(theme == "dark" ? Color.FromArgb(0xCC, 0x30, 0x33, 0x40) : Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)), null, new Rect(40, 70, 340, 72), 18, 18);
+                    var list = new[] { work, two, game, study };
+                    for (int i = 0; i < list.Length; i++)
+                    {
+                        double x = 60 + i * 80;
+                        dc.DrawImage(Icon(list[i]), new Rect(x - (i == 0 ? 6 : 0), 76 - (i == 0 ? 10 : 0), i == 0 ? 68 : 56, i == 0 ? 68 : 56));
+                        if (i == 0) dc.DrawEllipse(new SolidColorBrush(theme == "dark" ? Colors.White : Color.FromRgb(0x20, 0x20, 0x28)), null, new Point(x + 28, 138), 2.2, 2.2);
+                    }
+                    var text = new FormattedText(Tip(work), System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, new Typeface("Segoe UI Variable Text, Malgun Gothic"), 12,
+                        theme == "dark" ? Brushes.White : Brushes.Black, 1.0);
+                    dc.DrawRoundedRectangle(new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x2A, 0x2C, 0x36) : Color.FromRgb(0xFA, 0xFA, 0xFC)), new Pen(new SolidColorBrush(Color.FromArgb(0x30, 0, 0, 0)), 0.5),
+                        new Rect(30, 18, text.Width + 20, 26), 7, 7);
+                    dc.DrawText(text, new Point(40, 23));
+                }
+                var rtb = new RenderTargetBitmap((int)size.Width, (int)size.Height, 96, 96, PixelFormats.Pbgra32);
+                rtb.Render(dv);
+                string path = Path.Combine(dir, $"routine-{theme}-dock.png");
+                var enc = new PngBitmapEncoder();
+                enc.Frames.Add(BitmapFrame.Create(rtb));
+                using (var fs = File.Create(path)) enc.Save(fs);
+                Console.WriteLine($"  저장  {path}");
+            }
+
+            // 5) 끝내기 확인 카드 / 6) 다른 데스크톱 안내 카드
+            var card = T("Mongdock.Views.ConfirmCardWindow");
+            Window Card(string title, string message, string ok, string? cancel, string? check) =>
+                (Window)card.GetConstructors(Any)[0].Invoke(new object?[] { services, palette, title, message, ok, (Action)(() => { }), cancel, null, check, true });
+            var end = Card(Mongdock.Loc.F($"{work.Name} — 창 {4}개를 닫을까요?"), Mongdock.Loc.T("저장 안 한 작업은 각 앱이 물어봐요."), Mongdock.Loc.T("닫기"), null, Mongdock.Loc.T("데스크톱도 닫기"));
+            Save((FrameworkElement)end.Content, "end");
+            end.Close();
+            var elsewhere = Card(Mongdock.Loc.F($"이미 켜져 있는 앱 {3}개는 원래 데스크톱에 있어요"), "Chrome · 카카오톡 · Notion", Mongdock.Loc.T("그 데스크톱으로 가기"), Mongdock.Loc.T("닫기"), null);
+            Save((FrameworkElement)elsewhere.Content, "elsewhere");
+            elsewhere.Close();
             settings.Dispose();
         }
         GC.KeepAlive(app);

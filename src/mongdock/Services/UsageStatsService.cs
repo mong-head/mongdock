@@ -141,9 +141,21 @@ public sealed class UsageStatsService : IDisposable
             ["allAppsOpened"] = Interlocked.Exchange(ref AllAppsCatalog.OpenedSinceSignal, 0),
             ["allAppsCustomized"] = s.AllApps.Customized,
             ["allAppsCleanup"] = s.AllApps.CleanupUsed, // 안 쓰는 앱 정리를 써 봤는지만
+            // 루틴 (#24-A): 개수·실행 횟수·"지금 화면 저장"을 써 봤는지만 (이름·주소·경로는 보내지 않음)
+            ["routines"] = s.Routines.Count,
+            ["routineRuns"] = TakeRoutineRuns(s),
+            ["routineSavedFromScreen"] = s.Routines.Any(r => r.FromScreen),
             ["errors"] = errors,
             ["nonce"] = Guid.NewGuid().ToString("N"),
         };
+    }
+
+    /// <summary>지난 신호 뒤 루틴 실행 횟수를 꺼내고 0으로 (설정에 두어 몽독을 다시 시작해도 남음).</summary>
+    private static int TakeRoutineRuns(Models.Settings s)
+    {
+        int n = Math.Clamp(s.RoutineRunsSinceSignal, 0, 10000);
+        s.RoutineRunsSinceSignal = 0;
+        return n;
     }
 
     /// <summary>최근 7일 밖의 것과 7개 넘는 앞쪽을 버림 (한 달 꺼져 있던 PC 가 옛날 것을 보내지 않게). 바뀌었으면 true.</summary>

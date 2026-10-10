@@ -98,8 +98,11 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         Loaded += (_, _) => Dispatcher.BeginInvoke(() => { _search.Focus(); Keyboard.Focus(_search); }, DispatcherPriority.Input);
         SpotlightWindow.CloseIfOpen();
         Current = this;
+        void OnRoutines() { if (!IsClosing && _drag is null) Rebuild(); } // 실행 중 점
+        RoutineService.Changed += OnRoutines;
         Closed += (_, _) =>
         {
+            RoutineService.Changed -= OnRoutines;
             if (Current == this) Current = null;
             CancelDragOnClose(); // 끄는 중에 닫히면(DPI 바뀜 등) 끄는 아이콘을 남기지 않음
             _body.Content = null; // 닫힌 판의 시각 트리를 바로 놓아줌
@@ -230,6 +233,9 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         }
 
         if (CleanupBanner() is { } banner) root.Children.Add(banner);
+
+        // 루틴 (맨 위 — 루틴 칸 + [+ 루틴 추가], 0개면 설명 카드)
+        root.Children.Add(RoutineSection());
 
         // ★ 즐겨찾기 (내가 고른 것) + 줄 끝 추천 칸 (0개면 4개 + 제목 옆 안내, 있으면 2개). 추천 후보도 없고 0개면 점선 안내 칸
         var fav = Favorites(visible);
@@ -875,6 +881,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             ? DockMenus.Item(Loc.T("즐겨찾기에서 빼기"), () => { S.Favorites.RemoveAll(k => k.Equals(app.Key, StringComparison.OrdinalIgnoreCase)); Save(false); })
             : DockMenus.Item(Loc.T("즐겨찾기에 넣기"), () => PinToTop(app.Key)));
         menu.Items.Add(DockMenus.Item(Loc.T("독에 고정"), () => { CloseAnimated(); PinToDockRequested?.Invoke(app); }));
+        menu.Items.Add(RoutineUi.AddToRoutineMenu(Services, () => RoutineUi.ItemFromApp(app), CloseAnimated));
         menu.Items.Add(new Separator());
 
         string? current = _groupOf.GetValueOrDefault(app.Key);

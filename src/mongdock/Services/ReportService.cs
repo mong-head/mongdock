@@ -115,6 +115,8 @@ public static class ReportService
         sb.AppendLine("[설정 요약]");
         var d = s.Dock;
         sb.AppendLine($"독: {(d.Enabled ? "켜짐" : "꺼짐")}, 위치 {d.Edge}, 모드 {d.Mode}, 테마 {d.Theme}, 아이콘 {d.IconSize:0}, 확대 {d.HoverScale:0.##}, 흐림 {OnOff(d.Blur)}, 실행 중 앱 {OnOff(d.ShowRunningApps)}, 고정 앱 {s.Pins.Count}개");
+        // 루틴은 개수와 항목 수만 (이름·주소·경로는 넣지 않음)
+        if (s.Routines.Count > 0) sb.AppendLine($"루틴: {s.Routines.Count}개 (항목 {string.Join(", ", s.Routines.Select(r => r.Items.Count))})");
         var t = s.TopBar;
         sb.AppendLine($"상단바: {(t.Enabled ? "켜짐" : "꺼짐")}, 높이 {t.Height:0}, 색 {t.ColorMode}, 모든 모니터 {OnOff(t.ShowOnAllMonitors)}, 앱 메뉴 {OnOff(t.ShowAppMenus)}, 원래 메뉴 막대 숨김 {OnOff(t.HideNativeMenuBars)}, 트레이 {OnOff(t.ShowTrayIcons)}, 검색 {t.SearchMode}, 자리 확보 {OnOff(t.ReserveSpace)}");
         var n = s.Notifications;

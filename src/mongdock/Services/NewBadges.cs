@@ -12,7 +12,7 @@ internal static class NewBadges
     public const string Folders = "folders", RecycleBin = "recycleBin";
 
     /// <summary>배지를 붙이는 기능들 (새 기능이 생기면 여기에 키를 더함).</summary>
-    private static readonly string[] Features = { Folders, RecycleBin };
+    private static readonly string[] Features = { Folders, RecycleBin, Views.RoutineUi.Badge };
 
     private static readonly TimeSpan Life = TimeSpan.FromDays(14);
     private static ISettingsService? _settings;

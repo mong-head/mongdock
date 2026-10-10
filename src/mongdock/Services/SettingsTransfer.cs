@@ -68,6 +68,8 @@ public static class SettingsTransfer
             pin.IconPath = Pack(pin.IconPath);
             if (pin.Icon is { File: not null } icon) icon.File = Pack(icon.File);
         }
+        foreach (var r in s.Routines)
+            if (r.Icon is { File: not null } icon) icon.File = Pack(icon.File); // 루틴 아이콘 그림도 같이
         var cals = calendars.Feeds.Select(f => new CalendarEntry(f.Name, f.Color, f.Enabled, includeCalendarUrls && f.Url.Length > 0 ? f.Url : null)).ToList();
         var manifest = new Manifest(Format, FormatVersion, ReportService.AppVersion(), DateTime.Now, includeCalendarUrls && cals.Any(c => c.Url is not null),
             s.Pins.Count, cals.Count, icons.Count);
@@ -168,6 +170,8 @@ public static class SettingsTransfer
             pin.IconPath = Unpack(pin.IconPath);
             if (pin.Icon is { } icon) icon.File = Unpack(icon.File);
         }
+        foreach (var r in imported.Routines)
+            if (r.Icon is { } icon) icon.File = Unpack(icon.File);
         // 다른 PC 의 모니터 이름이면 주 모니터로 (같은 PC 다시 설치면 그대로)
         if (!string.IsNullOrEmpty(imported.Dock.Monitor) && Monitors.Find(imported.Dock.Monitor) is null) imported.Dock.Monitor = "";
         settings.ApplyImported(imported);
