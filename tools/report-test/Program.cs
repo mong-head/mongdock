@@ -541,6 +541,42 @@ internal static class Program
                 string wpath = Path.Combine(dir, $"settings-{_lang}-{theme}-window.png");
                 using (var fs = File.Create(wpath)) enc2.Save(fs);
                 Console.WriteLine($"  저장  {wpath}");
+                // 다크 메뉴 아이콘 판 비교: 지금 / A 깊은 라벤더 / B 지금 그라데이션 70% — 사이드바만 나란히
+                if (theme == "dark")
+                {
+                    var variantField = type.GetField("DarkTileVariant", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+                    const double cw = 200, ch = 430, zz = 2;
+                    var combo = new RenderTargetBitmap((int)(cw * 3 * zz), (int)(ch * zz), 96 * zz, 96 * zz, PixelFormats.Pbgra32);
+                    var vv = new DrawingVisual();
+                    using (var dc = vv.RenderOpen())
+                    {
+                        int k = 0;
+                        foreach (var variant in new[] { "now", "A", "B" })
+                        {
+                            variantField.SetValue(null, variant);
+                            rebuild.Invoke(w, null);
+                            w.UpdateLayout();
+                            var cur = (FrameworkElement)w.Content;
+                            var snap = new RenderTargetBitmap((int)(cw * zz), (int)(ch * zz), 96 * zz, 96 * zz, PixelFormats.Pbgra32);
+                            var one = new DrawingVisual();
+                            using (var d1 = one.RenderOpen())
+                                d1.DrawRectangle(new VisualBrush(cur) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top, ViewboxUnits = BrushMappingMode.Absolute, Viewbox = new Rect(0, 0, cw, ch) }, null, new Rect(0, 0, cw, ch));
+                            snap.Render(one);
+                            snap.Freeze();
+                            dc.DrawImage(snap, new Rect(k * cw, 0, cw, ch));
+                            k++;
+                        }
+                    }
+                    combo.Render(vv);
+                    variantField.SetValue(null, "now");
+                    rebuild.Invoke(w, null);
+                    w.UpdateLayout();
+                    var enc4 = new PngBitmapEncoder();
+                    enc4.Frames.Add(BitmapFrame.Create(combo));
+                    string vpath = Path.Combine(dir, "settings-dark-icons-now-A-B.png");
+                    using (var fs = File.Create(vpath)) enc4.Save(fs);
+                    Console.WriteLine($"  저장  {vpath}");
+                }
                 // 제목 줄 위치 판정 (WM_NCHITTEST): 위 띠 = 끌기(2), 최대화 동그라미 = 스냅(9), 닫기 = 내용(1), 오른쪽 끝 = 크기 조절(11), 아래 오른쪽 = 17
                 {
                     var hwnd = new System.Windows.Interop.WindowInteropHelper(w).Handle;

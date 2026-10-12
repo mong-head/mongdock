@@ -318,6 +318,32 @@ internal sealed partial class SettingsWindow : Window
         return b;
     }
 
+    /// <summary>다크 모드 판 (시험 비교용 고르기: "now" = 라이트와 같음, "A" = 깊은 라벤더, "B" = 지금 그라데이션 밝기 70%).</summary>
+    internal static string DarkTileVariant = "now";
+
+    private static Brush Gradient(Color top, Color bottom)
+    {
+        var b = new LinearGradientBrush(top, bottom, 90);
+        b.Freeze();
+        return b;
+    }
+
+    private static Color Dim(Color c, double k) => Color.FromRgb((byte)Math.Min(255, c.R * k), (byte)Math.Min(255, c.G * k), (byte)Math.Min(255, c.B * k));
+
+    /// <summary>메뉴 아이콘 판 — 다크 모드는 사이드바 위에서 튀지 않게 (사용자: 어둡게 했을 때 아이콘 색이 튐). 고른 메뉴는 살짝 밝게.</summary>
+    private Brush TileFor(bool selected)
+    {
+        if (_p.IsLight) return SidebarTile;
+        var (top, bottom) = PinIconRenderer.PlateColors("mongdock");
+        double lift = selected ? 1.15 : 1.0;
+        return DarkTileVariant switch
+        {
+            "A" => Gradient(Dim(Color.FromRgb(0x5B, 0x4F, 0xB0), lift), Dim(Color.FromRgb(0x47, 0x3C, 0x8F), lift)),
+            "B" => Gradient(Dim(top, 0.7 * lift), Dim(bottom, 0.7 * lift)),
+            _ => SidebarTile,
+        };
+    }
+
     private Border SidebarItem(Page page, string glyph)
     {
         bool selected = _page == page;
@@ -327,7 +353,7 @@ internal sealed partial class SettingsWindow : Window
             Width = 22,
             Height = 22,
             CornerRadius = new CornerRadius(6),
-            Background = SidebarTile,
+            Background = TileFor(selected),
             Margin = new Thickness(0, 0, 9, 0),
             Child = new TextBlock
             {
@@ -335,6 +361,7 @@ internal sealed partial class SettingsWindow : Window
                 FontFamily = (FontFamily)FindResource("IconFont"),
                 FontSize = 12,
                 Foreground = Brushes.White,
+                Opacity = _p.IsLight || DarkTileVariant == "now" ? 1 : 0.9,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             },
