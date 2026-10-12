@@ -42,7 +42,11 @@ public partial class DockWindow
         int icons = list.Count(i => !i.IsSeparator);
         if (_overflowCapacity == int.MaxValue || icons <= _overflowCapacity)
         {
-            if (_hiddenPins.Count > 0) Log.Info("독 넘침 풀림: 감춘 앱 다시 보임");
+            if (_hiddenPins.Count > 0)
+            {
+                Log.Info("독 넘침 풀림: 감춘 앱 다시 보임");
+                if (_folderPanel is OverflowStackPanel open) open.CloseAnimated();
+            }
             _hiddenPins.Clear();
             _overflowDeferred = false;
             return;
@@ -52,10 +56,12 @@ public partial class DockWindow
         List<PinItem> hide;
         bool mouseOver = PanelBorder.IsMouseOver && DockActive;
         var keep = _hiddenPins.Where(p => candidates.Any(c => ReferenceEquals(c.Pin, p))).ToList();
-        if (mouseOver && keep.Count >= Math.Min(need, candidates.Count) && keep.Count > 0)
+        if (mouseOver && keep.Count > 0)
         {
-            // 독 위에 마우스: 감춘 앱을 바꾸지 않음 (넘치는 만큼만 그대로) — 떠나면 다시 계산
+            // 독 위에 마우스: 감춘 앱을 되도록 그대로 (모자라면 그만큼만 더, 남으면 뒤에서부터 덜) — 떠나면 다시 계산
             hide = keep.Take(Math.Max(need, 0)).ToList();
+            if (hide.Count < need)
+                hide.AddRange(PickHidden(candidates.Where(c => !hide.Contains(c.Pin!)).ToList(), need - hide.Count));
             _overflowDeferred = true;
             HookOverflowLeave();
         }
@@ -67,7 +73,11 @@ public partial class DockWindow
         if (hide.Count == 0) { _hiddenPins.Clear(); return; }
         var pins = _services.Settings.Current.Pins;
         var hiddenSet = hide.ToHashSet();
-        if (!hiddenSet.SetEquals(_hiddenPins)) Log.Info($"독 넘침: 앱 {hide.Count}개를 ⋯ 칸으로 (보일 칸 {_overflowCapacity})");
+        if (!hiddenSet.SetEquals(_hiddenPins))
+        {
+            Log.Info($"독 넘침: 앱 {hide.Count}개를 ⋯ 칸으로 (보일 칸 {_overflowCapacity})");
+            if (_folderPanel is OverflowStackPanel open) open.CloseAnimated(); // 열린 ⋯ 판이 옛 목록이 되지 않게
+        }
         _hiddenPins = pins.Where(hiddenSet.Contains).ToList(); // 원래 순서
         list.RemoveAll(vm => vm.Pin is { } p && hiddenSet.Contains(p));
 
@@ -186,6 +196,9 @@ public partial class DockWindow
     {
         var menu = new ContextMenu();
         BuildPinMenu(menu, new DockItemViewModel("overflow-menu", pin, false, PinDisplayName(pin), null));
+        // 왼쪽/오른쪽(위/아래)으로 이동은 핀 순서 기준이라 감춘 앱 판에서는 뜻이 없음 (리뷰)
+        var moves = new[] { Loc.T("왼쪽으로 이동"), Loc.T("오른쪽으로 이동"), Loc.T("위로 이동"), Loc.T("아래로 이동") };
+        foreach (var mi in menu.Items.OfType<MenuItem>().Where(m => m.Header is string h && moves.Contains(h)).ToList()) menu.Items.Remove(mi);
         return menu;
     }
 
@@ -215,7 +228,23 @@ internal sealed class OverflowStackPanel : DockStackPanel
     {
         var root = new StackPanel();
         root.Children.Add(Header(Loc.F($"앱 {entries.Count}개 더")));
-        root.Children.Add(Grid(entries.Select(e => (UIElement)MakeIconCell(e.Name, e.Icon, e.Name, e.Launch, e.Menu())).ToList()));
+        root.Children.Add(Grid(entries.Select(e =>
+        {
+            // 메뉴는 오른쪽 클릭할 때 만듦 (판을 열 때 앱마다 만들면 느림 — 리뷰)
+            var menu = new ContextMenu();
+            var cell = MakeIconCell(e.Name, e.Icon, e.Name, e.Launch, menu);
+            cell.ContextMenuOpening += (_, _) =>
+            {
+                menu.Items.Clear();
+                var built = e.Menu();
+                foreach (var item in built.Items.Cast<object>().ToList())
+                {
+                    built.Items.Remove(item);
+                    menu.Items.Add(item);
+                }
+            };
+            return (UIElement)cell;
+        }).ToList()));
         SetBody(root);
     }
 }

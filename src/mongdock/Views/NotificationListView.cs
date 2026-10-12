@@ -294,14 +294,14 @@ internal sealed class NotificationListView : Border
             _services.Notifications.Open(item);
             ItemOpened?.Invoke();
         };
-        HoverExpand(item, host, card);
+        HoverExpand(item, host, card, () => HideItem(item, host, groupPanel, groupHeader));
         return host;
     }
 
     // 긴 알림 (#25 §5): 200ms 머물면 그 항목 위에 같은 폭의 펼친 카드를 겹쳐 띄움 — 목록은 그대로(출렁이지 않음). 떠나면 닫힘
     private System.Windows.Controls.Primitives.Popup? _expandedPopup;
 
-    private void HoverExpand(NotificationItem item, FrameworkElement host, Border card)
+    private void HoverExpand(NotificationItem item, FrameworkElement host, Border card, Action hide)
     {
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
         timer.Tick += (_, _) =>
@@ -311,6 +311,10 @@ internal sealed class NotificationListView : Border
             CloseExpanded();
             var big = NotificationUi.Card(_services, _p, item, _p.Tile);
             big.Width = card.ActualWidth;
+            // 겹친 카드가 원래 카드의 × 를 가리므로 같은 × 를 겹친 카드에도 (리뷰)
+            var bigClose = NotificationUi.CloseButton(_p, () => { CloseExpanded(); hide(); });
+            bigClose.Margin = new Thickness(-6, -6, 0, 0);
+            var bigHost = new Grid { Margin = new Thickness(6, 6, 0, 0) };
             big.Cursor = Cursors.Hand;
             big.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 16, ShadowDepth = 3, Direction = 270, Opacity = _p.ShadowOpacity };
             var popup = new System.Windows.Controls.Primitives.Popup
@@ -320,8 +324,15 @@ internal sealed class NotificationListView : Border
                 AllowsTransparency = true,
                 StaysOpen = true,
                 PopupAnimation = System.Windows.Controls.Primitives.PopupAnimation.None,
-                Child = new Border { Padding = new Thickness(0, 0, 16, 16), Background = Brushes.Transparent, Child = big }, // 그림자 자리
+                Child = new Border { Padding = new Thickness(0, 0, 16, 16), Background = Brushes.Transparent, Child = bigHost }, // 그림자 자리
+                HorizontalOffset = -6,
+                VerticalOffset = -6,
             };
+            bigHost.Children.Add(big);
+            bigHost.Children.Add(bigClose);
+            NotificationUi.ShowClose(bigClose, true);
+            // 휠: 겹친 창이 휠을 먹어 목록이 멈추지 않게 — 닫고 목록이 받게 (리뷰)
+            bigHost.PreviewMouseWheel += (_, e) => { CloseExpanded(); host.RaiseEvent(new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta) { RoutedEvent = UIElement.MouseWheelEvent }); e.Handled = true; };
             big.MouseLeftButtonUp += (_, e) =>
             {
                 e.Handled = true;
@@ -329,18 +340,19 @@ internal sealed class NotificationListView : Border
                 _services.Notifications.Open(item);
                 ItemOpened?.Invoke();
             };
-            big.MouseLeave += (_, _) => Dispatcher.BeginInvoke(() => { if (!host.IsMouseOver && !big.IsMouseOver) CloseExpanded(); });
+            bigHost.MouseLeave += (_, _) => Dispatcher.BeginInvoke(() => { if (!host.IsMouseOver && !bigHost.IsMouseOver) CloseExpanded(); });
             _expandedPopup = popup;
             popup.IsOpen = true; // 화면 밖으로 나가면 WPF 가 안쪽으로 옮김
             big.Loaded += (_, _) => { if (NotificationUi.Body(big) is { } b) NotificationUi.ExpandBody(b, true); };
         };
         host.MouseEnter += (_, _) => { timer.Stop(); timer.Start(); };
+        host.PreviewMouseWheel += (_, _) => { timer.Stop(); timer.Start(); }; // 스크롤 중에는 펼치지 않음
         host.MouseLeave += (_, _) =>
         {
             timer.Stop();
             Dispatcher.BeginInvoke(() =>
             {
-                if (_expandedPopup is { Child: Border { Child: Border big } } && !big.IsMouseOver && !host.IsMouseOver) CloseExpanded();
+                if (_expandedPopup is { Child: Border { Child: FrameworkElement big } } && !big.IsMouseOver && !host.IsMouseOver) CloseExpanded();
             });
         };
         host.Unloaded += (_, _) => { timer.Stop(); CloseExpanded(); };
@@ -672,6 +684,9 @@ internal static class NotificationUi
     public static void ExpandBody(TextBlock body, bool expand)
     {
         var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        int gen = (body.Resources["expandGen"] as int? ?? 0) + 1; // 늦게 온 이전 애니메이션 끝 처리가 지금 상태를 덮지 않게
+        body.Resources["expandGen"] = gen;
+        bool Current() => body.Resources["expandGen"] as int? == gen;
         if (expand)
         {
             double full = FullHeight(body);
@@ -682,7 +697,7 @@ internal static class NotificationUi
                 a.Completed += (_, _) =>
                 {
                     // 8줄보다 길면 본문만 스크롤 (끝까지 읽을 수 있게)
-                    if (body.Parent is not StackPanel parent || body.MaxHeight < BodyExpandedMax - 1) return;
+                    if (!Current() || body.Parent is not StackPanel parent || body.MaxHeight < BodyExpandedMax - 1) return;
                     int at = parent.Children.IndexOf(body);
                     body.BeginAnimation(FrameworkElement.MaxHeightProperty, null);
                     body.MaxHeight = double.PositiveInfinity;
@@ -706,7 +721,7 @@ internal static class NotificationUi
         double from = body.ActualHeight > 0 ? Math.Min(body.ActualHeight, BodyExpandedMax) : BodyCollapsed;
         if (from <= BodyCollapsed + 1) { body.BeginAnimation(FrameworkElement.MaxHeightProperty, null); body.MaxHeight = BodyCollapsed; return; }
         var back = new DoubleAnimation(from, BodyCollapsed, TimeSpan.FromMilliseconds(150)) { EasingFunction = ease };
-        back.Completed += (_, _) => { body.BeginAnimation(FrameworkElement.MaxHeightProperty, null); body.MaxHeight = BodyCollapsed; };
+        back.Completed += (_, _) => { if (!Current()) return; body.BeginAnimation(FrameworkElement.MaxHeightProperty, null); body.MaxHeight = BodyCollapsed; };
         body.BeginAnimation(FrameworkElement.MaxHeightProperty, back);
     }
 

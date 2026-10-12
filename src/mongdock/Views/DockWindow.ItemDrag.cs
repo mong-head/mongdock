@@ -208,7 +208,7 @@ public partial class DockWindow
         double dx = Math.Max(0, Math.Max(panel.Left - screen.X, screen.X - panel.Right));
         double dy = Math.Max(0, Math.Max(panel.Top - screen.Y, screen.Y - panel.Bottom));
         bool outside = Math.Max(dx, dy) >= l.IconSize;
-        bool removable = view.Item.Pin != null;
+        bool removable = view.Item.Pin != null && !IsOverflowItem(view.Item); // "⋯" 칸은 독에서 뺄 수 없음
         _itemOutside = outside;
         _dragIcon?.SetRemove(outside && removable);
 
