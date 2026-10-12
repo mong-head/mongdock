@@ -294,7 +294,63 @@ internal sealed class NotificationListView : Border
             _services.Notifications.Open(item);
             ItemOpened?.Invoke();
         };
+        HoverExpand(item, host, card);
         return host;
+    }
+
+    // 긴 알림 (#25 §5): 200ms 머물면 그 항목 위에 같은 폭의 펼친 카드를 겹쳐 띄움 — 목록은 그대로(출렁이지 않음). 떠나면 닫힘
+    private System.Windows.Controls.Primitives.Popup? _expandedPopup;
+
+    private void HoverExpand(NotificationItem item, FrameworkElement host, Border card)
+    {
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (!host.IsMouseOver || NotificationUi.Body(card) is not { } body || !NotificationUi.IsTruncated(body)) return;
+            CloseExpanded();
+            var big = NotificationUi.Card(_services, _p, item, _p.Tile);
+            big.Width = card.ActualWidth;
+            big.Cursor = Cursors.Hand;
+            big.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 16, ShadowDepth = 3, Direction = 270, Opacity = _p.ShadowOpacity };
+            var popup = new System.Windows.Controls.Primitives.Popup
+            {
+                PlacementTarget = card,
+                Placement = System.Windows.Controls.Primitives.PlacementMode.Relative,
+                AllowsTransparency = true,
+                StaysOpen = true,
+                PopupAnimation = System.Windows.Controls.Primitives.PopupAnimation.None,
+                Child = new Border { Padding = new Thickness(0, 0, 16, 16), Background = Brushes.Transparent, Child = big }, // 그림자 자리
+            };
+            big.MouseLeftButtonUp += (_, e) =>
+            {
+                e.Handled = true;
+                CloseExpanded();
+                _services.Notifications.Open(item);
+                ItemOpened?.Invoke();
+            };
+            big.MouseLeave += (_, _) => Dispatcher.BeginInvoke(() => { if (!host.IsMouseOver && !big.IsMouseOver) CloseExpanded(); });
+            _expandedPopup = popup;
+            popup.IsOpen = true; // 화면 밖으로 나가면 WPF 가 안쪽으로 옮김
+            big.Loaded += (_, _) => { if (NotificationUi.Body(big) is { } b) NotificationUi.ExpandBody(b, true); };
+        };
+        host.MouseEnter += (_, _) => { timer.Stop(); timer.Start(); };
+        host.MouseLeave += (_, _) =>
+        {
+            timer.Stop();
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (_expandedPopup is { Child: Border { Child: Border big } } && !big.IsMouseOver && !host.IsMouseOver) CloseExpanded();
+            });
+        };
+        host.Unloaded += (_, _) => { timer.Stop(); CloseExpanded(); };
+    }
+
+    private void CloseExpanded()
+    {
+        if (_expandedPopup is null) return;
+        _expandedPopup.IsOpen = false;
+        _expandedPopup = null;
     }
 
     // ───────────────────────── 숨기기 / 지우기 ─────────────────────────
@@ -550,8 +606,9 @@ internal static class NotificationUi
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
                 LineHeight = 17,
-                MaxHeight = 34, // 2줄
+                MaxHeight = BodyCollapsed, // 2줄
                 Margin = new Thickness(0, 1, 0, 0),
+                Tag = BodyTag, // 마우스를 올리면 펼침 (ExpandBody)
             });
         grid.Children.Add(text);
 
@@ -580,6 +637,77 @@ internal static class NotificationUi
             Padding = new Thickness(12, 10, 12, 10),
             Child = grid,
         };
+    }
+
+    // ───────────────────────── 긴 알림 펼치기 (#25 §5) ─────────────────────────
+
+    private static readonly object BodyTag = new();
+    private const double BodyLine = 17, BodyCollapsed = BodyLine * 2, BodyExpandedMax = BodyLine * 8;
+
+    /// <summary>카드의 본문 줄 (없으면 null).</summary>
+    public static TextBlock? Body(Border card) =>
+        card.Child is Grid g ? g.Children.OfType<StackPanel>().SelectMany(s => s.Children.OfType<FrameworkElement>())
+            .Select(e => e is ScrollViewer { Content: TextBlock inner } ? inner : e as TextBlock).FirstOrDefault(t => t?.Tag == BodyTag) : null;
+
+    /// <summary>본문을 다 보이면 필요한 높이 (지금 폭 기준).</summary>
+    private static double FullHeight(TextBlock body)
+    {
+        double width = body.ActualWidth;
+        if (width <= 0) return 0;
+        var probe = new TextBlock
+        {
+            Text = body.Text, FontSize = body.FontSize, FontFamily = body.FontFamily, TextWrapping = TextWrapping.Wrap,
+            LineStackingStrategy = LineStackingStrategy.BlockLineHeight, LineHeight = body.LineHeight,
+        };
+        probe.Measure(new Size(width, double.PositiveInfinity));
+        return probe.DesiredSize.Height;
+    }
+
+    /// <summary>2줄에서 잘렸음 (펼칠 게 있음).</summary>
+    public static bool IsTruncated(TextBlock body) => FullHeight(body) > BodyCollapsed + 1;
+
+    /// <summary>
+    /// 본문 펼치기/접기: 150ms 감속(되튐 없음)으로 최대 8줄까지, 그보다 길면 펼친 뒤 본문 안에서 스크롤. 접으면 다시 2줄 말줄임.
+    /// </summary>
+    public static void ExpandBody(TextBlock body, bool expand)
+    {
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        if (expand)
+        {
+            double full = FullHeight(body);
+            if (full <= BodyCollapsed + 1) return;
+            double target = Math.Min(full, BodyExpandedMax);
+            var a = new DoubleAnimation(body.ActualHeight > 0 ? body.ActualHeight : BodyCollapsed, target, TimeSpan.FromMilliseconds(150)) { EasingFunction = ease };
+            if (full > BodyExpandedMax)
+                a.Completed += (_, _) =>
+                {
+                    // 8줄보다 길면 본문만 스크롤 (끝까지 읽을 수 있게)
+                    if (body.Parent is not StackPanel parent || body.MaxHeight < BodyExpandedMax - 1) return;
+                    int at = parent.Children.IndexOf(body);
+                    body.BeginAnimation(FrameworkElement.MaxHeightProperty, null);
+                    body.MaxHeight = double.PositiveInfinity;
+                    parent.Children.RemoveAt(at);
+                    var scroll = new ScrollViewer { Content = body, MaxHeight = BodyExpandedMax, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false, Margin = body.Margin };
+                    if (Application.Current?.TryFindResource("OverlayScrollViewer") is Style overlay) scroll.Style = overlay;
+                    body.Margin = new Thickness(0);
+                    parent.Children.Insert(at, scroll);
+                };
+            body.BeginAnimation(FrameworkElement.MaxHeightProperty, a);
+            return;
+        }
+        if (body.Parent is ScrollViewer { Parent: StackPanel sp } sv)
+        {
+            int at = sp.Children.IndexOf(sv);
+            sv.Content = null;
+            body.Margin = sv.Margin;
+            sp.Children.RemoveAt(at);
+            sp.Children.Insert(at, body);
+        }
+        double from = body.ActualHeight > 0 ? Math.Min(body.ActualHeight, BodyExpandedMax) : BodyCollapsed;
+        if (from <= BodyCollapsed + 1) { body.BeginAnimation(FrameworkElement.MaxHeightProperty, null); body.MaxHeight = BodyCollapsed; return; }
+        var back = new DoubleAnimation(from, BodyCollapsed, TimeSpan.FromMilliseconds(150)) { EasingFunction = ease };
+        back.Completed += (_, _) => { body.BeginAnimation(FrameworkElement.MaxHeightProperty, null); body.MaxHeight = BodyCollapsed; };
+        body.BeginAnimation(FrameworkElement.MaxHeightProperty, back);
     }
 
     /// <summary>앱 아이콘 (36px). 토스트가 로고 대체 이미지(보낸 사람 사진 등)를 주면 그것 + 오른쪽 아래 작은 앱 아이콘.</summary>

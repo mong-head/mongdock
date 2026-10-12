@@ -237,8 +237,18 @@ internal sealed class NotificationBannerWindow : Window
         close.Margin = new Thickness(0, 0, 0, 0);
         host.Children.Add(close);
 
-        host.MouseEnter += (_, _) => NotificationUi.ShowClose(close, true);
-        host.MouseLeave += (_, _) => NotificationUi.ShowClose(close, false);
+        // 긴 알림: 마우스를 올리면 아래로 늘어나 전체 (최대 8줄, 넘으면 배너 안 스크롤) — #25 §5. 올려 둔 동안은 사라지지 않음(OnTick)
+        var body = NotificationUi.Body(card);
+        host.MouseEnter += (_, _) =>
+        {
+            NotificationUi.ShowClose(close, true);
+            if (body is not null) NotificationUi.ExpandBody(body, true);
+        };
+        host.MouseLeave += (_, _) =>
+        {
+            NotificationUi.ShowClose(close, false);
+            if (body is not null) NotificationUi.ExpandBody(body, false);
+        };
         bool pressed = false;
         host.MouseLeftButtonDown += (_, e) =>
         {
