@@ -491,7 +491,7 @@ public sealed class ReportWindow : Window
         return new Border
         {
             Background = _p.GroupBackground,
-            BorderBrush = _p.Divider,
+            BorderBrush = _p.GroupBorder,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
             Padding = new Thickness(14, 10, 12, 10),
@@ -571,7 +571,7 @@ public sealed class ReportWindow : Window
     private Border InputBox(UIElement child) => new()
     {
         Background = _p.GroupBackground,
-        BorderBrush = _p.Divider,
+        BorderBrush = _p.GroupBorder,
         BorderThickness = new Thickness(1),
         CornerRadius = new CornerRadius(8),
         Padding = new Thickness(10, 8, 10, 8),

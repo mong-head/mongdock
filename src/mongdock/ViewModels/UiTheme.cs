@@ -45,6 +45,8 @@ public sealed class UiPalette
     public Brush WindowBackground { get; private init; } = Brushes.White;
     public Brush SidebarBackground { get; private init; } = Brushes.WhiteSmoke;
     public Brush GroupBackground { get; private init; } = Brushes.White;
+    /// <summary>설정·신고 창 카드 테두리 (아주 옅은 라벤더).</summary>
+    public Brush GroupBorder { get; private init; } = Brushes.Lavender;
     // 달력: 일요일·공휴일(빨강), 토요일(파랑) 글자색
     public Brush HolidayText { get; private init; } = Brushes.Red;
     public Brush SaturdayText { get; private init; } = Brushes.Blue;
@@ -76,9 +78,10 @@ public sealed class UiPalette
         SliderTrack = F("#FFE6E6E8"),
         SliderFill = F("#FFFFFFFF"),
         SliderBorder = F("#24000000"),
-        WindowBackground = F("#FFF5F5F7"),
+        WindowBackground = F("#FFFAF9FE"), // 라벤더 화이트 (회색 바탕이 사이드바·아이콘과 안 어울림 — 사용자)
         SidebarBackground = F("#FFF3F1FA"), // 아주 옅은 라벤더 회색 (몽독 판 아이콘과 어울리게)
         GroupBackground = F("#FFFFFFFF"),
+        GroupBorder = F("#FFECE8F8"),
         HolidayText = F("#FFE0352B"),
         SaturdayText = F("#FF1F6FD6"),
     };
@@ -110,9 +113,10 @@ public sealed class UiPalette
         SliderTrack = F("#FF4A4A4D"),
         SliderFill = F("#FFE8E8EA"),
         SliderBorder = F("#33FFFFFF"),
-        WindowBackground = F("#FF1E1E20"),
+        WindowBackground = F("#FF2D2B38"), // 사이드바(#262430)보다 한 단계 밝은 라벤더 그레이
         SidebarBackground = F("#FF262430"), // 라벤더 기가 도는 어두운 회색
-        GroupBackground = F("#FF2C2C2E"),
+        GroupBackground = F("#FF363443"),
+        GroupBorder = F("#FF423F52"),
         HolidayText = F("#FFFF6B61"),
         SaturdayText = F("#FF6AAEFF"),
     };

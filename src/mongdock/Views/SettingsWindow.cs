@@ -230,7 +230,7 @@ internal sealed partial class SettingsWindow : Window
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(SidebarWidth) });
         root.ColumnDefinitions.Add(new ColumnDefinition());
 
-        var sidebar = new Border { Background = _p.SidebarBackground, BorderBrush = _p.Divider, BorderThickness = new Thickness(0, 0, 1, 0) };
+        var sidebar = new Border { Background = _p.SidebarBackground }; // 본문과는 선 대신 톤 차이로
         sidebar.Child = BuildSidebar();
         root.Children.Add(sidebar);
 
@@ -1350,7 +1350,7 @@ internal sealed partial class SettingsWindow : Window
         return new Border
         {
             Background = _p.GroupBackground,
-            BorderBrush = _p.Divider,
+            BorderBrush = _p.GroupBorder,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
             Margin = new Thickness(0, 0, 0, 16),
