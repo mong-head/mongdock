@@ -63,7 +63,7 @@ public sealed class UiPalette
         Accent = F("#FFD9CFFF"),
         AccentText = F("#FF4A3AA8"),
         AccentInk = F("#FF5B4BC4"),
-        AccentFill = Fill(0x5B, 0x8F, 0xEE, 0x7A, 0x6B, 0xE0), // 흰 카드 위 3:1 넘게 (QA 대비 측정)
+        AccentFill = Fill(0x8C, 0x7E, 0xEE, 0x6F, 0x5F, 0xD8), // 연보라 (파랑 기 없이 — #25 사용자: 설정 창 색 조화). 흰 카드 위 3:1 넘게
         SoftAccent = F("#FFECE7FF"),
         SoftAccentText = F("#FF4A3AA8"),
         SoftAccentLine = F("#FFB4A3FF"),
@@ -77,7 +77,7 @@ public sealed class UiPalette
         SliderFill = F("#FFFFFFFF"),
         SliderBorder = F("#24000000"),
         WindowBackground = F("#FFF5F5F7"),
-        SidebarBackground = F("#FFE9E9EC"),
+        SidebarBackground = F("#FFF3F1FA"), // 아주 옅은 라벤더 회색 (몽독 판 아이콘과 어울리게)
         GroupBackground = F("#FFFFFFFF"),
         HolidayText = F("#FFE0352B"),
         SaturdayText = F("#FF1F6FD6"),
@@ -97,7 +97,7 @@ public sealed class UiPalette
         Accent = F("#FF443C70"),
         AccentText = F("#FFE4DEFF"),
         AccentInk = F("#FFC9BEFF"),
-        AccentFill = Fill(0x86, 0xC6, 0xFF, 0xA8, 0x94, 0xFF), // 어두운 카드 위엔 밝은 쪽
+        AccentFill = Fill(0xB4, 0xA6, 0xFF, 0x96, 0x84, 0xF6), // 어두운 카드 위엔 밝은 연보라
         SoftAccent = F("#FF3D3763"),
         SoftAccentText = F("#FFD8CFFF"),
         SoftAccentLine = F("#FF8E7EE0"),
@@ -111,7 +111,7 @@ public sealed class UiPalette
         SliderFill = F("#FFE8E8EA"),
         SliderBorder = F("#33FFFFFF"),
         WindowBackground = F("#FF1E1E20"),
-        SidebarBackground = F("#FF2A2A2C"),
+        SidebarBackground = F("#FF262430"), // 라벤더 기가 도는 어두운 회색
         GroupBackground = F("#FF2C2C2E"),
         HolidayText = F("#FFFF6B61"),
         SaturdayText = F("#FF6AAEFF"),

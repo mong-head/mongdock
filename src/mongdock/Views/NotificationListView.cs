@@ -307,7 +307,7 @@ internal sealed class NotificationListView : Border
         timer.Tick += (_, _) =>
         {
             timer.Stop();
-            if (!host.IsMouseOver || NotificationUi.Body(card) is not { } body || !NotificationUi.IsTruncated(body)) return;
+            if (!host.IsMouseOver || !NotificationUi.CanExpand(card)) return;
             CloseExpanded();
             var big = NotificationUi.Card(_services, _p, item, _p.Tile);
             big.Width = card.ActualWidth;
@@ -343,7 +343,7 @@ internal sealed class NotificationListView : Border
             bigHost.MouseLeave += (_, _) => Dispatcher.BeginInvoke(() => { if (!host.IsMouseOver && !bigHost.IsMouseOver) CloseExpanded(); });
             _expandedPopup = popup;
             popup.IsOpen = true; // 화면 밖으로 나가면 WPF 가 안쪽으로 옮김
-            big.Loaded += (_, _) => { if (NotificationUi.Body(big) is { } b) NotificationUi.ExpandBody(b, true); };
+            big.Loaded += (_, _) => NotificationUi.ExpandCard(big, true);
         };
         host.MouseEnter += (_, _) => { timer.Stop(); timer.Start(); };
         host.PreviewMouseWheel += (_, _) => { timer.Stop(); timer.Start(); }; // 스크롤 중에는 펼치지 않음
@@ -608,6 +608,7 @@ internal static class NotificationUi
                 FontWeight = FontWeights.SemiBold,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 Margin = new Thickness(0, 2, 0, 0),
+                Tag = TitleTag, // 펼치면 여러 줄로
             });
         if (body.Length > 0)
             text.Children.Add(new TextBlock
@@ -653,7 +654,35 @@ internal static class NotificationUi
 
     // ───────────────────────── 긴 알림 펼치기 (#25 §5) ─────────────────────────
 
-    private static readonly object BodyTag = new();
+    private static readonly object BodyTag = new(), TitleTag = new();
+
+    /// <summary>카드의 제목 줄 (없으면 null).</summary>
+    private static TextBlock? Title(FrameworkElement card) =>
+        card is Border { Child: Grid g } ? g.Children.OfType<StackPanel>().SelectMany(s => s.Children.OfType<TextBlock>()).FirstOrDefault(t => t.Tag == TitleTag) : null;
+
+    /// <summary>제목이 한 줄에서 잘렸음.</summary>
+    private static bool TitleCut(TextBlock title)
+    {
+        if (title.ActualWidth <= 0) return false;
+        var probe = new TextBlock { Text = title.Text, FontSize = title.FontSize, FontFamily = title.FontFamily, FontWeight = title.FontWeight };
+        probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        return probe.DesiredSize.Width > title.ActualWidth + 0.5;
+    }
+
+    /// <summary>제목이나 본문이 잘려 펼칠 게 있음 (사용자: 제목만 긴 알림은 본문 기준으로 "안 잘림"이라 펼쳐지지 않았음).</summary>
+    public static bool CanExpand(Border card) =>
+        Title(card) is { } t && TitleCut(t) || Body(card) is { } b && IsTruncated(b);
+
+    /// <summary>카드 펼치기/접기: 제목은 여러 줄로, 본문은 <see cref="ExpandBody"/>.</summary>
+    public static void ExpandCard(Border card, bool expand)
+    {
+        if (Title(card) is { } t)
+        {
+            t.TextWrapping = expand ? TextWrapping.Wrap : TextWrapping.NoWrap;
+            t.TextTrimming = expand ? TextTrimming.None : TextTrimming.CharacterEllipsis;
+        }
+        if (Body(card) is { } b) ExpandBody(b, expand);
+    }
     private const double BodyLine = 17, BodyCollapsed = BodyLine * 2, BodyExpandedMax = BodyLine * 8;
 
     /// <summary>카드의 본문 줄 (없으면 null).</summary>

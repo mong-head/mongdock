@@ -442,7 +442,9 @@ public partial class DockWindow : Window
 
         GetFrame(l.Edge, false, out double edgeLine, out double start, out double end);
         CheckFit(end - start); // 화면보다 길면 아이콘 자동 축소 (DockWindow.Fit.cs)
-        double center = PanelCenter(l.Edge, ClampOffset(_services.Settings.Current.Dock.Offset), _baseLength, start, end);
+        // 확대해도 끝 아이콘이 화면 안에 있게 확대 여유까지 넣어 가두기 (쉬는 길이만 보면 위·아래 끝이 잘렸음)
+        double room = l.HoverScale > 1.001 ? l.GrowthRoom : 0;
+        double center = PanelCenter(l.Edge, ClampOffset(_services.Settings.Current.Dock.Offset), _baseLength + room * 2, start, end);
         double len = _baseLength + l.GrowthRoom * 2;
         double t = l.WindowThickness;
 

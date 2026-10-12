@@ -53,7 +53,10 @@ public sealed class DockLayout
     public double BounceHeight => Math.Max(4, Math.Min(IconSize * 0.35, IconSize * (HoverScale - 1) + 8 + Padding - 2));
 
     /// <summary>확대로 패널이 독 방향으로 늘어날 수 있는 길이 (한쪽).</summary>
-    public double GrowthRoom => Math.Ceiling(IconSize * (HoverScale - 1) * (Wave ? 1.7 : 0.6) + 12);
+    public double GrowthRoom => Math.Ceiling(IconSize * GrowthFactor(HoverScale, Wave) + 12);
+
+    /// <summary>확대로 한쪽에 튀어나오는 길이 / 아이콘 크기 (DockFit 이 맞춤 계산에 씀).</summary>
+    public static double GrowthFactor(double hoverScale, bool wave) => Math.Max(0, hoverScale - 1) * (wave ? 1.5 : 0.6); // 파도: 가운데 확대 시 한쪽 최대 ≈ 1.46 (반경 2.5·cos 감쇠)
 
     /// <summary>물결 확대 반경: 커서에서 이 거리 이상 떨어진 아이콘은 확대 안 됨.</summary>
     public double WaveRadius => IconSize * 2.5;

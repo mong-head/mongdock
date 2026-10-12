@@ -22,8 +22,17 @@ internal static class DockFit
     {
         double pad = Math.Round(Math.Max(5, icon * 0.12));
         double sep = 1 + Math.Max(5, spacing + 4) * 2;
-        return pad * 2 + 2 + icons * (icon + spacing) + separators * sep + extra;
+        return pad * 2 + 2 + icons * (icon + spacing) + separators * sep + extra + 2 * Growth(icon);
     }
+
+    /// <summary>
+    /// 확대(파도)로 독 양 끝이 한쪽에 튀어나오는 길이 계수 — DockLayout.GrowthRoom 과 같은 식 (아이콘 × 계수 + 12, 확대 끔이면 0).
+    /// 맞춤 계산이 이것을 빼지 않으면 쉬는 상태에선 들어가도 끝 아이콘을 확대할 때 화면 밖으로 잘림 (#25 사용자: 오른쪽 세로 독 위·아래 잘림).
+    /// UI 스레드에서 Fit 부르기 전에 정함.
+    /// </summary>
+    [ThreadStatic] public static double GrowthFactor;
+
+    public static double Growth(double icon) => GrowthFactor > 0 ? Math.Ceiling(icon * GrowthFactor + 12) : 0;
 
     /// <summary>
     /// 사용 가능한 길이(available, DIP) 안에 들어가는 가장 큰 아이콘 크기 (설정값 이하, 정수, 최소 <see cref="MinIcon"/>).
@@ -37,8 +46,8 @@ internal static class DockFit
         double limit = available - EndGap * 2;
         if (PanelLength(icon, spacing, icons, separators, extra) <= limit) return icon;
         // 선형이라 바로 계산 뒤 패딩 반올림 때문에 한두 칸 보정
-        double fixedLen = separators * (1 + Math.Max(5, spacing + 4) * 2) + 2 + extra + icons * spacing;
-        double guess = Math.Floor((limit - fixedLen) / (icons + 0.24));
+        double fixedLen = separators * (1 + Math.Max(5, spacing + 4) * 2) + 2 + extra + icons * spacing + (GrowthFactor > 0 ? 24 : 0);
+        double guess = Math.Floor((limit - fixedLen) / (icons + 0.24 + 2 * GrowthFactor));
         icon = Math.Clamp(guess + 2, floor, icon);
         while (icon > floor && PanelLength(icon, spacing, icons, separators, extra) > limit) icon--;
         return icon;

@@ -238,16 +238,21 @@ internal sealed class NotificationBannerWindow : Window
         host.Children.Add(close);
 
         // 긴 알림: 마우스를 올리면 아래로 늘어나 전체 (최대 8줄, 넘으면 배너 안 스크롤) — #25 §5. 올려 둔 동안은 사라지지 않음(OnTick)
-        var body = NotificationUi.Body(card);
+        bool expandable = !asks; // 버튼 줄이 있는 배너는 카드 모양이 달라 펼치지 않음 (짧은 안내)
         host.MouseEnter += (_, _) =>
         {
             NotificationUi.ShowClose(close, true);
-            if (body is not null) NotificationUi.ExpandBody(body, true);
+            if (expandable)
+            {
+                bool can = NotificationUi.CanExpand(card);
+                Log.Info($"알림 배너 호버: 펼칠 것 {(can ? "있음" : "없음")}");
+                if (can) NotificationUi.ExpandCard(card, true);
+            }
         };
         host.MouseLeave += (_, _) =>
         {
             NotificationUi.ShowClose(close, false);
-            if (body is not null) NotificationUi.ExpandBody(body, false);
+            if (expandable) NotificationUi.ExpandCard(card, false);
         };
         bool pressed = false;
         host.MouseLeftButtonDown += (_, e) =>

@@ -56,6 +56,7 @@ internal static class Program
 
         int allApps = Array.FindIndex(args, a => a == "--allapps");
         if (allApps >= 0 && allApps + 1 < args.Length) RenderAllAppsPanel(args[allApps + 1]);
+        if (Array.IndexOf(args, "--dockfit") >= 0) { DockFitReport(); return 0; }
 
         int trashIcons = Array.FindIndex(args, a => a == "--trash-icons");
         if (trashIcons >= 0 && trashIcons + 1 < args.Length) RenderTrashIcons(args[trashIcons + 1]);
@@ -548,6 +549,39 @@ internal static class Program
     }
 
     /// <summary>
+    /// --dockfit: 이 PC 사용자 settings.json(읽기만)의 독 값과 주 모니터 작업 영역으로 실제 DockFit 계산 — 아이콘 수별 줄인 크기·간격·"⋯" 칸 수,
+    /// 그리고 확대해도 끝 아이콘이 화면 안에 드는지 (#25 사용자: 오른쪽 세로 독 위·아래 잘림).
+    /// </summary>
+    private static void DockFitReport()
+    {
+        var asm = typeof(Mongdock.App).Assembly;
+        var fit = asm.GetType("Mongdock.Views.DockFit")!;
+        var layout = asm.GetType("Mongdock.ViewModels.DockLayout")!;
+        var any = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+        string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "mongdock", "settings.json");
+        using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+        var d = doc.RootElement.GetProperty("dock");
+        double icon = d.GetProperty("iconSize").GetDouble(), spacing = d.GetProperty("iconSpacing").GetDouble(), scale = d.GetProperty("hoverScale").GetDouble();
+        bool wave = d.GetProperty("waveMagnification").GetBoolean();
+        string edge = d.GetProperty("edge").GetString() ?? "Bottom";
+        var top = doc.RootElement.GetProperty("topBar");
+        double barH = top.GetProperty("enabled").GetBoolean() ? top.GetProperty("height").GetDouble() : 0;
+        var wa = SystemParameters.WorkArea;
+        double avail = edge is "Left" or "Right" ? wa.Bottom - Math.Max(wa.Top, barH) : wa.Width;
+        double g = (double)layout.GetMethod("GrowthFactor", any)!.Invoke(null, new object[] { scale, wave })!;
+        fit.GetField("GrowthFactor", any)!.SetValue(null, scale > 1.001 ? g : 0.0);
+        Console.WriteLine($"독 {edge}, 아이콘 {icon}, 간격 {spacing}, 확대 {scale}{(wave ? " 파도" : "")}, 쓸 수 있는 길이 {avail:0} DIP, 확대 여유 계수 {g:0.00}");
+        int pins = doc.RootElement.GetProperty("pins").GetArrayLength();
+        for (int n = Math.Max(4, pins - 2); n <= pins + 14; n += 2)
+        {
+            var r = ((double Icon, double Spacing))fit.GetMethod("Fit", any)!.Invoke(null, new object[] { icon, spacing, n, 2, avail, 0.0 })!;
+            int cap = (int)fit.GetMethod("Capacity", any)!.Invoke(null, new object[] { r.Icon, r.Spacing, n, 2, avail, 0.0 })!;
+            double len = (double)fit.GetMethod("PanelLength", any)!.Invoke(null, new object[] { r.Icon, r.Spacing, Math.Min(n, cap), 2, 0.0 })!;
+            Console.WriteLine($"  아이콘 {n,2}개 → 크기 {r.Icon:0} 간격 {r.Spacing:0}, {(cap == int.MaxValue ? "넘침 없음" : $"⋯ 칸 (보일 칸 {cap}, 감춤 {n - cap + 1})")}, 확대 포함 길이 {len:0} / {avail - 16:0} {(len <= avail - 16 ? "들어감" : "넘침!")}");
+        }
+    }
+
+    /// <summary>
     /// 앱 모음 판 그림 (--allapps DIR): 이 PC 의 실제 앱 목록으로 처음 화면 · 묶음 하나 펼침 · 검색 결과 3장 (라이트·다크).
     /// 설정은 기본값(사본) — 사용자 settings.json 은 쓰지 않음. 디스패처를 돌리지 않음(돌리면 App.OnStartup 이 실행됨).
     /// </summary>
@@ -973,6 +1007,36 @@ internal static class Program
                 var sync = (Window)Activator.CreateInstance(syncType, Any, null, new object[] { services, plan, items.Count, new Action<List<RoutineItem>, List<RoutineItem>>((_, _) => { }) }, null)!;
                 Save((FrameworkElement)sync.Content, "sync");
                 sync.Close();
+            }
+
+            // 1-c) 긴 알림 펼침 (#25 §5): 제목만 긴 것 / 본문이 긴 것 — 펼칠 것 판정 + 접힘·펼침(제목 여러 줄) 그림
+            {
+                var ui = T("Mongdock.Views.NotificationUi");
+                var pal = T("Mongdock.ViewModels.UiTheme").GetMethod("Palette", Any)!.Invoke(null, new object[] { services.Settings.Current })!;
+                var nbg = (Brush)pal.GetType().GetProperty("CardBackground")!.GetValue(pal)!;
+                var cases = new[]
+                {
+                    ("title", new Mongdock.Services.NotificationItem(1, "Claude_pzs8sxrjxfjjc!Claude", "Claude", "몽독 개발 세션이 작업을 마쳤어요 — 독 넘침 칸과 긴 알림 펼치기, 설정 창 색을 고쳤습니다", new[] { "확인해 주세요" }, DateTime.Now, null, null, false, null)),
+                    ("body", new Mongdock.Services.NotificationItem(2, "Claude_pzs8sxrjxfjjc!Claude", "Claude", "작업 완료", new[] { "독 넘침 칸과 긴 알림 펼치기를 고쳤습니다. 오른쪽 세로 독에서 위·아래 끝 아이콘이 확대돼도 화면 안에 보이게 했고, 아이콘이 많으면 ⋯ 칸으로 모읍니다. 설정 창은 사이드바와 스위치·슬라이더를 몽독 톤으로 맞췄습니다." }, DateTime.Now, null, null, false, null)),
+                    ("short", new Mongdock.Services.NotificationItem(3, "Claude_pzs8sxrjxfjjc!Claude", "Claude", "짧은 알림", new[] { "한 줄" }, DateTime.Now, null, null, false, null)),
+                };
+                foreach (var (name, item) in cases)
+                {
+                    var ncard = (System.Windows.Controls.Border)ui.GetMethod("Card", Any)!.Invoke(null, new object?[] { services, pal, item, nbg, 0, null })!;
+                    var host = new System.Windows.Controls.Border { Width = 340, Child = ncard, Background = nbg };
+                    host.Measure(new Size(340, double.PositiveInfinity));
+                    host.Arrange(new Rect(host.DesiredSize));
+                    host.UpdateLayout();
+                    bool can = (bool)ui.GetMethod("CanExpand", Any)!.Invoke(null, new object[] { ncard })!;
+                    Console.WriteLine($"  알림 펼침 판정 {name}: {(can ? "펼칠 것 있음" : "없음")}");
+                    Save(host, $"notify-{name}-folded");
+                    ui.GetMethod("ExpandCard", Any)!.Invoke(null, new object[] { ncard, true });
+                    foreach (var tb in Descendants(ncard).OfType<System.Windows.Controls.TextBlock>().Where(t => t.MaxHeight < 100)) { tb.BeginAnimation(FrameworkElement.MaxHeightProperty, null); tb.MaxHeight = 136; } // 화면 밖에선 애니메이션이 돌지 않아 끝 상태로
+                    host.Measure(new Size(340, double.PositiveInfinity));
+                    host.Arrange(new Rect(host.DesiredSize));
+                    host.UpdateLayout();
+                    Save(host, $"notify-{name}-expanded");
+                }
             }
 
             // 2) 편집 창: 크게 / Chrome 세부 펼침(+ 고급)
