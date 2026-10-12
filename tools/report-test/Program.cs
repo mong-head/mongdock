@@ -541,6 +541,50 @@ internal static class Program
                 string wpath = Path.Combine(dir, $"settings-{_lang}-{theme}-window.png");
                 using (var fs = File.Create(wpath)) enc2.Save(fs);
                 Console.WriteLine($"  저장  {wpath}");
+                // 제목 줄 위치 판정 (WM_NCHITTEST): 위 띠 = 끌기(2), 최대화 동그라미 = 스냅(9), 닫기 = 내용(1), 오른쪽 끝 = 크기 조절(11), 아래 오른쪽 = 17
+                {
+                    var hwnd = new System.Windows.Interop.WindowInteropHelper(w).Handle;
+                    var dpiS = VisualTreeHelper.GetDpi(w);
+                    int Hit(Point dip)
+                    {
+                        var sp = w.PointToScreen(dip);
+                        long lp = ((long)(short)sp.Y << 16) | (ushort)(short)sp.X;
+                        return (int)NcHit(hwnd, 0x0084, IntPtr.Zero, new IntPtr(lp));
+                    }
+                    double ww = w.ActualWidth, wh = w.ActualHeight;
+                    var checks = new (string Name, Point At, int Want)[]
+                    {
+                        ("위 띠 가운데", new Point(ww / 2, 18), 2), ("최대화 동그라미", new Point(14 + 2 * 20 + 6, 18), 9),
+                        ("닫기 동그라미", new Point(14 + 6, 18), 1), ("본문", new Point(ww / 2, wh / 2), 1),
+                        ("오른쪽 끝", new Point(ww - 2, wh / 2), 11), ("오른쪽 아래", new Point(ww - 2, wh - 2), 17),
+                    };
+                    foreach (var (n, at, want) in checks)
+                    {
+                        int got = Hit(at);
+                        Console.WriteLine($"  {(got == want ? "통과" : "실패")}  제목 줄 판정 {n}: {got} (기대 {want}) — 배율 {dpiS.DpiScaleX:0.##}");
+                    }
+                }
+                // 제목 줄 동그라미 3가지 상태 (활성 / 비활성 / 호버) — 왼쪽 위만 크게
+                var preview = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.MongTitleBar")!.GetMethod("Preview", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+                foreach (var (state, act, hov) in new[] { ("active", true, false), ("inactive", false, false), ("hover", true, true) })
+                {
+                    preview.Invoke(null, new object[] { w, act, hov });
+                    whole.UpdateLayout();
+                    const double z = 3;
+                    var crop = new RenderTargetBitmap((int)(260 * z), (int)(60 * z), 96 * z, 96 * z, PixelFormats.Pbgra32);
+                    var cv = new DrawingVisual();
+                    using (var dc = cv.RenderOpen())
+                    {
+                        dc.DrawRectangle(w.Background ?? Brushes.White, null, new Rect(0, 0, 260, 60));
+                        dc.DrawRectangle(new VisualBrush(whole) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top, ViewboxUnits = BrushMappingMode.Absolute, Viewbox = new Rect(0, 0, 260, 60) }, null, new Rect(0, 0, 260, 60));
+                    }
+                    crop.Render(cv);
+                    var enc3 = new PngBitmapEncoder();
+                    enc3.Frames.Add(BitmapFrame.Create(crop));
+                    string cpath = Path.Combine(dir, $"titlebar-{theme}-{state}.png");
+                    using (var fs = File.Create(cpath)) enc3.Save(fs);
+                    Console.WriteLine($"  저장  {cpath}");
+                }
             }
         }
         w.Close();
@@ -552,6 +596,9 @@ internal static class Program
     /// --dockfit: 이 PC 사용자 settings.json(읽기만)의 독 값과 주 모니터 작업 영역으로 실제 DockFit 계산 — 아이콘 수별 줄인 크기·간격·"⋯" 칸 수,
     /// 그리고 확대해도 끝 아이콘이 화면 안에 드는지 (#25 사용자: 오른쪽 세로 독 위·아래 잘림).
     /// </summary>
+    [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SendMessageW")]
+    private static extern IntPtr NcHit(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
+
     private static void DockFitReport()
     {
         var asm = typeof(Mongdock.App).Assembly;

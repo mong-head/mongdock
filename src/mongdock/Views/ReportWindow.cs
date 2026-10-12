@@ -110,6 +110,7 @@ public sealed class ReportWindow : Window
         Background = _p.WindowBackground;
         Foreground = _p.Text;
         SourceInitialized += (_, _) => ApplyTitleBarTheme();
+        MongTitleBar.Install(this, _p); // 몽독 제목 줄 (#25 §8) — 크기 고정 창이라 최대화 동그라미는 흐리게
         // "함께 보낼 정보"를 펼치면 창이 아래로 길어짐 → 화면 아래를 넘으면 위로 올리고, 화면보다 길면 높이를 막아 안에서 스크롤
         SizeChanged += (_, e) => { if (e.HeightChanged) KeepOnScreen(); };
         Closed += (_, _) =>
@@ -118,7 +119,7 @@ public sealed class ReportWindow : Window
             if (_instance == this) _instance = null;
         };
 
-        var body = new StackPanel { Margin = new Thickness(24, 20, 24, 20) };
+        var body = new StackPanel { Margin = new Thickness(24, 4, 24, 20) };
         body.Children.Add(new TextBlock { Text = Loc.T("문제 신고하기"), FontSize = 20, FontWeight = FontWeights.Bold });
         body.Children.Add(new TextBlock
         {
@@ -255,8 +256,9 @@ public sealed class ReportWindow : Window
         var root = new Grid();
         // 입력 칸·미리 보기·창 스크롤 모두 맥 같은 얇은 스크롤바 (Themes/Controls.xaml ThinScrollBar)
         if (TryFindResource("ThinScrollBar") is Style thin) root.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), thin);
-        root.Children.Add(new ScrollViewer { Content = _form, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false });
+        root.Children.Add(new ScrollViewer { Content = _form, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false, Margin = new Thickness(0, MongTitleBar.Height, 0, 0) });
         root.Children.Add(_done);
+        root.Children.Add(MongTitleBar.Overlay(this, _p, null));
         Content = root;
 
         UpdateForm();

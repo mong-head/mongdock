@@ -132,6 +132,7 @@ internal sealed partial class SettingsWindow : Window
         };
 
         SourceInitialized += (_, _) => ApplyTitleBarTheme();
+        MongTitleBar.Install(this, _p); // 몽독 제목 줄 (#25 §8): 사이드바 라벤더가 창 맨 위까지 + 왼쪽 위 동그라미 3개
         _services.Settings.SettingsChanged += OnSettingsChanged;
         _services.Calendars.Changed += OnCalendarsChanged;
         _services.TrayIcons.Changed += OnTrayIconsChanged; // SettingsWindow.Tray.cs
@@ -233,7 +234,7 @@ internal sealed partial class SettingsWindow : Window
         sidebar.Child = BuildSidebar();
         root.Children.Add(sidebar);
 
-        var body = new StackPanel { Margin = new Thickness(28, 22, 28, 28), MaxWidth = 640 };
+        var body = new StackPanel { Margin = new Thickness(28, 4, 28, 28), MaxWidth = 640 }; // 위는 제목 줄 띠(MongTitleBar.Height)가 이미 비움
         body.Children.Add(new TextBlock
         {
             Text = PageTitle(_page),
@@ -260,7 +261,9 @@ internal sealed partial class SettingsWindow : Window
             Content = body,
         };
         Grid.SetColumn(_scroll, 1);
+        _scroll.Margin = new Thickness(0, MongTitleBar.Height, 0, 0); // 위 띠는 끌어 옮기는 자리 (그 안에 누를 것이 오지 않게)
         root.Children.Add(_scroll);
+        root.Children.Add(MongTitleBar.Overlay(this, _p, null));
         Content = root;
 
         if (scroll > 0)
@@ -284,7 +287,7 @@ internal sealed partial class SettingsWindow : Window
 
     private UIElement BuildSidebar()
     {
-        var panel = new StackPanel { Margin = new Thickness(10, 16, 10, 10) };
+        var panel = new StackPanel { Margin = new Thickness(10, MongTitleBar.Height + 4, 10, 10) }; // 동그라미 아래부터
         panel.Children.Add(new TextBlock
         {
             Text = AppInfo.Name,
