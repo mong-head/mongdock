@@ -368,11 +368,14 @@ public partial class DockWindow
         if (item.Pin is PinItem pin)
         {
             int from = pins.IndexOf(pin);
-            if (from < 0 || from == target) return;
+            if (from < 0) return;
+            var rest = pins.Where(p => !ReferenceEquals(p, pin)).ToList();
+            int to = PinsIndexFor(target, view, rest); // 감춘 앱("⋯")이 있으면 화면 칸 ≠ 핀 순서
+            if (to == from) return;
             ModifyPins(p =>
             {
                 p.RemoveAt(from);
-                p.Insert(Math.Clamp(target, 0, p.Count), pin);
+                p.Insert(Math.Clamp(to, 0, p.Count), pin);
             });
             return;
         }
@@ -383,7 +386,8 @@ public partial class DockWindow
         {
             if (item.Windows.Count == 0 || !CanPin(item.Windows[0])) return;
             var newPin = _services.Windows.CreatePin(item.Windows[0]);
-            ModifyPins(p => p.Insert(Math.Clamp(target, 0, p.Count), newPin));
+            int to = PinsIndexFor(target, view, pins);
+            ModifyPins(p => p.Insert(Math.Clamp(to, 0, p.Count), newPin));
             return;
         }
 
@@ -517,7 +521,7 @@ public partial class DockWindow
     {
         e.Handled = true;
         if (!_fileDragOver) return;
-        int target = _dropTarget;
+        int target = _dropTarget >= 0 ? PinsIndexFor(_dropTarget, null, _services.Settings.Current.Pins) : _dropTarget; // 감춘 앱이 있으면 핀 순서로
         string[] paths = Array.Empty<string>();
         try
         {

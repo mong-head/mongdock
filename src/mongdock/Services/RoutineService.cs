@@ -139,6 +139,11 @@ internal static class RoutineService
         RaiseStarted(routine);
     }
 
+    /// <summary>독 핀이 이 루틴의 앱 항목과 같은 앱 (독 넘침 — 루틴 데스크톱에서 루틴 앱은 마지막까지 독에).</summary>
+    public static bool PinInRoutine(RoutineDef routine, PinItem pin) => routine.Items.Any(i => i.Kind == RoutineItemKind.App && (
+        pin.Kind == PinKind.Aumid ? string.Equals(i.Aumid, pin.Target, StringComparison.OrdinalIgnoreCase)
+        : pin.Kind == PinKind.Exe && string.Equals(Environment.ExpandEnvironmentVariables(i.Target), Environment.ExpandEnvironmentVariables(pin.Target), StringComparison.OrdinalIgnoreCase)));
+
     /// <summary>루틴 앱과 같은 앱인 창 (비슷하게 열면 물어보기). 앱 항목만.</summary>
     internal static bool IsItemWindow(RoutineItem item, AppWindowInfo w)
     {

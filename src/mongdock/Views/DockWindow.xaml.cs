@@ -1015,6 +1015,8 @@ public partial class DockWindow : Window
         _flashed.RemoveWhere(h => !alive.Contains(h));
         foreach (var h in _lastActive.Keys.Where(h => !alive.Contains(h)).ToList()) _lastActive.Remove(h);
 
+        ApplyOverflow(list, old); // 독이 넘치면 오래 안 쓴 고정 앱을 "⋯ +n" 칸으로 (#25 §2)
+
         bool structureChanged = rebuildViews || !list.Select(i => i.Id).SequenceEqual(_items.Select(i => i.Id));
         _items = list;
         UpdateStates();
@@ -1134,6 +1136,11 @@ public partial class DockWindow : Window
         if (IsAllApps(item.Pin))
         {
             ToggleAllAppsPanel(sender as DockItemView, item.Pin!); // 시작 메뉴 대신 몽독 앱 모음 판 (#24)
+            return;
+        }
+        if (IsOverflowItem(item))
+        {
+            ToggleOverflowPanel(sender as DockItemView); // "⋯ +n" — 독에서 감춘 앱 (#25 §2)
             return;
         }
         if (item.Pin is { Kind: PinKind.Routine } routinePin)
@@ -1604,6 +1611,7 @@ public partial class DockWindow : Window
         var view = FindItemView(e.OriginalSource as DependencyObject);
         if (view == null || view.Item.IsAutoSeparator) BuildEmptyAreaMenu(menu);
         else if (IsTrash(view.Item.Pin)) BuildTrashMenu(menu, view.Item.Pin!);
+        else if (IsOverflowItem(view.Item)) { e.Handled = true; return; } // "⋯" 칸은 메뉴 없음 (판 안 앱마다 메뉴)
         else if (view.Item.Pin is { Kind: PinKind.Folder }) BuildFolderMenu(menu, view.Item);
         else if (view.Item.Pin is { Kind: PinKind.Routine } routinePin) BuildRoutineMenu(menu, routinePin);
         else if (view.Item.Pin != null) BuildPinMenu(menu, view.Item);

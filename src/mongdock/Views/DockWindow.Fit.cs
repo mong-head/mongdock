@@ -39,21 +39,25 @@ public partial class DockWindow
         foreach (var i in _items)
         {
             if (i.IsSeparator) seps++;
-            else icons++;
+            else if (!IsOverflowItem(i)) icons++;
         }
+        icons += _hiddenPins.Count; // 감춘 앱까지 다 넣었을 때 기준 (넘침이 풀리는지 보려고)
         // 간격은 설정값 기준으로 계산 (지금 줄어 있는 간격 기준이면 다시 넓어지지 않음)
         double settingSpacing = double.IsNaN(s.IconSpacing) ? 5 : Math.Clamp(s.IconSpacing, 0, 64);
         var (want, spacing) = DockFit.Fit(s.IconSize, settingSpacing, icons, seps, available);
         double setting = Math.Floor(Math.Clamp(double.IsNaN(s.IconSize) ? 52 : s.IconSize, DockFit.MinIcon, 256));
         double newFit = want < setting ? want : 0;
         double newSpacing = spacing < settingSpacing ? spacing : -1;
-        if (Math.Abs(newFit - _fitIcon) < 0.5 && Math.Abs(newSpacing - _fitSpacing) < 0.5) return;
+        int newCapacity = DockFit.Capacity(want, spacing, icons, seps, available); // 하한·간격 1 로도 넘치면 "⋯ +n"
+        if (Math.Abs(newFit - _fitIcon) < 0.5 && Math.Abs(newSpacing - _fitSpacing) < 0.5 && newCapacity == _overflowCapacity) return;
         _fitPending = true;
         Dispatcher.BeginInvoke(() =>
         {
             _fitPending = false;
             if (_closed || AnyItemDrag || _itemDragging || _dragArmed) return;
-            if (Math.Abs(newFit - _fitIcon) < 0.5 && Math.Abs(newSpacing - _fitSpacing) < 0.5) return;
+            if (Math.Abs(newFit - _fitIcon) < 0.5 && Math.Abs(newSpacing - _fitSpacing) < 0.5 && newCapacity == _overflowCapacity) return;
+            if (newCapacity != _overflowCapacity) Log.Info(newCapacity == int.MaxValue ? "독 넘침 없음" : $"독 넘침: 보일 칸 {newCapacity}개");
+            _overflowCapacity = newCapacity;
             Log.Info(newFit > 0
                 ? Loc.F($"독이 화면보다 길어 아이콘을 {newFit:0} 으로 줄임 (설정 {setting:0}{(newSpacing >= 0 ? Loc.F($", 간격 {newSpacing:0}") : "")})")
                 : Loc.T("독 아이콘 크기를 설정값으로 되돌림"));

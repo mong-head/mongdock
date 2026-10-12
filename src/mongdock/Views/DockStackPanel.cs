@@ -377,6 +377,19 @@ internal abstract class DockStackPanel : Window
         var image = new Image { Width = Thumb, Height = Thumb, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Center };
         RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
         Dispatcher.BeginInvoke(() => { if (!_closing) image.Source = DockFolderService.Thumbnail(thumbPath, 96); }, DispatcherPriority.Background);
+        return CellWith(image, name, thumbPath, tooltip, click, dragPath, menu);
+    }
+
+    /// <summary>앱 아이콘 칸 (끌기 없음) — "⋯ +n" 판.</summary>
+    protected Border MakeIconCell(string name, ImageSource? icon, string tooltip, Action? click, ContextMenu? menu)
+    {
+        var image = new Image { Width = Thumb, Height = Thumb, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Center, Source = icon };
+        RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
+        return CellWith(image, name, "icon:" + name, tooltip, click, null, menu);
+    }
+
+    private Border CellWith(Image image, string name, string key, string tooltip, Action? click, string? dragPath, ContextMenu? menu)
+    {
 
         var text = new TextBlock
         {
@@ -403,7 +416,6 @@ internal abstract class DockStackPanel : Window
             Cursor = click is null ? Cursors.Arrow : Cursors.Hand,
             ContextMenu = menu,
         };
-        string key = thumbPath;
         if (menu is not null)
         {
             menu.Opened += (_, _) => _openMenu = menu;
