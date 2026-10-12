@@ -28,7 +28,8 @@ internal sealed class IconPickerWindow : Window
     private PinIcon _icon;
     private bool _dialogOpen;
 
-    private readonly Image _previewImage = new() { Width = 72, Height = 72, Margin = new Thickness(0, 4, 0, 12) };
+    private readonly Image _previewImage = new() { Width = 72, Height = 72 };
+    private readonly System.Windows.Shapes.Rectangle _previewDim = new() { Width = 72, Height = 72, Fill = Brushes.Black, Opacity = 1 - SettingsWindow.DarkPlate, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
     private readonly StackPanel _tabs = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 12) };
     private readonly StackPanel _glyphPage = new();
     private readonly StackPanel _filePage = new();
@@ -79,7 +80,10 @@ internal sealed class IconPickerWindow : Window
 
         var body = new StackPanel { Width = 280 };
         body.Children.Add(new TextBlock { Text = Loc.T("아이콘 바꾸기"), FontSize = 14, FontWeight = FontWeights.Bold, TextAlignment = TextAlignment.Center, Margin = new Thickness(0, 2, 0, 8) });
-        body.Children.Add(_previewImage);
+        var previewBox = new Grid { Width = 72, Height = 72, Margin = new Thickness(0, 4, 0, 12) };
+        previewBox.Children.Add(_previewImage);
+        previewBox.Children.Add(_previewDim);
+        body.Children.Add(previewBox);
         body.Children.Add(_tabs);
 
         // 자동
@@ -280,13 +284,20 @@ internal sealed class IconPickerWindow : Window
             PinIconMode.File when string.IsNullOrEmpty(_icon.File) => null,
             _ => _icon,
         };
-        try { _previewImage.Source = _preview(candidate is null ? null : Copy(candidate)); }
+        try
+        {
+            _previewImage.Source = _preview(candidate is null ? null : Copy(candidate));
+            // 다크: 미리 보기만 70% 밝기로 (그림 모양대로 검정 30% 를 덮음 — 독에 놓이는 아이콘 자체는 그대로)
+            _previewDim.OpacityMask = !_p.IsLight && _previewImage.Source is { } src ? new ImageBrush(src) : null;
+            _previewDim.Visibility = _previewDim.OpacityMask is null ? Visibility.Collapsed : Visibility.Visible;
+        }
         catch (Exception ex) { Log.Error("아이콘 미리 보기 실패", ex); }
     }
 
     private Border ColorSwatch(string name)
     {
         var (top, bottom) = PinIconRenderer.PlateColors(name);
+        if (!_p.IsLight) { top = SettingsWindow.Dim(top, SettingsWindow.DarkPlate); bottom = SettingsWindow.Dim(bottom, SettingsWindow.DarkPlate); } // 다크: 튀지 않게 70%
         var sw = new Border
         {
             Width = 26,

@@ -1122,6 +1122,15 @@ internal static class Program
                 }
             }
 
+            // 1-d) 아이콘 고르기 카드 (다크: 미리 보기·판 색 칸 70%)
+            {
+                var allAppsIcon = (ImageSource)T("Mongdock.Services.MacIconRenderer").GetMethod("AllApps", Any)!.Invoke(null, null)!;
+                var picker = New("Mongdock.Views.IconPickerWindow", services, new PinIcon { Mode = PinIconMode.Glyph, Glyph = "", Color = "mongdock" }, false, "자동",
+                    new Func<PinIcon?, ImageSource?>(_ => allAppsIcon), new Action<PinIcon?>(_ => { }), null);
+                Save((FrameworkElement)picker.Content, "iconpicker");
+                picker.Close();
+            }
+
             // 2) 편집 창: 크게 / Chrome 세부 펼침(+ 고급)
             var work = new RoutineDef { Id = "r-test1", Name = "업무 시작", Items = Work() };
             foreach (var expand in new[] { -1, 1 })
