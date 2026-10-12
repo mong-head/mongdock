@@ -504,7 +504,10 @@ internal static class RoutineService
         services.Launcher.Activate(hwnd);
     }
 
-    /// <summary>루틴은 늘 새 데스크톱에서 (2026-10-10 사용자 결정 — 데이터의 desktop 값은 무시). 못 만들면 지금 데스크톱에서 열고 안내 한 줄.</summary>
+    /// <summary>
+    /// 루틴은 새 데스크톱에서 (2026-10-10 사용자 결정 — 데이터의 desktop 값은 무시). 못 만들면 지금 데스크톱에서 열고 안내 한 줄.
+    /// 단 지금 데스크톱에 보이는 앱 창이 하나도 없으면 그 자리를 루틴 데스크톱으로 (2026-10-13 결정, #25 §7) — 만든 데스크톱이 아니라 끝내기에서 닫지 않음.
+    /// </summary>
     private static async Task PrepareDesktopAsync(AppServices services, RoutineDef routine, RunState state)
     {
         var ids = VirtualDesktopService.ReadDesktopIds();
@@ -516,6 +519,17 @@ internal static class RoutineService
         var before = ids.ToHashSet();
         int cur = VirtualDesktopService.Read().Current;
         Guid? from = cur > 0 && cur <= ids.Count ? ids[cur - 1] : null;
+        if (from is not null && !HasAppWindowsHere(services))
+        {
+            lock (Runs)
+            {
+                state.Desktop = from;
+                state.CreatedDesktop = false;
+                state.ReturnTo = null;
+            }
+            Log.Info("루틴: 지금 데스크톱에 앱 창이 없어 이 자리에서 엶");
+            return;
+        }
         bool sent = await VirtualDesktopService.NewAsync(); // Ctrl+Win+D — 새 데스크톱을 만들고 그리로 감
         for (int i = 0; sent && i < 25; i++)
         {
@@ -542,6 +556,11 @@ internal static class RoutineService
         }
         await Task.Delay(250); // 전환 애니메이션 뒤에 창을 열어야 새 데스크톱에 뜸
     }
+
+    /// <summary>지금 데스크톱에 보이는 앱 창이 있음 (몽독·최소화한 창은 세지 않음 — 창 목록에는 바탕 화면·도구 창이 없음).</summary>
+    private static bool HasAppWindowsHere(AppServices services) =>
+        services.Windows.Windows.Any(w => !w.IsMinimized && (VirtualDesktopHelper.IsOnCurrentDesktop(w.Hwnd) ?? w.OnCurrentDesktop)
+            && ExeName(w.ProcessPath) != "mongdock");
 
     /// <summary>항목 하나 열기. 앱(+ 열 것·인자), 웹 주소(위치를 정했으면 새 창), 파일·폴더(연결된 앱).</summary>
     private static bool Launch(AppServices services, RoutineItem item)

@@ -524,6 +524,23 @@ internal static class Program
             string path = Path.Combine(dir, $"settings-{_lang}-{theme}-{page.ToString()!.ToLowerInvariant()}.png");
             using (var fs = File.Create(path)) enc.Save(fs);
             Console.WriteLine($"  저장  {path}");
+            if (Convert.ToInt32(page) == 0 && w.Content is FrameworkElement whole && whole.ActualWidth > 0)
+            {
+                // 왼쪽 메뉴까지 보이는 창 전체 한 장 (메뉴 아이콘 확인용)
+                var all = new RenderTargetBitmap((int)(whole.ActualWidth * scale), (int)(whole.ActualHeight * scale), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
+                var wv = new DrawingVisual();
+                using (var dc = wv.RenderOpen())
+                {
+                    dc.DrawRectangle(w.Background ?? Brushes.White, null, new Rect(0, 0, whole.ActualWidth, whole.ActualHeight));
+                    dc.DrawRectangle(new VisualBrush(whole) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top }, null, new Rect(0, 0, whole.ActualWidth, whole.ActualHeight));
+                }
+                all.Render(wv);
+                var enc2 = new PngBitmapEncoder();
+                enc2.Frames.Add(BitmapFrame.Create(all));
+                string wpath = Path.Combine(dir, $"settings-{_lang}-{theme}-window.png");
+                using (var fs = File.Create(wpath)) enc2.Save(fs);
+                Console.WriteLine($"  저장  {wpath}");
+            }
         }
         w.Close();
         }

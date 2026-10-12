@@ -1122,7 +1122,7 @@ public partial class TopBarWindow : Window
         var mongdock = new MenuItem { Header = AppInfo.Name };
         mongdock.Items.Add(DockMenus.SettingsWindow(_services, Loc.T("설정…")));
         mongdock.Items.Add(new Separator());
-        mongdock.Items.Add(DockMenus.HideDock(_services));
+        mongdock.Items.Add(DockMenus.AutoHideDock(_services));
         mongdock.Items.Add(DockMenus.HideTaskbar(_services));
         mongdock.Items.Add(DockMenus.Pause());
         mongdock.Items.Add(new Separator());

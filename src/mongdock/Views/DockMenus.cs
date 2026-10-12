@@ -148,11 +148,17 @@ internal static class DockMenus
         }, isChecked: on);
     }
 
-    /// <summary>"독 숨기기" (Dock.Enabled=false 저장). 트레이 "독 보이기" 로 다시 켬.</summary>
-    public static MenuItem HideDock(AppServices services)
-        => Item(Loc.T("독 숨기기"), () => Update(services, () => services.Settings.Current.Dock.Enabled = false));
+    /// <summary>
+    /// "독 자동으로 숨기기" ✓ 토글 (Dock.Mode 자동 숨김 ↔ 항상 보이기) — 맥 "Dock 가리기 켜기/끄기". 예전 "독 숨기기"(독 끄기)는
+    /// 다시 눌러도 돌아오지 않아 헷갈렸음 (#25 §6). 독을 아예 끄는 건 설정 → 독 맨 위 스위치에만.
+    /// </summary>
+    public static MenuItem AutoHideDock(AppServices services)
+    {
+        bool on = services.Settings.Current.Dock.Mode == DockMode.AutoHide;
+        return Item(Loc.T("독 자동으로 숨기기"), () => Update(services, () => services.Settings.Current.Dock.Mode = on ? DockMode.Overlay : DockMode.AutoHide), isChecked: on);
+    }
 
-    /// <summary>"독 보이기" 체크 (Dock.Enabled 토글).</summary>
+    /// <summary>"독 보이기" 체크 (Dock.Enabled 토글) — 트레이에서 독이 꺼져 있을 때만 (설정에서 꺼 둔 사람의 복구용).</summary>
     public static MenuItem ShowDock(AppServices services)
     {
         bool on = services.Settings.Current.Dock.Enabled;

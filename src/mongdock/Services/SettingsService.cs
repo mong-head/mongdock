@@ -97,6 +97,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
             s.HideWindowsTaskbar = true;
             s.TopBar.ShowTrayIcons = true;
             s.TopBar.CalendarApp = CalendarApps.DefaultForNewInstall(); // Outlook 이 있으면 Outlook, 없으면 Google 웹 (#21 결정 7)
+            s.Dock.ShowWindowsFromAllDesktops = false; // #25 §3: 새 설치는 "지금 데스크톱의 앱만 보이기" 켬 (기존 사용자 값은 그대로)
             Current = s;
             CreatedThisRun = true;
             Save();

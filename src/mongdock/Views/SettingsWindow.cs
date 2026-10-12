@@ -292,19 +292,30 @@ internal sealed partial class SettingsWindow : Window
             FontWeight = FontWeights.Bold,
             Margin = new Thickness(10, 0, 0, 14),
         });
-        // 아이콘 글리프(Segoe Fluent Icons/MDL2) + 맥처럼 색 있는 둥근 사각형
-        panel.Children.Add(SidebarItem(Page.General, "\uE713", Color.FromRgb(0x8E, 0x8E, 0x93)));
-        panel.Children.Add(SidebarItem(Page.Dock, "\uE8A9", Color.FromRgb(0x0A, 0x84, 0xFF)));
-        panel.Children.Add(SidebarItem(Page.TopBar, "\uE700", Color.FromRgb(0x5E, 0x5C, 0xE6)));
-        panel.Children.Add(SidebarItem(Page.Notifications, "\uEA8F", Color.FromRgb(0xFF, 0x95, 0x00)));
-        panel.Children.Add(SidebarItem(Page.Calendar, "\uE787", Color.FromRgb(0xFF, 0x3B, 0x30)));
-        panel.Children.Add(SidebarItem(Page.Search, "\uE721", Color.FromRgb(0xFF, 0x9F, 0x0A)));
-        panel.Children.Add(SidebarItem(Page.About, "\uE946", Color.FromRgb(0x34, 0xC7, 0x59)));
-        panel.Children.Add(SidebarItem(Page.Changelog, "\uE81C", Color.FromRgb(0xAF, 0x52, 0xDE)));
+        // 아이콘 글리프(Segoe Fluent Icons/MDL2) + 몽독 판 (모두 같은 색)
+        panel.Children.Add(SidebarItem(Page.General, "\uE713"));
+        panel.Children.Add(SidebarItem(Page.Dock, "\uE8A9"));
+        panel.Children.Add(SidebarItem(Page.TopBar, "\uE700"));
+        panel.Children.Add(SidebarItem(Page.Notifications, "\uEA8F"));
+        panel.Children.Add(SidebarItem(Page.Calendar, "\uE787"));
+        panel.Children.Add(SidebarItem(Page.Search, "\uE721"));
+        panel.Children.Add(SidebarItem(Page.About, "\uE946"));
+        panel.Children.Add(SidebarItem(Page.Changelog, "\uE81C"));
         return panel;
     }
 
-    private Border SidebarItem(Page page, string glyph, Color tile)
+    /// <summary>메뉴 아이콘 판: 모두 몽독 판(하늘 → 연보라, 앱 모음·폴더 아이콘과 같은 색) + 흰 기호 (#25 §4 — 원색 판 대신).</summary>
+    private static readonly Brush SidebarTile = MongdockTile();
+
+    private static Brush MongdockTile()
+    {
+        var (top, bottom) = PinIconRenderer.PlateColors("mongdock");
+        var b = new LinearGradientBrush(top, bottom, 90);
+        b.Freeze();
+        return b;
+    }
+
+    private Border SidebarItem(Page page, string glyph)
     {
         bool selected = _page == page;
         var row = new StackPanel { Orientation = Orientation.Horizontal };
@@ -313,7 +324,7 @@ internal sealed partial class SettingsWindow : Window
             Width = 22,
             Height = 22,
             CornerRadius = new CornerRadius(6),
-            Background = Converters.BrushParser.Frozen(tile),
+            Background = SidebarTile,
             Margin = new Thickness(0, 0, 9, 0),
             Child = new TextBlock
             {
@@ -452,6 +463,9 @@ internal sealed partial class SettingsWindow : Window
             top.Add(Row(Loc.T("모니터"), Loc.T("독을 둘 모니터. 연결이 끊기면 주 모니터에 보여요."), MonitorDropdown(d.Monitor)));
         top.Add(Row(Loc.T("독 자동으로 숨기기"), Loc.T("평소엔 숨어 있다가 마우스를 화면 끝에 대면 나타나요."),
             Toggle(d.Mode == DockMode.AutoHide, on => Commit(() => D().Mode = on ? DockMode.AutoHide : DockMode.Overlay))));
+        // #25 §3: 루틴(데스크톱별 작업)과 맞춰 위로 — 값은 예전 "다른 데스크톱 창도 보이기"를 뒤집어 씀 (저장 값은 그대로)
+        top.Add(Row(Loc.T("지금 데스크톱의 앱만 보이기"), Loc.T("실행 중 앱과 실행 점을 지금 보고 있는 데스크톱의 창 기준으로 보여요."),
+            Toggle(!d.ShowWindowsFromAllDesktops, on => Commit(() => D().ShowWindowsFromAllDesktops = !on))));
         top.Add(Row(Loc.T("아이콘 크기"), null, ValueSlider(d.IconSize, 24, 96, 1, v => $"{v:0}", v => D().IconSize = v)));
         top.Add(Row(Loc.T("마우스 올리면 크게"), Loc.T("맨 왼쪽 = 끔"),
             ValueSlider(d.HoverScale, 1.0, 2.5, 0.1, v => v <= 1.001 ? Loc.T("끔") : Loc.F($"{v:0.0}배"), v => D().HoverScale = v)));
@@ -519,8 +533,6 @@ internal sealed partial class SettingsWindow : Window
             more.Add(Row(Loc.T("모서리 둥글기"), null, ValueSlider(d.CornerRadius, 8, 28, 1, v => $"{v:0}px", v => D().CornerRadius = v)));
         more.Add(Row(Loc.T("실행 중 앱도 독에 보이기"), Loc.T("고정하지 않은 실행 중 앱도 구분선 뒤에 보여요."),
             Toggle(d.ShowRunningApps, on => Commit(() => D().ShowRunningApps = on))));
-        more.Add(Row(Loc.T("다른 데스크톱에 있는 창도 독에 보이기"), null,
-            Toggle(d.ShowWindowsFromAllDesktops, on => Commit(() => D().ShowWindowsFromAllDesktops = on))));
         more.Add(Row(Loc.T("창이 여러 개일 때 클릭"), null, Segmented(d.MultiWindowClick,
             new[] { (MultiWindowClick.Picker, Loc.T("창 고르기")), (MultiWindowClick.MostRecent, Loc.T("최근 창")) },
             v => Commit(() => D().MultiWindowClick = v))));

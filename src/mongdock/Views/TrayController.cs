@@ -126,7 +126,8 @@ public sealed class TrayController : IDisposable
         }
         menu.Items.Add(DockMenus.SettingsWindow(_services));
         menu.Items.Add(new Separator());
-        menu.Items.Add(DockMenus.ShowDock(_services));
+        if (_services.Settings.Current.Dock.Enabled) menu.Items.Add(DockMenus.AutoHideDock(_services));
+        else menu.Items.Add(DockMenus.ShowDock(_services)); // 독을 꺼 둔 사람의 복구용
         menu.Items.Add(DockMenus.ShowTopBar(_services));
         menu.Items.Add(new Separator());
         menu.Items.Add(DockMenus.Pause());

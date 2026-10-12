@@ -1776,7 +1776,7 @@ public partial class DockWindow : Window
             _services.Settings.Save();
         }, enabled: Math.Abs(dock.Offset - 0.5) > 0.0005));
         menu.Items.Add(new Separator());
-        menu.Items.Add(DockMenus.HideDock(_services));
+        menu.Items.Add(DockMenus.AutoHideDock(_services));
         menu.Items.Add(DockMenus.Pause());
         menu.Items.Add(DockMenus.HideTaskbar(_services));
         menu.Items.Add(new Separator());
