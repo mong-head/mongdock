@@ -1102,6 +1102,24 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
         }
     }
 
+    public void LeftDown(TrayIconInfo icon, bool doubleClick, Rect iconScreenRect)
+    {
+        if (!Prepare(icon, iconScreenRect, out var e)) return;
+        if (e.Pid != 0) T.AllowSetForegroundWindow(e.Pid); // 누를 때 이미 허용 (앱이 누름에서 창을 띄우는 경우)
+        Send(e, doubleClick ? T.WM_LBUTTONDBLCLK : T.WM_LBUTTONDOWN, MousePoint(iconScreenRect));
+    }
+
+    public void LeftUp(TrayIconInfo icon, bool doubleClick, Rect iconScreenRect)
+    {
+        if (!Prepare(icon, iconScreenRect, out var e)) return;
+        if (e.Pid != 0) T.AllowSetForegroundWindow(e.Pid);
+        var pt = MousePoint(iconScreenRect);
+        Send(e, T.WM_LBUTTONUP, pt);
+        // 탐색기: 버전 3 이상은 떼기 뒤 NIN_SELECT. 더블클릭의 두 번째 떼기에는 보내지 않음 (선택이 두 번 겹쳐 열었다 닫히지 않게)
+        if (e.Version >= 3 && !doubleClick) Send(e, T.NIN_SELECT, pt);
+        Log.Info($"트레이 클릭 전달: {icon.ProcessName} (버전 {e.Version}, {(doubleClick ? "두 번 누름" : "한 번")}, 누름은 누를 때·떼기{(e.Version >= 3 && !doubleClick ? "+선택" : "")}은 뗄 때)");
+    }
+
     public void Hover(TrayIconInfo icon, Rect iconScreenRect)
     {
         if (!Prepare(icon, iconScreenRect, out var e)) return;

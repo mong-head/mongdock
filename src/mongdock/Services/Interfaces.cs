@@ -468,6 +468,13 @@ public interface ITrayIconService
     /// 앱이 Shell_NotifyIconGetRect 로 아이콘 위치를 물으면 이 사각형을 알려 줘 팝업이 상단바 근처에 뜬다.
     /// </summary>
     void Click(TrayIconInfo icon, TrayMouseButton button, bool doubleClick, Rect iconScreenRect);
+    /// <summary>
+    /// 왼쪽 버튼을 누른 그 순간 (탐색기처럼 누름은 누를 때, 떼기·선택은 뗄 때 — <see cref="LeftUp"/>). doubleClick 이면 WM_LBUTTONDBLCLK.
+    /// 예전엔 뗀 뒤 누름·떼기·선택을 한꺼번에 보내 카카오톡은 한 번 눌러서는 안 열렸음 (사용자).
+    /// </summary>
+    void LeftDown(TrayIconInfo icon, bool doubleClick, Rect iconScreenRect);
+    /// <summary>왼쪽 버튼을 뗌: WM_LBUTTONUP (+ 버전 3 이상이면 NIN_SELECT, 더블클릭의 두 번째 떼기는 제외).</summary>
+    void LeftUp(TrayIconInfo icon, bool doubleClick, Rect iconScreenRect);
     /// <summary>마우스가 아이콘 위에 올라옴 (WM_MOUSEMOVE — 일부 앱은 이때 툴팁 내용을 갱신).</summary>
     void Hover(TrayIconInfo icon, Rect iconScreenRect);
 }

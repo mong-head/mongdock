@@ -23,6 +23,8 @@ internal sealed class TrayIconButton : Button
     private readonly Action? _beforeClick;
     private readonly bool _onBar;
     private bool _doubleClick;
+    /// <summary>이번 누름을 이미 앱에 보냄 (뗄 때 떼기만).</summary>
+    private bool _leftDownSent;
     private Point? _downAt;
     private TrayIconDrag? _drag;
     private bool _swallowRightUp;
@@ -69,6 +71,12 @@ internal sealed class TrayIconButton : Button
             _downTicks = Environment.TickCount64;
             _doubleClick = e.ClickCount >= 2;
             _downAt = e.GetPosition(this);
+            _leftDownSent = false;
+            if (!_touchDown) // 탐색기처럼 누름은 누른 그 순간 앱에 (터치는 오래 누르기 판정 뒤 뗄 때 한꺼번에)
+            {
+                try { _beforeClick?.Invoke(); _services.TrayIcons.LeftDown(Info, _doubleClick, ScreenRect()); _leftDownSent = true; }
+                catch (Exception ex) { Log.Error("트레이 아이콘 누름 전달 실패", ex); }
+            }
         };
         PreviewMouseMove += OnDragMove;
         PreviewMouseLeftButtonUp += (_, e) =>
@@ -132,6 +140,13 @@ internal sealed class TrayIconButton : Button
         {
             bool dbl = _doubleClick;
             _doubleClick = false;
+            if (_leftDownSent)
+            {
+                _leftDownSent = false;
+                try { _services.TrayIcons.LeftUp(Info, dbl, ScreenRect()); } // 누름은 이미 보냄 → 떼기(+선택)만
+                catch (Exception ex) { Log.Error("트레이 아이콘 떼기 전달 실패", ex); }
+                return;
+            }
             Send(TrayMouseButton.Left, dbl);
         };
         MouseRightButtonUp += (_, e) =>
