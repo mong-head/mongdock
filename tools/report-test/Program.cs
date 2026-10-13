@@ -735,6 +735,30 @@ internal static class Program
         }
         Console.WriteLine(fail == 0 ? "루틴 추천 판정: 모두 통과" : $"루틴 추천 판정: {fail}개 실패");
         Console.WriteLine("  (묻는 단계에서 거름: 설치 7일 안, 지난 추천 7일 안, 전체 화면·방해 금지, 일시 정지, 루틴 추천 끔·자주 쓰는 앱 기록 끔, 3번 연속 거절이면 끔)");
+        // 루틴 링크 해석·허용 (리뷰 H1·H2·M2)
+        var links = asm.GetType("Mongdock.Services.RoutineLinks")!;
+        var parse = links.GetMethod("Parse")!;
+        var allowed = links.GetMethod("Allowed")!;
+        (string Link, string? Expect, bool? Allow)[] cases =
+        {
+            ("localhost:3000", "https://localhost:3000/", true),
+            ("intranet:8080/x", "https://intranet:8080/x", true),
+            ("mail.company.com:8443/x", "https://mail.company.com:8443/x", true),
+            ("naver.com", "https://naver.com/", true),
+            ("ms-msdt:/id x", null, false),
+            ("ms-visio:ofe|u|http://x/a.vsd", null, false),
+            ("search-ms:query=x", null, false),
+            ("C:\\x.exe", null, false),
+            ("discord:x\" --gpu-launcher=\"calc\"", null, false),
+            ("javascript:alert(1)", null, false),
+        };
+        foreach (var (link, expect, allow) in cases)
+        {
+            var u = (Uri?)parse.Invoke(null, new object[] { link });
+            bool ok = u is null ? allow != true : (expect is null || u.AbsoluteUri == expect) && (allow is null || (bool)allowed.Invoke(null, new object[] { u })! == allow);
+            if (!ok) fail++;
+            Console.WriteLine($"  {(ok ? "통과" : "실패")}  링크 {link} → {u?.AbsoluteUri ?? "(없음)"}");
+        }
         return fail == 0 ? 0 : 1;
     }
 

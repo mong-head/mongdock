@@ -982,7 +982,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             menu.Items.Add(DockMenus.Item(Loc.T("자주 쓰는 앱 기록 (추천·정리에 써요)"), () =>
             {
                 S.ShowSuggestions = !S.ShowSuggestions;
-                if (!S.ShowSuggestions) AppUsage.Clear(); // 끄면 기록도 지움
+                if (!S.ShowSuggestions) { AppUsage.Clear(); RoutineSuggest.Clear(); } // 끄면 기록도 지움 (루틴 추천용 실행 시각 포함)
                 Save(false);
             }, isChecked: S.ShowSuggestions));
             menu.Items.Add(DockMenus.Item(Loc.T("안 쓰는 앱 정리…"), OpenCleanup, enabled: S.ShowSuggestions));

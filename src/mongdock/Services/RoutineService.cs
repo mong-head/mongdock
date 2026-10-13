@@ -601,7 +601,7 @@ internal static class RoutineService
                 foreach (var app in links.Where(u => !RoutineLinks.IsWeb(u)))
                 {
                     if (!RoutineLinks.Allowed(app)) { Log.Warn($"루틴 항목: 열 수 없는 링크 ({app.Scheme}:) — 건너뜀"); continue; }
-                    Start(app.OriginalString, null);
+                    Start(app.AbsoluteUri, null); // 원문 대신 이스케이프된 주소 (따옴표로 인자가 새지 않게)
                     any = true;
                 }
                 var web = links.Where(RoutineLinks.IsWeb).ToList();
@@ -875,6 +875,7 @@ internal static class RoutineService
         if (services is null) return list;
         onDesktop ??= w => w.OnCurrentDesktop;
         var explorerFolders = ExplorerFolders();
+        var games = GameCatalog.Cached; // 게임 목록은 캐시만 (없으면 이번엔 게임 매핑 없이)
         List<(string Name, string Lnk)>? recent = null;
         foreach (var w in services.Windows.Windows.Where(w => onDesktop(w) && !w.IsMinimized))
         {
@@ -891,7 +892,7 @@ internal static class RoutineService
             else
             {
                 // 스팀·에픽 라이브러리 안의 게임 exe 면 런처가 아니라 그 게임 링크로 (§15-3 — 루틴에서 게임이 바로 열림)
-                if (GameCatalog.FromExe(w.ProcessPath) is { LaunchIsExe: false } game)
+                if (games is not null && GameCatalog.FromExe(w.ProcessPath, games) is { LaunchIsExe: false } game) // 캐시만 (UI 스레드에서 스캔하지 않음)
                 {
                     item = GameCatalog.ToItem(game);
                     ReadPlacement(w.Hwnd, item);

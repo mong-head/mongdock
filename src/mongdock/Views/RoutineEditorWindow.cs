@@ -30,6 +30,7 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
     private readonly WrapPanel _addButtons = new() { Margin = new Thickness(0, 6, 0, 0) };
     private readonly List<FrameworkElement> _rowHeads = new();
     private int _expanded = -1;
+    private RoutineItem? _addTabTo; // 페이지 힌트 칩: 다음에 펼칠 때 빈 탭 줄 하나
     private bool _advancedOpen;
 
     public static void Open(AppServices services, RoutineDef routine, bool focusName = false)
@@ -90,9 +91,7 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
                 int at = _r.Items.FindIndex(i => i.Kind == RoutineItemKind.Url);
                 if (at >= 0)
                 {
-                    var link = _r.Items[at];
-                    link.Tabs ??= new List<string>();
-                    if (link.Target.Length > 0) link.Tabs.Add(""); // 이미 있는 링크 항목엔 탭으로
+                    _addTabTo = _r.Items[at]; // 이미 있는 링크 항목엔 빈 탭 줄로
                     _expanded = at;
                     Rebuild();
                 }
@@ -437,6 +436,7 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         var root = new StackPanel();
         var links = RoutineLinks.Urls(item);
         if (links.Count == 0) links.Add("");
+        if (ReferenceEquals(_addTabTo, item)) { _addTabTo = null; if (links[^1].Length > 0) links.Add(""); } // 페이지 힌트 칩 → 빈 탭 줄
         string? autoName = item.Name is null ? null : RoutineLinks.AutoName(links[0]) == item.Name ? item.Name : null;
         var name = Field(item.Name ?? "");
         name.TextChanged += (_, _) => { item.Name = string.IsNullOrWhiteSpace(name.Text) ? null : name.Text.Trim(); changed(); };
@@ -449,8 +449,9 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         void Save()
         {
             var clean = links.Select(l => l.Trim()).ToList();
-            item.Target = clean.FirstOrDefault() ?? "";
-            var rest = clean.Skip(1).Where(l => l.Length > 0).ToList();
+            var filled = clean.Where(l => l.Length > 0).ToList(); // 첫 칸을 비워도 나머지 탭이 첫 주소로 (항목이 통째로 사라지지 않게)
+            item.Target = filled.FirstOrDefault() ?? "";
+            var rest = filled.Skip(1).ToList();
             item.Tabs = rest.Count > 0 ? rest : null;
             // 붙여 넣으면 이름 자동 (사용자가 직접 고친 이름은 그대로)
             if ((item.Name is null || item.Name == autoName) && RoutineLinks.AutoName(item.Target) is { } auto)
@@ -846,7 +847,7 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
     {
         string name = _name.Text.Trim();
         _r.Name = name.Length > 0 ? name : _original?.Name ?? RoutineUi.NextName(Services);
-        _r.Items.RemoveAll(i => i.Kind != RoutineItemKind.App && string.IsNullOrWhiteSpace(i.Target)); // 빈 웹 주소·경로
+        _r.Items.RemoveAll(i => i.Kind == RoutineItemKind.Url ? RoutineLinks.Urls(i).Count == 0 : i.Kind != RoutineItemKind.App && string.IsNullOrWhiteSpace(i.Target)); // 빈 웹 주소·경로
         if (!AnyMore(_r.More)) _r.More = null; // 더 보기를 하나도 안 켰으면 저장하지 않음
         if (_original is null)
         {

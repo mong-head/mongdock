@@ -19,7 +19,34 @@ internal static class GameCatalog
     private static List<Game>? _cache;
     private static DateTime _cacheAt;
 
+    /// <summary>캐시만 (없으면 null — UI 스레드에서 쓸 때). 백그라운드에서 데움.</summary>
+    public static List<Game>? Cached
+    {
+        get
+        {
+            var c = _cache;
+            if (c is null || DateTime.UtcNow - _cacheAt >= TimeSpan.FromMinutes(5)) Warm();
+            return c;
+        }
+    }
+
+    private static int _warming;
+
+    /// <summary>백그라운드에서 목록 읽기 (몽독 시작·"지금 화면 저장" 전).</summary>
+    public static void Warm()
+    {
+        if (Interlocked.Exchange(ref _warming, 1) == 1) return;
+        Task.Run(() => { try { All(); } finally { Interlocked.Exchange(ref _warming, 0); } });
+    }
+
+    private static readonly object _lock = new();
+
     public static List<Game> All()
+    {
+        lock (_lock) return AllLocked();
+    }
+
+    private static List<Game> AllLocked()
     {
         if (_cache is not null && DateTime.UtcNow - _cacheAt < TimeSpan.FromMinutes(5)) return _cache;
         var list = new List<Game>();
@@ -39,12 +66,13 @@ internal static class GameCatalog
         : new RoutineItem { Kind = RoutineItemKind.Url, Target = g.Launch, Name = g.Name, GameExe = g.Exe };
 
     /// <summary>실행 중 창의 exe 가 알려진 게임이면 그 게임 ("지금 화면 저장"·루틴 추천이 런처가 아니라 게임으로).</summary>
-    public static Game? FromExe(string? exePath)
+    public static Game? FromExe(string? exePath, List<Game>? games = null)
     {
         if (string.IsNullOrEmpty(exePath)) return null;
+        games ??= All();
         string full = exePath.Replace('/', '\\');
-        return All().FirstOrDefault(g => g.Exe is { } e && string.Equals(e, full, StringComparison.OrdinalIgnoreCase))
-            ?? All().FirstOrDefault(g => g.Exe is { } e && Path.GetDirectoryName(e) is { } dir && full.StartsWith(dir + "\\", StringComparison.OrdinalIgnoreCase)
+        return games.FirstOrDefault(g => g.Exe is { } e && string.Equals(e, full, StringComparison.OrdinalIgnoreCase))
+            ?? games.FirstOrDefault(g => g.Exe is { } e && Path.GetDirectoryName(e) is { } dir && full.StartsWith(dir + "\\", StringComparison.OrdinalIgnoreCase)
                 && !g.LaunchIsExe && full.Contains(@"\steamapps\common\", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -70,7 +98,8 @@ internal static class GameCatalog
             if (!Directory.Exists(apps)) continue;
             foreach (var acf in Directory.EnumerateFiles(apps, "appmanifest_*.acf"))
             {
-                string text = File.ReadAllText(acf);
+                string text;
+                try { text = File.ReadAllText(acf); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; } // 업데이트 중 잠긴 파일 하나만 건너뜀
                 string? id = Field(text, "appid"), name = Field(text, "name"), dir = Field(text, "installdir");
                 if (id is null || name is null || IsTool(name)) continue;
                 string? exe = dir is null ? null : MainExe(Path.Combine(apps, "common", dir), name);
@@ -116,7 +145,7 @@ internal static class GameCatalog
                     g = new Game(name, "Epic", $"com.epicgames.launcher://apps/{ns}%3A{item}%3A{app}?action=launch&silent=true",
                         loc is not null && exe is not null ? Path.Combine(loc, exe) : null);
             }
-            catch (Exception ex) when (ex is JsonException or IOException) { }
+            catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException) { }
             if (g is not null) yield return g;
         }
     }
@@ -144,6 +173,9 @@ internal static class GameCatalog
         ["nxl"] = "Nexon", ["ngm"] = "Nexon", ["rockstar"] = "Rockstar",
     };
 
+    /// <summary>게임 런처 링크 종류인지 (루틴 링크 허용 목록).</summary>
+    public static bool IsLauncherScheme(string scheme) => LauncherSchemes.ContainsKey(scheme);
+
     private static IEnumerable<Game> StartMenu()
     {
         foreach (var sf in new[] { Environment.SpecialFolder.Programs, Environment.SpecialFolder.CommonPrograms, Environment.SpecialFolder.DesktopDirectory })
@@ -153,7 +185,9 @@ internal static class GameCatalog
             foreach (var url in Directory.EnumerateFiles(root, "*.url", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true }))
             {
                 string? link = null, icon = null;
-                foreach (var line in File.ReadLines(url))
+                string[] lines;
+                try { lines = File.ReadAllLines(url); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
+                foreach (var line in lines)
                 {
                     if (line.StartsWith("URL=", StringComparison.OrdinalIgnoreCase)) link = line[4..].Trim();
                     else if (line.StartsWith("IconFile=", StringComparison.OrdinalIgnoreCase)) icon = line[9..].Trim();

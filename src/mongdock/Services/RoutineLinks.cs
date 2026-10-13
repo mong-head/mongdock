@@ -24,25 +24,33 @@ internal static class RoutineLinks
         return list;
     }
 
-    /// <summary>링크 → Uri. "mail.company.com" 처럼 꼴이 없으면 https:// 를 붙여 봄.</summary>
+    /// <summary>링크 → Uri. "mail.company.com" 처럼 꼴이 없으면 https:// 를 붙여 봄 ("localhost:3000"·"intranet:8080/x" 처럼 포트가 붙은 주소도 웹으로).</summary>
     public static Uri? Parse(string link)
     {
         link = link.Trim();
         if (link.Length == 0) return null;
-        if (Uri.TryCreate(link, UriKind.Absolute, out var u) && u.Scheme.Length > 1) return u; // "C:\…" 은 file 이라 아래에서 막힘
-        return !link.Contains(' ') && link.Contains('.') && Uri.TryCreate("https://" + link, UriKind.Absolute, out var w) ? w : null;
+        bool hostPort = System.Text.RegularExpressions.Regex.IsMatch(link, @"^[^:/\s]+:\d+(/|$)");
+        if (!hostPort && Uri.TryCreate(link, UriKind.Absolute, out var u) && u.Scheme.Length > 1 && !u.Scheme.Contains('.')) return u; // "C:\…" 은 file 이라 아래에서 막힘
+        return !link.Contains(' ') && (link.Contains('.') || hostPort) && Uri.TryCreate("https://" + link, UriKind.Absolute, out var w) ? w : null;
     }
 
     public static bool IsWeb(Uri u) => u.Scheme is "http" or "https";
 
-    private static readonly HashSet<string> Blocked = new(StringComparer.OrdinalIgnoreCase)
+    /// <summary>
+    /// 열어도 되는 앱 링크 종류 (허용 목록 — 오피스·검색·진단 같은 위험한 링크 종류가 새로 생겨도 막힘).
+    /// 음악·메신저·회의·메모 앱과 게임 런처만. 그 밖은 "이 링크를 열 앱이 없어요".
+    /// </summary>
+    internal static readonly HashSet<string> AppSchemes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "javascript", "vbscript", "file", "data", "about", "jar", "res", "shell", "ms-msdt", "search-ms", "search", "ms-appinstaller",
-        "ms-officecmd", "ms-word", "ms-excel", "ms-powerpoint", "ms-cxh", "ms-cxh-full", "mk", "its", "ms-its", "hcp",
+        "spotify", "discord", "notion", "zoommtg", "zoomus", "msteams", "slack", "obsidian", "figma", "mailto",
+        "kakaotalk", "tg", "whatsapp", "line", "evernote", "todoist", "linear",
     };
 
-    /// <summary>열어도 되는 링크인지 — 웹은 늘, 앱 링크는 위험 목록이 아니고 이 PC 에 열 앱이 등록된 것만.</summary>
-    public static bool Allowed(Uri u) => IsWeb(u) || !Blocked.Contains(u.Scheme) && AppFor(u.Scheme) is not null;
+    /// <summary>열어도 되는 링크인지 — 웹은 늘, 앱 링크는 허용 목록에 있고 이 PC 에 열 앱이 등록됐고 따옴표·공백·제어 문자가 없는 것만.</summary>
+    public static bool Allowed(Uri u) => IsWeb(u)
+        || (AppSchemes.Contains(u.Scheme) || GameCatalog.IsLauncherScheme(u.Scheme))
+           && !u.OriginalString.Any(c => c == '"' || char.IsWhiteSpace(c) || char.IsControl(c))
+           && AppFor(u.Scheme) is not null;
 
     // ── 연결된 앱 ──
 

@@ -38,6 +38,8 @@ internal static class RoutineSuggest
         var s = services.Settings.Current;
         if (s.FirstRunAt is null) { s.FirstRunAt = DateTime.Now; services.Settings.Save(); } // 설치 날짜가 없던 기존 사용자는 오늘부터 7일
         _log = Load();
+        if (!Recording) Clear(); // 기록이 꺼져 있으면 남은 파일도 지움
+        GameCatalog.Warm();
         _present = Current(services).ToHashSet(); // 몽독을 켜기 전에 이미 떠 있던 앱은 세지 않음
         services.Windows.WindowsChanged += (_, _) => OnWindows();
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(10) }; // 로그인 10분 뒤, 그 뒤 2시간마다
@@ -68,7 +70,7 @@ internal static class RoutineSuggest
 
     private static void CountBrowserTitles(AppServices services)
     {
-        if (!Recording) return;
+        if (!Recording || !services.Settings.Current.RoutineSuggest) return; // 루틴 추천을 끄면 페이지 제목도 세지 않음
         foreach (var w in services.Windows.Windows)
         {
             string exe = Path.GetFileNameWithoutExtension(w.ProcessPath);
@@ -130,7 +132,7 @@ internal static class RoutineSuggest
             if (!File.Exists(LogPath)) return new();
             var list = JsonSerializer.Deserialize<List<Launch>>(File.ReadAllText(LogPath)) ?? new();
             var since = DateTime.Now - Keep;
-            return list.Where(l => l.At >= since).ToList();
+            return list.Where(l => l is not null && !string.IsNullOrEmpty(l.Id) && l.At >= since).ToList(); // 손상된 줄은 뺌
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return new(); }
     }
@@ -148,6 +150,8 @@ internal static class RoutineSuggest
     {
         _log.Clear();
         _lastSeen.Clear();
+        _titles.Clear();
+        _titleSeen.Clear();
         try { if (File.Exists(LogPath)) File.Delete(LogPath); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
@@ -170,10 +174,13 @@ internal static class RoutineSuggest
         foreach (var day in recent.GroupBy(l => l.At.Date))
         {
             var list = day.ToList();
+            HashSet<string>? prev = null;
             for (int i = 0; i < list.Count; i++)
             {
                 var set = list.Skip(i).TakeWhile(l => l.At - list[i].At <= Window).Select(l => l.Id).ToHashSet();
-                if (set.Count >= MinApps) occ.Add((day.Key, list[i].At, set));
+                if (set.Count < MinApps || prev is not null && prev.SetEquals(set)) continue; // 같은 묶음의 연속 시작점은 하나만
+                occ.Add((day.Key, list[i].At, set));
+                prev = set;
             }
         }
         var routineSets = routines.ToList();
@@ -264,10 +271,12 @@ internal static class RoutineSuggest
 
     // ───────────────────────── 묻기 ─────────────────────────
 
+    private static bool _checking;
+
     private static void Check()
     {
         var services = _services;
-        if (services is null || _asking) return;
+        if (services is null || _asking || _checking) return;
         var s = services.Settings.Current;
         if (!s.RoutineSuggest || !s.AllApps.ShowSuggestions || AppState.Paused) return;
         if (s.FirstRunAt is { } first && DateTime.Now - first < TimeSpan.FromDays(7)) return;
@@ -275,20 +284,44 @@ internal static class RoutineSuggest
         if (!RoutineUi.CanAdd(services) || RoutineTriggers.IsBusy()) return;
         var apps = AllAppsCatalog.Cached;
         if (apps is null) return;
-        var routines = s.Routines.Select(r => (IReadOnlyCollection<string>)r.Items.Where(i => i.Kind == RoutineItemKind.App)
-            .Select(i => !string.IsNullOrEmpty(i.Aumid) ? "app:" + i.Aumid!.ToLowerInvariant() : "exe:" + Path.GetFileNameWithoutExtension(i.Target).ToLowerInvariant()).ToList()).ToList();
-        var bundle = Find(_log, DateTime.Now, StartupApps(), routines, s.RoutineSuggestDeclined.Select(d => (IReadOnlyCollection<string>)d));
-        if (bundle is null) return;
-        // 식별자 → 루틴 항목: 게임 exe 는 런처가 아니라 그 게임(§15-3), 그 밖은 앱 모음 항목 (못 찾는 앱은 뺌 — 그래도 3개 이상일 때만)
-        var picks = new List<(string Name, RoutineItem Item, string? Exe)>();
-        foreach (var id in bundle.Apps)
+        var routines = s.Routines.Select(r => (IReadOnlyCollection<string>)r.Items.Select(RoutineId).OfType<string>().ToList()).ToList();
+        var declined = (s.RoutineSuggestDeclined ?? new()).Where(d => d is not null).Select(d => (IReadOnlyCollection<string>)d).ToList();
+        var log = _log.ToList();
+        var now = DateTime.Now;
+        // 계산(묶음 찾기·시작 프로그램·게임 목록)은 백그라운드 — UI 가 멈추지 않게
+        _checking = true;
+        Task.Run(() =>
         {
-            if (id.StartsWith("exe:") && GameCatalog.FromExeName(id[4..]) is { } game) { picks.Add((game.Name, GameCatalog.ToItem(game), id[4..])); continue; }
-            if (apps.FirstOrDefault(a => AllAppsCatalog.Identities(a).Contains(id)) is { } app) picks.Add((app.Name, RoutineUi.ItemFromApp(services, app), app.Exe));
-        }
-        if (picks.Count < MinApps) return;
-        Ask(services, bundle, picks);
+            var bundle = Find(log, now, StartupApps(), routines, declined);
+            var games = bundle?.Apps.Where(id => id.StartsWith("exe:")).Select(id => (id, GameCatalog.FromExeName(id[4..]))).Where(g => g.Item2 is not null)
+                .ToDictionary(g => g.id, g => g.Item2!);
+            return (bundle, games);
+        }).ContinueWith(t => System.Windows.Application.Current?.Dispatcher.BeginInvoke(() =>
+        {
+            _checking = false;
+            if (t.Status != TaskStatus.RanToCompletion) { Log.Warn($"루틴 추천 계산 실패: {t.Exception?.InnerException?.GetType().Name}"); return; }
+            var (bundle, games) = t.Result;
+            if (bundle is null || games is null || _asking || !s.RoutineSuggest || !s.AllApps.ShowSuggestions || AppState.Paused) return;
+            // 식별자 → 루틴 항목: 게임 exe 는 런처가 아니라 그 게임(§15-3), 그 밖은 앱 모음 항목 (못 찾는 앱은 뺌 — 그래도 3개 이상일 때만)
+            var picks = new List<(string Name, RoutineItem Item, string? Exe)>();
+            foreach (var id in bundle.Apps)
+            {
+                if (games.TryGetValue(id, out var game)) { picks.Add((game.Name, GameCatalog.ToItem(game), id[4..])); continue; }
+                if (apps.FirstOrDefault(a => AllAppsCatalog.Identities(a).Contains(id)) is { } app) picks.Add((app.Name, RoutineUi.ItemFromApp(services, app), app.Exe));
+            }
+            if (picks.Count < MinApps) return;
+            Ask(services, bundle, picks);
+        }), TaskScheduler.Default);
     }
+
+    /// <summary>기존 루틴 항목 → 실행 기록 식별자 (앱, 게임 링크의 게임 exe).</summary>
+    private static string? RoutineId(RoutineItem i) => i.Kind switch
+    {
+        RoutineItemKind.App when !string.IsNullOrEmpty(i.Aumid) => "app:" + i.Aumid!.ToLowerInvariant(),
+        RoutineItemKind.App => "exe:" + Path.GetFileNameWithoutExtension(i.Target).ToLowerInvariant(),
+        RoutineItemKind.Url when !string.IsNullOrEmpty(i.GameExe) => "exe:" + Path.GetFileNameWithoutExtension(i.GameExe).ToLowerInvariant(),
+        _ => null,
+    };
 
     private static void Ask(AppServices services, Bundle bundle, List<(string Name, RoutineItem Item, string? Exe)> entries)
     {
