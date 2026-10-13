@@ -47,6 +47,14 @@ public sealed class ReportWindow : Window
     private readonly Grid _form;
     private readonly StackPanel _done;
     private readonly List<(Button Button, ReportKind Kind)> _kindButtons = new();
+    // 첨부 (#26)
+    private readonly List<ReportAttachment> _attachments = new();
+    private readonly StackPanel _attachRows = new();
+    private readonly TextBlock _attachNote;
+    private readonly TextBlock _attachError;
+    private readonly Button _sendWithout;
+    private AppServices? _services;
+    private ReportRedactor.Context _ctx = ReportRedactor.Context.Current(Array.Empty<string>());
 
     /// <summary>창이 열려 있는지 (열려 있으면 Open 의 prefill 은 무시됨).</summary>
     public static bool IsOpen => _instance is not null;
@@ -75,7 +83,7 @@ public sealed class ReportWindow : Window
                 string redacted = string.Join("\n", error.Replace("\r\n", "\n").Split('\n').Select(l => ReportRedactor.RedactLog(l, ctx)));
                 head = redacted.TrimEnd() + "\n\n" + head;
             }
-            var win = new ReportWindow(settings);
+            var win = new ReportWindow(settings) { _services = services, _ctx = ctx };
             if (prefill is not null) win.SetPreviewState(prefill.Kind, prefill.Title, prefill.Message, "", detailsOpen: false);
             _instance = win;
             win.Show();
@@ -178,6 +186,30 @@ public sealed class ReportWindow : Window
         };
         body.Children.Add(_contactError);
 
+        // ── 첨부 (선택) (#26) ──
+        body.Children.Add(Label(Loc.T("첨부 (선택)")));
+        var attachButtons = new WrapPanel();
+        var addFile = Button("+ " + Loc.T("파일 추가"), primary: false, AddFiles);
+        addFile.Margin = new Thickness(0, 0, 8, 0);
+        var capture = Button("+ " + Loc.T("지금 화면 캡처"), primary: false, () => _ = CaptureAsync());
+        attachButtons.Children.Add(addFile);
+        attachButtons.Children.Add(capture);
+        body.Children.Add(attachButtons);
+        _attachRows.Margin = new Thickness(0, 6, 0, 0);
+        body.Children.Add(_attachRows);
+        _attachError = new TextBlock { FontSize = 11.5, Foreground = _p.HolidayText, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(2, 4, 0, 0), Visibility = Visibility.Collapsed };
+        body.Children.Add(_attachError);
+        _attachNote = new TextBlock
+        {
+            Text = Loc.T("화면에 개인정보(이름·대화·주소 등)가 보이지 않는지 확인해 주세요."),
+            FontSize = 11.5,
+            Foreground = _p.SubText,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(2, 4, 0, 0),
+            Visibility = Visibility.Collapsed,
+        };
+        body.Children.Add(_attachNote);
+
         // ── 함께 보낼 정보 (접기/펼치기) ──
         _detailsChevron = new TextBlock
         {
@@ -243,6 +275,10 @@ public sealed class ReportWindow : Window
         _cancel = Button(Loc.T("취소"), primary: false, Close);
         _send = Button(Loc.T("보내기"), primary: true, () => _ = SendAsync());
         _send.Margin = new Thickness(8, 0, 0, 0);
+        _sendWithout = Button(Loc.T("첨부 없이 보내기"), primary: false, () => _ = SendAsync(withoutAttachments: true));
+        _sendWithout.Margin = new Thickness(0, 0, 8, 0);
+        _sendWithout.Visibility = Visibility.Collapsed;
+        buttons.Children.Add(_sendWithout);
         buttons.Children.Add(_cancel);
         buttons.Children.Add(_send);
         Grid.SetColumn(buttons, 1);
@@ -368,7 +404,128 @@ public sealed class ReportWindow : Window
         _ => Loc.T("무엇을 했을 때 어떻게 됐는지 적어 주세요.\n예: 독에서 카카오톡을 누르면 창이 안 떠요."),
     };
 
-    private async Task SendAsync()
+    // ───────────────────────── 첨부 (#26) ─────────────────────────
+
+    /// <summary>시험·스크린샷용: 첨부 하나 더함.</summary>
+    public void AddPreviewAttachment(ReportAttachment a) => TryAdd(a);
+
+    private long AttachedBytes => _attachments.Sum(a => (long)a.Data.Length);
+
+    private void AddFiles()
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Filter = ReportAttachments.DialogFilter, Title = Loc.T("첨부할 파일") };
+        if (dlg.ShowDialog(this) != true) return;
+        foreach (var path in dlg.FileNames)
+        {
+            if (!ReportAttachments.Allowed(path)) { ShowAttachError(Loc.T("그림(png·jpg·gif·webp)·동영상(mp4)·텍스트(txt·log)만 붙일 수 있어요.")); continue; }
+            var a = ReportAttachments.FromFile(path, _ctx, out bool tooBig);
+            if (tooBig) { ShowAttachError(Loc.T("파일이 너무 커요(최대 10MB)")); continue; }
+            if (a is null) { ShowAttachError(Loc.T("파일을 읽지 못했어요.")); continue; }
+            if (!TryAdd(a)) break;
+        }
+    }
+
+    private bool TryAdd(ReportAttachment a)
+    {
+        if (_attachments.Count >= ReportAttachments.MaxCount) { ShowAttachError(Loc.F($"첨부는 {ReportAttachments.MaxCount}개까지예요.")); return false; }
+        if (AttachedBytes + a.Data.Length > ReportAttachments.MaxTotalBytes) { ShowAttachError(Loc.T("파일이 너무 커요(최대 10MB)")); return true; }
+        _attachError.Visibility = Visibility.Collapsed;
+        _attachments.Add(a);
+        RebuildAttachments();
+        return true;
+    }
+
+    private void ShowAttachError(string text)
+    {
+        _attachError.Text = text;
+        _attachError.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>[+ 지금 화면 캡처]: 신고 창을 숨기고 300ms 뒤 커서 모니터 전체를 찍고 다시 띄움 (카운트다운·번쩍임 없음).</summary>
+    private async Task CaptureAsync()
+    {
+        if (_attachments.Count >= ReportAttachments.MaxCount) { ShowAttachError(Loc.F($"첨부는 {ReportAttachments.MaxCount}개까지예요.")); return; }
+        Hide();
+        ReportAttachment? shot;
+        try
+        {
+            await Task.Delay(300);
+            shot = await Task.Run(ReportAttachments.CaptureScreen);
+        }
+        finally
+        {
+            if (!_closed) { Show(); Activate(); }
+        }
+        if (_closed) return;
+        if (shot is null) { ShowAttachError(Loc.T("화면을 찍지 못했어요.")); return; }
+        TryAdd(shot);
+    }
+
+    private void RebuildAttachments()
+    {
+        _attachRows.Children.Clear();
+        foreach (var att in _attachments)
+        {
+            var a = att;
+            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 6), LastChildFill = true };
+            var remove = new Button
+            {
+                Style = (Style)FindResource("CardButton"),
+                Background = Brushes.Transparent,
+                Foreground = _p.SubText,
+                Content = "×",
+                FontSize = 15,
+                Padding = new Thickness(8, 0, 8, 2),
+                ToolTip = Loc.T("빼기"),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            remove.Click += (_, _) => { _attachments.Remove(a); _attachError.Visibility = Visibility.Collapsed; RebuildAttachments(); };
+            DockPanel.SetDock(remove, Dock.Right);
+            row.Children.Add(remove);
+            var thumb = new Border { Width = 48, Height = 36, CornerRadius = new CornerRadius(4), Background = _p.Tile, Margin = new Thickness(0, 0, 10, 0), ClipToBounds = true };
+            if (ReportAttachments.Preview(a, 96) is { } img)
+            {
+                thumb.Child = new Image { Source = img, Stretch = Stretch.UniformToFill };
+                thumb.Cursor = Cursors.Hand;
+                thumb.ToolTip = Loc.T("크게 보기");
+                thumb.MouseLeftButtonUp += (_, _) => ShowLarge(a);
+            }
+            else thumb.Child = new TextBlock { Text = a.Mime.StartsWith("video/") ? "▶" : "TXT", FontSize = 11, Foreground = _p.SubText, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(thumb, Dock.Left);
+            row.Children.Add(thumb);
+            var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            text.Children.Add(new TextBlock { Text = a.Name, TextTrimming = TextTrimming.CharacterEllipsis });
+            text.Children.Add(new TextBlock { Text = ReportAttachments.SizeText(a.Data.Length), FontSize = 11.5, Foreground = _p.SubText });
+            row.Children.Add(text);
+            _attachRows.Children.Add(row);
+        }
+        _attachNote.Visibility = _attachments.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        _sendWithout.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>그림 첨부 크게 보기 (화면의 80% 안).</summary>
+    private void ShowLarge(ReportAttachment a)
+    {
+        if (ReportAttachments.Preview(a, 0) is not { } img) return;
+        var work = Monitors.FromHwnd(new WindowInteropHelper(this).Handle).WorkArea;
+        var w = new Window
+        {
+            Title = a.Name,
+            Owner = this,
+            Background = _p.WindowBackground,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ShowInTaskbar = false,
+            ResizeMode = ResizeMode.CanResize,
+            Width = Math.Min(work.Width * 0.8, img.PixelWidth + 40),
+            Height = Math.Min(work.Height * 0.8, img.PixelHeight + 80),
+            Content = new Image { Source = img, Stretch = Stretch.Uniform, Margin = new Thickness(12) },
+        };
+        w.KeyDown += (_, e) => { if (e.Key == Key.Escape) w.Close(); };
+        w.MouseLeftButtonUp += (_, _) => w.Close();
+        w.Show();
+    }
+
+    private async Task SendAsync(bool withoutAttachments = false)
     {
         if (_sending || !_send.IsEnabled) return;
         // 제목을 적었으면 내용 앞줄로 (받는 쪽이 첫 줄을 메일 제목으로 씀)
@@ -390,7 +547,7 @@ public sealed class ReportWindow : Window
         ReportSendResult result;
         try
         {
-            result = await ReportService.SendAsync(_kind, message, contact, diagnostics);
+            result = await ReportService.SendAsync(_kind, message, contact, diagnostics, withoutAttachments ? null : _attachments);
         }
         catch (Exception ex)
         {
@@ -402,10 +559,21 @@ public sealed class ReportWindow : Window
         _send.Content = Loc.T("보내기");
         UpdateForm();
 
+        bool hadAttachments = !withoutAttachments && _attachments.Count > 0;
         switch (result)
         {
             case ReportSendResult.Sent:
+                if (hadAttachments && _services is { } services)
+                {
+                    services.Settings.Current.ReportAttachmentsSinceSignal += _attachments.Count; // 통계: 첨부 개수만
+                    services.Settings.Save();
+                }
                 ShowDone(contact.Length > 0);
+                break;
+            case ReportSendResult.Failed when hadAttachments:
+                // 첨부 때문일 수 있음 → 첨부 없이 다시 보낼지 묻기 (클립보드 복사는 첨부 없이도 실패할 때)
+                ShowStatus(Loc.T("첨부 파일 때문에 보내지 못했어요. 첨부 없이 보낼까요?"), error: true);
+                _sendWithout.Visibility = Visibility.Visible;
                 break;
             case ReportSendResult.Limited:
                 ShowStatus(Loc.T("오늘은 더 보낼 수 없어요. 내일 다시 보내 주세요."), error: true);

@@ -211,7 +211,7 @@ public static class ReportService
     };
 
     public static async Task<ReportSendResult> SendAsync(
-        ReportKind kind, string message, string contact, string diagnostics, CancellationToken ct = default)
+        ReportKind kind, string message, string contact, string diagnostics, IReadOnlyList<ReportAttachment>? attachments = null, CancellationToken ct = default)
     {
         if (!IsConfigured) return ReportSendResult.NotConfigured;
         if (SentToday() >= DailyLimit)
@@ -221,7 +221,7 @@ public static class ReportService
         }
         try
         {
-            var body = new Dictionary<string, string>
+            var body = new Dictionary<string, object>
             {
                 ["token"] = Token,
                 // 받는 쪽(Code.gs)이 요구하는 칸이라 남기되 보낼 때마다 새 무작위 값 — 신고끼리·PC 를 잇지 못하게
@@ -233,9 +233,17 @@ public static class ReportService
                 ["lang"] = Loc.Code,
                 ["diagnostics"] = Truncate(diagnostics, MaxDiagnostics),
             };
+            // 첨부 (#26): 최대 3개·합계 10MB (base64 약 13.5MB — Apps Script 요청 한도 안)
+            var files = (attachments ?? Array.Empty<ReportAttachment>()).Take(ReportAttachments.MaxCount).ToList();
+            if (files.Sum(a => (long)a.Data.Length) > ReportAttachments.MaxTotalBytes) return ReportSendResult.Failed;
+            if (files.Count > 0)
+                body["attachments"] = files.Select(a => new Dictionary<string, string> { ["name"] = a.Name, ["mime"] = a.Mime, ["b64"] = Convert.ToBase64String(a.Data) }).ToList();
             using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             string endpoint = await IntakeEndpoint.GetAsync(ct).ConfigureAwait(false);
-            using var response = await Http.PostAsync(endpoint, content, ct).ConfigureAwait(false);
+            // 첨부가 있으면 올리는 데 오래 걸릴 수 있어 2분 (기본 30초)
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(files.Count > 0 ? TimeSpan.FromMinutes(2) : TimeSpan.FromSeconds(30));
+            using var response = await Http.PostAsync(endpoint, content, cts.Token).ConfigureAwait(false);
             string text = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
@@ -243,7 +251,7 @@ public static class ReportService
                 return ReportSendResult.Failed;
             }
             int status = ParseStatus(text);
-            Log.Info($"문제 신고 보냄: 종류 {KindValue(kind)}, 응답 {status}");
+            Log.Info($"문제 신고 보냄: 종류 {KindValue(kind)}, 첨부 {files.Count}개, 응답 {status}");
             if (status == 200) CountSent();
             return status switch
             {
@@ -301,7 +309,7 @@ public static class ReportService
             ConnectTimeout = TimeSpan.FromSeconds(10),
             PooledConnectionLifetime = TimeSpan.FromMinutes(10),
         };
-        var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
+        var client = new HttpClient(handler) { Timeout = TimeSpan.FromMinutes(2) }; // 호출마다 따로 줄임 (신고 30초, 첨부 있으면 2분)
         client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue(AppInfo.Name, AppVersion()));
         return client;
     }

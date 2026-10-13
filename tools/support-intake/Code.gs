@@ -6,7 +6,8 @@
  * 요청 본문 (application/json):
  * { "token": "...", "clientId": "신고마다 새 무작위 번호 (PC 를 잇지 않음)", "kind": "bug|question|idea",
  *   "message": "사용자가 쓴 내용", "contact": "답장 받을 이메일(선택)",
- *   "appVersion": "0.4.2", "lang": "ko|en|ja|zh-Hans|zh-Hant|de|fr|es", "diagnostics": "개인정보를 가린 진단 정보" }
+ *   "appVersion": "0.4.2", "lang": "ko|en|ja|zh-Hans|zh-Hant|de|fr|es", "diagnostics": "개인정보를 가린 진단 정보",
+ *   "attachments": [{ "name": "screen.jpg", "mime": "image/jpeg", "b64": "..." }] (선택, 최대 3개·합계 10MB — #26) }
  */
 
 var SUPPORT_TO = 'mongdock+help@gmail.com';
@@ -16,6 +17,10 @@ var MAX_PER_CLIENT_PER_DAY = 5;
 var MAX_TOTAL_PER_DAY = 80; // Gmail 일반 계정의 Apps Script 발송 한도(하루 100통) 안쪽
 var MAX_MESSAGE = 4000;
 var MAX_DIAG = 12000;
+// 첨부 (#26): 개수·종류·디코드 크기 합
+var MAX_ATTACH = 3;
+var MAX_ATTACH_BYTES = 10 * 1024 * 1024;
+var ATTACH_MIMES = { 'image/png': 1, 'image/jpeg': 1, 'image/gif': 1, 'image/webp': 1, 'video/mp4': 1, 'text/plain': 1 };
 
 function doPost(e) {
   try {
@@ -61,13 +66,40 @@ function doPost(e) {
       '\n── 내용 ──\n' + message + '\n' +
       '\n── 진단 정보 (앱이 개인정보를 가린 뒤 보냄) ──\n' + (diag || '(없음)') + '\n';
 
+    var att = attachments_(body.attachments);
+    if (att.sent > 0) {
+      text += '\n── 첨부 ──\n' + att.blobs.length + '개' +
+        (att.blobs.length < att.sent ? ' (첨부 ' + att.sent + '개 중 ' + (att.sent - att.blobs.length) + '개를 받지 못함)' : '') + '\n';
+    }
+
     var opts = { name: '몽독 문제 신고' };
     if (contact) opts.replyTo = contact;
+    if (att.blobs.length > 0) opts.attachments = att.blobs;
     MailApp.sendEmail(SUPPORT_TO, subject, text, opts);
     return reply_(200, 'ok');
   } catch (err) {
     return reply_(500, 'error');
   }
+}
+
+/** 첨부 검증 → Blob 목록. 개수·mime 허용 목록·디코드 크기 합을 넘는 항목은 버림. */
+function attachments_(list) {
+  var out = { sent: 0, blobs: [] };
+  if (!Array.isArray(list)) return out;
+  out.sent = list.length;
+  var total = 0;
+  for (var i = 0; i < list.length && out.blobs.length < MAX_ATTACH; i++) {
+    var a = list[i] || {};
+    var mime = String(a.mime || '');
+    if (!ATTACH_MIMES[mime] || typeof a.b64 !== 'string') continue;
+    var bytes;
+    try { bytes = Utilities.base64Decode(a.b64); } catch (err) { continue; }
+    if (total + bytes.length > MAX_ATTACH_BYTES) continue;
+    total += bytes.length;
+    var name = String(a.name || 'file').replace(/[\\\/:*?"<>|\r\n]/g, '_').substring(0, 80) || 'file';
+    out.blobs.push(Utilities.newBlob(bytes, mime, name));
+  }
+  return out;
 }
 
 function doGet(e) {
@@ -113,7 +145,8 @@ var STATS_COLUMNS = [
   ['routineEndTriggers', kinds_], // 끝 조건 종류별 개수
   ['routineSettingSteps', int_(0, 12)], // 함께 바꿀 것을 쓰는 루틴 수
   ['routineSuggestShown', int_(0, 1000)], // 지난 신호 뒤 루틴 추천을 보여 준 횟수 (§15)
-  ['routineSuggestCreated', int_(0, 1000)] // 그중 [만들기]를 누른 횟수
+  ['routineSuggestCreated', int_(0, 1000)], // 그중 [만들기]를 누른 횟수
+  ['reportAttachments', int_(0, 1000)] // 지난 신호 뒤 문제 신고에 붙인 첨부 개수 (#26)
 ];
 
 function oneOf_(list) { return function (v) { v = String(v); return list.indexOf(v) >= 0 ? v : null; }; }

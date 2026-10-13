@@ -230,6 +230,24 @@ internal static class Program
                 w.Show();
                 w.SetDiagnostics(sample);
                 w.SetPreviewState(ReportKind.Bug, open ? "" : "독에서 카카오톡이 안 열려요", "독에서 카카오톡 아이콘을 누르면 창이 안 떠요.\n다시 누르면 떠요.", open ? "me@example.com" : "", open);
+                if (open)
+                {
+                    // 첨부 (#26): 화면 캡처 같은 그림 + 로그 파일
+                    var dv = new DrawingVisual();
+                    using (var dc = dv.RenderOpen())
+                    {
+                        dc.DrawRectangle(new LinearGradientBrush(Color.FromRgb(0xB9, 0xA8, 0xF0), Color.FromRgb(0x9E, 0xD8, 0xF5), 30), null, new Rect(0, 0, 1600, 900));
+                        dc.DrawRoundedRectangle(Brushes.White, null, new Rect(200, 150, 900, 560), 16, 16);
+                    }
+                    var rtb = new RenderTargetBitmap(1600, 900, 96, 96, PixelFormats.Pbgra32);
+                    rtb.Render(dv);
+                    var enc = new JpegBitmapEncoder { QualityLevel = 85 };
+                    enc.Frames.Add(BitmapFrame.Create(rtb));
+                    using var ms = new MemoryStream();
+                    enc.Save(ms);
+                    w.AddPreviewAttachment(new Mongdock.Services.ReportAttachment("screen-20261013-131500.jpg", "image/jpeg", ms.ToArray()));
+                    w.AddPreviewAttachment(new Mongdock.Services.ReportAttachment("kakao.log", "text/plain", new byte[48_000]));
+                }
                 w.UpdateLayout();
                 string name = $"report-{(Mongdock.Loc.IsKorean ? "" : Mongdock.Loc.Code + "-")}{theme.ToString().ToLowerInvariant()}{(open ? "-details" : "")}.png";
                 Save(w, Path.Combine(dir, name));
