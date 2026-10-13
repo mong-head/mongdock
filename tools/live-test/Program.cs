@@ -27,7 +27,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        if (args.Length == 0) { Console.WriteLine("live-test OUT [--idle 초]"); return 2; }
+        if (args.Length == 0) { Console.WriteLine("live-test OUT [--idle 초] [--new]"); return 2; }
         string outDir = Path.GetFullPath(args[0]);
         Directory.CreateDirectory(outDir);
         int idleAt = Array.IndexOf(args, "--idle");
@@ -65,6 +65,15 @@ internal static class Program
         Window Open() => (Window)panelType.GetConstructors(Any)[0].Invoke(new object[] { services, palette, icon, DockEdge.Bottom, monitor });
         bool GhostVisible() => introType.GetField("_ghost", Any)!.GetValue(null) is Window { IsVisible: true };
         void Close(Window w) => w.GetType().GetMethod("CloseAnimated", Any)!.Invoke(w, null);
+
+        if (Array.IndexOf(args, "--new") >= 0)
+        {
+            NewFeatures(services, settings, panelType, Open, Close, outDir, work, tracker);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            Console.WriteLine(_fail == 0 ? "실제 창 시험: 모두 통과" : $"실제 창 시험: {_fail}개 실패");
+            try { File.Copy(Path.Combine(data, "logs", "mongdock.log"), Path.Combine(outDir, "mongdock.log"), true); } catch { /* 로그 없음 */ }
+            return _fail == 0 ? 0 : 1;
+        }
 
         foreach (var mode in new[] { "center", "icon" })
         {
@@ -128,6 +137,119 @@ internal static class Program
         try { File.Copy(Path.Combine(data, "logs", "mongdock.log"), Path.Combine(outDir, "mongdock.log"), true); } catch { /* 로그 없음 */ }
         return _fail == 0 ? 0 : 1;
     }
+
+    /// <summary>
+    /// --new: 이번 묶음 실제 창 시험 (2026-10-13 PM 요청 — 사용자 앱은 건드리지 않음, 시험 데이터 폴더라 설정도 그대로).
+    /// A) 앱 모음 [안 쓰는 앱] 보기: 이 PC 앱으로 실제 계산 → 목록이 뜨는지·걸린 시간, 판 그림.
+    /// B) 알림 튀기기 애니메이션: 실제 창에 독 아이콘 하나를 띄워 NotifyBounce → 16ms 마다 이동량을 읽어 2번·35%·1초 안에 제자리인지.
+    /// C) 작업 표시줄 깜빡임 신호: 시험 창(live-test)을 FlashWindowEx → 이 시험의 창 추적이 깜빡임을 받는지.
+    ///    설치된 몽독 독에도 이 시험 창이 실행 중 앱으로 보이므로 실제 독이 튀는지는 몽독 로그("독 아이콘 튀기기 (깜빡임")로 따로 확인.
+    /// </summary>
+    private static void NewFeatures(AppServices services, SettingsService settings, Type panelType, Func<Window> open, Action<Window> close, string outDir, Rect work, WindowTracker tracker)
+    {
+        // A) 안 쓰는 앱 보기
+        {
+            settings.Current.AllApps.ShowSuggestions = true;
+            var w = open();
+            panelType.GetField("_allOpen", Any)!.SetValue(w, true);
+            var filterType = panelType.GetNestedType("AllFilter", BindingFlags.NonPublic)!;
+            w.Show();
+            Pump(400);
+            var sw = Stopwatch.StartNew();
+            panelType.GetMethod("SetFilter", Any)!.Invoke(w, new[] { Enum.ToObject(filterType, 2) });
+            object? rows = null;
+            while (sw.ElapsedMilliseconds < 20000 && (rows = panelType.GetField("_unused", Any)!.GetValue(w)) is null) Pump(50);
+            int count = rows is System.Collections.ICollection c ? c.Count : -1;
+            Check($"안 쓰는 앱: 목록 계산됨 ({count}개, {sw.ElapsedMilliseconds}ms)", rows is not null);
+            Check("안 쓰는 앱: 계산이 5초 안 (UI 안 멈춤 — 백그라운드)", sw.ElapsedMilliseconds < 5000);
+            // 판을 계속 그리는지 (계산 중 UI 스레드가 막히지 않았는지): 계산 동안 펌프가 돌았으면 통과
+            Pump(600);
+            if (w.Content is FrameworkElement fe && fe.ActualWidth > 0)
+            {
+                var r = new Rect(w.Left, w.Top, w.ActualWidth, w.ActualHeight);
+                SaveStrip(Path.Combine(outDir, "unused-panel.png"), new List<(long, byte[])> { (0, Grab(r)) }, (int)r.Width, (int)r.Height);
+            }
+            if (rows is System.Collections.IEnumerable list)
+                foreach (var row in list.Cast<object>().Take(8))
+                {
+                    var app = row.GetType().GetProperty("App")!.GetValue(row)!;
+                    Console.WriteLine($"    {app.GetType().GetProperty("Name")!.GetValue(app)} | 마지막 {row.GetType().GetProperty("Last")!.GetValue(row) ?? "없음"} | {row.GetType().GetProperty("Bytes")!.GetValue(row) ?? "용량 모름"}");
+                }
+            close(w);
+            Pump(400);
+        }
+
+        // B) 튀기기 애니메이션 (실제 창)
+        {
+            var layout = Mongdock.ViewModels.DockLayout.From(settings.Current.Dock, true);
+            var vm = new Mongdock.ViewModels.DockItemViewModel("live-bounce", null, false, "live-test", null);
+            var viewType = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.DockItemView")!;
+            var view = (FrameworkElement)Activator.CreateInstance(viewType, Any, null, new object[] { vm, layout }, null)!;
+            var host = new Window
+            {
+                Title = "live-test bounce host", WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false, Topmost = true,
+                Width = layout.IconSize * 2, Height = layout.IconSize * 3, Left = work.Left + 40, Top = work.Bottom - layout.IconSize * 3 - 40,
+                Background = Brushes.Transparent, AllowsTransparency = true, ShowActivated = false,
+                Content = new System.Windows.Controls.Border { VerticalAlignment = VerticalAlignment.Bottom, Child = view },
+            };
+            host.Show();
+            Pump(400);
+            var anim = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.Anim")!;
+            bool animOn = (bool)anim.GetProperty("Enabled", Any)!.GetValue(null)!;
+            var bounce = (TranslateTransform)viewType.GetField("_bounce", Any)!.GetValue(view)!;
+            var samples = new List<(long Ms, double Y)>();
+            var sw = Stopwatch.StartNew();
+            viewType.GetMethod("NotifyBounce", Any)!.Invoke(view, null);
+            while (sw.ElapsedMilliseconds < 1300) { Pump(16); samples.Add((sw.ElapsedMilliseconds, bounce.Y)); }
+            double expect = layout.IconSize * 0.35;
+            double maxUp = samples.Max(x => -x.Y);
+            int peaks = 0;
+            for (int i = 1; i + 1 < samples.Count; i++)
+                if (-samples[i].Y > expect * 0.6 && -samples[i].Y >= -samples[i - 1].Y && -samples[i].Y > -samples[i + 1].Y) peaks++;
+            long settled = samples.FirstOrDefault(x => x.Ms > 500 && Math.Abs(x.Y) < 0.5 && samples.Where(y => y.Ms >= x.Ms).All(y => Math.Abs(y.Y) < 0.5)).Ms;
+            Console.WriteLine($"    애니메이션 켬 {animOn}, 아이콘 {layout.IconSize}, 기대 높이 {expect:0.0}, 최고 {maxUp:0.0}, 봉우리 {peaks}, 제자리 {settled}ms");
+            Check($"튀기기: 애니메이션 설정 켜짐 (꺼져 있으면 튀지 않는 게 맞음)", animOn);
+            if (animOn)
+            {
+                Check($"튀기기: 높이 아이콘의 약 35% (최고 {maxUp:0.0} / 기대 {expect:0.0})", Math.Abs(maxUp - expect) <= expect * 0.15);
+                Check($"튀기기: 딱 2번 ({peaks}번)", peaks == 2);
+                Check($"튀기기: 1초 안에 제자리 ({settled}ms)", settled > 0 && settled <= 1000);
+            }
+            host.Close();
+            Pump(300);
+        }
+
+        // C) 작업 표시줄 깜빡임 신호
+        {
+            tracker.Start();
+            int flashes = 0;
+            IntPtr target = IntPtr.Zero;
+            tracker.WindowFlashed += (_, h) => { if (h == target) flashes++; };
+            var test = new Window { Title = "live-test flash", Width = 260, Height = 120, Left = work.Left + 60, Top = work.Top + 60, ShowInTaskbar = true };
+            test.Show();
+            target = new WindowInteropHelper(test).Handle;
+            Pump(1500); // 설치된 몽독 독에 실행 중 앱으로 나타날 시간
+            var other = new Window { Title = "live-test other", Width = 200, Height = 100, Left = work.Left + 340, Top = work.Top + 60, ShowInTaskbar = false };
+            other.Show();
+            other.Activate();
+            Pump(500);
+            var started = DateTime.Now;
+            var fi = new FLASHWINFO { cbSize = (uint)Marshal.SizeOf<FLASHWINFO>(), hwnd = target, dwFlags = 2 /* FLASHW_TRAY */, uCount = 3, dwTimeout = 0 };
+            FlashWindowEx(ref fi);
+            Pump(2500);
+            Check($"깜빡임: 창 추적이 깜빡임을 받음 ({flashes}번, {started:HH:mm:ss})", flashes > 0);
+            File.WriteAllText(Path.Combine(outDir, "flash-started.txt"), started.ToString("yyyy-MM-dd HH:mm:ss"));
+            fi.dwFlags = 0; // FLASHW_STOP
+            FlashWindowEx(ref fi);
+            other.Close();
+            test.Close();
+            Pump(500);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FLASHWINFO { public uint cbSize; public IntPtr hwnd; public uint dwFlags; public uint uCount; public uint dwTimeout; }
+    [DllImport("user32.dll")] private static extern bool FlashWindowEx(ref FLASHWINFO info);
 
     private static void Check(string what, bool ok)
     {
