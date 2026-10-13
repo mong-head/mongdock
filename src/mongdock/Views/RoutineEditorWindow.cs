@@ -204,7 +204,9 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
             return b;
         }
         _addButtons.Children.Add(Small("+ " + Loc.T("앱"), ShowAppPicker, !full));
-        _addButtons.Children.Add(Small("+ " + Loc.T("웹사이트"), AddWebsite, !full));
+        var link = Small("+ " + Loc.T("링크"), AddWebsite, !full);
+        link.ToolTip = Loc.T("웹 주소, 스포티파이·디스코드·노션 링크 등");
+        _addButtons.Children.Add(link);
         var file = Small("+ " + Loc.T("파일·폴더"), () => { }, !full);
         file.Click += (_, _) =>
         {
@@ -215,6 +217,12 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         };
         _addButtons.Children.Add(file);
         _addButtons.Children.Add(Small(Loc.T("지금 화면으로 맞추기"), Sync, true));
+        // [+ 링크] 아래 작은 글씨 (§15-4 직관성)
+        var note = Muted(Loc.T("링크: 웹 주소, 스포티파이·디스코드·노션 링크 등"), 11);
+        note.Width = double.NaN;
+        note.Margin = new Thickness(2, 0, 0, 0);
+        _addButtons.Children.Add(new Border { Width = 9999, Height = 0 }); // 줄바꿈
+        _addButtons.Children.Add(note);
     }
 
     // ───────────────────────── 항목 목록 ─────────────────────────
@@ -257,12 +265,13 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         void Header()
         {
             name.Inlines.Clear();
-            string title = item.Kind == RoutineItemKind.Url && item.Target.Length == 0 ? Loc.T("웹사이트") : RoutineService.ItemName(item);
+            string title = item.Kind == RoutineItemKind.Url && item.Target.Length == 0 ? Loc.T("링크") : RoutineService.ItemName(item);
             name.Inlines.Add(new System.Windows.Documents.Run(title));
             string? extra = item.Kind switch
             {
                 RoutineItemKind.App => item.Open,
                 RoutineItemKind.Path => item.Target,
+                RoutineItemKind.Url => RoutineLinks.Summary(item), // "Chrome — mail.company.com 외 2개 탭"
                 _ => null,
             };
             if (missing) extra = Loc.T("이 PC에 없음 — 건너뛰어요");
@@ -375,6 +384,100 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
 
     // ───────────────────────── 세부 ─────────────────────────
 
+    /// <summary>
+    /// 링크 세부 (§15-2·15-4): 이름(붙여 넣으면 자동) + 링크 목록(첫 줄 = 창, 그다음 = 같은 창의 탭; ≡ 끌어 순서, × 빼기) + [+ 탭 추가] + [열어 보기] + (?) 링크 얻는 법.
+    /// 열 앱이 없는 링크는 "이 링크를 열 앱이 없어요".
+    /// </summary>
+    private UIElement LinkDetail(RoutineItem item, Action changed, double lw)
+    {
+        var root = new StackPanel();
+        var links = RoutineLinks.Urls(item);
+        if (links.Count == 0) links.Add("");
+        string? autoName = item.Name is null ? null : RoutineLinks.AutoName(links[0]) == item.Name ? item.Name : null;
+        var name = Field(item.Name ?? "");
+        name.TextChanged += (_, _) => { item.Name = string.IsNullOrWhiteSpace(name.Text) ? null : name.Text.Trim(); changed(); };
+        root.Children.Add(LabeledRow(Loc.T("이름"), Hinted(name, Loc.T("붙여 넣으면 자동으로 채워져요")), lw, 6));
+
+        var warn = Muted("", 11.5);
+        warn.Foreground = Brushes.IndianRed;
+        warn.Visibility = Visibility.Collapsed;
+        var rows = new StackPanel();
+        void Save()
+        {
+            var clean = links.Select(l => l.Trim()).ToList();
+            item.Target = clean.FirstOrDefault() ?? "";
+            var rest = clean.Skip(1).Where(l => l.Length > 0).ToList();
+            item.Tabs = rest.Count > 0 ? rest : null;
+            // 붙여 넣으면 이름 자동 (사용자가 직접 고친 이름은 그대로)
+            if ((item.Name is null || item.Name == autoName) && RoutineLinks.AutoName(item.Target) is { } auto)
+            {
+                autoName = auto;
+                if (name.Text != auto) name.Text = auto;
+            }
+            var bad = clean.Where(l => l.Length > 0).FirstOrDefault(l => RoutineLinks.Parse(l) is not { } u || !RoutineLinks.Allowed(u));
+            warn.Text = bad is null ? "" : Loc.T("이 링크를 열 앱이 없어요");
+            warn.Visibility = bad is null ? Visibility.Collapsed : Visibility.Visible;
+            changed();
+        }
+        void Fill()
+        {
+            rows.Children.Clear();
+            for (int i = 0; i < links.Count; i++)
+            {
+                int at = i;
+                var line = new DockPanel { Margin = new Thickness(0, 0, 0, 4), Tag = at };
+                var handle = new TextBlock { Text = "\uE700", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 11, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0), Cursor = Cursors.SizeNS, ToolTip = Loc.T("끌어서 탭 순서 바꾸기"), Visibility = links.Count > 1 ? Visibility.Visible : Visibility.Hidden };
+                DockPanel.SetDock(handle, Dock.Left);
+                line.Children.Add(handle);
+                var remove = new TextBlock { Text = "\uE711", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 10, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0), Cursor = Cursors.Hand, ToolTip = Loc.T("빼기"), Visibility = links.Count > 1 ? Visibility.Visible : Visibility.Hidden };
+                remove.MouseLeftButtonUp += (_, e) => { e.Handled = true; links.RemoveAt(at); Save(); Fill(); };
+                DockPanel.SetDock(remove, Dock.Right);
+                line.Children.Add(remove);
+                var field = Field(links[at]);
+                field.TextChanged += (_, _) => { links[at] = field.Text; Save(); };
+                line.Children.Add(Hinted(field, at == 0 ? "https://… " + Loc.T("또는") + " spotify:…" : Loc.T("탭으로 같이 열 주소")));
+                // ≡ 끌어서 순서 (놓은 줄 위치로)
+                handle.MouseLeftButtonDown += (_, e) => { e.Handled = true; handle.CaptureMouse(); };
+                handle.MouseLeftButtonUp += (_, e) =>
+                {
+                    if (!handle.IsMouseCaptured) return;
+                    handle.ReleaseMouseCapture();
+                    double y = e.GetPosition(rows).Y;
+                    int to = links.Count - 1;
+                    foreach (var r in rows.Children.OfType<FrameworkElement>())
+                        if (y < r.TranslatePoint(new Point(0, 0), rows).Y + r.ActualHeight / 2) { to = (int)r.Tag; break; }
+                    if (to == at) return;
+                    var moving = links[at];
+                    links.RemoveAt(at);
+                    links.Insert(Math.Clamp(to, 0, links.Count), moving);
+                    Save();
+                    Fill();
+                };
+                rows.Children.Add(line);
+                if (at == 0 && links[0].Length == 0) Dispatcher.BeginInvoke(() => { field.Focus(); Keyboard.Focus(field); }, System.Windows.Threading.DispatcherPriority.Input);
+            }
+        }
+        Fill();
+        var linkBox = new StackPanel();
+        linkBox.Children.Add(rows);
+        linkBox.Children.Add(warn);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 0) };
+        var addTab = new TextBlock { Text = "+ " + Loc.T("탭 추가"), FontSize = 12, Foreground = P.SoftAccentText, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 14, 0), ToolTip = Loc.T("웹 주소는 브라우저 창 하나에 탭으로 같이 열려요") };
+        addTab.MouseLeftButtonUp += (_, _) => { links.Add(""); Fill(); };
+        actions.Children.Add(addTab);
+        var tryOpen = new TextBlock { Text = Loc.T("열어 보기"), FontSize = 12, Foreground = P.SoftAccentText, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 14, 0), ToolTip = Loc.T("저장하기 전에 제대로 열리는지 확인해요") };
+        tryOpen.MouseLeftButtonUp += (_, _) => { if (!RoutineService.TryOpen(item)) { warn.Text = Loc.T("이 링크를 열 앱이 없어요"); warn.Visibility = Visibility.Visible; } };
+        actions.Children.Add(tryOpen);
+        var help = new Border { Width = 16, Height = 16, CornerRadius = new CornerRadius(8), BorderBrush = P.SubText, BorderThickness = new Thickness(1), VerticalAlignment = VerticalAlignment.Center, Cursor = Cursors.Help, ToolTip = RoutineLinks.HowToGetLinks(),
+            Child = new TextBlock { Text = "?", FontSize = 10, Foreground = P.SubText, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
+        ToolTipService.SetShowDuration(help, 20000);
+        ToolTipService.SetInitialShowDelay(help, 100);
+        actions.Children.Add(help);
+        linkBox.Children.Add(actions);
+        root.Children.Add(LabeledRow(Loc.T("링크"), linkBox, lw, 8));
+        return root;
+    }
+
     private UIElement Detail(RoutineItem item)
     {
         var box = new StackPanel();
@@ -437,10 +540,7 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
             }
             case RoutineItemKind.Url:
             {
-                var field = Field(item.Target);
-                field.TextChanged += (_, _) => { item.Target = field.Text.Trim(); Changed(); };
-                box.Children.Add(LabeledRow(Loc.T("주소"), Hinted(field, "https://"), lw, 8));
-                if (item.Target.Length == 0) Dispatcher.BeginInvoke(() => { field.Focus(); Keyboard.Focus(field); }, System.Windows.Threading.DispatcherPriority.Input);
+                box.Children.Add(LinkDetail(item, Changed, lw));
                 break;
             }
             default:

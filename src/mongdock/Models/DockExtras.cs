@@ -86,8 +86,11 @@ public enum RoutineIfRunning { Focus, New }
 public sealed class RoutineItem
 {
     public RoutineItemKind Kind { get; set; } = RoutineItemKind.App;
-    /// <summary>앱: exe 경로 / url: 주소 / path: 파일·폴더 경로.</summary>
+    /// <summary>앱: exe 경로 / url: 링크(첫 번째 탭) / path: 파일·폴더 경로.</summary>
     public string Target { get; set; } = "";
+    /// <summary>링크 항목의 두 번째부터의 탭 (브라우저 창 하나에 같이 열림, §15-2). 예전 데이터는 null = 탭 하나.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? Tabs { get; set; }
     /// <summary>스토어 앱이면 AUMID (Target 대신).</summary>
     public string? Aumid { get; set; }
     /// <summary>표시 이름 (없으면 대상에서).</summary>

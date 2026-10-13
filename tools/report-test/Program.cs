@@ -1323,6 +1323,19 @@ internal static class Program
                 editor.Close();
             }
 
+            // 2-b) 링크 항목 세부: 웹 주소 3개(탭) + 앱 링크 항목
+            {
+                var links = new RoutineDef { Id = "r-links", Name = "업무 링크", Items = new()
+                {
+                    new() { Kind = RoutineItemKind.Url, Target = "https://mail.company.com", Tabs = new() { "https://calendar.company.com", "https://notion.so/team" } },
+                    new() { Kind = RoutineItemKind.Url, Target = "spotify:playlist:37i9dQZF1DXcBWIGoYBM5M" },
+                } };
+                var le = New("Mongdock.Views.RoutineEditorWindow", services, links, links, false);
+                le.GetType().GetMethod("ExpandForTest", Any)!.Invoke(le, new object[] { 0, false });
+                Save((FrameworkElement)le.Content, "editor-links");
+                le.Close();
+            }
+
             // 2-1) 편집 창 "▸ 더 보기" 펼침 (시작 조건 2개·끝 조건·함께 바꿀 것·예외 앱·물어보기·머문 시간)
             {
                 var more = new RoutineDef

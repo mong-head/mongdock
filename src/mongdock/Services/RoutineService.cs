@@ -568,6 +568,9 @@ internal static class RoutineService
             && ExeName(w.ProcessPath) != "mongdock");
 
     /// <summary>항목 하나 열기. 앱(+ 열 것·인자), 웹 주소(위치를 정했으면 새 창), 파일·폴더(연결된 앱).</summary>
+    /// <summary>편집 창 [열어 보기]: 저장 전에 그 항목만 바로 열어 봄 (자리 잡기 없이).</summary>
+    internal static bool TryOpen(RoutineItem item) => _services is { } s && Launch(s, item);
+
     private static bool Launch(AppServices services, RoutineItem item)
     {
         switch (item.Kind)
@@ -591,16 +594,28 @@ internal static class RoutineService
             }
             case RoutineItemKind.Url:
             {
-                string url = item.Target.Trim();
-                if (!Uri.TryCreate(url.Contains("://") ? url : "https://" + url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) return false;
-                var placement = item.Placement?.Mode ?? RoutinePlacementMode.Keep;
-                if (placement != RoutinePlacementMode.Keep && DefaultBrowser() is { } browser)
+                // 링크 (§15-2·15-4): 웹 주소 여러 개 = 브라우저 창 하나에 탭으로, 앱 링크는 연결된 앱에 맡김 (위험·미등록 링크는 막음)
+                var links = RoutineLinks.Urls(item).Select(RoutineLinks.Parse).OfType<Uri>().ToList();
+                if (links.Count == 0) return false;
+                bool any = false;
+                foreach (var app in links.Where(u => !RoutineLinks.IsWeb(u)))
                 {
-                    string flag = Path.GetFileNameWithoutExtension(browser).Equals("firefox", StringComparison.OrdinalIgnoreCase) ? "-new-window" : "--new-window";
-                    Start(browser, $"{flag} \"{uri.AbsoluteUri}\"");
+                    if (!RoutineLinks.Allowed(app)) { Log.Warn($"루틴 항목: 열 수 없는 링크 ({app.Scheme}:) — 건너뜀"); continue; }
+                    Start(app.OriginalString, null);
+                    any = true;
                 }
-                else Start(uri.AbsoluteUri, null);
-                return true;
+                var web = links.Where(RoutineLinks.IsWeb).ToList();
+                if (web.Count > 0)
+                {
+                    var placement = item.Placement?.Mode ?? RoutinePlacementMode.Keep;
+                    bool newWindow = web.Count > 1 || placement != RoutinePlacementMode.Keep;
+                    if (newWindow && DefaultBrowser() is { } browser && RoutineLinks.Kind(browser) is var kind && kind != RoutineLinks.Browser.Unknown)
+                        Start(browser, RoutineLinks.TabArgs(kind, web));
+                    else
+                        foreach (var u in web) Start(u.AbsoluteUri, null); // 모르는 브라우저는 하나씩
+                    any = true;
+                }
+                return any;
             }
             default:
             {
@@ -1079,7 +1094,7 @@ internal static class RoutineService
     // ───────────────────────── 도우미 ─────────────────────────
 
     internal static string ItemName(RoutineItem item) => item.Name is { Length: > 0 } n ? n
-        : item.Kind == RoutineItemKind.Url ? item.Target
+        : item.Kind == RoutineItemKind.Url ? RoutineLinks.AutoName(item.Target) ?? item.Target
         : Path.GetFileNameWithoutExtension(item.Target) is { Length: > 0 } f ? f : item.Aumid ?? item.Target;
 
     private static string? ExeName(string? path) => string.IsNullOrEmpty(path) ? null : Path.GetFileNameWithoutExtension(path).ToLowerInvariant();
@@ -1088,7 +1103,7 @@ internal static class RoutineService
     private static string? ExpectedExe(RoutineItem item) => item.Kind switch
     {
         RoutineItemKind.App => ExeName(item.Target),
-        RoutineItemKind.Url => ExeName(DefaultBrowser()),
+        RoutineItemKind.Url => ExeName(RoutineLinks.HandlerExe(item)),
         _ => Directory.Exists(item.Target) ? "explorer" : ExeName(AssociatedExe(Path.GetExtension(item.Target))),
     };
 
