@@ -288,7 +288,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         var title = new StackPanel { Orientation = Orientation.Horizontal };
         title.Children.Add(SectionTitle("★ " + Loc.T("즐겨찾기")));
         if (fav.Count == 0 && suggestions.Count > 0)
-            title.Children.Add(new TextBlock { Text = Loc.T("＋를 누르거나, 아래 앱을 여기로 끌어다 놓으면 즐겨찾기에 들어가요"), FontSize = 11.5, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 6, 0, 4) });
+            title.Children.Add(new TextBlock { Text = Loc.T("자주 여는 앱을 골라 봤어요 · +를 누르면 즐겨찾기에 들어가요"), FontSize = 11.5, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 6, 0, 4) });
         root.Children.Add(title);
         var row = new WrapPanel { Width = Cols * AppCell, Background = Brushes.Transparent };
         _favRow = row;
@@ -367,7 +367,9 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             byIdentity.TryGetValue(id, out var app) && !docked.Contains(id)
             && !S.Favorites.Contains(app.Key, StringComparer.OrdinalIgnoreCase)
             && !(S.DismissedSuggestions.TryGetValue(app.Key, out var when) && DateTime.Now - when < TimeSpan.FromDays(30));
-        var ids = SuggestionsOverride?.Invoke().Where(Keep).Take(max).ToList() ?? AppUsage.Suggestions(max, Keep);
+        // 2순위(윈도우 기록)는 윈도우 기본 앱·도구를 뺌 — 단축키·윈도우가 연 것도 남아서 "자주 쓴 앱"이 아님. 1순위(몽독이 본 기록)는 그대로.
+        bool SeedKeep(string id) => byIdentity.TryGetValue(id, out var app) && !UnusedApps.IsSystemApp(app);
+        var ids = SuggestionsOverride?.Invoke().Where(Keep).Take(max).ToList() ?? AppUsage.Suggestions(max, Keep, SeedKeep);
         return ids.Select(id => byIdentity[id]).ToList();
     }
 
@@ -384,32 +386,30 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     internal static bool ShowSuggestionHoverForTest { get; set; }
 
     /// <summary>
-    /// 줄 끝 추천 칸: 점선 테두리, 살짝 흐린 아이콘, 작은 "추천". 마우스를 올리면 [+](즐겨찾기에 넣기)·[×](30일 동안 추천 안 함).
+    /// 줄 끝 추천 칸 (2026-10-13 사용자: 점선 상자 4개가 어색함): 즐겨찾기 앱 칸과 같은 틀(아이콘·이름 자리·크기 같음), 아이콘만 흐리게(0.6).
+    /// 마우스를 올리면 진해지고 오른쪽 위에 작은 [+](즐겨찾기에 넣기)·×(30일 동안 추천 안 함) 동그라미. "추천" 글자 없음.
     /// 클릭은 실행, 끌기는 없음(넣기는 [+]·오른쪽 클릭). 추천 칸 위에 놓기도 안 됨(자리 바꾸기 없음).
     /// </summary>
     private Border SuggestionCell(AppEntry app)
     {
-        var image = new Image { Width = AppIcon, Height = AppIcon, Opacity = 0.7, HorizontalAlignment = HorizontalAlignment.Center };
+        var image = new Image { Width = AppIcon, Height = AppIcon, Opacity = 0.6, HorizontalAlignment = HorizontalAlignment.Center };
         RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
         LoadIcon(image, app);
-        var stack = new StackPanel();
-        stack.Children.Add(image);
-        var nameText = new TextBlock { Uid = "name", Text = app.Name, TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = UiText.Sub, Opacity = 0.75, Margin = new Thickness(0, 4, 0, 0) };
-        stack.Children.Add(nameText);
-        stack.Children.Add(new TextBlock { Text = Loc.T("추천"), TextAlignment = TextAlignment.Center, FontSize = 9.5, Foreground = P.SubText });
+        var iconHost = new Grid { Width = AppIcon, Height = AppIcon, HorizontalAlignment = HorizontalAlignment.Center };
+        iconHost.Children.Add(image);
         Border Mini(string glyph, string tip, Action run)
         {
             var b = new Border
             {
-                Width = 20,
-                Height = 20,
-                CornerRadius = new CornerRadius(10),
+                Width = 18,
+                Height = 18,
+                CornerRadius = new CornerRadius(9),
                 Background = P.CardBackground,
                 BorderBrush = P.Divider,
                 BorderThickness = new Thickness(1),
                 Cursor = Cursors.Hand,
                 ToolTip = tip,
-                Child = new TextBlock { Text = glyph, FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 9, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+                Child = new TextBlock { Text = glyph, FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 8, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
             };
             b.MouseLeftButtonDown += (_, e) => e.Handled = true;
             b.MouseLeftButtonUp += (_, e) => { e.Handled = true; run(); };
@@ -421,18 +421,16 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             S.DismissedSuggestions[app.Key] = DateTime.Now;
             Save(false);
         });
-        plus.HorizontalAlignment = HorizontalAlignment.Left;
-        close.HorizontalAlignment = HorizontalAlignment.Right;
-        var overlay = new Grid { VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, -6, 0, 0), Visibility = ShowSuggestionHoverForTest ? Visibility.Visible : Visibility.Hidden };
-        overlay.Children.Add(plus);
-        overlay.Children.Add(close);
-        var content = new Grid();
-        content.Children.Add(stack);
-        content.Children.Add(overlay);
-        var dashed = DashedRect(8);
-        var host = new Grid();
-        host.Children.Add(dashed);
-        host.Children.Add(content);
+        // 오른쪽 위에 [+] 와 × 나란히 (아이콘 모서리에 살짝 걸치게)
+        var badges = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, -7, -14, 0), Visibility = ShowSuggestionHoverForTest ? Visibility.Visible : Visibility.Hidden };
+        close.Margin = new Thickness(3, 0, 0, 0);
+        badges.Children.Add(plus);
+        badges.Children.Add(close);
+        iconHost.Children.Add(badges);
+        var stack = new StackPanel();
+        stack.Children.Add(iconHost);
+        var nameText = new TextBlock { Uid = "name", Text = app.Name, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = TextAlignment.Center, FontSize = UiText.Sub, Foreground = P.SubText, Margin = new Thickness(0, 4, 0, 0) };
+        stack.Children.Add(nameText);
         ShowSuggestionHoverForTest = false; // 첫 칸만
         var cell = new Border
         {
@@ -441,13 +439,15 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             Padding = new Thickness(2, 6, 2, 4),
             CornerRadius = new CornerRadius(8),
             Background = Brushes.Transparent,
-            Child = host,
+            BorderThickness = new Thickness(1.5),
+            BorderBrush = Brushes.Transparent,
+            Child = stack,
             Cursor = Cursors.Hand,
             Tag = new DropTag("suggest", app.Key),
         };
         MongToolTip.IfTrimmed(cell, nameText, app.Name); // 잘렸을 때만 전체 이름
-        cell.MouseEnter += (_, _) => overlay.Visibility = Visibility.Visible;
-        cell.MouseLeave += (_, _) => overlay.Visibility = Visibility.Hidden;
+        cell.MouseEnter += (_, _) => { cell.Background = P.Tile; image.Opacity = 1; nameText.Foreground = P.Text; badges.Visibility = Visibility.Visible; HoverIcon(image, true); };
+        cell.MouseLeave += (_, _) => { cell.Background = Brushes.Transparent; image.Opacity = 0.6; nameText.Foreground = P.SubText; badges.Visibility = Visibility.Hidden; HoverIcon(image, false); };
         Pressable(cell, () => Launch(app), null, null); // 추천 칸은 끌기 없음 (내가 넣은 게 아니라서) — 넣기는 [+]·오른쪽 클릭
         cell.ContextMenu = LazyMenu(m => FillAppMenu(m, app));
         return cell;
@@ -1206,23 +1206,37 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         IsHitTestVisible = false,
     };
 
-    /// <summary>점선 칸 가운데 "+" — 중간 회색, 마우스를 올리면 연보라.</summary>
-    internal TextBlock PlusGlyph(double size) => new()
+    /// <summary>
+    /// 점선 칸 가운데 "+" — 글자가 아니라 선 두 개(굵기 2, 길이 = 칸의 35%)라 기준선 없이 정확히 가운데 (2026-10-13 사용자: "+"가 아래로 치우침).
+    /// 중간 회색, 마우스를 올리면 연보라 (Stroke 를 바꿈).
+    /// </summary>
+    internal System.Windows.Shapes.Path PlusMark(double box)
     {
-        Text = "\uE710",
-        FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),
-        FontSize = size,
-        Foreground = P.SubText,
-        HorizontalAlignment = HorizontalAlignment.Center,
-        VerticalAlignment = VerticalAlignment.Center,
-    };
+        double len = Math.Round(box * 0.35);
+        var g = new GeometryGroup();
+        g.Children.Add(new LineGeometry(new Point(len / 2, 0), new Point(len / 2, len)));
+        g.Children.Add(new LineGeometry(new Point(0, len / 2), new Point(len, len / 2)));
+        return new System.Windows.Shapes.Path
+        {
+            Data = g,
+            Stroke = P.SubText,
+            StrokeThickness = 2,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            Width = len,
+            Height = len,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            IsHitTestVisible = false,
+        };
+    }
 
     private Border NewFolderTile()
     {
         // 폴더 칸과 같은 크기·모서리, 이름도 폴더 이름과 같은 글자 (점선·회색 "+"만 다름)
         var plus = new Grid { Width = GroupTile, Height = GroupTile, HorizontalAlignment = HorizontalAlignment.Center };
         plus.Children.Add(DashedRect(14));
-        var glyph = PlusGlyph(18);
+        var glyph = PlusMark(GroupTile);
         plus.Children.Add(glyph);
         var stack = new StackPanel();
         stack.Children.Add(plus);
@@ -1240,8 +1254,8 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             ToolTip = Loc.T("새 폴더 — 앱을 여기로 끌어다 놓아도 돼요"),
             Tag = new DropTag("newfolder", ""),
         };
-        cell.MouseEnter += (_, _) => { cell.Background = P.Hover; glyph.Foreground = P.SoftAccentText; };
-        cell.MouseLeave += (_, _) => { cell.Background = Brushes.Transparent; glyph.Foreground = P.SubText; };
+        cell.MouseEnter += (_, _) => { cell.Background = P.Hover; glyph.Stroke = P.SoftAccentText; };
+        cell.MouseLeave += (_, _) => { cell.Background = Brushes.Transparent; glyph.Stroke = P.SubText; };
         cell.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;

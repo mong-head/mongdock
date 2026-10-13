@@ -117,6 +117,21 @@ internal static class UnusedApps
         "Windows PowerShell", "Administrative Tools", "관리 도구", "System Tools", "시스템 도구",
     };
 
+    /// <summary>
+    /// 윈도우가 깔아 둔 앱·도구 (즐겨찾기 추천의 윈도우 기록에서 뺌 — 2026-10-13 사용자: 캡처 도구·Game Bar·Store·돋보기가 "자주 쓴 앱"으로 뜸.
+    /// 단축키나 윈도우가 저절로 연 것도 기록에 남아서). 기본 도구 규칙 + 마이크로소프트가 낸 스토어 앱 + 윈도우 폴더 안 프로그램.
+    /// </summary>
+    internal static bool IsSystemApp(AppEntry app)
+    {
+        if (IsBuiltIn(app)) return true;
+        string fam = app.Family ?? (app.Key.Contains('!') ? app.Key[..app.Key.IndexOf('!')] : "");
+        if (fam.StartsWith("Microsoft.", StringComparison.OrdinalIgnoreCase) || fam.StartsWith("MicrosoftWindows.", StringComparison.OrdinalIgnoreCase)
+            || fam.StartsWith("windows.", StringComparison.OrdinalIgnoreCase)) return true;
+        string win = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        return app.Exe is { Length: > 0 } && app.TargetPath is null && app.Key.StartsWith("{1AC14E77", StringComparison.OrdinalIgnoreCase) // System32 알려진 폴더
+               || app.Key.StartsWith(win, StringComparison.OrdinalIgnoreCase);
+    }
+
     internal static bool IsBuiltIn(AppEntry app, IReadOnlyDictionary<string, Pkg>? packages = null)
     {
         if (app.Key.StartsWith("Microsoft.Windows.", StringComparison.OrdinalIgnoreCase) || app.Key.StartsWith("windows.", StringComparison.OrdinalIgnoreCase)) return true;

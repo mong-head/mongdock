@@ -480,10 +480,10 @@ internal static class AppUsage
     /// 같은 날 두 기록에 다 있으면 많은 쪽만 (같은 실행을 두 번 세지 않게). 기록이 적은 처음 며칠은 윈도우 기록(UserAssist — 실행 3회 이상,
     /// 2회 이상, 최근 90일 안 마지막 실행)으로 채움 (2026-10-13 — 사용자 PC 에서 추천이 하나도 안 떴음).
     /// </summary>
-    public static List<string> Suggestions(int max, Func<string, bool>? keep = null) => SuggestionStages(max, keep).Result;
+    public static List<string> Suggestions(int max, Func<string, bool>? keep = null, Func<string, bool>? seedKeep = null) => SuggestionStages(max, keep, seedKeep).Result;
 
     /// <summary>추천을 단계별로 (진단·시험용): 판·독 기록 후보, 새 창 기록까지 더한 후보 수, 윈도우 기록으로 채운 수, 결과.</summary>
-    internal static (List<string> PanelOnly, int WithLaunches, int FromWindows, List<string> Result) SuggestionStages(int max, Func<string, bool>? keep = null)
+    internal static (List<string> PanelOnly, int WithLaunches, int FromWindows, List<string> Result) SuggestionStages(int max, Func<string, bool>? keep = null, Func<string, bool>? seedKeep = null)
     {
         var since = DateTime.Now.Date.AddDays(-14);
         var perDay = new Dictionary<string, Dictionary<DateTime, (int Panel, int Launch)>>();
@@ -508,7 +508,7 @@ internal static class AppUsage
         var panelOnly = Rank(perDay, p => p.Panel);
         foreach (var (id, day) in RoutineSuggest.RecentLaunchDays(14)) Add(id, day, panel: false);
         var mongdock = Rank(perDay, p => Math.Max(p.Panel, p.Launch)); // 판·독·새 창 기록 (같은 날 같은 실행은 한 번)
-        var (result, fromWindows) = Pick(mongdock, seeds, max, keep ?? (_ => true), DateTime.Now);
+        var (result, fromWindows) = Pick(mongdock, seeds, max, keep ?? (_ => true), DateTime.Now, seedKeep);
         return (panelOnly, mongdock.Count, fromWindows, result);
     }
 
@@ -518,7 +518,7 @@ internal static class AppUsage
     /// 칸이 남으면 그 칸만 2순위 윈도우 씨앗(90일 안·2회 이상, 횟수 순·같으면 최근 순)으로. 두 기록을 섞어 더하지 않고,
     /// 같은 앱은 1순위 쪽으로 한 번만. keep = 즐겨찾기·독 고정·숨김·× 30일 빼기 (판에서 줌 — 빼고 나서 채워야 칸이 비지 않음).
     /// </summary>
-    internal static (List<string> Result, int FromWindows) Pick(List<string> mongdock, List<(string Id, int Runs, string Last)> seeds, int max, Func<string, bool> keep, DateTime now)
+    internal static (List<string> Result, int FromWindows) Pick(List<string> mongdock, List<(string Id, int Runs, string Last)> seeds, int max, Func<string, bool> keep, DateTime now, Func<string, bool>? seedKeep = null)
     {
         var result = mongdock.Where(keep).Distinct().Take(max).ToList();
         int fromWindows = 0;
@@ -530,7 +530,7 @@ internal static class AppUsage
                          .OrderByDescending(x => x.Runs).ThenByDescending(x => x.Last, StringComparer.Ordinal))
             {
                 if (result.Count >= max) break;
-                if (taken.Contains(s.Id) || result.Contains(s.Id) || !keep(s.Id)) continue;
+                if (taken.Contains(s.Id) || result.Contains(s.Id) || !keep(s.Id) || seedKeep?.Invoke(s.Id) == false) continue; // 윈도우 기록은 윈도우 기본 앱 뺌 (seedKeep)
                 result.Add(s.Id);
                 fromWindows++;
             }

@@ -871,9 +871,9 @@ internal static class Program
             var pick = asm.GetType("Mongdock.Services.AppUsage")!.GetMethod("Pick", any)!;
             var today = new DateTime(2026, 10, 13);
             string D(int daysAgo) => today.AddDays(-daysAgo).ToString("yyyy-MM-dd");
-            (List<string> R, int W) Run(List<string> mongdock, List<(string, int, string)> seeds, Func<string, bool>? keep = null)
+            (List<string> R, int W) Run(List<string> mongdock, List<(string, int, string)> seeds, Func<string, bool>? keep = null, Func<string, bool>? seedKeep = null)
             {
-                var r = pick.Invoke(null, new object[] { mongdock, seeds, 4, keep ?? (_ => true), today })!;
+                var r = pick.Invoke(null, new object?[] { mongdock, seeds, 4, keep ?? (_ => true), today, seedKeep })!;
                 return ((List<string>)r.GetType().GetField("Item1")!.GetValue(r)!, (int)r.GetType().GetField("Item2")!.GetValue(r)!);
             }
             void CaseFav(string name, (List<string> R, int W) got, string[] expect, int expectWin)
@@ -885,6 +885,7 @@ internal static class Program
             var seeds = new List<(string, int, string)> { ("w1", 9, D(3)), ("w2", 5, D(1)), ("w3", 5, D(10)), ("w4", 2, D(80)), ("w5", 1, D(0)), ("w6", 7, D(120)) };
             CaseFav("첫날: 씨앗만 4칸", Run(new(), seeds), new[] { "w1", "w2", "w3", "w4" }, 4); // 1회(w5)·90일 넘은(w6) 빼고, 같은 횟수는 최근 순
             CaseFav("몽독 2 + 씨앗 2", Run(new() { "m1", "w1", "m2" }, seeds, id => id != "w1"), new[] { "m1", "m2", "w2", "w3" }, 2); // w1 은 독 고정 → 씨앗으로도 안 들어옴
+            CaseFav("씨앗의 윈도우 기본 앱 뺌", Run(new() { "sys" }, seeds, null, id => id != "w1" && id != "w2"), new[] { "sys", "w3", "w4" }, 2); // 1순위의 기본 앱(sys)은 그대로, 씨앗에서만 w1·w2(기본 앱) 뺌, 억지로 안 채움
             CaseFav("몽독 기록만 4칸", Run(new() { "m1", "m2", "m3", "m4", "m5" }, seeds), new[] { "m1", "m2", "m3", "m4" }, 0);
         }
         // 루틴 링크 해석·허용 (리뷰 H1·H2·M2)
@@ -1195,8 +1196,8 @@ internal static class Program
                 panelType.GetMethod("Rebuild", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(w, null);
                 var content = (FrameworkElement)w.Content;
                 content.Opacity = 1;
-                // 그림에는 판 전체가 보이게 (스크롤 높이 제한 풀기)
-                foreach (var sv in Descendants(content).OfType<System.Windows.Controls.ScrollViewer>()) sv.MaxHeight = double.PositiveInfinity;
+                // 그림에는 판 전체가 보이게 (스크롤 높이 제한 풀기 — 펼친 폴더 그림은 본문 높이도 풀어 [+] 칸까지)
+                foreach (var sv in Descendants(content).OfType<System.Windows.Controls.ScrollViewer>()) { sv.MaxHeight = double.PositiveInfinity; if (mode == "group") sv.Height = double.NaN; }
                 content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
                 var size = content.DesiredSize;
                 content.Arrange(new Rect(size));

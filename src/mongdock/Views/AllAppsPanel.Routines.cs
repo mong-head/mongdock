@@ -140,7 +140,7 @@ internal sealed partial class AllAppsPanel
         dashed.HorizontalAlignment = HorizontalAlignment.Center;
         dashed.VerticalAlignment = VerticalAlignment.Center;
         slot.Children.Add(dashed);
-        var glyph = PlusGlyph(14);
+        var glyph = PlusMark(body);
         slot.Children.Add(glyph);
         var stack = new StackPanel();
         stack.Children.Add(slot);
@@ -157,8 +157,8 @@ internal sealed partial class AllAppsPanel
             Child = stack,
             Cursor = Cursors.Hand,
         };
-        cell.MouseEnter += (_, _) => { cell.Background = P.Tile; glyph.Foreground = P.SoftAccentText; };
-        cell.MouseLeave += (_, _) => { cell.Background = Brushes.Transparent; glyph.Foreground = P.SubText; };
+        cell.MouseEnter += (_, _) => { cell.Background = P.Tile; glyph.Stroke = P.SoftAccentText; };
+        cell.MouseLeave += (_, _) => { cell.Background = Brushes.Transparent; glyph.Stroke = P.SubText; };
         cell.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;
