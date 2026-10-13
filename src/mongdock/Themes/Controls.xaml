@@ -219,18 +219,17 @@
         </Setter>
     </Style>
 
+    <!-- 켜짐 채움 기본값 (라이트). 테마는 UiTheme.Apply 가 팔레트 AccentFill 로 덮어씀 -->
+    <LinearGradientBrush x:Key="Mong.OnFill" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Color="#FF837BD8" Offset="0" />
+        <GradientStop Color="#FF6F66C9" Offset="1" />
+    </LinearGradientBrush>
+
     <!-- 맥 느낌 토글 스위치. Background = 켜짐 색, BorderBrush = 꺼짐 트랙 색 -->
     <Style x:Key="MacSwitch" TargetType="ToggleButton">
         <Setter Property="Focusable" Value="False" />
         <Setter Property="IsTabStop" Value="False" />
-        <Setter Property="Background">
-            <Setter.Value>
-                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                    <GradientStop Color="#FF8C7EEE" Offset="0" />
-                    <GradientStop Color="#FF6F5FD8" Offset="1" />
-                </LinearGradientBrush>
-            </Setter.Value>
-        </Setter>
+        <Setter Property="Background" Value="{DynamicResource Mong.OnFill}" /> <!-- 켜짐 색: 팔레트 AccentFill (UiTheme.Apply) -->
         <Setter Property="BorderBrush" Value="#FFDDDDE0" />
         <Setter Property="Template">
             <Setter.Value>
@@ -267,14 +266,7 @@
                     <StackPanel Orientation="Horizontal" Background="Transparent">
                         <Grid Width="16" Height="16" VerticalAlignment="Center">
                             <Border x:Name="Box" CornerRadius="4.5" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" />
-                            <Border x:Name="Fill" CornerRadius="4.5" Opacity="0">
-                                <Border.Background>
-                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                        <GradientStop Color="#FF8C7EEE" Offset="0" />
-                                        <GradientStop Color="#FF6F5FD8" Offset="1" />
-                                    </LinearGradientBrush>
-                                </Border.Background>
-                            </Border>
+                            <Border x:Name="Fill" CornerRadius="4.5" Opacity="0" Background="{DynamicResource Mong.OnFill}" />
                             <Path x:Name="Mark" Data="M4,8.3 L6.9,11.1 L12.2,5.2" Stroke="White" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Opacity="0" />
                         </Grid>
                         <ContentPresenter Margin="{TemplateBinding Padding}" VerticalAlignment="Center" />

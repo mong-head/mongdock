@@ -31,6 +31,8 @@ public sealed class UiPalette
     public Brush SoftAccentText { get; private init; } = Brushes.DarkSlateBlue;
     /// <summary>몽독 톤 선 (놓을 곳 강조·고른 칸 테두리·검색 선택).</summary>
     public Brush SoftAccentLine { get; private init; } = Brushes.MediumPurple;
+    /// <summary>켜짐·선택 표시 단색 (키보드 포커스 고리 등 — AccentFill 의 진한 쪽).</summary>
+    public Color OnColor { get; private init; } = Colors.MediumPurple;
     /// <summary>
     /// 앱 모음 판의 "연한 채움" (2026-10-13 사용자: 연보라 바탕이 아이콘 색과 안 어울림 → 회색기 도는 연보라): 추천 묶음·열린 폴더 칸·펼친 폴더 판·카드 버튼 바탕.
     /// 판 바탕보다 한 단계 진하게(다크는 한 단계 밝게). 글자·테두리는 PanelTintText·PanelTintLine. "지금 고른 것"(포커스·체크·토글·놓을 곳)은 SoftAccent* 그대로.
@@ -76,20 +78,22 @@ public sealed class UiPalette
         SubText = F("#8C000000"),
         Disabled = F("#4D000000"),
         Divider = F("#14000000"),
-        Accent = F("#FFD9CFFF"),
-        AccentText = F("#FF4A3AA8"),
-        AccentInk = F("#FF5B4BC4"),
-        AccentFill = Fill(0x8C, 0x7E, 0xEE, 0x6F, 0x5F, 0xD8), // 연보라 (파랑 기 없이 — #25 사용자: 설정 창 색 조화). 흰 카드 위 3:1 넘게
-        SoftAccent = F("#FFECE7FF"),
-        SoftAccentText = F("#FF4A3AA8"),
-        SoftAccentLine = F("#FFB4A3FF"),
+        // 연한 채움은 앱 모음 판 회보라(PanelTint) 계열로 통일, 진한 보라(#6F66C9)는 켜짐·선택 표시에만 (2026-10-14 사용자: 메뉴 마우스 올림 보라가 튐)
+        Accent = F("#FFDFDAF0"), // 고른 칸·누름 (PanelTint 한 단계 진하게)
+        AccentText = F("#FF4B4580"),
+        AccentInk = F("#FF5A52B0"),
+        AccentFill = Fill(0x83, 0x7B, 0xD8, 0x6F, 0x66, 0xC9), // 켜짐 (채도 낮춘 보라 #6F66C9). 흰 카드 위 3:1 넘게
+        OnColor = Color.FromRgb(0x6F, 0x66, 0xC9),
+        SoftAccent = F("#FFE9E5F6"), // = PanelTint (마우스 올림·연한 채움)
+        SoftAccentText = F("#FF4B4580"),
+        SoftAccentLine = F("#FFA9A2DE"),
         PanelTint = F("#FFE9E5F6"),
         PanelTintText = F("#FF6E6A86"),
         PanelTintLine = F("#FFC6C0DE"),
         CellHover = F("#146E6A86"),
         CellHoverOnTint = F("#66FFFFFF"),
         CellPress = F("#246E6A86"),
-        AddGlyph = F("#FF534AB7"),
+        AddGlyph = F("#FF6F66C9"),
         AddTileOnTint = F("#99FFFFFF"),
         CheckOff = F("#FFFFFFFF"),
         CheckBorder = F("#40000000"),
@@ -119,20 +123,21 @@ public sealed class UiPalette
         SubText = F("#99FFFFFF"),
         Disabled = F("#4DFFFFFF"),
         Divider = F("#1FFFFFFF"),
-        Accent = F("#FF443C70"),
-        AccentText = F("#FFE4DEFF"),
-        AccentInk = F("#FFC9BEFF"),
-        AccentFill = Fill(0xB4, 0xA6, 0xFF, 0x96, 0x84, 0xF6), // 어두운 카드 위엔 밝은 연보라
-        SoftAccent = F("#FF3D3763"),
-        SoftAccentText = F("#FFD8CFFF"),
-        SoftAccentLine = F("#FF8E7EE0"),
+        Accent = F("#FF48445F"), // 고른 칸·누름 (PanelTint 한 단계 밝게)
+        AccentText = F("#FFE2DEF5"),
+        AccentInk = F("#FFC6C0F0"),
+        AccentFill = Fill(0xA3, 0x9C, 0xEA, 0x8F, 0x87, 0xDE), // 켜짐: 어두운 카드 위엔 밝은 쪽 (#6F66C9 계열)
+        OnColor = Color.FromRgb(0x8F, 0x87, 0xDE),
+        SoftAccent = F("#FF3D3953"), // = PanelTint
+        SoftAccentText = F("#FFE2DEF5"),
+        SoftAccentLine = F("#FF857EC8"),
         PanelTint = F("#FF3D3953"),
         PanelTintText = F("#FFC3BFD6"),
         PanelTintLine = F("#FF55536A"),
         CellHover = F("#17FFFFFF"),
         CellHoverOnTint = F("#17FFFFFF"),
         CellPress = F("#26FFFFFF"),
-        AddGlyph = F("#FFC3B8FF"),
+        AddGlyph = F("#FFBDB7EE"),
         AddTileOnTint = F("#14FFFFFF"),
         CheckOff = F("#FF3A3A3C"),
         CheckBorder = F("#4DFFFFFF"),
@@ -166,6 +171,9 @@ public static class UiTheme
 {
     private static bool? _applied;
 
+    /// <summary>마지막으로 적용한 팔레트 (설정을 못 받는 곳 — 포커스 고리·스크롤 막대 기본값).</summary>
+    public static UiPalette Current { get; private set; } = UiPalette.Light;
+
     /// <summary>독 테마 설정(System/Light/Dark)으로 라이트 여부 판단.</summary>
     public static bool IsLight(Settings settings) => settings.Dock.Theme switch
     {
@@ -184,15 +192,16 @@ public static class UiTheme
         bool light = IsLight(settings);
         if (_applied == light || Application.Current == null) return;
         _applied = light;
-        var p = light ? UiPalette.Light : UiPalette.Dark;
+        var p = Current = light ? UiPalette.Light : UiPalette.Dark;
         var r = Application.Current.Resources;
         r["Menu.Background"] = p.CardBackground;
         r["Menu.Border"] = p.CardBorder;
         r["Menu.Text"] = p.Text;
         r["Menu.Disabled"] = p.Disabled;
         r["Menu.Divider"] = p.Divider;
-        r["Menu.Accent"] = p.Accent;
-        r["Menu.AccentText"] = p.AccentText;
+        r["Menu.Accent"] = p.PanelTint; // 메뉴 마우스 올림 = 앱 모음 판 회보라, 글자는 보통 글자색 그대로
+        r["Menu.AccentText"] = p.Text;
+        r["Mong.OnFill"] = p.AccentFill; // 스위치·체크 켜짐
         r["Menu.ShadowOpacity"] = p.ShadowOpacity;
     }
 }

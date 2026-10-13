@@ -23,9 +23,9 @@ internal static class DockMenus
     /// <summary>
     /// 새 기능 메뉴 항목: NewBadges.Show(feature) 면 이름 옆에 작은 알약 "NEW" (몽독 강조색, 모든 언어 같은 글자). 누르면 그 기능을 쓴 것으로.
     /// </summary>
-    /// <summary>NEW 배지: 몽독 하늘~연보라 그라데이션 + 진한 보라 글자 (모든 테마 같음).</summary>
-    internal static readonly Brush NewBadgeBrush = Frozen(new LinearGradientBrush(Color.FromRgb(0x9F, 0xD6, 0xFF), Color.FromRgb(0xCB, 0xBE, 0xFF), 0));
-    internal static readonly Brush NewBadgeText = Frozen(new SolidColorBrush(Color.FromRgb(0x2E, 0x24, 0x70)));
+    /// <summary>NEW 배지: 켜짐 보라(팔레트 AccentFill) + 흰 글자 — 숫자 배지처럼 "표시"라서 진한 보라 (2026-10-14 색 통일).</summary>
+    internal static Brush NewBadgeBrush => ViewModels.UiTheme.Current.AccentFill;
+    internal static Brush NewBadgeText => Brushes.White;
 
     private static Brush Frozen(Brush b) { b.Freeze(); return b; }
 

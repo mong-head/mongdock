@@ -9,8 +9,8 @@
     <SolidColorBrush x:Key="Menu.Text" Color="#FF1D1D1F" />
     <SolidColorBrush x:Key="Menu.Disabled" Color="#4D000000" />
     <SolidColorBrush x:Key="Menu.Divider" Color="#14000000" />
-    <SolidColorBrush x:Key="Menu.Accent" Color="#FF0A64D6" />
-    <SolidColorBrush x:Key="Menu.AccentText" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="Menu.Accent" Color="#FFE9E5F6" />
+    <SolidColorBrush x:Key="Menu.AccentText" Color="#FF1D1D1F" />
     <sys:Double x:Key="Menu.ShadowOpacity">0.22</sys:Double>
 
     <!-- 카드 (그림자는 별도 Border 에만 걸어 글자가 흐려지지 않게) -->

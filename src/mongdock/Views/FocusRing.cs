@@ -22,7 +22,7 @@ internal static class FocusRing
     public static void SetTarget(DependencyObject d, bool v) => d.SetValue(TargetProperty, v);
     public static bool GetTarget(DependencyObject d) => (bool)d.GetValue(TargetProperty);
 
-    private static readonly Color RingColor = Color.FromRgb(0xA8, 0x96, 0xF2);
+    private static Color RingColor => ViewModels.UiTheme.Current.OnColor; // 켜짐·선택 보라 (팔레트)
     private static RingAdorner? _ring;
     private static bool _done;
     /// <summary>마지막 입력이 키보드였는지 (키를 누르면 true, 마우스를 누르면 false).</summary>

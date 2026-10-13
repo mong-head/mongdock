@@ -20,7 +20,7 @@ internal static class MongScroll
         if (Application.Current?.TryFindResource("OverlayScrollViewer") is Style overlay) scroll.Style = overlay;
         if (Application.Current?.TryFindResource("ThinScrollBar") is Style thin && !scroll.Resources.Contains(typeof(ScrollBar)))
             scroll.Resources[typeof(ScrollBar)] = thin;
-        var bar = p?.SoftAccentLine ?? new SolidColorBrush(Color.FromRgb(0xB4, 0xA3, 0xFF));
+        var bar = (p ?? ViewModels.UiTheme.Current).SoftAccentLine;
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         ScrollBar? vbar = null;
         void Find()

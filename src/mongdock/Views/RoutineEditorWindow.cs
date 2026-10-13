@@ -528,7 +528,7 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         var box = new StackPanel();
         var frame = new Border
         {
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0xC3, 0xB3, 0xFF)),
+            BorderBrush = P.SoftAccentLine,
             BorderThickness = new Thickness(2, 0, 0, 0),
             Padding = new Thickness(14, 8, 0, 4),
             Margin = new Thickness(26, 0, 0, 8),
