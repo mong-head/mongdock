@@ -59,6 +59,7 @@ internal sealed class TourSession : ICoachRun
         _card.Card.SkipClicked += () => { Log.Info("둘러보기: 건너뛰기"); Close(markSeen: true, CoachEndReason.Completed); };
         _card.Card.TryClicked += Try;
         _card.Card.InlineClicked += RunInline;
+        _card.Card.UndoClicked += UndoInline;
         _card.Card.LinkClicked += () =>
         {
             // 설정 → 변경 내역. 마지막 카드면 안내를 본 것으로 끝냄 (설정 창이 카드에 가리지 않게)
@@ -82,7 +83,7 @@ internal sealed class TourSession : ICoachRun
         _keepOnTop.Start();
         _index = 0;
         // 카드 높이는 둘러보기 내내 같게 (가장 긴 단계 기준) — 넘길 때 카드 크기·자리가 안 바뀜
-        _card.Card.FixHeight(_pages.Select(p => StepFor(p, new List<ImageSource>(), canTry: p.Anchor != CoachAnchor.Center)).ToList());
+        _card.Card.FixHeight(MeasureSteps().ToList());
         Log.Info($"둘러보기 시작: {_pages.Count}장");
         ShowCurrent(animate: false);
     }
@@ -152,30 +153,65 @@ internal sealed class TourSession : ICoachRun
         BringToFront();
     }
 
-    /// <summary>카드 안 버튼을 실행한 단계 (버튼 "넣었어요 ✓", 설명도 바뀐 채로).</summary>
-    private readonly HashSet<CoachPage> _inlineDone = new();
+    /// <summary>카드 안 버튼 결과 (단계별): 결과 문구, 되돌리기(없으면 null).</summary>
+    private readonly Dictionary<CoachPage, InlineResult> _inlineResults = new();
+    private bool _inlineBusy;
 
-    /// <summary>[다운로드·휴지통 넣기] 같은 카드 안 버튼: 실행 → 카드 글 바꿈 → 독이 새 칸을 그린 뒤 강조 구멍을 새 자리로 (다음 단계로는 안 넘어감).</summary>
-    private void RunInline()
+    /// <summary>
+    /// 카드 안 버튼 ([다운로드·휴지통 넣기]·[컴퓨터 켜면 몽독도 켜기]·[허용하기]): 실행 → 버튼 자리에 결과 한 줄 + [되돌리기].
+    /// 다음 단계로는 안 넘어감. 독이 바뀌면 그린 뒤 강조 구멍을 새 자리로.
+    /// </summary>
+    private async void RunInline()
     {
-        if (_closed || _index >= _pages.Count || _pages[_index].Inline is not { } inline || _inlineDone.Contains(_pages[_index])) return;
-        bool ok;
-        try { ok = inline.Run(); }
-        catch (Exception ex) { Log.Error("둘러보기 카드 버튼 실패", ex); ok = false; }
-        if (!ok) return;
-        _inlineDone.Add(_pages[_index]);
+        if (_closed || _inlineBusy || _index >= _pages.Count || _pages[_index].Inline is not { } inline) return;
+        var page = _pages[_index];
+        _inlineBusy = true;
+        InlineResult? result;
+        try { result = await inline.Run(); }
+        catch (Exception ex) { Log.Error("둘러보기 카드 버튼 실패", ex); result = null; }
+        finally { _inlineBusy = false; }
+        if (_closed || result is null) return;
+        _inlineResults[page] = result;
+        RefreshAfterInline(page);
+    }
+
+    private void UndoInline()
+    {
+        if (_closed || _index >= _pages.Count || !_inlineResults.TryGetValue(_pages[_index], out var r) || r.Undo is null) return;
+        var page = _pages[_index];
+        string message;
+        try { message = r.Undo(); }
+        catch (Exception ex) { Log.Error("둘러보기 되돌리기 실패", ex); return; }
+        _inlineResults[page] = new InlineResult(message); // 되돌린 뒤: 문구만, 버튼은 다시 (Visible 이면)
+        RefreshAfterInline(page);
+    }
+
+    private void RefreshAfterInline(CoachPage page)
+    {
         ShowCurrent(animate: true);
         int at = _index;
         var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) }; // 독이 새 칸을 그린 뒤 구멍을 새 자리로
-        t.Tick += (_, _) => { t.Stop(); if (!_closed && _index == at) ShowCurrent(animate: true); };
+        t.Tick += (_, _) => { t.Stop(); if (!_closed && _index == at && _pages[at] == page) ShowCurrent(animate: true); };
         t.Start();
+    }
+
+    /// <summary>카드 높이 재기용: 버튼을 누른 뒤 모습(가장 긴 결과 + [되돌리기])도 함께 잼.</summary>
+    private IEnumerable<TourStep> MeasureSteps()
+    {
+        foreach (var p in _pages)
+        {
+            yield return StepFor(p, new List<ImageSource>(), canTry: p.Anchor != CoachAnchor.Center);
+            if (p.Inline is { } a)
+                yield return StepFor(p, new List<ImageSource>(), canTry: p.Anchor != CoachAnchor.Center) with { InlineText = null, ResultText = a.LongestResult, CanUndo = true };
+        }
     }
 
     private TourStep StepFor(CoachPage page, List<ImageSource> frames, bool canTry)
     {
-        bool done = _inlineDone.Contains(page);
-        string? inline = page.Inline is not { } a ? null : done ? a.DoneLabel : SafeVisible(a) ? a.Label : null;
-        return new TourStep(page.Title, done && page.Inline is { } b ? b.DoneBody : page.Body, frames)
+        _inlineResults.TryGetValue(page, out var result);
+        bool undoable = result?.Undo is not null;
+        string? inline = page.Inline is { } a && !undoable && SafeVisible(a) ? a.Label : null;
+        return new TourStep(page.Title, page.Body, frames)
         {
             Action = page.Action,
             NextText = page.NextText,
@@ -187,7 +223,8 @@ internal sealed class TourSession : ICoachRun
             FramesPending = page.Pictures is { } k && TourScenes.Count(k) > 0,
             ShowLogo = page.ShowLogo,
             InlineText = inline,
-            InlineDone = done,
+            ResultText = result?.Message,
+            CanUndo = undoable,
         };
     }
 

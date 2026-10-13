@@ -25,6 +25,10 @@ internal sealed class ConfirmCardWindow : Window
     private bool _extraClicked;
     /// <summary>체크 줄(예: 루틴 끝내기의 "데스크톱도 닫기")이 있으면 그 값.</summary>
     private CheckBox? _check;
+    private TextBlock _messageText = null!;
+    private Button _cancelButton = null!;
+    /// <summary>[취소] 자리 버튼이 창을 닫지 않고 이 일을 함 (결과 카드의 [되돌리기]) — 돌려준 문구로 바꾸고 버튼을 숨김.</summary>
+    private Func<string>? _cancelInPlace;
 
     public ConfirmCardWindow(AppServices services, UiPalette p, string title, string message, string confirmText, Action onConfirm,
         string? cancelText = null, string? extraText = null, string? checkText = null, bool checkDefault = true)
@@ -58,7 +62,7 @@ internal sealed class ConfirmCardWindow : Window
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 4, 0, 6),
         });
-        body.Children.Add(new TextBlock
+        body.Children.Add(_messageText = new TextBlock
         {
             Text = message,
             Foreground = p.SubText,
@@ -80,10 +84,18 @@ internal sealed class ConfirmCardWindow : Window
         buttons.ColumnDefinitions.Add(new ColumnDefinition());
         buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) });
         buttons.ColumnDefinitions.Add(new ColumnDefinition());
-        var cancel = MakeButton(cancelText, p.Tile, p.Text);
+        var cancel = _cancelButton = MakeButton(cancelText, p.Tile, p.Text);
         cancel.Click += (_, _) =>
         {
             Log.Info($"확인 카드 '{title}': {cancelText}");
+            if (_cancelInPlace is { } inPlace)
+            {
+                _cancelInPlace = null;
+                try { _messageText.Text = inPlace(); }
+                catch (Exception ex) { Log.Error("되돌리기 실패", ex); }
+                _cancelButton.Visibility = Visibility.Hidden;
+                return;
+            }
             _cancelClicked = true;
             Close();
         };
@@ -199,6 +211,18 @@ internal sealed class ConfirmCardWindow : Window
         card._onCancel = () => tcs.TrySetResult(card._cancelClicked ? false : null);
         card.Show();
         return tcs.Task;
+    }
+
+    /// <summary>
+    /// 고른 직후 같은 자리에 결과 카드: 제목·결과 한 줄 + [되돌리기] [확인]. [되돌리기]는 닫지 않고 그 자리에서 문구를 바꿈
+    /// (undo 가 돌려준 "되돌렸어요 …"). 바깥 클릭·[확인]이면 그대로 닫힘.
+    /// </summary>
+    public static void ShowResult(AppServices services, string title, string message, Func<string> undo)
+    {
+        var p = UiTheme.Palette(services.Settings.Current);
+        var card = new ConfirmCardWindow(services, p, title, message, Loc.T("확인"), () => { }, Loc.T("되돌리기"));
+        card._cancelInPlace = undo;
+        card.Show();
     }
 
     /// <summary>tag 를 붙여 띄운 카드를 모두 닫음 (고르지 않음으로 끝남). 예: 체험이 끝나면 "N일 남았어요" 카드를 치움.</summary>

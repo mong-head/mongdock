@@ -1340,5 +1340,18 @@
  "처음 써 볼 때 짧게 알려 드려요.": "Beim ersten Benutzen zeigen wir jeweils einen kurzen Tipp.",
  "다운로드·휴지통 넣기": "Downloads & Papierkorb hinzufügen",
  "넣었어요 ✓": "Hinzugefügt ✓",
- "독 끝에 넣었어요 — 눌러서 펼쳐 보세요": "Am Ende des Docks hinzugefügt – zum Auffächern klicken"
+ "독 끝에 넣었어요 — 눌러서 펼쳐 보세요": "Am Ende des Docks hinzugefügt – zum Auffächern klicken",
+ "되돌렸어요 — 독에서 뺐어요": "Rückgängig gemacht – aus dem Dock entfernt",
+ "켰어요 — 컴퓨터를 켜면 몽독도 켜져요. 설정 → 일반에서도 바꿀 수 있어요": "Ein – mongdock startet bei der Anmeldung. Änderbar unter Einstellungen → Allgemein",
+ "되돌렸어요 — 자동 실행 꺼짐": "Rückgängig gemacht – kein Start bei der Anmeldung",
+ "허용됐어요 — 새 알림이 몽독 배너로 떠요": "Erlaubt – neue Mitteilungen erscheinen als mongdock-Banner",
+ "아직 허용 안 됨 — 나중에 설정 → 알림에서 허용할 수 있어요": "Noch nicht erlaubt – später unter Einstellungen → Mitteilungen möglich",
+ "자동 실행을 켰어요": "Start bei der Anmeldung ist an",
+ "컴퓨터를 켜면 몽독도 켜져요. 설정 → 일반에서도 바꿀 수 있어요.": "mongdock startet bei der Anmeldung. Änderbar unter Einstellungen → Allgemein.",
+ "작업 표시줄을 숨겼어요": "Die Taskleiste ist ausgeblendet",
+ "설정 → 일반 → '윈도우 작업 표시줄 숨기기'에서도 바꿀 수 있어요.": "Änderbar unter Einstellungen → Allgemein → „Windows-Taskleiste ausblenden“.",
+ "되돌렸어요 — 작업 표시줄이 다시 보여요": "Rückgängig gemacht – die Taskleiste ist wieder sichtbar",
+ "독을 왼쪽으로 옮겼어요": "Das Dock ist jetzt links",
+ "설정 → 독 → 위치에서도 바꿀 수 있어요.": "Änderbar unter Einstellungen → Dock → Position.",
+ "되돌렸어요 — 독이 원래 자리로 갔어요": "Rückgängig gemacht – das Dock ist wieder an seinem Platz"
 }

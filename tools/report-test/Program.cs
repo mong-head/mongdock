@@ -1280,6 +1280,17 @@ internal static class Program
                 Set("FramesPending", key is not null && (int)scenes.GetMethod("Count", any)!.Invoke(null, new object?[] { key })! > 0);
                 steps.Add(step);
                 titles.Add(P<string>("Title") ?? "");
+                // 버튼을 누른 뒤 모습 (가장 긴 결과 한 줄 + [되돌리기])도 잘리지 않아야 함
+                if (P<object>("Inline") is { } inl2)
+                {
+                    var after = Activator.CreateInstance(stepType, P<string>("Title"), P<string>("Body"), new List<ImageSource>())!;
+                    foreach (var prop in stepType.GetProperties().Where(x => x.CanWrite && x.Name is not ("Title" or "Body" or "Frames"))) prop.SetValue(after, prop.GetValue(step));
+                    stepType.GetProperty("InlineText")!.SetValue(after, null);
+                    stepType.GetProperty("ResultText")!.SetValue(after, (string)inl2.GetType().GetProperty("LongestResult")!.GetValue(inl2)!);
+                    stepType.GetProperty("CanUndo")!.SetValue(after, true);
+                    steps.Add(after);
+                    titles.Add((P<string>("Title") ?? "") + " (누른 뒤)");
+                }
             }
             var card = (FrameworkElement)Activator.CreateInstance(cardType, any, null, new object[] { palette }, null)!;
             var host = new System.Windows.Controls.Border { Child = card }; // 앱처럼 부모 아래 (상속 글꼴)
@@ -1446,6 +1457,29 @@ internal static class Program
                 foreach (var r in rows) sheet.Children.Add(new System.Windows.Controls.Image { Source = r, Width = r.PixelWidth, Height = r.PixelHeight, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 10) });
                 Save(Snap(sheet, 0.6), $"sheet-{flow}-{_lang}-{theme}.png");
                 Console.WriteLine($"  저장  sheet-{flow}-{_lang}-{theme}.png ({pages.Count}장)");
+            }
+            // 버튼을 누른 뒤 모습: 둘러보기 카드 결과 줄 + [되돌리기], 질문 카드 결과 (창은 띄우지 않고 내용만 그림)
+            {
+                var step = Activator.CreateInstance(stepType, Mongdock.Loc.T("독의 폴더와 휴지통"), "", new List<ImageSource>())!;
+                stepType.GetProperty("ResultText")!.SetValue(step, Mongdock.Loc.T("독 끝에 넣었어요 — 눌러서 펼쳐 보세요"));
+                stepType.GetProperty("CanUndo")!.SetValue(step, true);
+                stepType.GetProperty("FramesPending")!.SetValue(step, true);
+                var card = (FrameworkElement)Activator.CreateInstance(cardType, any, null, new object[] { palette }, null)!;
+                cardType.GetMethod("Show", any)!.Invoke(card, new object[] { step, 2, 5 });
+                Save(Snap(new System.Windows.Controls.Border { Padding = new Thickness(24), Background = new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x24, 0x24, 0x2C) : Color.FromRgb(0xE4, 0xE6, 0xEE)), Child = card }), $"result-tourcard-{_lang}-{theme}.png");
+                var confirm = asm.GetType("Mongdock.Views.ConfirmCardWindow")!;
+                foreach (var (name, title, msg) in new[]
+                {
+                    ("startup", Mongdock.Loc.T("자동 실행을 켰어요"), Mongdock.Loc.T("컴퓨터를 켜면 몽독도 켜져요. 설정 → 일반에서도 바꿀 수 있어요.")),
+                    ("taskbar", Mongdock.Loc.T("작업 표시줄을 숨겼어요"), Mongdock.Loc.T("설정 → 일반 → '윈도우 작업 표시줄 숨기기'에서도 바꿀 수 있어요.")),
+                })
+                {
+                    var w = (Window)confirm.GetConstructors(any)[0].Invoke(new object?[] { services, palette, title, msg, Mongdock.Loc.T("확인"), (Action)(() => { }), Mongdock.Loc.T("되돌리기"), null, null, true });
+                    var content = (FrameworkElement)w.Content;
+                    w.Content = null;
+                    Save(Snap(new System.Windows.Controls.Border { Background = new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x24, 0x24, 0x2C) : Color.FromRgb(0xE4, 0xE6, 0xEE)), Child = content }), $"result-{name}-{_lang}-{theme}.png");
+                    w.Close();
+                }
             }
             settings.Dispose();
         }

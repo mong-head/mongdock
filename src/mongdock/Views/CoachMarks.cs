@@ -40,10 +40,15 @@ internal sealed class CoachPage
 }
 
 /// <summary>
-/// 카드 설명 아래 버튼. Visible = 지금 보일지(이미 해 둔 상태면 안 보임), Run = 실행(성공이면 true).
-/// 실행한 뒤에는 버튼이 DoneLabel(비활성)로, 설명이 DoneBody 로 바뀜.
+/// 카드 설명 아래 버튼 (설정을 바꾸는 버튼은 모두 이 방식 — 2026-10-14 PM: 조용히 바꾸고 넘어가지 않기).
+/// Visible = 지금 보일지(이미 해 둔 상태면 안 보임). Run = 실행 → 결과(null 이면 아무것도 안 바뀜).
+/// 실행하면 버튼 자리에 결과 한 줄 + [되돌리기](Undo 가 있으면), 다음 단계로는 안 넘어감.
+/// LongestResult = 카드 높이를 잴 때 쓸 가장 긴 결과 문구.
 /// </summary>
-internal sealed record InlineAction(string Label, string DoneLabel, string DoneBody, Func<bool> Visible, Func<bool> Run);
+internal sealed record InlineAction(string Label, Func<bool> Visible, Func<Task<InlineResult?>> Run, string LongestResult);
+
+/// <summary>버튼 결과: 결과 한 줄, 되돌리기(되돌린 뒤 보일 문구를 돌려줌 — null 이면 되돌리기 없음).</summary>
+internal sealed record InlineResult(string Message, Func<string>? Undo = null);
 
 /// <summary>둘러보기가 끝난 이유 (설정 창이 다시 나타날 때 포커스를 가져갈지 정하는 데 씀).</summary>
 internal enum CoachEndReason
@@ -298,6 +303,15 @@ internal static class CoachMarks
             }
             services.Settings.Save();
             Log.Info($"첫 실행 자동 실행 질문: {(choice == true ? "켜기" : "나중에")}");
+            if (choice == true)
+                ConfirmCardWindow.ShowResult(services, Loc.T("자동 실행을 켰어요"), Loc.T("컴퓨터를 켜면 몽독도 켜져요. 설정 → 일반에서도 바꿀 수 있어요."), () =>
+                {
+                    services.Startup.SetEnabled(false);
+                    services.Settings.Current.StartWithWindows = false;
+                    services.Settings.Save();
+                    Log.Info("첫 실행 자동 실행 질문: 되돌림");
+                    return Loc.T("되돌렸어요 — 자동 실행 꺼짐");
+                });
         }
         catch (Exception ex)
         {
@@ -347,18 +361,69 @@ internal static class CoachMarks
         Anchor = page.Anchor,
         Hint = page.Hint,
         Pictures = page.Pictures,
-        Inline = new InlineAction(Loc.T("다운로드·휴지통 넣기"), Loc.T("넣었어요 ✓"), Loc.T("독 끝에 넣었어요 — 눌러서 펼쳐 보세요"),
+        Inline = new InlineAction(Loc.T("다운로드·휴지통 넣기"),
             () => _services is { } sv && DefaultPins.DockStacksMissing(sv.Settings.Current.Pins),
-            () =>
-            {
-                if (_services is not { } sv) return false;
-                var (dl, bin) = DefaultPins.AddDockStacks(sv.Settings.Current.Pins);
-                if (!dl && !bin) return false;
-                sv.Settings.Save(); // 독이 새 칸을 그림
-                Log.Info($"둘러보기: 독에 넣음 (다운로드 {(dl ? "넣음" : "그대로")}, 휴지통 {(bin ? "넣음" : "그대로")})");
-                return true;
-            }),
+            () => Task.FromResult(AddDockStacks()),
+            Loc.T("독 끝에 넣었어요 — 눌러서 펼쳐 보세요")),
     };
+
+    /// <summary>[다운로드·휴지통 넣기] 실행: 넣은 것만 기억해 [되돌리기]는 그것만 뺌.</summary>
+    private static InlineResult? AddDockStacks()
+    {
+        if (_services is not { } sv) return null;
+        var pins = sv.Settings.Current.Pins;
+        var before = pins.ToList();
+        var (dl, bin) = DefaultPins.AddDockStacks(pins);
+        if (!dl && !bin) return null;
+        var added = pins.Where(p => !before.Contains(p)).ToList();
+        sv.Settings.Save(); // 독이 새 칸을 그림
+        Log.Info($"둘러보기: 독에 넣음 (다운로드 {(dl ? "넣음" : "그대로")}, 휴지통 {(bin ? "넣음" : "그대로")})");
+        return new InlineResult(Loc.T("독 끝에 넣었어요 — 눌러서 펼쳐 보세요"), () =>
+        {
+            sv.Settings.Current.Pins.RemoveAll(added.Contains);
+            sv.Settings.Save();
+            Log.Info("둘러보기: 다운로드·휴지통 되돌림 (독에서 뺌)");
+            return Loc.T("되돌렸어요 — 독에서 뺐어요");
+        });
+    }
+
+    /// <summary>둘러보기 [컴퓨터 켜면 몽독도 켜기]: 켜고 결과 + [되돌리기] (예전엔 켜고 바로 끝났음).</summary>
+    private static InlineAction StartupInline(AppServices services) => new(Loc.T("컴퓨터 켜면 몽독도 켜기"),
+        () => !services.Settings.Current.StartWithWindows,
+        () =>
+        {
+            var s = services.Settings.Current;
+            bool wasOn = s.StartWithWindows;
+            services.Startup.SetEnabled(true);
+            s.StartWithWindows = true;
+            services.Settings.Save();
+            Log.Info("둘러보기: 로그인 시 자동 실행 켬");
+            return Task.FromResult<InlineResult?>(new InlineResult(Loc.T("켰어요 — 컴퓨터를 켜면 몽독도 켜져요. 설정 → 일반에서도 바꿀 수 있어요"), () =>
+            {
+                services.Startup.SetEnabled(wasOn);
+                services.Settings.Current.StartWithWindows = wasOn;
+                services.Settings.Save();
+                Log.Info("둘러보기: 자동 실행 되돌림");
+                return Loc.T("되돌렸어요 — 자동 실행 꺼짐");
+            }));
+        },
+        Loc.T("켰어요 — 컴퓨터를 켜면 몽독도 켜져요. 설정 → 일반에서도 바꿀 수 있어요"));
+
+    /// <summary>둘러보기 [허용하기]: 윈도우 허락 창 → 결과를 다시 읽어 "허용됐어요"/"아직 허용 안 됨" (윈도우 권한이라 되돌리기 없음).</summary>
+    private static InlineAction AllowInline(AppServices services) => new(Loc.T("허용하기"),
+        () => NotificationListener.Status() != Windows.UI.Notifications.Management.UserNotificationListenerAccessStatus.Allowed,
+        async () =>
+        {
+            try { await NotificationListener.RequestAccessAsync(); }
+            catch (Exception ex) { Log.Warn($"알림 읽기 허락 요청 실패: {ex.GetType().Name}"); }
+            bool allowed = NotificationListener.Status() == Windows.UI.Notifications.Management.UserNotificationListenerAccessStatus.Allowed;
+            if (allowed) (services.Notifications as NotificationService)?.ReconsiderSource();
+            Log.Info($"둘러보기: 알림 읽기 허락 → {(allowed ? "허용됨" : "아직 허용 안 됨")}");
+            return new InlineResult(allowed
+                ? Loc.T("허용됐어요 — 새 알림이 몽독 배너로 떠요")
+                : Loc.T("아직 허용 안 됨 — 나중에 설정 → 알림에서 허용할 수 있어요"));
+        },
+        Loc.T("아직 허용 안 됨 — 나중에 설정 → 알림에서 허용할 수 있어요"));
 
     private static CoachPage ToPage(CoachStep step, Settings s) => new()
     {
@@ -369,7 +434,6 @@ internal static class CoachMarks
                 : ""),
         Anchor = step.Anchor,
         NextText = step.Key == WhatsNew.IntroKey ? Loc.T("좋아요") : null,
-        Action = step.Key == WhatsNew.IntroKey ? (Loc.T("작업 표시줄 보이기"), ShowWindowsTaskbarAgain) : null, // 카드 폭에 맞게 짧게 (QA: "다시 보이기" 가 잘림)
         AdvanceOnUse = step.Key == WhatsNew.SearchKey,
         Hint = HasPressPrompt(step.Title) || HasPressPrompt(step.Body) ? null : PressHint(step.Anchor),
         Pictures = WhatsNew.TourPictures.Contains(step.Key) ? step.Key : null,
@@ -381,20 +445,6 @@ internal static class CoachMarks
         || text.StartsWith("Click ", StringComparison.Ordinal) || text.Contains("Try it", StringComparison.Ordinal); // 사전에 없는 영어(변경 내역 _en)
 
     /// <summary>둘러보기 [허용하기]: 윈도우 허락 창 → 허용되면 알림을 공식 API 로 다시 읽기 시작.</summary>
-    private static async Task AllowNotificationsAsync(AppServices services)
-    {
-        bool allowed = await NotificationListener.RequestAccessAsync();
-        if (allowed) (services.Notifications as NotificationService)?.ReconsiderSource();
-    }
-
-    /// <summary>둘러보기 첫 카드 [작업 표시줄 다시 보이기]: "윈도우 작업 표시줄 숨기기" 끄기 (알림 숨김은 그대로).</summary>
-    private static void ShowWindowsTaskbarAgain()
-    {
-        if (_services is null) return;
-        _services.Settings.Current.SetHideWindowsTaskbar(false);
-        _services.Settings.Save();
-        Log.Info("둘러보기: 작업 표시줄 다시 보이기");
-    }
 
     /// <summary>독 위치 쪽 화면 가장자리 ("화면 아래" / "화면 왼쪽" …).</summary>
     private static string DockEdgePhrase(Settings s) => s.Dock.Edge switch
@@ -623,20 +673,12 @@ internal static class CoachMarks
                 Title = Loc.T("알림을 몽독에서 보려면"),
                 Body = Loc.T("윈도우가 알림 읽기 허락을 물어봐요. 허용하면 새 알림을 상단바 아래 배너와 알림 목록으로 보여 주고, 몽독에서 지운 알림은 윈도우 알림 센터에서도 지워져요."),
                 Anchor = CoachAnchor.Center,
-                Action = (Loc.T("허용하기"), () => _ = AllowNotificationsAsync(services)),
+                Inline = AllowInline(services),
             });
         }
         var final = ToPage(last, s);
         var extras = WhatsNew.ExtraFeatureLines(s);
-        (string, Action)? startup = s.StartupPromptPending
-            ? (Loc.T("컴퓨터 켜면 몽독도 켜기"), () =>
-            {
-                services.Startup.SetEnabled(true);
-                services.Settings.Current.StartWithWindows = true;
-                services.Settings.Save();
-                Log.Info("둘러보기 마무리: 로그인 시 자동 실행 켬");
-            })
-            : null;
+        InlineAction? startup = s.StartupPromptPending ? StartupInline(services) : null;
         // 설정 카드는 설명만, "이 밖에도" 목록은 마지막 정리 카드 한 장으로 따로 (2026-10-14 PM: 설정 카드에서 목록이 잘림)
         pages.Add(new CoachPage
         {
@@ -644,7 +686,7 @@ internal static class CoachMarks
             Body = final.Body,
             Anchor = final.Anchor,
             Pictures = final.Pictures,
-            Action = extras.Count > 0 ? null : startup,
+            Inline = extras.Count > 0 ? null : startup,
         });
         if (extras.Count > 0)
             pages.Add(new CoachPage
@@ -653,7 +695,7 @@ internal static class CoachMarks
                 Body = Loc.T("처음 써 볼 때 짧게 알려 드려요."),
                 Groups = new() { ("", extras.ToList()) },
                 ShowLogo = true,
-                Action = startup,
+                Inline = startup,
             });
         return pages;
     }

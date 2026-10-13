@@ -29,9 +29,11 @@ internal sealed record TourStep(string Title, string Body, IReadOnlyList<ImageSo
     public string? Link { get; init; }
     /// <summary>그림 없는 목록 카드에서도 위에 몽독 아이콘.</summary>
     public bool ShowLogo { get; init; }
-    /// <summary>설명 아래 버튼 글자 (null = 없음). InlineDone 이면 비활성.</summary>
+    /// <summary>설명 아래 버튼 글자 (null = 없음).</summary>
     public string? InlineText { get; init; }
-    public bool InlineDone { get; init; }
+    /// <summary>버튼을 누른 결과 한 줄 (null = 없음). CanUndo 면 옆에 [되돌리기].</summary>
+    public string? ResultText { get; init; }
+    public bool CanUndo { get; init; }
     /// <summary>그림을 뒤에서 그리는 중 (그림 영역 크기를 미리 잡아 둠).</summary>
     public bool FramesPending { get; init; }
 }
@@ -68,6 +70,9 @@ internal sealed class TourCard : Border
     private readonly Grid _picture;
     private readonly StackPanel _content = new();
     private readonly Button _inline;
+    private readonly TextBlock _result;
+    private readonly Button _undo;
+    private readonly DockPanel _resultRow;
     private readonly Image _logo = new() { Width = 72, Height = 72, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
     private Action? _runAction;
     private readonly DispatcherTimer _slide = new() { Interval = TimeSpan.FromMilliseconds(SlideMs) };
@@ -85,6 +90,7 @@ internal sealed class TourCard : Border
     public event Action? TryClicked;
     public event Action? LinkClicked;
     public event Action? InlineClicked;
+    public event Action? UndoClicked;
 
     public TourCard(UiPalette p)
     {
@@ -153,6 +159,20 @@ internal sealed class TourCard : Border
         _inline.Margin = new Thickness(0, 10, 0, 0);
         _inline.Visibility = Visibility.Collapsed;
         _inline.Click += (_, _) => InlineClicked?.Invoke();
+        // 누른 결과 한 줄 + [되돌리기] (설정을 조용히 바꾸지 않기 — 2026-10-14)
+        _result = new TextBlock { FontSize = UiText.Sub, Foreground = p.Text, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
+        _undo = new Button
+        {
+            Style = (Style)Application.Current.FindResource("CardLinkButton"),
+            Content = new TextBlock { Text = Loc.T("되돌리기"), FontSize = UiText.Sub, Foreground = p.AccentInk },
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(10, 0, 0, 0),
+        };
+        _undo.Click += (_, _) => UndoClicked?.Invoke();
+        _resultRow = new DockPanel { Margin = new Thickness(0, 10, 0, 0), Visibility = Visibility.Collapsed };
+        DockPanel.SetDock(_undo, Dock.Right);
+        _resultRow.Children.Add(_undo);
+        _resultRow.Children.Add(new Border { Background = p.PanelTint, CornerRadius = new CornerRadius(8), Padding = new Thickness(10, 6, 10, 6), Child = _result });
         // 아래 줄: 왼쪽 [건너뛰기](회색 글자 버튼) · 가운데 단계 점 · 오른쪽 [이전] [다음 →] (2026-10-14 사용자: 건너뛰기가 그림 위에 떠 있어 이상함)
         _skip = new TextBlock { Text = Loc.T("건너뛰기"), FontSize = UiText.Sub, Foreground = p.SubText, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center };
         _skip.MouseLeftButtonUp += (_, e) => { e.Handled = true; SkipClicked?.Invoke(); };
@@ -176,6 +196,7 @@ internal sealed class TourCard : Border
         content.Children.Add(_list);
         content.Children.Add(_link);
         content.Children.Add(_inline);
+        content.Children.Add(_resultRow);
         content.Children.Add(_try);
         var text = new DockPanel { Margin = new Thickness(24, 18, 24, 20), LastChildFill = true };
         DockPanel.SetDock(bottom, Dock.Bottom);
@@ -248,7 +269,9 @@ internal sealed class TourCard : Border
         _list.Visibility = _list.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         _inline.Visibility = step.InlineText is null ? Visibility.Collapsed : Visibility.Visible;
         if (_inline.Content is TextBlock it) it.Text = step.InlineText ?? "";
-        _inline.IsEnabled = !step.InlineDone;
+        _result.Text = step.ResultText ?? "";
+        _resultRow.Visibility = step.ResultText is null ? Visibility.Collapsed : Visibility.Visible;
+        _undo.Visibility = step.CanUndo ? Visibility.Visible : Visibility.Collapsed;
         _link.Text = step.Link ?? "";
         _link.Visibility = step.Link is null ? Visibility.Collapsed : Visibility.Visible;
         _footnote.Text = step.Footnote ?? "";

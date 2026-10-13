@@ -53,6 +53,7 @@ internal static class TaskbarOverlapHint
                 Loc.T("윈도우 작업 표시줄이 자동 숨김이라, 화면 아래 끝에서 올라오면 독을 덮어요."),
                 Loc.T("작업 표시줄 숨기기"), Loc.T("독을 왼쪽으로 옮기기"), Loc.T("그대로 두기"));
             s = services.Settings.Current;
+            var oldEdge = s.Dock.Edge;
             switch (choice)
             {
                 case ConfirmCardWindow.Choice.Confirm:
@@ -68,6 +69,23 @@ internal static class TaskbarOverlapHint
             s.TaskbarOverlapAsked = true;
             Log.Info($"작업 표시줄 겹침 안내: {choice}");
             services.Settings.Save();
+            // 고른 직후 같은 자리에 결과 한 줄 + [되돌리기] (2026-10-14: 설정을 조용히 바꾸지 않기)
+            if (choice == ConfirmCardWindow.Choice.Confirm)
+                ConfirmCardWindow.ShowResult(services, Loc.T("작업 표시줄을 숨겼어요"), Loc.T("설정 → 일반 → '윈도우 작업 표시줄 숨기기'에서도 바꿀 수 있어요."), () =>
+                {
+                    services.Settings.Current.SetHideWindowsTaskbar(false);
+                    services.Settings.Save();
+                    Log.Info("작업 표시줄 겹침 안내: 숨기기 되돌림");
+                    return Loc.T("되돌렸어요 — 작업 표시줄이 다시 보여요");
+                });
+            else if (choice == ConfirmCardWindow.Choice.Cancel)
+                ConfirmCardWindow.ShowResult(services, Loc.T("독을 왼쪽으로 옮겼어요"), Loc.T("설정 → 독 → 위치에서도 바꿀 수 있어요."), () =>
+                {
+                    services.Settings.Current.Dock.Edge = oldEdge;
+                    services.Settings.Save();
+                    Log.Info("작업 표시줄 겹침 안내: 독 위치 되돌림");
+                    return Loc.T("되돌렸어요 — 독이 원래 자리로 갔어요");
+                });
         }
         catch (Exception ex) { Log.Error("작업 표시줄 겹침 안내 실패", ex); }
         finally { _asking = false; }

@@ -1340,5 +1340,18 @@
  "처음 써 볼 때 짧게 알려 드려요.": "We'll give you a quick tip the first time you use each one.",
  "다운로드·휴지통 넣기": "Add Downloads & Recycle Bin",
  "넣었어요 ✓": "Added ✓",
- "독 끝에 넣었어요 — 눌러서 펼쳐 보세요": "Added to the end of the Dock — click to fan them out"
+ "독 끝에 넣었어요 — 눌러서 펼쳐 보세요": "Added to the end of the Dock — click to fan them out",
+ "되돌렸어요 — 독에서 뺐어요": "Undone — removed from the Dock",
+ "켰어요 — 컴퓨터를 켜면 몽독도 켜져요. 설정 → 일반에서도 바꿀 수 있어요": "On — mongdock starts when you sign in. You can change this in Settings → General",
+ "되돌렸어요 — 자동 실행 꺼짐": "Undone — mongdock won't start at sign-in",
+ "허용됐어요 — 새 알림이 몽독 배너로 떠요": "Allowed — new notifications show as mongdock banners",
+ "아직 허용 안 됨 — 나중에 설정 → 알림에서 허용할 수 있어요": "Not allowed yet — you can allow it later in Settings → Notifications",
+ "자동 실행을 켰어요": "Start at sign-in is on",
+ "컴퓨터를 켜면 몽독도 켜져요. 설정 → 일반에서도 바꿀 수 있어요.": "mongdock starts when you sign in. You can change this in Settings → General.",
+ "작업 표시줄을 숨겼어요": "The taskbar is hidden",
+ "설정 → 일반 → '윈도우 작업 표시줄 숨기기'에서도 바꿀 수 있어요.": "You can change this in Settings → General → 'Hide the Windows taskbar'.",
+ "되돌렸어요 — 작업 표시줄이 다시 보여요": "Undone — the taskbar is visible again",
+ "독을 왼쪽으로 옮겼어요": "The Dock moved to the left",
+ "설정 → 독 → 위치에서도 바꿀 수 있어요.": "You can change this in Settings → Dock → Position.",
+ "되돌렸어요 — 독이 원래 자리로 갔어요": "Undone — the Dock is back where it was"
 }
