@@ -418,14 +418,14 @@ public partial class DockWindow
 
     private static bool HasFiles(DragEventArgs e)
     {
-        try { return e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent(AllAppsPanel.AppFormat) || e.Data.GetDataPresent(AllAppsPanel.RoutineFormat); }
+        try { return e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetDataPresent(AllAppsPanel.AppFormat) || e.Data.GetDataPresent(AllAppsPanel.RoutineFormat) || e.Data.GetDataPresent(OverflowWindowFormat); }
         catch { return false; }
     }
 
     /// <summary>앱 모음 판에서 끌어 온 앱의 키 (shell:AppsFolder 파싱 이름). 아니면 null.</summary>
     private static string? DraggedAppKey(DragEventArgs e)
     {
-        try { return e.Data.GetDataPresent(AllAppsPanel.AppFormat) ? e.Data.GetData(AllAppsPanel.AppFormat) as string : null; }
+        try { return e.Data.GetDataPresent(AllAppsPanel.AppFormat) ? e.Data.GetData(AllAppsPanel.AppFormat) as string : e.Data.GetDataPresent(OverflowWindowFormat) ? "" : null; }
         catch { return null; }
     }
 
@@ -536,6 +536,21 @@ public partial class DockWindow
         catch (Exception ex) { Log.Warn($"끌어 놓은 루틴 읽기 실패: {ex.GetType().Name}"); }
         _dropDataSeen = null;
         EndFileDrag();
+        string? overflowHwnd = null;
+        try { overflowHwnd = e.Data.GetDataPresent(OverflowWindowFormat) ? e.Data.GetData(OverflowWindowFormat) as string : null; }
+        catch (Exception ex) { Log.Warn($"⋯ 판에서 끈 앱 읽기 실패: {ex.GetType().Name}"); }
+        if (overflowHwnd != null && target >= 0)
+        {
+            // ⋯ 판의 실행 중 앱을 독에 놓음 → 그 자리에 고정 ("독에 고정"과 같은 CreatePin)
+            var win = long.TryParse(overflowHwnd, out long h) ? _services.Windows.Windows.FirstOrDefault(w => w.Hwnd.ToInt64() == h) : null;
+            if (win is not null && CanPin(win))
+            {
+                var newPin = _services.Windows.CreatePin(win);
+                ModifyPins(list => list.Insert(Math.Clamp(target, 0, list.Count), newPin));
+                Log.Info("⋯ 판 → 독에 끌어 고정");
+            }
+            return;
+        }
         if (routineId != null && target >= 0 && RoutineUi.Find(_services, routineId) is { } droppedRoutine)
         {
             RoutineUi.PinToDock(_services, droppedRoutine, target); // 앱 모음 판 루틴 칸을 독에 놓음 → 그 자리에 고정

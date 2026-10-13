@@ -1227,6 +1227,22 @@ internal static class Program
                 picker.Close();
             }
 
+            // 1-e) "⋯ 나머지 앱" 판 (오른쪽 세로 독 기준) — 실행 중 앱 예시 아이콘
+            {
+                var entryType = T("Mongdock.Views.OverflowStackPanel+Entry");
+                var listType = typeof(List<>).MakeGenericType(entryType);
+                var entries = (System.Collections.IList)Activator.CreateInstance(listType)!;
+                var macR = T("Mongdock.Services.MacIconRenderer");
+                var sample = (ImageSource)macR.GetMethod("AllApps", Any)!.Invoke(null, null)!;
+                foreach (var n in new[] { "Discord", "Steam", "Netflix", "Notion", "Visual Studio Code", "카카오톡" })
+                    entries.Add(Activator.CreateInstance(entryType, n, sample, new Action(() => { }), new Func<System.Windows.Controls.ContextMenu>(() => new System.Windows.Controls.ContextMenu()), null));
+                var mon = Monitors.GetPrimary();
+                var ov = New("Mongdock.Views.OverflowStackPanel", services, T("Mongdock.ViewModels.UiTheme").GetMethod("Palette", Any)!.Invoke(null, new object[] { services.Settings.Current })!, entries,
+                    new Rect(mon.WorkArea.Right - 60, mon.WorkArea.Bottom - 120, 40, 40), DockEdge.Right, mon);
+                Save((FrameworkElement)ov.Content, "overflow-panel");
+                ov.Close();
+            }
+
             // 2) 편집 창: 크게 / Chrome 세부 펼침(+ 고급)
             var work = new RoutineDef { Id = "r-test1", Name = "업무 시작", Items = Work() };
             foreach (var expand in new[] { -1, 1 })

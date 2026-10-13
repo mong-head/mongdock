@@ -299,12 +299,12 @@ internal abstract class DockStackPanel : Window
     // ───────────────────────── 조각 ─────────────────────────
 
     /// <summary>머리줄: 이름 + 작은 연필(아이콘 바꾸기 — 메뉴에만 숨기지 않음) + 오른쪽 끝 요소(예 [비우기…]).</summary>
-    protected UIElement Header(string title, UIElement? right = null)
+    protected UIElement Header(string title, UIElement? right = null, bool pencil = true)
     {
         var dock = new DockPanel { Margin = new Thickness(4, 0, 4, 8), LastChildFill = false };
         var left = new StackPanel { Orientation = Orientation.Horizontal };
         left.Children.Add(new TextBlock { Text = title, FontSize = 13, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
-        var pencil = new Border
+        var pen = new Border
         {
             Width = 22,
             Height = 22,
@@ -323,15 +323,15 @@ internal abstract class DockStackPanel : Window
                 VerticalAlignment = VerticalAlignment.Center,
             },
         };
-        pencil.MouseEnter += (_, _) => pencil.Background = P.Hover;
-        pencil.MouseLeave += (_, _) => pencil.Background = Brushes.Transparent;
-        pencil.MouseLeftButtonUp += (_, e) =>
+        pen.MouseEnter += (_, _) => pen.Background = P.Hover;
+        pen.MouseLeave += (_, _) => pen.Background = Brushes.Transparent;
+        pen.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;
             CloseAnimated();
             EditIconRequested?.Invoke();
         };
-        left.Children.Add(pencil);
+        if (pencil) left.Children.Add(pen);
         DockPanel.SetDock(left, Dock.Left);
         dock.Children.Add(left);
         if (right is not null)
@@ -381,14 +381,14 @@ internal abstract class DockStackPanel : Window
     }
 
     /// <summary>앱 아이콘 칸 (끌기 없음) — "⋯ +n" 판.</summary>
-    protected Border MakeIconCell(string name, ImageSource? icon, string tooltip, Action? click, ContextMenu? menu)
+    protected Border MakeIconCell(string name, ImageSource? icon, string tooltip, Action? click, ContextMenu? menu, Func<DataObject>? dragData = null)
     {
         var image = new Image { Width = Thumb, Height = Thumb, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Center, Source = icon };
         RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
-        return CellWith(image, name, "icon:" + name, tooltip, click, null, menu);
+        return CellWith(image, name, "icon:" + name, tooltip, click, null, menu, dragData);
     }
 
-    private Border CellWith(Image image, string name, string key, string tooltip, Action? click, string? dragPath, ContextMenu? menu)
+    private Border CellWith(Image image, string name, string key, string tooltip, Action? click, string? dragPath, ContextMenu? menu, Func<DataObject>? dragData = null)
     {
 
         var text = new TextBlock
@@ -432,13 +432,14 @@ internal abstract class DockStackPanel : Window
         };
         cell.MouseMove += (_, e) =>
         {
-            if (dragPath is null || _pressKey != key || e.LeftButton != MouseButtonState.Pressed) return;
+            if (dragPath is null && dragData is null || _pressKey != key || e.LeftButton != MouseButtonState.Pressed) return;
             var p = e.GetPosition(this);
             if (Math.Abs(p.X - _pressAt.X) < SystemParameters.MinimumHorizontalDragDistance
                 && Math.Abs(p.Y - _pressAt.Y) < SystemParameters.MinimumVerticalDragDistance) return;
             cell.ReleaseMouseCapture();
             _pressKey = null;
-            DragOut(cell, dragPath);
+            if (dragPath is not null) DragOut(cell, dragPath);
+            else DragData(cell, dragData!(), DragDropEffects.Copy | DragDropEffects.Link);
         };
         cell.MouseLeftButtonUp += (_, e) =>
         {

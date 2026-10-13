@@ -29,6 +29,9 @@ public partial class DockWindow
 
     private bool IsOverflowItem(DockItemViewModel item) => ReferenceEquals(item.Pin, _overflowPin);
 
+    /// <summary>⋯ 판에서 독으로 끄는 실행 중 앱 (창 핸들) — 놓은 자리에 고정.</summary>
+    internal const string OverflowWindowFormat = "mongdock.overflow-window";
+
     /// <summary>
     /// 넘칠 후보 (#25 사용자: 많이 켜도 ⋯ 가 안 뜨고 아이콘만 작아짐): 고정 앱(탐색기 제외)과 고정 안 된 실행 중 앱.
     /// 지금 앞에 있는 창의 앱·알림이 깜빡이는 앱·켜는 중인 앱은 남김. 루틴·폴더·휴지통·앱 모음·구분선은 후보 아님.
@@ -38,9 +41,7 @@ public partial class DockWindow
         if (vm.IsSeparator || vm.IsLaunching || IsOverflowItem(vm)) return false;
         var fg = _services.Windows.ForegroundWindow;
         if (vm.Windows.Any(w => w.Hwnd == fg || _flashed.Contains(w.Hwnd))) return false;
-        if (vm.Pin is null) return vm.Windows.Count > 0; // 고정 안 된 실행 중 앱
-        return vm.Pin is { Kind: PinKind.Exe or PinKind.Aumid } pin
-            && !(pin.Kind == PinKind.Exe && string.Equals(System.IO.Path.GetFileNameWithoutExtension(pin.Target), "explorer", StringComparison.OrdinalIgnoreCase));
+        return vm.Pin is null && vm.Windows.Count > 0; // 고정 안 된 실행 중 앱만 — 고정 앱은 맥처럼 늘 독에 (사용자 확정)
     }
 
     /// <summary>감춘 항목을 알아보는 열쇠: 고정 앱은 그 핀, 실행 중 앱은 id ("app:…").</summary>
@@ -189,7 +190,8 @@ public partial class DockWindow
         var b = toDip.Transform(view.PointToScreen(new Point(view.ActualWidth, view.ActualHeight)));
         var style = _services.Settings.Current.Dock.IconStyle;
         var entries = _hiddenItems.Select(vm => new OverflowStackPanel.Entry(vm.Pin is { } p ? PinDisplayName(p) : vm.Name, vm.Icon,
-            () => LaunchOverflowItem(vm), () => OverflowMenu(vm))).ToList();
+            () => LaunchOverflowItem(vm), () => OverflowMenu(vm),
+            vm.Windows.Count > 0 ? () => new DataObject(OverflowWindowFormat, vm.Windows[0].Hwnd.ToInt64().ToString(System.Globalization.CultureInfo.InvariantCulture)) : null)).ToList();
         var panel = new OverflowStackPanel(_services, UiTheme.Palette(_services.Settings.Current), entries, new Rect(a, b), _layout.Edge, _monitor);
         panel.Closed += (_, _) =>
         {
@@ -254,18 +256,18 @@ public partial class DockWindow
 /// <summary>"⋯ +n" 판: 감춘 앱 격자 (원래 순서). 클릭 = 실행, 오른쪽 클릭 = 독 아이콘 메뉴.</summary>
 internal sealed class OverflowStackPanel : DockStackPanel
 {
-    public sealed record Entry(string Name, ImageSource? Icon, Action Launch, Func<ContextMenu> Menu);
+    public sealed record Entry(string Name, ImageSource? Icon, Action Launch, Func<ContextMenu> Menu, Func<DataObject>? Drag = null);
 
     public OverflowStackPanel(AppServices services, UiPalette palette, List<Entry> entries, Rect anchorDip, DockEdge edge, MonitorInfo monitor)
         : base(services, palette, anchorDip, edge, monitor, "mongdock Overflow")
     {
         var root = new StackPanel();
-        root.Children.Add(Header(Loc.F($"앱 {entries.Count}개 더")));
+        root.Children.Add(Header(Loc.F($"나머지 앱 {entries.Count}개"), pencil: false)); // 폴더 전용 연필 없음
         root.Children.Add(Grid(entries.Select(e =>
         {
             // 메뉴는 오른쪽 클릭할 때 만듦 (판을 열 때 앱마다 만들면 느림 — 리뷰)
             var menu = new ContextMenu();
-            var cell = MakeIconCell(e.Name, e.Icon, e.Name, e.Launch, menu);
+            var cell = MakeIconCell(e.Name, e.Icon, e.Name, e.Launch, menu, e.Drag); // 독으로 끌어 놓으면 그 자리에 고정
             cell.ContextMenuOpening += (_, _) =>
             {
                 menu.Items.Clear();
