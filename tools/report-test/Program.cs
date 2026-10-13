@@ -163,7 +163,7 @@ internal static class Program
             return 0;
         }
         int tour = Array.FindIndex(args, a => a == "--tour");
-        if (tour >= 0 && tour + 1 < args.Length) { RenderTour(args[tour + 1]); return 0; }
+        if (tour >= 0 && tour + 1 < args.Length) { RenderTour(args[tour + 1], tour + 2 < args.Length ? args[tour + 2] : args[tour + 1]); return 0; }
         int types = Array.FindIndex(args, a => a == "--types");
         if (types >= 0 && types + 1 < args.Length) { _typesOnly = true; RenderAllAppsPanel(args[types + 1]); return 0; }
         int allApps = Array.FindIndex(args, a => a == "--allapps");
@@ -1223,10 +1223,11 @@ internal static class Program
     /// 설정은 기본값(사본) — 사용자 settings.json 은 쓰지 않음. 디스패처를 돌리지 않음(돌리면 App.OnStartup 이 실행됨).
     /// </summary>
     /// <summary>
-    /// 둘러보기 새 방식 그림 (--tour DIR, spec-coach-tour.md): 1단계(독) 움직이는 그림 장면(기본 핀으로 그린 독 — 쉬는 모습·확대·이름)과
-    /// 화면 전체 미리보기(어둡게 + 독 자리 구멍 + 연보라 링 + 가운데 카드), 라이트·다크.
+    /// 둘러보기 새 방식 그림 (--tour DIR [RAW], spec-coach-tour.md, 2026-10-14 사용자 확정): 6단계 × 2~3장 (16:10, 기능을 크게 잘라 + 커서가 움직이며 올리기·누르기·끌기),
+    /// 단계마다 화면 미리보기(어둡게 35% + 기능 자리 구멍·링 + 가운데 카드 — 강조 자리를 피해 위·아래), 라이트·다크.
+    /// RAW = 다른 그림 재료 폴더(--panels·--routines·--settings·--trash-icons·--folder-icons 결과). 앱에 넣을 그림이라 독은 기본 핀.
     /// </summary>
-    private static void RenderTour(string dir)
+    private static void RenderTour(string dir, string raw)
     {
         Directory.CreateDirectory(dir);
         var app = new Mongdock.App();
@@ -1239,13 +1240,13 @@ internal static class Program
         var stepType = asm.GetType("Mongdock.Views.TourStep")!;
         var spotType = asm.GetType("Mongdock.Views.TourSpotlight")!;
         var any = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        const double SW = 640, SH = 400; // 장 크기 (16:10)
         void Save(BitmapSource bmp, string name)
         {
             var enc = new PngBitmapEncoder();
             enc.Frames.Add(BitmapFrame.Create(bmp));
             using var fs = File.Create(Path.Combine(dir, name));
             enc.Save(fs);
-            Console.WriteLine($"  저장  {Path.Combine(dir, name)}");
         }
         BitmapSource Render(FrameworkElement el, Size size, double scale = 1)
         {
@@ -1257,43 +1258,75 @@ internal static class Program
             rtb.Freeze();
             return rtb;
         }
+        BitmapSource Load(string name, Int32Rect? crop = null)
+        {
+            var bmp = new BitmapImage();
+            bmp.BeginInit();
+            bmp.CacheOption = BitmapCacheOption.OnLoad;
+            bmp.UriSource = new Uri(Path.Combine(raw, name));
+            bmp.EndInit();
+            bmp.Freeze();
+            if (crop is not { } c) return bmp;
+            var cb = new CroppedBitmap(bmp, c);
+            cb.Freeze();
+            return cb;
+        }
         foreach (var theme in new[] { "light", "dark" })
         {
+            bool dark = theme == "dark";
             var settings = new SettingsService();
-            settings.Current.Dock.Theme = theme == "dark" ? Mongdock.Models.DockTheme.Dark : Mongdock.Models.DockTheme.Light;
+            settings.Current.Dock.Theme = dark ? Mongdock.Models.DockTheme.Dark : Mongdock.Models.DockTheme.Light;
+            settings.Current.Dock.Edge = Mongdock.Models.DockEdge.Bottom;
+            settings.Current.Dock.IconSize = 52;
             Mongdock.ViewModels.UiFonts.Apply(settings.Current);
             Mongdock.ViewModels.UiTheme.Apply(settings.Current);
             var palette = Mongdock.ViewModels.UiTheme.Palette(settings.Current);
-            settings.Current.Dock.Edge = Mongdock.Models.DockEdge.Bottom; // 그림은 기본(아래) 독
-            settings.Current.Dock.IconSize = 52;
-            var layout = Mongdock.ViewModels.DockLayout.From(settings.Current.Dock, theme == "light");
+            var layout = Mongdock.ViewModels.DockLayout.From(settings.Current.Dock, !dark);
             var icons = new IconService();
-            // 기본 핀으로 독 (사용자 앱이 아니라 새로 설치했을 때와 같은 독 — 앱에 넣을 그림이므로)
-            var pins = DefaultPins.Create().Where(p => p.Kind != Mongdock.Models.PinKind.Separator).Take(8).ToList();
-            var views = new List<FrameworkElement>();
-            var bar = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
-            for (int i = 0; i < pins.Count; i++)
+            Brush Wallpaper() => new LinearGradientBrush(dark ? Color.FromRgb(0x2B, 0x2D, 0x4A) : Color.FromRgb(0xC9, 0xD6, 0xF2), dark ? Color.FromRgb(0x4A, 0x33, 0x5C) : Color.FromRgb(0xE9, 0xD9, 0xF0), 35);
+            Brush PanelBg() => new SolidColorBrush(dark ? Color.FromRgb(0x2B, 0x2B, 0x2D) : Color.FromRgb(0xF9, 0xF9, 0xFA));
+
+            // ── 독 (기본 핀 + 필요하면 다운로드 폴더·휴지통) ──
+            var basePins = DefaultPins.Create().Where(p => p.Kind != Mongdock.Models.PinKind.Separator).Take(6).ToList();
+            (System.Windows.Controls.Border Panel, List<FrameworkElement> Views, List<Mongdock.ViewModels.DockItemViewModel> Vms) MakeDock(bool withStacks, bool trashFull = false)
             {
-                var pin = pins[i];
-                ImageSource? icon = null;
-                try { icon = icons.GetIcon(pin, settings.Current.Dock.IconStyle); } catch { }
-                var vm = new Mongdock.ViewModels.DockItemViewModel("p" + i, pin, false, pin.Name ?? "", icon) { IsRunning = i is 0 or 2 };
-                var v = (FrameworkElement)Activator.CreateInstance(itemViewType, any, null, new object[] { vm, layout }, null)!;
-                views.Add(v);
-                bar.Children.Add(v);
+                var views = new List<FrameworkElement>();
+                var vms = new List<Mongdock.ViewModels.DockItemViewModel>();
+                var bar = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
+                void AddItem(string id, Mongdock.Models.PinItem? pin, bool sep, string name, ImageSource? icon, bool running)
+                {
+                    var vm = new Mongdock.ViewModels.DockItemViewModel(id, pin, sep, name, icon) { IsRunning = running };
+                    var v = (FrameworkElement)Activator.CreateInstance(itemViewType, any, null, new object[] { vm, layout }, null)!;
+                    views.Add(v);
+                    vms.Add(vm);
+                    bar.Children.Add(v);
+                }
+                for (int i = 0; i < basePins.Count; i++)
+                {
+                    ImageSource? icon = null;
+                    try { icon = icons.GetIcon(basePins[i], settings.Current.Dock.IconStyle); } catch { }
+                    AddItem("p" + i, basePins[i], false, basePins[i].Name ?? "", icon, i == 0);
+                }
+                if (withStacks)
+                {
+                    AddItem("sep", null, true, "", null, false);
+                    AddItem("dl", null, false, Mongdock.Loc.T("다운로드"), Load("C-downloads-256.png"), false);
+                    AddItem("trash", null, false, Mongdock.Loc.T("휴지통"), Load(trashFull ? "trash-full-256.png" : "trash-empty-256.png"), false);
+                }
+                var panel = new System.Windows.Controls.Border
+                {
+                    CornerRadius = new CornerRadius(layout.CornerRadius),
+                    Padding = new Thickness(layout.Padding),
+                    Background = new SolidColorBrush(dark ? Color.FromArgb(0xD0, 0x2A, 0x2A, 0x30) : Color.FromArgb(0xC8, 0xF4, 0xF3, 0xF8)),
+                    BorderBrush = layout.Border,
+                    BorderThickness = new Thickness(1),
+                    Child = bar,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Bottom,
+                };
+                return (panel, views, vms);
             }
-            var dockPanel = new System.Windows.Controls.Border
-            {
-                CornerRadius = new CornerRadius(layout.CornerRadius),
-                Padding = new Thickness(layout.Padding),
-                Background = layout.SolidBackground is SolidColorBrush { Color.A: > 0 } ? layout.SolidBackground : new SolidColorBrush(theme == "dark" ? Color.FromArgb(0xD0, 0x2A, 0x2A, 0x30) : Color.FromArgb(0xC8, 0xF4, 0xF3, 0xF8)),
-                BorderBrush = layout.Border,
-                BorderThickness = new Thickness(1),
-                Child = bar,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Bottom,
-            };
-            void Magnify(int? at)
+            void Magnify(List<FrameworkElement> views, int? at)
             {
                 var apply = itemViewType.GetMethod("ApplyScale")!;
                 double baseLen = layout.IconSize + layout.Spacing;
@@ -1305,76 +1338,330 @@ internal static class Program
                         double d = Math.Abs(i - c) * baseLen, r = layout.WaveRadius;
                         target = layout.Wave ? 1 + (layout.HoverScale - 1) * Math.Max(0, Math.Cos(Math.PI * Math.Min(d, r) / (2 * r))) : i == c ? layout.HoverScale : 1;
                     }
-                    apply.Invoke(views[i], new object[] { target });
+                    try { apply.Invoke(views[i], new object[] { target }); } catch { /* 구분선 */ }
                 }
             }
-            Brush Wallpaper() => new LinearGradientBrush(theme == "dark" ? Color.FromRgb(0x2B, 0x2D, 0x4A) : Color.FromRgb(0xC9, 0xD6, 0xF2), theme == "dark" ? Color.FromRgb(0x4A, 0x33, 0x5C) : Color.FromRgb(0xE9, 0xD9, 0xF0), 35);
-            // 장면 (그림 영역에 들어갈 장, 16:10 에 맞춤): 독 아래쪽만 바탕 화면과 함께
-            var frames = new List<BitmapSource>();
-            foreach (var (name, at, label) in new[] { ("rest", (int?)null, false), ("magnify", (int?)3, false), ("label", (int?)3, true) })
+
+            // ── 장면 + 커서 ──
+            (System.Windows.Controls.Grid Scene, System.Windows.Controls.Canvas Top) NewScene(Brush? bg = null)
             {
-                Magnify(at);
-                const double SW = 520, SH = 325; // 16:10 — 독 둘레만 (확대 자리 포함)
-                var scene = new System.Windows.Controls.Grid { Width = SW, Height = SH, Background = Wallpaper(), ClipToBounds = true };
-                dockPanel.Margin = new Thickness(0, 0, 0, 60);
-                if (dockPanel.Parent is System.Windows.Controls.Panel old) old.Children.Remove(dockPanel);
-                scene.Children.Add(dockPanel);
-                if (label)
+                var g = new System.Windows.Controls.Grid { Width = SW, Height = SH, Background = bg ?? Wallpaper(), ClipToBounds = true };
+                var top = new System.Windows.Controls.Canvas { IsHitTestVisible = false };
+                return (g, top);
+            }
+            BitmapSource Shot(System.Windows.Controls.Grid g, System.Windows.Controls.Canvas top)
+            {
+                g.Children.Add(top);
+                var bmp = Render(g, new Size(SW, SH), 1.5);
+                g.Children.Clear();
+                return bmp;
+            }
+            void Layout(FrameworkElement g) { g.Measure(new Size(SW, SH)); g.Arrange(new Rect(0, 0, SW, SH)); g.UpdateLayout(); }
+            // 맥 화살표 커서 (흰 바탕·검은 테두리, 1.6배). pressed = 누름 고리, carry = 끌고 가는 그림
+            void Cursor(System.Windows.Controls.Canvas top, Point at, bool pressed = false, UIElement? carry = null)
+            {
+                if (carry is not null)
                 {
-                    // 가리킨 아이콘 위 이름표 (독 이름표와 같은 색)
-                    var tag = new System.Windows.Controls.Border
-                    {
-                        Background = layout.LabelBackground,
-                        BorderBrush = layout.LabelBorder,
-                        BorderThickness = new Thickness(0.5),
-                        CornerRadius = new CornerRadius(6),
-                        Padding = new Thickness(10, 4, 10, 5),
-                        Child = new System.Windows.Controls.TextBlock { Text = pins[3].Name ?? "", Foreground = layout.LabelForeground, FontSize = 13 },
-                        HorizontalAlignment = HorizontalAlignment.Left,
-                        VerticalAlignment = VerticalAlignment.Top,
-                    };
-                    scene.Children.Add(tag);
-                    scene.Measure(new Size(SW, SH));
-                    scene.Arrange(new Rect(0, 0, SW, SH));
-                    scene.UpdateLayout();
-                    var c = views[3].TranslatePoint(new Point(views[3].ActualWidth / 2, 0), scene);
-                    tag.Measure(new Size(400, 100));
-                    tag.Margin = new Thickness(c.X - tag.DesiredSize.Width / 2, c.Y - layout.IconSize * (layout.HoverScale - 1) - tag.DesiredSize.Height - 10, 0, 0);
+                    System.Windows.Controls.Canvas.SetLeft(carry, at.X - 22);
+                    System.Windows.Controls.Canvas.SetTop(carry, at.Y - 22);
+                    carry.Opacity = 0.9;
+                    top.Children.Add(carry);
                 }
-                var bmp = Render(scene, new Size(SW, SH), 2);
-                frames.Add(bmp);
-                Save(bmp, $"tour-dock-{name}-{theme}.png");
-                scene.Children.Clear();
+                if (pressed)
+                {
+                    var ring = new System.Windows.Shapes.Ellipse { Width = 34, Height = 34, Stroke = new SolidColorBrush(Color.FromArgb(0xE0, 0x7C, 0x6C, 0xF0)), StrokeThickness = 3, Fill = new SolidColorBrush(Color.FromArgb(0x30, 0x7C, 0x6C, 0xF0)) };
+                    System.Windows.Controls.Canvas.SetLeft(ring, at.X - 17);
+                    System.Windows.Controls.Canvas.SetTop(ring, at.Y - 17);
+                    top.Children.Add(ring);
+                }
+                var arrow = new System.Windows.Shapes.Path
+                {
+                    Data = Geometry.Parse("M0,0 L0,17 L4.2,13.2 L7.2,20 L10,18.8 L7.1,12.2 L12.6,12.2 Z"),
+                    Fill = Brushes.White,
+                    Stroke = Brushes.Black,
+                    StrokeThickness = 1.1,
+                    StrokeLineJoin = PenLineJoin.Round,
+                    RenderTransform = new ScaleTransform(1.6, 1.6),
+                    Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 6, ShadowDepth = 1.5, Direction = 270, Opacity = 0.35 },
+                };
+                System.Windows.Controls.Canvas.SetLeft(arrow, at.X);
+                System.Windows.Controls.Canvas.SetTop(arrow, at.Y);
+                top.Children.Add(arrow);
             }
-            Magnify(null);
-            // 화면 전체 미리보기 (1600x900): 바탕 화면 + 독 + 어둡게·구멍·링 + 가운데 카드
-            var screen = new System.Windows.Controls.Grid { Width = 1600, Height = 900, Background = Wallpaper() };
-            dockPanel.Margin = new Thickness(0, 0, 0, layout.EdgeMargin);
-            screen.Children.Add(dockPanel);
-            var spot = (FrameworkElement)Activator.CreateInstance(spotType, any, null, new object[] { palette }, null)!;
-            spot.Width = 1600;
-            spot.Height = 900;
-            screen.Children.Add(spot);
-            var step = Activator.CreateInstance(stepType, Mongdock.Loc.T("독 — 자주 쓰는 앱을 한 줄에"),
-                Mongdock.Loc.T("아이콘을 누르면 앱이 열리고, 마우스를 올리면 커져요. 자주 쓰는 앱은 오른쪽 클릭 → 독에 고정. 끌어서 순서를 바꿔요."),
-                frames.Cast<ImageSource>().ToList())!;
-            var card = (FrameworkElement)Activator.CreateInstance(cardType, any, null, new object[] { palette }, null)!;
-            cardType.GetMethod("Show", any)!.Invoke(card, new object[] { step, 0, 6 });
-            card.HorizontalAlignment = HorizontalAlignment.Center;
-            card.VerticalAlignment = VerticalAlignment.Center;
-            card.Margin = new Thickness(0, 0, 0, 120); // 독(아래)을 가리지 않게 조금 위로
-            screen.Children.Add(card);
-            screen.Measure(new Size(1600, 900));
-            screen.Arrange(new Rect(0, 0, 1600, 900));
-            screen.UpdateLayout();
-            var dockRect = new Rect(dockPanel.TranslatePoint(new Point(0, 0), spot), new Size(dockPanel.ActualWidth, dockPanel.ActualHeight));
-            spotType.GetMethod("MoveTo", any)!.Invoke(spot, new object?[] { dockRect, layout.CornerRadius, false });
-            foreach (var (k, suffix) in new[] { (0, ""), (1, "-frame2") })
+            Point Center(FrameworkElement e, FrameworkElement g, double fx = 0.5, double fy = 0.5) => e.TranslatePoint(new Point(e.ActualWidth * fx, e.ActualHeight * fy), g);
+            FrameworkElement Picture(ImageSource src, double w, double h, HorizontalAlignment ha, VerticalAlignment va, Thickness m, double radius = 12)
             {
-                cardType.GetMethod("ShowFrameForTest", any)!.Invoke(card, new object[] { k });
-                Save(Render(screen, new Size(1600, 900)), $"tour-step1-{theme}{suffix}.png");
+                var img = new System.Windows.Controls.Image { Source = src, Width = w, Height = h, Stretch = Stretch.Uniform };
+                RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
+                return new System.Windows.Controls.Border
+                {
+                    Child = img,
+                    CornerRadius = new CornerRadius(radius),
+                    HorizontalAlignment = ha,
+                    VerticalAlignment = va,
+                    Margin = m,
+                    Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 18, ShadowDepth = 4, Direction = 270, Opacity = 0.22 },
+                };
             }
-            screen.Children.Clear();
+            FrameworkElement Bar()
+            {
+                // 상단바 모형: 오른쪽 상태 아이콘(와이파이·소리·배터리) + 시계 (글자 없는 부분 위주)
+                var right = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 16, 0) };
+                var fg = dark ? Brushes.White : new SolidColorBrush(Color.FromRgb(0x1D, 0x1D, 0x1F));
+                foreach (var (glyph, name) in new[] { ("", "wifi"), ("", "volume"), ("", "battery") })
+                    right.Children.Add(new System.Windows.Controls.TextBlock { Text = glyph, Uid = name, FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 15, Foreground = fg, Margin = new Thickness(9, 0, 9, 0), VerticalAlignment = VerticalAlignment.Center });
+                right.Children.Add(new System.Windows.Controls.TextBlock { Text = "10:30", Uid = "clock", FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = fg, Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+                var left = new System.Windows.Controls.TextBlock { Text = "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 15, Foreground = fg, Margin = new Thickness(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
+                var g = new System.Windows.Controls.Grid { Height = 36, VerticalAlignment = VerticalAlignment.Top, Background = new SolidColorBrush(dark ? Color.FromArgb(0xD8, 0x1E, 0x1E, 0x22) : Color.FromArgb(0xD8, 0xF6, 0xF5, 0xFA)) };
+                g.Children.Add(left);
+                g.Children.Add(right);
+                return g;
+            }
+            FrameworkElement? ByUid(DependencyObject root, string uid) => Descendants(root).OfType<FrameworkElement>().FirstOrDefault(e => e.Uid == uid);
+
+            var steps = new List<(string Title, string Body, List<BitmapSource> Frames, string Spot)>();
+
+            // 1) 독 — 크게(장면 폭의 약 70%): 쉬는 독에 커서 다가감 → 올려 확대·이름표 → 눌러 열림(실행 점)
+            {
+                var frames = new List<BitmapSource>();
+                for (int f = 0; f < 3; f++)
+                {
+                    var (g, top) = NewScene();
+                    var (panel, views, vms) = MakeDock(false);
+                    double scale = SW * 0.62 / (basePins.Count * (layout.IconSize + layout.Spacing) + layout.Padding * 2); // 쉬는 독 = 장면 폭의 약 62% (확대해도 장면 안)
+                    panel.LayoutTransform = new ScaleTransform(scale, scale);
+                    panel.Margin = new Thickness(0, 0, 0, 34);
+                    g.Children.Add(panel);
+                    int target = Math.Min(2, views.Count - 1);
+                    if (f >= 1) Magnify(views, target);
+                    if (f == 2) vms[target].IsRunning = true;
+                    Layout(g);
+                    var c = Center(views[target], g, 0.55, 0.45);
+                    if (f == 0) Cursor(top, new Point(c.X + 70, c.Y - 70));
+                    else
+                    {
+                        if (f == 1)
+                        {
+                            var tag = new System.Windows.Controls.Border { Background = layout.LabelBackground, BorderBrush = layout.LabelBorder, BorderThickness = new Thickness(0.5), CornerRadius = new CornerRadius(7), Padding = new Thickness(12, 5, 12, 6), Child = new System.Windows.Controls.TextBlock { Text = basePins[target].Name ?? "", Foreground = layout.LabelForeground, FontSize = 15 } };
+                            tag.Measure(new Size(400, 100));
+                            var head = views[target].TranslatePoint(new Point(views[target].ActualWidth / 2, 0), g);
+                            System.Windows.Controls.Canvas.SetLeft(tag, head.X - tag.DesiredSize.Width / 2);
+                            System.Windows.Controls.Canvas.SetTop(tag, head.Y - layout.IconSize * scale * (layout.HoverScale - 1) - tag.DesiredSize.Height - 12);
+                            top.Children.Add(tag);
+                        }
+                        Cursor(top, c, pressed: f == 2);
+                    }
+                    frames.Add(Shot(g, top));
+                }
+                steps.Add((Mongdock.Loc.T("독 — 자주 쓰는 앱을 한 줄에"), Mongdock.Loc.T("아이콘을 누르면 앱이 열리고, 마우스를 올리면 커져요. 자주 쓰는 앱은 오른쪽 클릭 → 독에 고정. 끌어서 순서를 바꿔요."), frames, "dock"));
+            }
+
+            // 2) 상단바 — 소리·와이파이(제어 센터), 시계(달력) 누르기
+            {
+                var frames = new List<BitmapSource>();
+                var cc = Load($"panel-{theme}-controlcenter.png");
+                var cal = Load($"panel-{theme}-calendar.png");
+                for (int f = 0; f < 3; f++)
+                {
+                    var (g, top) = NewScene();
+                    var bar = Bar();
+                    var barScale = new ScaleTransform(1.5, 1.5);
+                    bar.LayoutTransform = barScale;
+                    g.Children.Add(bar);
+                    if (f == 1) g.Children.Add(Picture(cc, 388 * 0.62, 524 * 0.62, HorizontalAlignment.Right, VerticalAlignment.Top, new Thickness(0, 60, 70, 0)));
+                    if (f == 2) g.Children.Add(Picture(cal, 352 * 0.62, 500 * 0.62, HorizontalAlignment.Right, VerticalAlignment.Top, new Thickness(0, 60, 12, 0)));
+                    Layout(g);
+                    var wifi = ByUid(bar, "wifi")!;
+                    var clock = ByUid(bar, "clock")!;
+                    if (f == 0) Cursor(top, new Point(Center(wifi, g).X - 60, Center(wifi, g).Y + 90));
+                    else if (f == 1) Cursor(top, Center(wifi, g), pressed: true);
+                    else Cursor(top, Center(clock, g), pressed: true);
+                    frames.Add(Shot(g, top));
+                }
+                steps.Add((Mongdock.Loc.T("상단바 — 시계·소리·알림을 한눈에"), Mongdock.Loc.T("와이파이·소리를 누르면 제어 센터, 시계를 누르면 달력과 일정이 열려요. 왼쪽에는 지금 앱의 메뉴가 나와요."), frames, "topbar"));
+            }
+
+            // 3) 앱 모음 판 — 독의 앱 모음 아이콘 누르기 → 판(즐겨찾기·폴더) → 폴더 펼치기
+            {
+                var frames = new List<BitmapSource>();
+                var home = Load($"allapps-{theme}-group.png", new Int32Rect(0, 260, 1180, 540));
+                {
+                    var (g, top) = NewScene();
+                    var (panel, views, _) = MakeDock(false);
+                    double scale = SW * 0.62 / (basePins.Count * (layout.IconSize + layout.Spacing) + layout.Padding * 2);
+                    panel.LayoutTransform = new ScaleTransform(scale, scale);
+                    panel.Margin = new Thickness(0, 0, 0, 34);
+                    g.Children.Add(panel);
+                    Magnify(views, 1);
+                    Layout(g);
+                    Cursor(top, Center(views[1], g, 0.55, 0.45), pressed: true);
+                    frames.Add(Shot(g, top));
+                }
+                foreach (var (crop, at) in new[] { (new Int32Rect(0, 0, 640, 360), new Point(0.69, 0.66)), (new Int32Rect(420, 160, 640, 380), new Point(0.57, 0.82)) })
+                {
+                    var (g, top) = NewScene(PanelBg());
+                    var src = new CroppedBitmap(home, crop);
+                    double w = SW, h = SW * crop.Height / crop.Width;
+                    var img = new System.Windows.Controls.Image { Source = src, Width = w, Height = h, Stretch = Stretch.Fill, VerticalAlignment = VerticalAlignment.Center };
+                    RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
+                    g.Children.Add(img);
+                    Layout(g);
+                    Cursor(top, new Point(w * at.X, (SH - h) / 2 + h * at.Y), pressed: frames.Count == 1);
+                    frames.Add(Shot(g, top));
+                }
+                steps.Add((Mongdock.Loc.T("앱 모음 판 — 모든 앱을 한곳에"), Mongdock.Loc.T("독의 앱 모음을 누르면 열려요. 자주 쓰는 앱은 즐겨찾기에, 비슷한 앱은 폴더에 모여 있어요. 끌어서 순서를 바꾸고, 안 쓰는 앱은 정리해요."), frames, "allapps"));
+            }
+
+            // 4) 루틴 — 판 맨 위 루틴 누르기 → 새 데스크톱에 한꺼번에 → 연결하면 물어봄
+            {
+                var frames = new List<BitmapSource>();
+                var panelImg = Load($"routine-{theme}-panel.png", new Int32Rect(0, 70, 360, 135));
+                {
+                    var (g, top) = NewScene(PanelBg());
+                    double ih = SW * 135 / 360;
+                    var img = new System.Windows.Controls.Image { Source = panelImg, Width = SW, Height = ih, Stretch = Stretch.Fill, VerticalAlignment = VerticalAlignment.Center };
+                    RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
+                    g.Children.Add(img);
+                    Layout(g);
+                    double y0 = (SH - ih) / 2;
+                    Cursor(top, new Point(78.0 / 360 * SW, y0 + 70.0 / 135 * ih), pressed: true);
+                    frames.Add(Shot(g, top));
+                }
+                {
+                    var (g, top) = NewScene();
+                    var bar = Bar();
+                    bar.LayoutTransform = new ScaleTransform(1.5, 1.5);
+                    g.Children.Add(bar);
+                    g.Children.Add(Picture(Load($"routine-{theme}-topbar.png"), 420 * 1.1, 44 * 1.1, HorizontalAlignment.Center, VerticalAlignment.Top, new Thickness(0, 2, 0, 0), 0));
+                    // 한꺼번에 열린 창 (모형): 둥근 창 셋
+                    var wins = new System.Windows.Controls.Canvas();
+                    foreach (var (x, y, w, h) in new[] { (60.0, 110.0, 250.0, 180.0), (330.0, 100.0, 250.0, 120.0), (330.0, 235.0, 250.0, 120.0) })
+                    {
+                        var win = new System.Windows.Controls.Border { Width = w, Height = h, CornerRadius = new CornerRadius(10), Background = new SolidColorBrush(dark ? Color.FromRgb(0x33, 0x33, 0x3A) : Colors.White), BorderBrush = new SolidColorBrush(Color.FromArgb(0x30, 0, 0, 0)), BorderThickness = new Thickness(1), Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 14, ShadowDepth = 3, Direction = 270, Opacity = 0.2 } };
+                        System.Windows.Controls.Canvas.SetLeft(win, x);
+                        System.Windows.Controls.Canvas.SetTop(win, y);
+                        wins.Children.Add(win);
+                    }
+                    g.Children.Add(wins);
+                    Layout(g);
+                    Cursor(top, new Point(SW / 2 + 40, 34), pressed: false);
+                    frames.Add(Shot(g, top));
+                }
+                {
+                    var (g, top) = NewScene();
+                    var bar = Bar();
+                    bar.LayoutTransform = new ScaleTransform(1.5, 1.5);
+                    g.Children.Add(bar);
+                    g.Children.Add(Picture(Load($"routine-{theme}-banner-ask.png"), 280 * 1.45, 159 * 1.45, HorizontalAlignment.Right, VerticalAlignment.Top, new Thickness(0, 66, 18, 0), 14));
+                    Layout(g);
+                    Cursor(top, new Point(SW - 18 - 280 * 1.45 + 70, 66 + 159 * 1.45 - 34), pressed: true);
+                    frames.Add(Shot(g, top));
+                }
+                steps.Add((Mongdock.Loc.T("루틴 — 일하는 앱을 한 번에"), Mongdock.Loc.T("자주 같이 여는 앱들을 루틴으로 만들어 두면, 누를 때 새 데스크톱에 정해 둔 자리로 한꺼번에 열려요. 헤드셋을 연결하면 열지 물어보게 할 수도 있어요."), frames, "allapps"));
+            }
+
+            // 5) 독 폴더·휴지통 — 다운로드 폴더 누르기 → 펼친 묶음 → 파일을 휴지통으로 끌기
+            {
+                var frames = new List<BitmapSource>();
+                for (int f = 0; f < 3; f++)
+                {
+                    var (g, top) = NewScene();
+                    var (panel, views, _) = MakeDock(true, trashFull: f == 2);
+                    int n = views.Count;
+                    double scale = SW * 0.62 / ((basePins.Count + 2) * (layout.IconSize + layout.Spacing) + 20 + layout.Padding * 2);
+                    panel.LayoutTransform = new ScaleTransform(scale, scale);
+                    panel.Margin = new Thickness(0, 0, 0, 30);
+                    g.Children.Add(panel);
+                    int folder = n - 2, trash = n - 1;
+                    if (f == 0) Magnify(views, folder);
+                    if (f == 2) Magnify(views, trash);
+                    Layout(g);
+                    if (f == 1)
+                    {
+                        // 펼친 묶음 (모형): 파일 아이콘 6개 격자
+                        var grid = new System.Windows.Controls.Primitives.UniformGrid { Columns = 3, Rows = 2 };
+                        var colors = new[] { "#FF4F8DF5", "#FF2EB67D", "#FFF29B38", "#FFE5534B", "#FF8C7BF0", "#FF5AC8E0" };
+                        foreach (var col in colors)
+                        {
+                            var doc = new System.Windows.Controls.Border { Width = 46, Height = 56, Margin = new Thickness(10), CornerRadius = new CornerRadius(6), Background = (Brush)new BrushConverter().ConvertFromString(col)!, Child = new System.Windows.Controls.TextBlock { Text = "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 22, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
+                            grid.Children.Add(doc);
+                        }
+                        var stack = new System.Windows.Controls.Border { Child = grid, Padding = new Thickness(10), CornerRadius = new CornerRadius(14), Background = PanelBg(), Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 18, ShadowDepth = 4, Direction = 270, Opacity = 0.22 } };
+                        stack.Measure(new Size(SW, SH));
+                        var fc = Center(views[folder], g);
+                        System.Windows.Controls.Canvas.SetLeft(stack, Math.Min(SW - stack.DesiredSize.Width - 10, fc.X - stack.DesiredSize.Width / 2));
+                        System.Windows.Controls.Canvas.SetTop(stack, fc.Y - 50 - stack.DesiredSize.Height);
+                        top.Children.Add(stack);
+                        Cursor(top, new Point(fc.X + 6, fc.Y), pressed: true);
+                    }
+                    else if (f == 0) Cursor(top, Center(views[folder], g, 0.55, 0.45));
+                    else
+                    {
+                        var doc = new System.Windows.Controls.Border { Width = 46, Height = 56, CornerRadius = new CornerRadius(6), Background = (Brush)new BrushConverter().ConvertFromString("#FF4F8DF5")!, Child = new System.Windows.Controls.TextBlock { Text = "", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 22, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
+                        Cursor(top, Center(views[trash], g, 0.55, 0.4), carry: doc);
+                    }
+                    frames.Add(Shot(g, top));
+                }
+                steps.Add((Mongdock.Loc.T("독의 폴더와 휴지통"), Mongdock.Loc.T("폴더를 독에 두면 눌렀을 때 안의 파일이 펼쳐져요. 파일을 휴지통으로 끌면 지워지고, 휴지통을 누르면 비울 수 있어요."), frames, "stacks"));
+            }
+
+            // 6) 설정 — 독 위치·자동 숨기기 바꾸기
+            {
+                var frames = new List<BitmapSource>();
+                var page = Load($"settings-ko-{theme}-dock.png", new Int32Rect(0, 40, 725, 300));
+                foreach (var (fx, fy) in new[] { (0.70, 0.385), (0.905, 0.635) })
+                {
+                    var (g, top) = NewScene(PanelBg());
+                    double w = SW, h = SW * 300 / 725;
+                    var img = new System.Windows.Controls.Image { Source = page, Width = w, Height = h, Stretch = Stretch.Fill, VerticalAlignment = VerticalAlignment.Center };
+                    RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
+                    g.Children.Add(img);
+                    Layout(g);
+                    Cursor(top, new Point(w * fx, (SH - h) / 2 + h * fy), pressed: true);
+                    frames.Add(Shot(g, top));
+                }
+                steps.Add((Mongdock.Loc.T("설정 — 내 손에 맞게"), Mongdock.Loc.T("독 위치·자동 숨기기·크기와 라이트·다크 테마를 바꿔요. 독이나 상단바를 오른쪽 클릭하면 설정이 열려요."), frames, ""));
+            }
+
+            // 장 저장 + 단계별 화면 미리보기 (어둡게 35% + 구멍·링 + 카드)
+            for (int s = 0; s < steps.Count; s++)
+                for (int f = 0; f < steps[s].Frames.Count; f++) Save(steps[s].Frames[f], $"tour-{s + 1}-{f + 1}-{theme}.png");
+            for (int s = 0; s < steps.Count; s++)
+            {
+                var screen = new System.Windows.Controls.Grid { Width = 1600, Height = 900, Background = Wallpaper() };
+                var bar = Bar();
+                screen.Children.Add(bar);
+                var (dockPanel, dockViews, _) = MakeDock(true);
+                dockPanel.Margin = new Thickness(0, 0, 0, layout.EdgeMargin);
+                screen.Children.Add(dockPanel);
+                var spot = (FrameworkElement)Activator.CreateInstance(spotType, any, null, new object[] { palette }, null)!;
+                spot.Width = 1600;
+                spot.Height = 900;
+                screen.Children.Add(spot);
+                var step = Activator.CreateInstance(stepType, steps[s].Title, steps[s].Body, steps[s].Frames.Cast<ImageSource>().ToList())!;
+                var card = (FrameworkElement)Activator.CreateInstance(cardType, any, null, new object[] { palette }, null)!;
+                cardType.GetMethod("Show", any)!.Invoke(card, new object[] { step, s, steps.Count });
+                card.HorizontalAlignment = HorizontalAlignment.Center;
+                card.VerticalAlignment = VerticalAlignment.Center;
+                string where = steps[s].Spot;
+                // 강조 자리를 피해 카드를 위·아래로: 아래(독)면 위로, 위(상단바)면 아래로
+                card.Margin = where is "topbar" ? new Thickness(0, 140, 0, 0) : where is "" ? new Thickness(0) : new Thickness(0, 0, 0, 130);
+                screen.Children.Add(card);
+                screen.Measure(new Size(1600, 900));
+                screen.Arrange(new Rect(0, 0, 1600, 900));
+                screen.UpdateLayout();
+                Rect? hole = null;
+                double radius = layout.CornerRadius;
+                Rect R(FrameworkElement e) => new(e.TranslatePoint(new Point(0, 0), spot), new Size(e.ActualWidth, e.ActualHeight));
+                if (where == "dock") hole = R(dockPanel);
+                else if (where == "topbar") { hole = R(bar); radius = 0; }
+                else if (where == "allapps" && dockViews.Count > 1) { hole = R(dockViews[1]); radius = 12; }
+                else if (where == "stacks") { var a = R(dockViews[^2]); a.Union(R(dockViews[^1])); hole = a; radius = 12; }
+                spotType.GetMethod("MoveTo", any)!.Invoke(spot, new object?[] { hole, radius, false });
+                Save(Render(screen, new Size(1600, 900)), $"tour-step{s + 1}-{theme}.png");
+                screen.Children.Clear();
+            }
+            Console.WriteLine($"  저장  둘러보기 {theme}: 단계 {steps.Count}개, 장 {steps.Sum(x => x.Frames.Count)}개");
             settings.Dispose();
         }
         GC.KeepAlive(app);

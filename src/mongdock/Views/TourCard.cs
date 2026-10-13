@@ -172,7 +172,7 @@ internal sealed class TourCard : Border
 }
 
 /// <summary>
-/// 둘러보기 강조 틀: 화면 전체를 살짝 어둡게(검정 25%) 하고 그 기능 자리만 둥글게 뚫어 밝게 + 연보라 링.
+/// 둘러보기 강조 틀: 화면 전체를 살짝 어둡게(검정 35%) 하고 그 기능 자리만 둥글게 뚫어 밝게 + 연보라 링.
 /// 링은 처음 한 번 은은하게 커졌다 돌아옴(튕김 없음). 자리가 바뀌면 구멍과 링이 미끄러져 이동(250ms). 클릭은 통과(창 쪽에서).
 /// </summary>
 internal sealed class TourSpotlight : Canvas
@@ -189,7 +189,7 @@ internal sealed class TourSpotlight : Canvas
         IsHitTestVisible = false;
         var dim = new Path
         {
-            Fill = new SolidColorBrush(Color.FromArgb(0x40, 0, 0, 0)), // 25%
+            Fill = new SolidColorBrush(Color.FromArgb(0x59, 0, 0, 0)), // 35% (2026-10-14 사용자 확정 — 25% 는 라이트 바탕에서 약함)
             Data = new GeometryGroup { FillRule = FillRule.EvenOdd, Children = { _full, _hole } },
         };
         Children.Add(dim);
