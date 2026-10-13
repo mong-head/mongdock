@@ -152,10 +152,18 @@ public sealed class UsageStatsService : IDisposable
                     ("time", s.Routines.Count(r => r.More?.End.Time is not null)),
                     ("allclosed", s.Routines.Count(r => r.More?.End.AllAppsClosed == true)), // 소문자만 (Code.gs kinds_ 검증)
                 }.Where(x => x.Item2 > 0).Select(x => $"{x.Item1}:{x.Item2}")),
+            ["routineSuggestShown"] = Take(s.RoutineSuggestShownSinceSignal, v => s.RoutineSuggestShownSinceSignal = v), // 루틴 추천을 보여 준 횟수 (§15)
+            ["routineSuggestCreated"] = Take(s.RoutineSuggestCreatedSinceSignal, v => s.RoutineSuggestCreatedSinceSignal = v), // [만들기]를 누른 횟수
             ["routineSettingSteps"] = s.Routines.Count(r => r.More?.Change is { } c && (c.Dnd || c.DockHide || c.OutputDevice is not null || c.Volume is not null)),
             ["errors"] = errors,
             ["nonce"] = Guid.NewGuid().ToString("N"),
         };
+    }
+
+    private static int Take(int value, Action<int> reset)
+    {
+        reset(0);
+        return Math.Clamp(value, 0, 1000);
     }
 
     /// <summary>지난 신호 뒤 루틴 실행 횟수를 꺼내고 0으로 (설정에 두어 몽독을 다시 시작해도 남음).</summary>

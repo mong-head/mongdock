@@ -433,6 +433,9 @@ public sealed class Settings
     public List<RoutineDef> Routines { get; set; } = new();
     /// <summary>루틴 실행 횟수 (사용 통계 routineRuns — 하루치 신호를 만들 때 0으로).</summary>
     public int RoutineRunsSinceSignal { get; set; }
+    /// <summary>루틴 추천을 보여 준 횟수 / [만들기]를 누른 횟수 (사용 통계 — 하루치 신호를 만들 때 0으로). 숫자만.</summary>
+    public int RoutineSuggestShownSinceSignal { get; set; }
+    public int RoutineSuggestCreatedSinceSignal { get; set; }
     /// <summary>옛 빌드(602a63a 전)가 이미 열린 루틴을 누를 때마다 센 실행 횟수를 한 번 버렸음 (통계에 나가지 않게).</summary>
     public bool RoutineRunsReset { get; set; }
     /// <summary>열린 루틴이 바꾼 소리 설정의 열기 직전 값 (끝내기·"설정만 되돌리기" 때 되돌림). 이 PC 것.</summary>

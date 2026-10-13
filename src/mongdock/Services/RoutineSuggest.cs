@@ -263,6 +263,7 @@ internal static class RoutineSuggest
             return;
         }
         s.RoutineSuggestLastAt = DateTime.Now;
+        s.RoutineSuggestShownSinceSignal++;
         services.Settings.Save();
         Log.Info($"루틴 추천: 앱 {entries.Count}개, {bundle.Days.Count}일, {bundle.Time:hh\\:mm}");
     }
@@ -271,12 +272,12 @@ internal static class RoutineSuggest
     {
         var s = services.Settings.Current;
         s.RoutineSuggestDeclines = 0;
+        s.RoutineSuggestCreatedSinceSignal++;
         services.Settings.Save();
         var t = new TimeSpan(bundle.Time.Hours, bundle.Time.Minutes / 5 * 5, 0);
-        int h = t.Hours;
         var r = new RoutineDef
         {
-            Name = h < 11 ? Loc.T("아침 루틴") : h < 14 ? Loc.T("점심 루틴") : h < 18 ? Loc.T("오후 루틴") : Loc.T("저녁 루틴"),
+            Name = Loc.F($"{WhenText(bundle)} 루틴"), // "평일 아침 루틴"
             Items = entries.Select(e => RoutineUi.ItemFromApp(services, e)).ToList(),
         };
         (r.More ??= new RoutineMore()).Start.Add(new RoutineStart { Kind = RoutineStartKind.Time, Time = t.ToString(@"hh\:mm"), Days = StartDays(bundle) }); // 묻기만 (AutoOpen 끔)

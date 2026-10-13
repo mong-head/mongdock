@@ -111,7 +111,9 @@ var STATS_COLUMNS = [
   ['routineSavedFromScreen', bool_], // "지금 화면 저장"으로 만든 루틴이 있음
   ['routineTriggers', kinds_], // 시작 조건 종류별 개수 "login:1,time:2" (#24-A §14)
   ['routineEndTriggers', kinds_], // 끝 조건 종류별 개수
-  ['routineSettingSteps', int_(0, 12)] // 함께 바꿀 것을 쓰는 루틴 수
+  ['routineSettingSteps', int_(0, 12)], // 함께 바꿀 것을 쓰는 루틴 수
+  ['routineSuggestShown', int_(0, 1000)], // 지난 신호 뒤 루틴 추천을 보여 준 횟수 (§15)
+  ['routineSuggestCreated', int_(0, 1000)] // 그중 [만들기]를 누른 횟수
 ];
 
 function oneOf_(list) { return function (v) { v = String(v); return list.indexOf(v) >= 0 ? v : null; }; }
