@@ -83,7 +83,9 @@ internal sealed partial class AllAppsPanel
         try { image.Source = RoutineIcons.Icon(Services, routine, _style); }
         catch (Exception ex) { Log.Warn($"루틴 아이콘 실패: {ex.GetType().Name}"); }
         var stack = new StackPanel();
-        stack.Children.Add(image);
+        var iconHost = new System.Windows.Controls.Grid { HorizontalAlignment = HorizontalAlignment.Center }; // 누름 막을 아이콘 위에 겹치려고
+        iconHost.Children.Add(image);
+        stack.Children.Add(iconHost);
         // 실행 중 = 이름 왼쪽 점 5px·4px 간격, 점까지 합쳐 가운데 (아이콘과 이름 사이에 끼면 이름에 붙어 보였음 — 사용자). 깜빡이지 않음
         var name = new DockPanel { HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, NameTop, 0, 0) };
         if (RoutineService.IsRunning(routine.Id) || RoutineService.IsOpening(routine.Id))
@@ -109,8 +111,7 @@ internal sealed partial class AllAppsPanel
             Tag = new DropTag("routine", routine.Id),
             ContextMenu = LazyMenu(m => RoutineUi.FillMenu(m, Services, routine, CloseAnimated)),
         };
-        cell.MouseEnter += (_, _) => cell.Background = P.Tile;
-        cell.MouseLeave += (_, _) => cell.Background = Brushes.Transparent;
+        CellFeedback(cell, image, onTint: false);
         Pressable(cell, () =>
         {
             if (routine.Items.Count == 0) { CloseAnimated(); RoutineEditorWindow.Open(Services, routine); return; }
@@ -157,8 +158,9 @@ internal sealed partial class AllAppsPanel
             Child = stack,
             Cursor = Cursors.Hand,
         };
-        cell.MouseEnter += (_, _) => { cell.Background = P.Tile; glyph.Stroke = P.SoftAccentText; };
-        cell.MouseLeave += (_, _) => { cell.Background = Brushes.Transparent; glyph.Stroke = P.SubText; };
+        CellFeedback(cell, slot, onTint: false);
+        cell.MouseEnter += (_, _) => glyph.Stroke = P.SoftAccentText;
+        cell.MouseLeave += (_, _) => glyph.Stroke = P.SubText;
         cell.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;

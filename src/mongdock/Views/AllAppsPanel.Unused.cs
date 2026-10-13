@@ -197,8 +197,7 @@ internal sealed partial class AllAppsPanel
         grid.Children.Add(size);
         var row = new Border { CornerRadius = new CornerRadius(6), Child = grid, ContextMenu = LazyMenu(m => FillAppMenu(m, app)), Uid = "m:u:" + app.Key };
         MongToolTip.IfTrimmed(row, name, app.Name); // 잘렸을 때만 전체 이름
-        row.MouseEnter += (_, _) => row.Background = P.Hover;
-        row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
+        RowFeedback(row);
         // 줄을 누르면 체크 (실행은 오른쪽 클릭 메뉴 — 정리 화면에서 실수로 켜지 않게)
         row.MouseLeftButtonUp += (_, e) => { if (e.OriginalSource is not CheckBox) check.IsChecked = check.IsChecked != true; };
         return row;

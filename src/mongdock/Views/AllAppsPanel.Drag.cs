@@ -19,9 +19,20 @@ namespace Mongdock.Views;
 /// </summary>
 internal sealed partial class AllAppsPanel
 {
-    /// <summary>끌기 시작: 8px 이상 움직이고 150ms 이상 눌렀을 때 (원격 접속에서 클릭 중 흔들림은 클릭으로).</summary>
+    /// <summary>
+    /// 끌기 시작: 8px 이상 움직이면. 원격 세션(SM_REMOTESESSION)일 때만 150ms 이상 눌렀을 때 (원격에서 클릭 중 흔들림은 클릭으로) —
+    /// 직접 접속이면 기다리지 않음 (2026-10-13 사용자: 빨리 끌면 처음에 아이콘이 늦게 따라옴). StarDesk 같은 화면 공유는 원격으로 안 잡힐 수 있음.
+    /// </summary>
     private const double DragStartPx = 8, LiftScale = 1.05, ShiftMs = 120, SettleMs = 150;
-    private const long DragMinHoldMs = 150;
+    private const long RemoteHoldMs = 150;
+    private long _holdMs;
+
+    /// <summary>원격 데스크톱 세션인지 (누를 때마다 읽음 — 접속 방식이 몽독 실행 중에 바뀔 수 있어서).</summary>
+    private static bool RemoteSession()
+    {
+        try { return Native.User32.GetSystemMetrics(0x1000 /* SM_REMOTESESSION */) != 0; }
+        catch { return false; }
+    }
     private long _pressTicks;
 
     /// <summary>끌 수 있는 것: 앱 또는 묶음.</summary>
@@ -65,6 +76,7 @@ internal sealed partial class AllAppsPanel
             if (_drag is not null) return;
             _press = e.GetPosition(this);
             _pressTicks = Environment.TickCount64;
+            _holdMs = RemoteSession() ? RemoteHoldMs : 0;
             _pressedCell = el;
             el.CaptureMouse();
             e.Handled = true;
@@ -76,7 +88,7 @@ internal sealed partial class AllAppsPanel
             if (_drag is null)
             {
                 if (item is null || (Math.Abs(p.X - _press.X) < DragStartPx && Math.Abs(p.Y - _press.Y) < DragStartPx)) return;
-                if (Environment.TickCount64 - _pressTicks < DragMinHoldMs) return;
+                if (Environment.TickCount64 - _pressTicks < _holdMs) return;
                 Log.Info($"앱 모음 판: 끌기 시작 ({(item.IsGroup ? "묶음" : "앱")})");
                 DragFromPress(el, item, oleData, p);
                 return;
@@ -158,6 +170,7 @@ internal sealed partial class AllAppsPanel
             OleData = oleData,
             IconOffset = new Vector(off.X * k, off.Y * k),
         };
+        _pressRelease?.Invoke(); // 눌린 아이콘은 원래대로 (끄는 그림이 따로 나옴)
         source.Opacity = 0.25; // 원래 자리는 흐린 빈 칸
         source.ToolTip = null;
         Dragging = true; // 끄는 동안은 비활성화·바깥 판정으로 판을 닫지 않음
@@ -209,6 +222,32 @@ internal sealed partial class AllAppsPanel
     {
         if (_drag is null || CursorPx() is not { } c) return;
         PlaceGhost(c);
+        LogGhostOffset(c);
+    }
+
+    private static int _offsetLogged; // 1 = 왼쪽 위 쪽 적음, 2 = 오른쪽 아래 쪽 적음 (몽독 실행마다 한 번씩)
+
+    /// <summary>
+    /// 끌기 진단 (2026-10-13 PM: 배율이 한 번 더 곱해지거나 빠지는지): 판 왼쪽 위 근처·오른쪽 아래 근처에서 한 번씩
+    /// "그림의 잡은 지점 화면 좌표 − 실제 OS 커서"(물리 픽셀)와 판 창·그림 창 DPI를 로그로. 배율이 틀리면 오른쪽 아래에서 차이가 커짐.
+    /// </summary>
+    private void LogGhostOffset(Point cursor)
+    {
+        if (_drag is not { } d || _offsetLogged == 3 || CursorForTest is not null) return;
+        try
+        {
+            var local = PointFromScreen(cursor);
+            int zone = local.X < ActualWidth / 3 && local.Y < ActualHeight / 2 ? 1 : local.X > ActualWidth * 2 / 3 && local.Y > ActualHeight / 2 ? 2 : 0;
+            if (zone == 0 || (_offsetLogged & zone) != 0) return;
+            _offsetLogged |= zone;
+            var h = new WindowInteropHelper(d.Ghost).Handle;
+            if (h == IntPtr.Zero || !GetWindowRect(h, out var r)) return;
+            var dpi = VisualTreeHelper.GetDpi(this);
+            var gdpi = VisualTreeHelper.GetDpi(d.Ghost);
+            double gx = r.Left + (12 + d.Grab.X) * dpi.DpiScaleX, gy = r.Top + (12 + d.Grab.Y) * dpi.DpiScaleY;
+            Log.Info($"앱 모음 판 끌기 진단({(zone == 1 ? "왼쪽 위" : "오른쪽 아래")}): 그림 잡은 지점 − OS 커서 = {gx - cursor.X:0.0},{gy - cursor.Y:0.0} px, 판 창 DPI {dpi.DpiScaleX:0.00}, 그림 창 DPI {gdpi.DpiScaleX:0.00}, 판 배율 {UiScale:0.00}, 판 안 자리 {local.X:0},{local.Y:0}");
+        }
+        catch (Exception ex) { Log.Warn($"끌기 진단 실패: {ex.GetType().Name}"); }
     }
 
     /// <summary>시험에서만: 진짜 커서 대신 쓸 커서 자리(화면 픽셀) — 프레임마다 따라오는지 진짜 마우스 없이 봄.</summary>

@@ -1180,7 +1180,7 @@ internal static class Program
             settings.Current.AllApps.UsageSeededAt = DateTime.Now.AddDays(-60);
             settings.Current.AllApps.CleanupPromptMonth = null;
             asm.GetType("Mongdock.Services.AppFolders")!.GetMethod("RefreshAuto")!.Invoke(null, new object[] { settings.Current, appsForFolders(), true });
-            var modes = _typesOnly ? new[] { "type-A", "type-B", "type-C" } : new[] { "home", "group", "search", "edit", "cleanup", "unused", "size-old", "size-now", "size-new" };
+            var modes = _typesOnly ? new[] { "type-A", "type-B", "type-C" } : new[] { "home", "group", "feedback", "search", "edit", "cleanup", "unused", "size-old", "size-now", "size-new" };
             if (_typesOnly && theme == "dark") continue;
             foreach (var mode in modes)
             {
@@ -1198,7 +1198,9 @@ internal static class Program
                 panelType.GetProperty("StaleDaysForTest", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, mode == "home" ? 3 : null);
                 var w = (Window)panelType.GetConstructors(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)[0]
                     .Invoke(new object[] { services, palette, new Rect(800, 1000, 52, 52), Mongdock.Models.DockEdge.Bottom, monitor });
-                if (mode == "group") panelType.GetField("_expanded", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(w, "tools");
+                if (mode is "group" or "feedback") panelType.GetField("_expanded", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(w, "tools");
+                // 올림·누름 그림: 추천 칸 첫째 올림·둘째 누름 (연한 판 위), 폴더 칸 하나 올림, 펼친 폴더 앱 하나 누름
+                panelType.GetProperty("FeedbackForTest", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, mode == "feedback" ? "hover,press,-,-,hover,-,-,-,-,-,-,press" : null);
                 if (mode == "edit")
                 {
                     panelType.GetField("_editing", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(w, true);
@@ -1216,7 +1218,7 @@ internal static class Program
                 var content = (FrameworkElement)w.Content;
                 content.Opacity = 1;
                 // 그림에는 판 전체가 보이게 (스크롤 높이 제한 풀기 — 펼친 폴더 그림은 본문 높이도 풀어 [+] 칸까지)
-                foreach (var sv in Descendants(content).OfType<System.Windows.Controls.ScrollViewer>()) { sv.MaxHeight = double.PositiveInfinity; if (mode is "group" or "unused") sv.Height = double.NaN; }
+                foreach (var sv in Descendants(content).OfType<System.Windows.Controls.ScrollViewer>()) { sv.MaxHeight = double.PositiveInfinity; if (mode is "group" or "unused" or "feedback") sv.Height = double.NaN; }
                 content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
                 var size = content.DesiredSize;
                 content.Arrange(new Rect(size));

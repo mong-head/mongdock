@@ -494,8 +494,9 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             Tag = new DropTag("suggest", app.Key),
         };
         MongToolTip.IfTrimmed(cell, nameText, app.Name); // 잘렸을 때만 전체 이름
-        cell.MouseEnter += (_, _) => { cell.Background = P.Hover; badges.Visibility = Visibility.Visible; HoverIcon(image, true); };
-        cell.MouseLeave += (_, _) => { cell.Background = Brushes.Transparent; badges.Visibility = Visibility.Hidden; HoverIcon(image, false); };
+        CellFeedback(cell, image, onTint: true);
+        cell.MouseEnter += (_, _) => badges.Visibility = Visibility.Visible;
+        cell.MouseLeave += (_, _) => badges.Visibility = Visibility.Hidden;
         Pressable(cell, () => Launch(app), null, null); // 추천 칸은 끌기 없음 (내가 넣은 게 아니라서) — 넣기는 [+]·오른쪽 클릭
         cell.ContextMenu = LazyMenu(m => FillAppMenu(m, app));
         return cell;
@@ -503,7 +504,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
 
     // ───────────────────────── 칸 ─────────────────────────
 
-    private Border AppCellView(AppEntry app, bool pinned = false, bool selected = false, bool inFavorites = false)
+    private Border AppCellView(AppEntry app, bool pinned = false, bool selected = false, bool inFavorites = false, bool onTint = false)
     {
         var image = new Image { Width = AppIcon, Height = AppIcon, HorizontalAlignment = HorizontalAlignment.Center };
         RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
@@ -550,8 +551,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             ContextMenu = LazyMenu(m => FillAppMenu(m, app)),
         };
         MongToolTip.IfTrimmed(cell, nameText, app.Name); // 잘렸을 때만 전체 이름
-        cell.MouseEnter += (_, _) => { if (!selected) cell.Background = P.Tile; HoverIcon(image, true); };
-        cell.MouseLeave += (_, _) => { if (!selected) cell.Background = Brushes.Transparent; HoverIcon(image, false); };
+        CellFeedback(cell, image, onTint, keepBackground: selected); // 올림 = 밝은 하이라이트 + 아이콘 1.06, 누름 = 아이콘 0.94 + 어두운 막 (AllAppsPanel.Feedback.cs)
         cell.Tag = new DropTag(inFavorites ? "favapp" : "app", app.Key);
         Pressable(cell, () => Launch(app), new DragItem(false, app.Key), () =>
         {
@@ -825,8 +825,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             Cursor = Cursors.Hand,
             ContextMenu = LazyMenu(m => FillGroupMenu(m, id)),
         };
-        cell.MouseEnter += (_, _) => cell.Background = P.Hover;
-        cell.MouseLeave += (_, _) => cell.Background = Brushes.Transparent;
+        CellFeedback(cell, tile, onTint: false); // 폴더 그림이 커지고 눌림
         cell.Tag = new DropTag("group", id);
         Pressable(cell, () =>
         {
@@ -914,7 +913,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         _groupApps.Clear();
         foreach (var app in apps.Take(limit))
         {
-            var c = AppCellView(app);
+            var c = AppCellView(app, onTint: true); // 펼친 폴더 판(연한 채움) 위
             if (_editing && c.Child is UIElement inner)
             {
                 // 편집 모드: 앱마다 − (이 폴더에서 빼기 — 앱은 모든 앱에 그대로)
@@ -1324,8 +1323,9 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             ToolTip = Loc.T("새 폴더 — 앱을 여기로 끌어다 놓아도 돼요"),
             Tag = new DropTag("newfolder", ""),
         };
-        cell.MouseEnter += (_, _) => { cell.Background = P.Hover; glyph.Stroke = P.SoftAccentText; };
-        cell.MouseLeave += (_, _) => { cell.Background = Brushes.Transparent; glyph.Stroke = P.SubText; };
+        CellFeedback(cell, plus, onTint: false);
+        cell.MouseEnter += (_, _) => glyph.Stroke = P.SoftAccentText;
+        cell.MouseLeave += (_, _) => glyph.Stroke = P.SubText;
         cell.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;

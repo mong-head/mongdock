@@ -38,6 +38,10 @@ public sealed class UiPalette
     public Brush PanelTint { get; private init; } = Brushes.Lavender;
     public Brush PanelTintText { get; private init; } = Brushes.DimGray;
     public Brush PanelTintLine { get; private init; } = Brushes.LightGray;
+    /// <summary>판 칸 마우스 올림 (회색 채움 대신): 흰 판 위 = 아주 연한 회보라, 연한 채움 판 위(OnTint) = 흰색 반투명. 목록 줄 누름 = CellPress.</summary>
+    public Brush CellHover { get; private init; } = Brushes.WhiteSmoke;
+    public Brush CellHoverOnTint { get; private init; } = Brushes.White;
+    public Brush CellPress { get; private init; } = Brushes.Gainsboro;
     /// <summary>몽독 체크 (안 켜짐 바탕·테두리). 켜지면 하늘~연보라 그라데이션.</summary>
     public Brush CheckOff { get; private init; } = Brushes.White;
     public Brush CheckBorder { get; private init; } = Brushes.Gray;
@@ -76,9 +80,12 @@ public sealed class UiPalette
         SoftAccent = F("#FFECE7FF"),
         SoftAccentText = F("#FF4A3AA8"),
         SoftAccentLine = F("#FFB4A3FF"),
-        PanelTint = F("#FFEEEDF3"),
+        PanelTint = F("#FFE9E5F6"),
         PanelTintText = F("#FF6E6A86"),
-        PanelTintLine = F("#FFCFCCDB"),
+        PanelTintLine = F("#FFC6C0DE"),
+        CellHover = F("#146E6A86"),
+        CellHoverOnTint = F("#66FFFFFF"),
+        CellPress = F("#246E6A86"),
         CheckOff = F("#FFFFFFFF"),
         CheckBorder = F("#40000000"),
         Hover = F("#0F000000"),
@@ -114,9 +121,12 @@ public sealed class UiPalette
         SoftAccent = F("#FF3D3763"),
         SoftAccentText = F("#FFD8CFFF"),
         SoftAccentLine = F("#FF8E7EE0"),
-        PanelTint = F("#FF3A3946"),
+        PanelTint = F("#FF3D3953"),
         PanelTintText = F("#FFC3BFD6"),
         PanelTintLine = F("#FF55536A"),
+        CellHover = F("#17FFFFFF"),
+        CellHoverOnTint = F("#17FFFFFF"),
+        CellPress = F("#26FFFFFF"),
         CheckOff = F("#FF3A3A3C"),
         CheckBorder = F("#4DFFFFFF"),
         Hover = F("#14FFFFFF"),

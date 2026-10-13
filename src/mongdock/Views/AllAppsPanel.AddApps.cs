@@ -78,8 +78,9 @@ internal sealed partial class AllAppsPanel
             Cursor = Cursors.Hand,
             Uid = "m:addapps:" + folderId,
         };
-        cell.MouseEnter += (_, _) => { cell.Background = P.Tile; glyph.Stroke = P.SoftAccentText; };
-        cell.MouseLeave += (_, _) => { cell.Background = Brushes.Transparent; glyph.Stroke = P.SubText; };
+        CellFeedback(cell, iconHost, onTint: true); // 펼친 폴더 판 위
+        cell.MouseEnter += (_, _) => glyph.Stroke = P.SoftAccentText;
+        cell.MouseLeave += (_, _) => glyph.Stroke = P.SubText;
         cell.MouseLeftButtonUp += (_, e) => { e.Handled = true; OpenAddApps(folderId); };
         return cell;
     }
@@ -171,8 +172,7 @@ internal sealed partial class AllAppsPanel
                 {
                     rows.Add(row);
                     row.KeyDown += (_, e) => { if (e.Key == Key.Space) { e.Handled = true; check.IsChecked = check.IsChecked != true; } };
-                    row.MouseEnter += (_, _) => row.Background = P.Hover;
-                    row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
+                    RowFeedback(row);
                     row.MouseLeftButtonUp += (_, e) => { if (e.OriginalSource is not CheckBox) check.IsChecked = check.IsChecked != true; };
                 }
                 list.Children.Add(row);
