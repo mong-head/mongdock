@@ -391,7 +391,7 @@ internal sealed partial class AllAppsPanel
         SetHighlight(target is { Kind: "group" or "app" or "newfolder" } ? FindCell(target) : null);
         if (target is { Kind: "fav" or "favapp" }) ShiftFavorites(p);
         else ShiftFavorites(null);
-        ShiftGroup(target is { Kind: "groupgrid" } && !d.Item.IsGroup ? d.Item.Key : null);
+        ShiftGroup(target is { Kind: "groupgrid" } && !d.Item.IsGroup ? p : null);
         d.Target = target;
         ((FrameworkElement)d.Ghost.Content).Opacity = target is null ? 0.45 : 1; // 놓을 수 없는 곳이면 흐리게
     }
@@ -409,6 +409,8 @@ internal sealed partial class AllAppsPanel
                 // 펼친 묶음 안 앱 칸: 가운데(반지름 30%)에 놓으면 둘로 새 묶음, 가장자리면 이 묶음의 빈칸으로
                 if (tag.Kind == "app" && fe is Border cell && _groupCells.Contains(cell) && _groupGridId is { } gid)
                 {
+                    // 같은 폴더 앱끼리는 늘 순서 바꾸기 (폴더 안에서 새 폴더는 만들지 않음)
+                    if (_groupApps.Any(a => a.Key == item.Key)) { found = new DropTag("groupgrid", gid); return HitTestResultBehavior.Stop; }
                     var local = TranslatePoint(p, cell);
                     var center = new Point(cell.ActualWidth / 2, cell.ActualHeight / 2);
                     if ((local - center).Length > AppCell * 0.3) { found = new DropTag("groupgrid", gid); return HitTestResultBehavior.Stop; }
@@ -430,7 +432,7 @@ internal sealed partial class AllAppsPanel
         {
             "fav" => true,
             "favapp" => true,
-            "groupgrid" => _groupApps.All(a => a.Key != item.Key) || tag.Key != _groupGridId, // 이미 이 폴더면 놓을 곳 아님
+            "groupgrid" => true, // 다른 앱은 이 폴더로, 이 폴더 앱은 순서 바꾸기
             "newfolder" => !item.IsGroup,
             "group" => !InFolder(tag.Key, item.Key), // 이미 그 폴더에 든 앱이면 놓을 곳 아님 (놓아도 아무 일 없음 — 강조하지 않음)
             "app" => tag.Key != item.Key,
@@ -520,20 +522,31 @@ internal sealed partial class AllAppsPanel
     }
 
     /// <summary>
-    /// 펼친 묶음: 끄는 앱이 들어갈 이름순 자리에 빈칸을 만들고 뒤 칸들이 120ms 로 비켜남 (여러 줄 — 줄 끝은 다음 줄 처음으로).
-    /// key = null 이면 원래대로.
+    /// 펼친 폴더: 커서 자리에 빈칸을 만들고 다른 칸들이 120ms 로 비켜남 (즐겨찾기 순서 바꾸기와 같은 동작, 여러 줄 — 줄 끝은 다음 줄 처음으로).
+    /// 끄는 앱이 이 폴더 앱이면 그 칸을 뺀 순서로 (순서 바꾸기, 2026-10-14 사용자). p = null 이면 원래대로.
     /// </summary>
-    private void ShiftGroup(string? key)
+    private void ShiftGroup(Point? p)
     {
         if (_groupGrid is null) return;
-        int gap = key is not null ? _groupApps.Count : -1; // 넣으면 맨 끝에 들어감
-        if (gap == _groupGap) return;
-        _groupGap = gap;
         int perRow = Math.Max(1, (int)(_groupGrid.Width / AppCell));
         double rowH = _groupCells.Count > 0 ? _groupCells[0].ActualHeight + 4 : AppCell;
+        int src = _drag is { } dd ? _groupCells.IndexOf(dd.Source) : -1;
+        int count = _groupCells.Count - (src >= 0 ? 1 : 0);
+        int gap = -1;
+        if (p is { } pt)
+        {
+            var local = TranslatePoint(pt, _groupGrid);
+            int row = Math.Max(0, (int)Math.Floor(local.Y / rowH));
+            int col = Math.Clamp((int)Math.Floor(local.X / AppCell), 0, perRow - 1); // 커서가 있는 칸 자리에 들어감 (런치패드처럼)
+            gap = Math.Clamp(row * perRow + col, 0, count);
+        }
+        if (gap == _groupGap) return;
+        _groupGap = gap;
         for (int i = 0; i < _groupCells.Count; i++)
         {
-            int to = gap >= 0 && i >= gap ? i + 1 : i;
+            if (i == src) continue; // 끄는 칸은 흐린 빈 칸으로 제자리
+            int eff = src >= 0 && i > src ? i - 1 : i; // 끄는 칸을 뺀 순서
+            int to = gap >= 0 ? (eff >= gap ? eff + 1 : eff) : i;
             double dx = (to % perRow - i % perRow) * AppCell, dy = (to / perRow - i / perRow) * rowH;
             var cell = _groupCells[i];
             if (cell.RenderTransform is not TranslateTransform tt) cell.RenderTransform = tt = new TranslateTransform();
@@ -639,7 +652,16 @@ internal sealed partial class AllAppsPanel
         else if (target is { Kind: "groupgrid" } && !d.Item.IsGroup)
         {
             to = new Rect(GroupGapOrigin(), d.GhostSize);
-            apply = () => { if (_apps.FirstOrDefault(a => a.Key == d.Item.Key) is { } app) MoveTo(app, target.Key); };
+            int index = Math.Max(0, _groupGap);
+            bool inside = _groupApps.Any(a => a.Key == d.Item.Key) && target.Key == _groupGridId;
+            apply = () =>
+            {
+                if (_apps.FirstOrDefault(a => a.Key == d.Item.Key) is not { } app) return;
+                if (!inside) AppFolders.AddTo(Services.Settings.Current, _apps, target.Key, app.Key); // 다른 앱은 이 폴더로 (놓은 자리에)
+                AppFolders.MoveWithin(Services.Settings.Current, _apps, target.Key, app.Key, index);
+                Log.Info($"앱 모음 판: 폴더 안 {(inside ? "순서 바꿈" : "넣음")} (자리 {index})");
+                Save();
+            };
         }
         else if (target is not null && FindCell(target) is { } cell)
         {
@@ -672,6 +694,7 @@ internal sealed partial class AllAppsPanel
         {
             d.Source.Opacity = 1;
             Dragging = false;
+            if (apply is null) ShiftGroup(null); // 취소·놓을 곳 없음: 비켜난 폴더 칸을 원래대로
             _groupGap = -1;
             if (apply is not null)
             {

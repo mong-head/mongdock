@@ -124,6 +124,21 @@ internal static class AppFolders
         s.Customized = true;
     }
 
+    /// <summary>
+    /// 폴더 안 순서 바꾸기 (2026-10-14 사용자: 폴더 안에서 앱 순서가 안 바뀜): 보이는 순서에서 appKey 를 index 자리로.
+    /// 그 폴더는 손댄 폴더가 됨 — 자동 분류가 순서·내용을 바꾸지 않음. 숨긴 앱처럼 안 보이는 것은 뒤에 그대로.
+    /// </summary>
+    public static void MoveWithin(Settings settings, IReadOnlyList<AppEntry> apps, string id, string appKey, int index)
+    {
+        var shown = Visible(settings, apps).FirstOrDefault(f => f.Id == id)?.Apps.Select(a => a.Key).ToList() ?? new List<string>();
+        var d = Touch(settings, apps, id);
+        shown.RemoveAll(k => k.Equals(appKey, StringComparison.OrdinalIgnoreCase));
+        shown.Insert(Math.Clamp(index, 0, shown.Count), appKey);
+        var rest = d.Apps!.Where(k => !shown.Contains(k, StringComparer.OrdinalIgnoreCase)).ToList();
+        d.Apps = shown.Concat(rest).ToList();
+        settings.AllApps.Customized = true;
+    }
+
     /// <summary>폴더에서 빼기 (앱은 모든 앱에 그대로).</summary>
     public static void RemoveFrom(Settings settings, IReadOnlyList<AppEntry> apps, string id, string appKey)
     {

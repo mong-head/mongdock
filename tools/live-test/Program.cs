@@ -88,6 +88,13 @@ internal static class Program
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
             return _fail == 0 ? 0 : 1;
         }
+        if (Array.IndexOf(args, "--folderorder") >= 0)
+        {
+            panelType.GetProperty("EdgeScrollEnabled", Any)!.SetValue(null, false);
+            FolderOrder(panelType, Open, Close, settings);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            return _fail == 0 ? 0 : 1;
+        }
         if (Array.IndexOf(args, "--dragfolders") >= 0)
         {
             panelType.GetProperty("EdgeScrollEnabled", Any)!.SetValue(null, false);
@@ -346,6 +353,79 @@ internal static class Program
     /// 폴더를 하나씩 펼치고 첫 앱 칸을 끌어 ① 잡는 순간 첫 프레임 오프셋 ② 스크립트 좌표로 옮길 때 ③ 프레임마다 커서 자리로 따라올 때 거리를 잼.
     /// 칸·아이콘 크기, 칸과 조상의 변환, 스크롤 자리도 같이 적음.
     /// </summary>
+    /// <summary>
+    /// 폴더 안 순서 바꾸기 (2026-10-14 사용자: 폴더 안에서 앱 순서가 안 바뀜) — 스크립트 끌기만 (진짜 마우스 없음, 시험 데이터 폴더):
+    /// 첫 앱을 셋째·넷째 사이로 끌면 둘째·셋째가 한 칸 앞으로 비켜나고, 놓으면 그 순서로 저장·폴더 칸 미리보기도 같은 순서, 손댄 폴더가 됨.
+    /// 취소하면 순서 그대로·비켜난 칸 원래대로.
+    /// </summary>
+    private static void FolderOrder(Type panelType, Func<Window> open, Action<Window> close, SettingsService settings)
+    {
+        var w = open();
+        w.Show();
+        Pump(1200);
+        var folders = ((System.Collections.IList)panelType.GetField("_folders", Any)!.GetValue(w)!).Cast<object>().ToList();
+        string Id(object f) => (string)f.GetType().GetProperty("Id")!.GetValue(f)!;
+        List<string> Keys(object f) => ((System.Collections.IEnumerable)f.GetType().GetProperty("Apps")!.GetValue(f)!).Cast<object>().Select(a => (string)a.GetType().GetProperty("Key")!.GetValue(a)!).ToList();
+        var folder = folders.FirstOrDefault(f => Keys(f).Count >= 4);
+        if (folder is null) { Check("폴더 순서: 앱 4개 이상인 폴더가 없음", false); close(w); return; }
+        string id = Id(folder);
+        var before = Keys(folder);
+        panelType.GetField("_expanded", Any)!.SetValue(w, id);
+        panelType.GetMethod("Rebuild", Any)!.Invoke(w, null);
+        Pump(600);
+        var cells = ((System.Collections.IEnumerable)panelType.GetField("_groupCells", Any)!.GetValue(w)!).Cast<System.Windows.Controls.Border>().ToList();
+        if (panelType.GetField("_bodyScroll", Any)!.GetValue(w) is System.Windows.Controls.ScrollViewer sv)
+        {
+            sv.ScrollToVerticalOffset(sv.VerticalOffset + cells[0].TranslatePoint(new Point(0, 0), sv).Y - 120);
+            Pump(400);
+        }
+        var dragItem = panelType.GetNestedType("DragItem", BindingFlags.NonPublic)!;
+        double appCell = (double)panelType.GetField("AppCell", BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Public)!.GetValue(null)!;
+        double X(System.Windows.Controls.Border c) => c.RenderTransform is TranslateTransform t ? t.X : 0;
+        void Drag(bool drop)
+        {
+            var c0 = cells[0];
+            var grab = new Point(c0.ActualWidth / 2, c0.ActualHeight * 0.3);
+            panelType.GetMethod("BeginDrag", Any)!.Invoke(w, new object?[] { c0, Activator.CreateInstance(dragItem, false, before[0], false), null, grab });
+            // 셋째 칸 자리(가운데)에 올림 → 끄는 앱이 셋째 자리로, 둘째·셋째는 한 칸 앞으로
+            var target = cells[2].TranslatePoint(new Point(cells[2].ActualWidth / 2, cells[2].ActualHeight / 2), w);
+            panelType.GetMethod("UpdateDrag", Any)!.Invoke(w, new object[] { target });
+            Pump(300);
+            if (drop)
+            {
+                double x1 = X(cells[1]), x2 = X(cells[2]), x3 = X(cells[3]);
+                Check($"폴더 순서: 끄는 동안 둘째·셋째가 한 칸 앞으로, 넷째는 그대로 (x {x1:0}, {x2:0}, {x3:0} / 칸 {appCell:0})",
+                    Math.Abs(x1 + appCell) < 2 && Math.Abs(x2 + appCell) < 2 && Math.Abs(x3) < 2);
+            }
+            panelType.GetMethod("EndDrag", Any)!.Invoke(w, new object[] { drop });
+            Pump(700);
+        }
+        // 취소: 순서 그대로, 비켜난 칸 원래대로
+        Drag(drop: false);
+        var afterCancel = Keys(((System.Collections.IList)panelType.GetField("_folders", Any)!.GetValue(w)!).Cast<object>().First(f => Id(f) == id));
+        Check($"폴더 순서: 취소하면 순서 그대로·칸 원래대로 (칸 x {X(cells[1]):0}, {X(cells[2]):0})", afterCancel.SequenceEqual(before) && Math.Abs(X(cells[1])) < 1 && Math.Abs(X(cells[2])) < 1);
+        // 놓기: 첫 앱이 셋째 자리로
+        Drag(drop: true);
+        var expect = before.Skip(1).Take(2).Append(before[0]).Concat(before.Skip(3)).ToList();
+        var now = Keys(((System.Collections.IList)panelType.GetField("_folders", Any)!.GetValue(w)!).Cast<object>().First(f => Id(f) == id));
+        Check($"폴더 순서: 놓으면 첫 앱이 셋째 자리로 (앞 4개 {string.Join(",", now.Take(4).Select(k => before.IndexOf(k)))} — 기대 1,2,0,3)", now.SequenceEqual(expect));
+        var def = settings.Current.AllApps.Groups.FirstOrDefault(g => g.Id == id);
+        Check($"폴더 순서: 설정에 저장·손댄 폴더 (Touched {def?.Touched}, 저장된 앞 3개 순서 맞음 {def?.Apps?.Take(3).SequenceEqual(expect.Take(3))})", def is { Touched: true } && def.Apps!.Take(expect.Count).SequenceEqual(expect));
+        // 폴더 칸 미리보기 아이콘도 같은 순서 (폴더 칸 안 작은 아이콘의 그림 = 앱 순서대로 들어감 — 폴더 정의 순서로 확인)
+        var tileKeys = Keys(((System.Collections.IList)panelType.GetField("_folders", Any)!.GetValue(w)!).Cast<object>().First(f => Id(f) == id)).Take(9).ToList();
+        Check("폴더 순서: 폴더 칸 미리보기도 새 순서", tileKeys.SequenceEqual(expect.Take(9)));
+        // 자동 분류 새로 고침(하루 한 번)을 돌려도 순서 그대로
+        var catalog = typeof(Mongdock.App).Assembly.GetType("Mongdock.Services.AllAppsCatalog")!;
+        var apps = catalog.GetMethod("Apps")!.Invoke(null, new object[] { false })!;
+        typeof(Mongdock.App).Assembly.GetType("Mongdock.Services.AppFolders")!.GetMethod("RefreshAuto")!.Invoke(null, new object[] { settings.Current, apps, true });
+        panelType.GetMethod("Rebuild", Any)!.Invoke(w, null);
+        Pump(300);
+        var afterAuto = Keys(((System.Collections.IList)panelType.GetField("_folders", Any)!.GetValue(w)!).Cast<object>().First(f => Id(f) == id));
+        Check("폴더 순서: 자동 분류를 다시 돌려도 순서 그대로", afterAuto.SequenceEqual(expect));
+        close(w);
+        Pump(400);
+    }
+
     private static void DragFollowFolders(Type panelType, Func<Window> open, Action<Window> close)
     {
         var w = open();
