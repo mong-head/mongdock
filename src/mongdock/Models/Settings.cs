@@ -387,6 +387,17 @@ public sealed class Settings
     /// <summary>"작업 표시줄이 독을 가릴 수 있어요" 안내를 이미 함 (다시 묻지 않음). 이 PC 것.</summary>
     public bool TaskbarOverlapAsked { get; set; }
 
+    /// <summary>이 PC 에서 몽독을 처음 켠 때 (루틴 추천은 7일 뒤부터). 없던 기존 사용자는 처음 읽은 날.</summary>
+    public DateTime? FirstRunAt { get; set; }
+    /// <summary>루틴 추천 (spec-routines §15) — 같이 여는 앱이 반복되면 한 번 물음. 기본 켬.</summary>
+    public bool RoutineSuggest { get; set; } = true;
+    /// <summary>마지막으로 루틴 추천을 보여 준 때 (일주일에 한 번까지).</summary>
+    public DateTime? RoutineSuggestLastAt { get; set; }
+    /// <summary>[괜찮아요]를 누른 묶음 (앱 식별자들) — 다시 묻지 않음.</summary>
+    public List<List<string>> RoutineSuggestDeclined { get; set; } = new();
+    /// <summary>연속 거절 수 (3이면 추천을 끔, [만들기]면 0).</summary>
+    public int RoutineSuggestDeclines { get; set; }
+
     /// <summary>가벼운 모드 (저사양 PC): 애니메이션·블러·독 호버 확대를 끄고 확인 주기를 2배로 (ViewModels/PerfMode).</summary>
     public bool PerformanceMode { get; set; }
 

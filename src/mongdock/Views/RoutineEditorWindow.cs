@@ -53,6 +53,14 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         Show(new RoutineEditorWindow(services, null, r, focusName: true) { _pinToDock = pinToDock });
     }
 
+    /// <summary>미리 채운 새 루틴 (루틴 추천 [만들기]) — 저장해야 루틴이 됨.</summary>
+    public static void OpenPrefilled(AppServices services, RoutineDef prefilled)
+    {
+        _open?.Close();
+        if (!RoutineUi.CanAdd(services)) return;
+        Show(new RoutineEditorWindow(services, null, prefilled, focusName: true));
+    }
+
     private static void Show(RoutineEditorWindow w)
     {
         _open = w;

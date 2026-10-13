@@ -515,7 +515,7 @@ internal sealed partial class SettingsWindow : Window
                 Toggle(_services.Settings.Current.AllApps.ShowSuggestions, on => Commit(() =>
                 {
                     _services.Settings.Current.AllApps.ShowSuggestions = on;
-                    if (!on) AppUsage.Clear();
+                    if (!on) { AppUsage.Clear(); RoutineSuggest.Clear(); } // 루틴 추천용 실행 시각 기록도
                 }))),
             // 판이 나타나는 모양 — 사용자가 직접 눌러 비교해 보고 고르게 (임시 줄, 닫기는 둘 다 즉시)
             Row(Loc.T("열 때 효과"), Loc.T("앱 모음 판이 나타나는 모양. 닫을 때는 바로 사라져요."), Segmented(
@@ -545,6 +545,17 @@ internal sealed partial class SettingsWindow : Window
         blank.Margin = new Thickness(6, 0, 0, 0);
         make.Children.Add(fromScreen);
         make.Children.Add(blank);
+        // 루틴 추천 (§15): "자주 쓰는 앱 기록"이 꺼져 있으면 함께 꺼짐(회색)
+        bool canSuggest = _services.Settings.Current.AllApps.ShowSuggestions;
+        var suggest = Toggle(canSuggest && _services.Settings.Current.RoutineSuggest, on => Commit(() =>
+        {
+            _services.Settings.Current.RoutineSuggest = on;
+            if (on) _services.Settings.Current.RoutineSuggestDeclines = 0;
+        }));
+        suggest.IsEnabled = canSuggest;
+        routineRows.Add(Row(Loc.T("루틴 추천"), canSuggest
+            ? Loc.T("같이 여는 앱이 며칠 반복되면 루틴으로 만들지 한 번 물어봐요. 이 PC 안에서만 계산해요.")
+            : Loc.T("\"자주 쓰는 앱 기록\"을 켜면 쓸 수 있어요."), suggest));
         routineRows.Add(Row(Loc.T("루틴 만들기"), Loc.F($"자주 쓰는 앱·웹사이트·파일을 정해 둔 모니터와 자리에 한꺼번에 열어요. 앱 모음 판 맨 위에도 있어요. (최대 {RoutineDef.MaxRoutines}개)"), make));
         body.Children.Add(Group(routineRows.ToArray()));
 

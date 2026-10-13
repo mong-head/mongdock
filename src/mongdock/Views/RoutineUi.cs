@@ -26,6 +26,7 @@ internal static class RoutineUi
             services.Settings.Save(); // 이관한 0 을 파일에도 바로 (저장 전에 꺼져도 다음 시작 때 다시 이관되지만 기다리지 않게)
         }
         RoutineTriggers.Init(services); // 더 보기: 시작·끝 조건, 함께 바꿀 것, 비슷하게 열면 묻기, 머문 시간
+        RoutineSuggest.Init(services); // 같이 여는 앱이 반복되면 루틴으로 만들지 한 번 물음 (§15)
         RoutineService.ElsewhereShown += list => _ = ShowElsewhereAsync(services, list);
         RoutineService.AlreadyAllHere += _ => NoteAtCursor(services, Loc.T("이미 열려 있어요"));
     }

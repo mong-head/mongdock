@@ -58,6 +58,7 @@ internal static class Program
         if (allApps >= 0 && allApps + 1 < args.Length) RenderAllAppsPanel(args[allApps + 1]);
         if (Array.IndexOf(args, "--dockfit") >= 0) { DockFitReport(); return 0; }
         if (Array.IndexOf(args, "--clipdemo") >= 0) { ClipDemo(); return 0; }
+        if (Array.IndexOf(args, "--suggest") >= 0) return SuggestTable();
 
         int trashIcons = Array.FindIndex(args, a => a == "--trash-icons");
         if (trashIcons >= 0 && trashIcons + 1 < args.Length) RenderTrashIcons(args[trashIcons + 1]);
@@ -640,6 +641,75 @@ internal static class Program
     /// --clipdemo: 오른쪽 세로 독 구조(창 Grid → 오른쪽 정렬 판 Border → StackPanel → 확대 아이콘)에서 판이 원하는 길이가 창보다 길 때
     /// 판 밖(왼쪽)으로 튀어나온 확대 아이콘이 잘리는지 (WPF 배치 잘림). 왼쪽 튀어나온 자리의 픽셀이 칠해졌으면 "보임".
     /// </summary>
+    /// <summary>
+    /// --suggest: 루틴 추천(spec-routines §15) 판정표 — 가짜 실행 기록으로 RoutineSuggest.Find 를 돌려 기대와 맞는지.
+    /// (설치 7일·주 1회·전체 화면·방해 금지·일시 정지·3번 거절은 묻는 단계에서 거름 — 표 아래 따로)
+    /// </summary>
+    private static int SuggestTable()
+    {
+        var asm = typeof(Mongdock.App).Assembly;
+        var t = asm.GetType("Mongdock.Services.RoutineSuggest")!;
+        var any = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+        var launchType = t.GetNestedType("Launch", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)!;
+        var find = t.GetMethod("Find", any)!;
+        var whenText = t.GetMethod("WhenText", any)!;
+        var now = new DateTime(2026, 10, 16, 18, 0, 0); // 금요일 저녁
+        var monday = new DateTime(2026, 10, 5); // 2주 전 월요일
+        System.Collections.IList Make(IEnumerable<(string Id, DateTime At)> items)
+        {
+            var list = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(launchType))!;
+            foreach (var (id, at) in items) list.Add(Activator.CreateInstance(launchType, id, at));
+            return list;
+        }
+        IEnumerable<(string, DateTime)> Days(IEnumerable<int> dayOffsets, TimeSpan start, params string[] apps)
+        {
+            foreach (int d in dayOffsets)
+                for (int i = 0; i < apps.Length; i++)
+                    yield return (apps[i], monday.AddDays(d) + start + TimeSpan.FromMinutes(4 * i));
+        }
+        var weekdays = new[] { 0, 1, 2, 3, 4, 7, 8, 9 }; // 2주 평일 8일
+        var none = new HashSet<string>();
+        var empty = new List<IReadOnlyCollection<string>>();
+        int fail = 0;
+        void Case(string name, IEnumerable<(string, DateTime)> launches, bool expect, ISet<string>? startup = null,
+            List<IReadOnlyCollection<string>>? routines = null, List<IReadOnlyCollection<string>>? declined = null)
+        {
+            var r = find.Invoke(null, new object?[] { Make(launches), now, startup ?? none, routines ?? empty, declined ?? empty });
+            string got = r is null ? "안 물음" : "물음: " + string.Join("·", ((System.Collections.IEnumerable)r.GetType().GetProperty("Apps")!.GetValue(r)!).Cast<string>().Select(x => x[4..]))
+                + $" ({((System.Collections.ICollection)r.GetType().GetProperty("Days")!.GetValue(r)!).Count}일, {whenText.Invoke(null, new[] { r })})";
+            bool ok = (r is not null) == expect;
+            if (!ok) fail++;
+            Console.WriteLine($"  {(ok ? "통과" : "실패")}  {name,-34} → {got}");
+        }
+        var nine = TimeSpan.FromHours(9);
+        Case("평일 아침 3앱 8일", Days(weekdays, nine, "exe:outlook", "exe:chrome", "exe:hwp"), true);
+        Case("앱 2개뿐", Days(weekdays, nine, "exe:outlook", "exe:chrome"), false);
+        Case("3일만 반복", Days(new[] { 7, 8, 9 }, nine, "exe:outlook", "exe:chrome", "exe:hwp"), false);
+        Case("4일 반복 (최소)", Days(new[] { 2, 7, 8, 9 }, nine, "exe:outlook", "exe:chrome", "exe:hwp"), true);
+        Case("시각이 날마다 2시간 이상 다름", Days(new[] { 0, 7 }, nine, "exe:outlook", "exe:chrome", "exe:hwp")
+            .Concat(Days(new[] { 1, 8 }, TimeSpan.FromHours(11.5), "exe:outlook", "exe:chrome", "exe:hwp"))
+            .Concat(Days(new[] { 2, 9 }, TimeSpan.FromHours(14), "exe:outlook", "exe:chrome", "exe:hwp")), false);
+        Case("시각 ±40분 흔들림", Days(new[] { 0, 7 }, nine, "exe:outlook", "exe:chrome", "exe:hwp")
+            .Concat(Days(new[] { 1, 8 }, TimeSpan.FromHours(9.6), "exe:outlook", "exe:chrome", "exe:hwp")), true);
+        Case("30분 넘게 흩어져 켬", weekdays.SelectMany(d => new[] { ("exe:outlook", monday.AddDays(d) + nine), ("exe:chrome", monday.AddDays(d) + nine + TimeSpan.FromMinutes(25)), ("exe:hwp", monday.AddDays(d) + nine + TimeSpan.FromMinutes(55)) }), false);
+        Case("시작 프로그램(카톡) 끼면 2앱", Days(weekdays, nine, "exe:kakaotalk", "exe:outlook", "exe:chrome"), false, new HashSet<string> { "exe:kakaotalk" });
+        Case("시작 프로그램 빼고도 3앱", Days(weekdays, nine, "exe:kakaotalk", "exe:outlook", "exe:chrome", "exe:hwp"), true, new HashSet<string> { "exe:kakaotalk" });
+        Case("기존 루틴과 같은 묶음", Days(weekdays, nine, "exe:outlook", "exe:chrome", "exe:hwp"), false,
+            routines: new List<IReadOnlyCollection<string>> { new[] { "exe:outlook", "exe:chrome", "exe:hwp" } });
+        Case("거절한 묶음", Days(weekdays, nine, "exe:outlook", "exe:chrome", "exe:hwp"), false,
+            declined: new List<IReadOnlyCollection<string>> { new[] { "exe:outlook", "exe:chrome", "exe:hwp" } });
+        Case("거절한 묶음과 1개만 겹침", Days(weekdays, nine, "exe:code", "exe:slack", "exe:figma"), true,
+            declined: new List<IReadOnlyCollection<string>> { new[] { "exe:outlook", "exe:chrome", "exe:code" } });
+        Case("15일보다 오래된 기록", Days(weekdays, nine, "exe:outlook", "exe:chrome", "exe:hwp").Select(x => (x.Item1, x.Item2.AddDays(-14))), false);
+        Case("주말 저녁 게임 묶음 (2주말)", Days(new[] { -2, -1, 5, 6 }, TimeSpan.FromHours(20), "exe:steam", "exe:discord", "exe:chrome"), true);
+        Case("주말 저녁 3일만 (15일 전 하루는 빠짐)", Days(new[] { -12, 5, 6, -2 }, TimeSpan.FromHours(20), "exe:steam", "exe:discord", "exe:chrome"), false);
+        Case("매일 4앱 중 하루 1개 빠짐", Days(new[] { 0, 1, 7, 8, 9 }, nine, "exe:outlook", "exe:chrome", "exe:hwp", "exe:teams")
+            .Concat(Days(new[] { 2 }, nine, "exe:outlook", "exe:chrome", "exe:hwp")), true);
+        Console.WriteLine(fail == 0 ? "루틴 추천 판정: 모두 통과" : $"루틴 추천 판정: {fail}개 실패");
+        Console.WriteLine("  (묻는 단계에서 거름: 설치 7일 안, 지난 추천 7일 안, 전체 화면·방해 금지, 일시 정지, 루틴 추천 끔·자주 쓰는 앱 기록 끔, 3번 연속 거절이면 끔)");
+        return fail == 0 ? 0 : 1;
+    }
+
     private static void ClipDemo()
     {
         foreach (var (longer, fixedPanels) in new[] { (false, false), (true, false), (true, true) })

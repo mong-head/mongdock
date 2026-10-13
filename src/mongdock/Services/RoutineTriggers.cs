@@ -229,6 +229,9 @@ internal static class RoutineTriggers
         else if (_pending.All(p => p.Key != key)) _pending.Add((key, routine, index, DateTime.Now)); // 못 띄웠으면 나중에 (30분 안)
     }
 
+    /// <summary>방해 금지·전체 화면 중 (루틴 추천도 안 물음).</summary>
+    internal static bool IsBusy() => Busy();
+
     private static bool Busy()
     {
         var s = _s!;
