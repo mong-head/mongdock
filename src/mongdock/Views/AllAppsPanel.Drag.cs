@@ -116,6 +116,9 @@ internal sealed partial class AllAppsPanel
         source.Opacity = 0.25; // 원래 자리는 흐린 빈 칸
         source.ToolTip = null;
         Dragging = true; // 끄는 동안은 비활성화·바깥 판정으로 판을 닫지 않음
+        // 보이기 전에 창 핸들을 만들고 커서 아래(잡은 자리 그대로)로 먼저 옮긴 뒤 보임 — 첫 프레임이 다른 자리에 그려졌다 날아오지 않게
+        new WindowInteropHelper(_drag.Ghost).EnsureHandle();
+        MoveGhost(Mouse.GetPosition(this));
         _drag.Ghost.Show();
     }
 

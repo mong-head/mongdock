@@ -36,26 +36,21 @@ internal sealed partial class AllAppsPanel
 
     // ── 판 열기: 구역 차례로 ──
 
-    /// <summary>그림 창을 뜨기 직전: 둘째 구역부터 숨겨 둠 (그림과 진짜 판이 같은 모습 — 바꿔 끼울 때 번쩍이지 않게).</summary>
+    // 판 열기: 판이 커지는 동안(그림 창) 70% 지점부터 내용이 겹쳐 나타나고, 다 열린 뒤에는 내용이 따로 다시 나오지 않음
+    // (2026-10-13 "열릴 때 두 번 열리는 듯" — 예전엔 판이 다 커진 뒤 구역이 차례로 나타나 두 번 움직이는 것처럼 보였음)
+    protected override bool IntroContentFade => Motion;
+
+    /// <summary>빈 판 그림을 뜨기 직전: 첫 구역(루틴 줄)만 남기고 숨김 — 첫 칸은 예전처럼 처음부터 보임.</summary>
     protected override void BeforeIntroPicture()
     {
-        if (!Motion || Sections() is not { } list) return;
+        if (Sections() is not { } list) return;
         foreach (var s in list.Skip(1)) s.Opacity = 0;
     }
 
-    /// <summary>진짜 판이 제자리에 놓인 뒤: 숨겨 둔 구역을 위에서부터 차례로.</summary>
-    protected override void AfterIntro()
+    protected override void AfterIntroPicture()
     {
         if (Sections() is not { } list) return;
-        if (!Motion) { foreach (var s in list) s.Opacity = 1; return; }
-        double viewport = ViewHeight;
-        int i = 0;
-        foreach (var s in list.Skip(1))
-        {
-            var top = s.TranslatePoint(new Point(0, 0), View).Y;
-            if (top > viewport) { s.Opacity = 1; continue; } // 화면 밖은 그냥
-            Appear(s, Math.Min(i++ * StepMs, 150), SectionMs, 8);
-        }
+        foreach (var s in list) s.Opacity = 1;
     }
 
     /// <summary>처음 화면의 구역들 (루틴 줄·즐겨찾기·폴더·모든 앱 …).</summary>

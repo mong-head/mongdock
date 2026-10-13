@@ -59,6 +59,8 @@ internal static class PanelIntro
     private static Window? _ghost;
     private static System.Windows.Controls.Canvas? _canvas;
     private static Rectangle? _shape;
+    /// <summary>판 안 내용 그림 (빈 판 그림 위에 같은 자리 — 판이 70% 커졌을 때부터 흐릿→보임).</summary>
+    private static Rectangle? _content;
     private static int _play; // 지금 움직이는 차례 (먼저 시작한 것은 멈춤)
 
     private static AppServices? _services;
@@ -74,8 +76,10 @@ internal static class PanelIntro
             RadiusY = 8,
             Effect = new DropShadowEffect { BlurRadius = 24, ShadowDepth = 4, Direction = 270, Opacity = 0.22 },
         };
+        _content = new Rectangle { RadiusX = 8, RadiusY = 8, Opacity = 0 };
         _canvas = new System.Windows.Controls.Canvas();
         _canvas.Children.Add(_shape);
+        _canvas.Children.Add(_content);
         var ghost = new Window
         {
             WindowStyle = WindowStyle.None,
@@ -167,7 +171,8 @@ internal static class PanelIntro
     }
 
     /// <summary>판 그림을 움직임. 끝나면 done (진짜 판을 제자리에) — 그 다음 프레임에 그림 창을 숨김.</summary>
-    public static void Play(AppServices services, string mode, ImageSource picture, Rect final, Rect icon, Action done)
+    /// <summary>contentPicture: 판 안 내용까지 그린 그림 — 있으면 판이 70% 커졌을 때부터 빈 판 위에 흐릿→보임 (판이 다 열린 뒤 내용이 따로 나오지 않게, 2026-10-13 "두 번 열리는 듯").</summary>
+    public static void Play(AppServices services, string mode, ImageSource picture, Rect final, Rect icon, Action done, ImageSource? contentPicture = null)
     {
         var ghost = Ghost(services);
         var shape = _shape!;
@@ -182,6 +187,8 @@ internal static class PanelIntro
         _canvas!.Width = area.Width;
         _canvas.Height = area.Height;
         shape.Fill = new ImageBrush(picture) { Stretch = Stretch.Fill };
+        var content = _content!;
+        content.Fill = contentPicture is not null ? new ImageBrush(contentPicture) { Stretch = Stretch.Fill } : null;
         void Apply(double t)
         {
             var (r, opacity) = Sample(mode, t, final, icon);
@@ -191,6 +198,13 @@ internal static class PanelIntro
             shape.Height = Math.Max(1, r.Height);
             shape.RadiusX = shape.RadiusY = 8 * r.Width / Math.Max(1, final.Width);
             shape.Opacity = opacity;
+            if (content.Fill is null) return;
+            System.Windows.Controls.Canvas.SetLeft(content, r.Left - area.Left);
+            System.Windows.Controls.Canvas.SetTop(content, r.Top - area.Top);
+            content.Width = shape.Width;
+            content.Height = shape.Height;
+            content.RadiusX = content.RadiusY = shape.RadiusX;
+            content.Opacity = opacity * Math.Clamp((t - 0.7) / 0.3, 0, 1); // 70% 부터 겹쳐 나타나 끝에서 다 보임
         }
         Apply(0);
         var clock = new Stopwatch();
@@ -236,6 +250,7 @@ internal static class PanelIntro
         if (play != _play) return;
         if (_ghost is { IsVisible: true } g) g.Hide();
         if (_shape is not null) _shape.Fill = null; // 판 그림을 들고 있지 않게
+        if (_content is not null) { _content.Fill = null; _content.Opacity = 0; }
         BlankSoon();
     }
 

@@ -241,6 +241,91 @@ internal static class Program
             Pump(400);
         }
 
+        // A4) 끌기 시작: 잡는 순간 끄는 그림이 커서 아래(잡은 지점 그대로)에 바로 — 첫 프레임부터 커서에서 4px 안, 판 왼쪽 위에서 날아오지 않음
+        {
+            var w = open();
+            panelType.GetField("_allOpen", Any)!.SetValue(w, true);
+            w.Show();
+            Pump(1200);
+            panelType.GetMethod("Rebuild", Any)!.Invoke(w, null);
+            Pump(400);
+            var dropTag = panelType.GetNestedType("DropTag", BindingFlags.NonPublic)!;
+            var dragItem = panelType.GetNestedType("DragItem", BindingFlags.NonPublic)!;
+            var cells = Descendants((DependencyObject)w.Content).OfType<System.Windows.Controls.Border>()
+                .Where(b => b.Tag is { } t && t.GetType() == dropTag && (string)dropTag.GetProperty("Kind")!.GetValue(t)! is "app" or "group" && b.ActualWidth > 0 && b.IsVisible)
+                .Take(2).ToList();
+            foreach (var cell in cells)
+            {
+                var tag = cell.Tag;
+                bool group = (string)dropTag.GetProperty("Kind")!.GetValue(tag)! == "group";
+                string key = (string)dropTag.GetProperty("Key")!.GetValue(tag)!;
+                var grab = new Point(cell.ActualWidth * 0.3, cell.ActualHeight * 0.4); // 칸 안 잡은 자리
+                var panelPt = cell.TranslatePoint(grab, w);
+                var cursorPx = w.PointToScreen(panelPt);
+                var item = Activator.CreateInstance(dragItem, group, key, false)!;
+                panelType.GetMethod("BeginDrag", Any)!.Invoke(w, new object?[] { cell, item, null, grab });
+                panelType.GetMethod("UpdateDrag", Any)!.Invoke(w, new object[] { panelPt });
+                var drag = panelType.GetField("_drag", Any)!.GetValue(w)!;
+                var ghost = (Window)drag.GetType().GetField("Ghost")!.GetValue(drag)!;
+                var gh = new WindowInteropHelper(ghost).Handle;
+                var grabPx = (Point)drag.GetType().GetField("Grab")!.GetValue(drag)!;
+                var dpi = VisualTreeHelper.GetDpi(w);
+                double worst = 0;
+                var log = new List<string>();
+                for (int f = 0; f < 12; f++)
+                {
+                    Pump(f == 0 ? 1 : 16);
+                    GetWindowRect(gh, out var r);
+                    // 커서가 있어야 할 자리 = 그림 창 왼쪽 위 + (그림자 여백 12 + 잡은 자리) × 배율
+                    double cx = r.Left + (12 + grabPx.X) * dpi.DpiScaleX, cy = r.Top + (12 + grabPx.Y) * dpi.DpiScaleY;
+                    double off = Math.Max(Math.Abs(cx - cursorPx.X), Math.Abs(cy - cursorPx.Y)) / dpi.DpiScaleX;
+                    worst = Math.Max(worst, off);
+                    if (f < 3) log.Add($"{off:0.0}");
+                }
+                Check($"끌기 시작({(group ? "폴더 칸" : "앱 칸")}): 첫 프레임부터 그림이 커서에서 4px 안 (가장 먼 {worst:0.0}px, 처음 {string.Join("·", log)})", worst <= 4);
+                panelType.GetMethod("EndDrag", Any)!.Invoke(w, new object[] { false });
+                Pump(500);
+            }
+            if (cells.Count == 0) Check("끌기 시작: 끌 칸을 찾지 못함", false);
+            // 진짜 마우스로 (사용자 말: "잡는 순간 판 왼쪽 위에서 나타났다가 커서로") — 누르고 150ms 뒤 12px 끌면서 판 왼쪽 위~칸 자리를 찍음
+            if (cells.Count > 0 && GetCursorPos(out var saved))
+            {
+                // 폴더 칸만 (앱 칸을 떼면 그 앱이 실행될 수 있어서 — 사용자 앱은 건드리지 않음)
+                var cell = cells.FirstOrDefault(c => (string)dropTag.GetProperty("Kind")!.GetValue(c.Tag)! == "group") ?? cells[0];
+                if ((string)dropTag.GetProperty("Kind")!.GetValue(cell.Tag)! != "group") { Check("끌기 시작(진짜 마우스): 폴더 칸이 없어 건너뜀", true); goto skipReal; }
+                var center = cell.PointToScreen(new Point(cell.ActualWidth / 2, cell.ActualHeight / 2));
+                var dpi = VisualTreeHelper.GetDpi(w);
+                var topLeft = w.PointToScreen(new Point(0, 0));
+                var region = new Rect(w.Left, w.Top, Math.Min(w.ActualWidth, (center.X - topLeft.X) / dpi.DpiScaleX + 120), Math.Min(w.ActualHeight, (center.Y - topLeft.Y) / dpi.DpiScaleY + 80));
+                SetCursorPos((int)center.X, (int)center.Y);
+                Pump(150);
+                mouse_event(0x0002, 0, 0, 0, IntPtr.Zero); // 왼쪽 누름
+                Pump(220);
+                var frames = new List<(long, byte[])>();
+                var sw = Stopwatch.StartNew();
+                for (int i = 1; i <= 6; i++) { SetCursorPos((int)center.X + i * 4, (int)center.Y); Pump(16); frames.Add((sw.ElapsedMilliseconds, Grab(region))); }
+                for (int i = 0; i < 6; i++) { Pump(16); frames.Add((sw.ElapsedMilliseconds, Grab(region))); }
+                var drag = panelType.GetField("_drag", Any)!.GetValue(w);
+                double off = -1;
+                if (drag is not null)
+                {
+                    var ghost = (Window)drag.GetType().GetField("Ghost")!.GetValue(drag)!;
+                    var grabPx = (Point)drag.GetType().GetField("Grab")!.GetValue(drag)!;
+                    GetWindowRect(new WindowInteropHelper(ghost).Handle, out var r);
+                    GetCursorPos(out var now);
+                    off = Math.Max(Math.Abs(r.Left + (12 + grabPx.X) * dpi.DpiScaleX - now.X), Math.Abs(r.Top + (12 + grabPx.Y) * dpi.DpiScaleY - now.Y)) / dpi.DpiScaleX;
+                }
+                mouse_event(0x0004, 0, 0, 0, IntPtr.Zero); // 뗌
+                Pump(400);
+                SetCursorPos(saved.X, saved.Y); // 커서 원래 자리로
+                SaveStrip(Path.Combine(outDir, "frames-drag-start.png"), frames, (int)region.Width, (int)region.Height);
+                Check($"끌기 시작(진짜 마우스): 끌기가 시작됨, 그림이 커서에서 4px 안 ({(drag is null ? "끌기 안 됨" : $"{off:0.0}px")})", drag is not null && off <= 4);
+            }
+            skipReal:
+            close(w);
+            Pump(400);
+        }
+
         // B) 튀기기 애니메이션 (실제 창)
         {
             var layout = Mongdock.ViewModels.DockLayout.From(settings.Current.Dock, true);
@@ -357,6 +442,26 @@ internal static class Program
     private struct FLASHWINFO { public uint cbSize; public IntPtr hwnd; public uint dwFlags; public uint uCount; public uint dwTimeout; }
     [DllImport("user32.dll")] private static extern bool FlashWindowEx(ref FLASHWINFO info);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [StructLayout(LayoutKind.Sequential)] private struct POINTL { public int X, Y; }
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINTL p);
+    [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] private static extern void mouse_event(uint flags, int dx, int dy, uint data, IntPtr extra);
+    [DllImport("user32.dll")] private static extern void keybd_event(byte vk, byte scan, uint flags, IntPtr extra);
+    /// <summary>Esc (끄는 중 취소 — 원래 자리로).</summary>
+    private static void Key2Escape() { keybd_event(0x1B, 0, 0, IntPtr.Zero); keybd_event(0x1B, 0, 2, IntPtr.Zero); Pump(200); }
+    [StructLayout(LayoutKind.Sequential)] private struct RECTL { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out RECTL rect);
+
+    private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
+    {
+        int n = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < n; i++)
+        {
+            var c = VisualTreeHelper.GetChild(root, i);
+            yield return c;
+            foreach (var d in Descendants(c)) yield return d;
+        }
+    }
 
     private static void Check(string what, bool ok)
     {
@@ -397,10 +502,20 @@ internal static class Program
             if (peak > 0.6 && s < peak - 0.35) dips++; // 거의 다 보였다가 크게 사라짐 = 번쩍임·두 번 뜸
             peak = Math.Max(peak, s);
         }
+        // 움직임 덩어리: 프레임 사이 변화가 있는 구간이 몇 번인지 (멈춘 프레임 3개 이상으로 나뉘면 따로 셈) — 2번이면 "두 번 열리는" 것처럼 보임
+        int bursts = 0, still = 99;
+        long burst2At = -1;
+        for (int i = 1; i < frames.Count; i++)
+        {
+            bool moving = Diff(frames[i - 1].Px, frames[i].Px) > 0.004;
+            if (moving) { if (still >= 3) { bursts++; if (bursts == 2) burst2At = frames[i].Ms; } still = 0; }
+            else still++;
+        }
         int firstSeen = shown.FindIndex(s => s > 0.1);
         int full = shown.FindIndex(s => s >= final - 0.05 && final > 0.3);
         Check($"{name}: 열림·활성 (활성 {active}, 보임 {visible})", visible);
         Check($"{name}: 사라졌다 다시 뜨지 않음 (떨어짐 {dips}번, 처음 보임 {(firstSeen >= 0 ? frames[firstSeen].Ms : -1)}ms, 다 보임 {(full >= 0 ? frames[full].Ms : -1)}ms)", dips == 0 && final > 0.3);
+        Check($"{name}: 움직임이 한 번에 끝남 (움직임 {bursts}번{(burst2At >= 0 ? $", 두 번째 {burst2At}ms" : "")})", bursts <= 1);
         SaveStrip(Path.Combine(outDir, $"frames-{name}.png"), frames.Where((_, i) => i % 3 == 0).Take(18).ToList(), (int)sample.Width, (int)sample.Height);
         close(w);
         Pump(250);
