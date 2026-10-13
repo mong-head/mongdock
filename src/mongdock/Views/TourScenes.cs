@@ -453,8 +453,35 @@ internal static class TourScenes
             var g = new Grid { Height = 32, VerticalAlignment = VerticalAlignment.Top, Background = new SolidColorBrush(_dark ? Color.FromArgb(0xE0, 0x1E, 0x1E, 0x22) : Color.FromArgb(0xE0, 0xF6, 0xF5, 0xFA)) };
             g.Children.Add(left);
             g.Children.Add(right);
+            // 메뉴 이름이 긴 언어(독일어 "Ansicht" 등)는 오른쪽 아이콘과 겹치지 않게 상단바를 조금 작게 (장면 폭 안에 왼쪽·오른쪽 + 사이 24)
+            left.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            right.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            double need = left.DesiredSize.Width + right.DesiredSize.Width + 24;
+            if (need * scale > W) scale = W / need;
             g.LayoutTransform = new ScaleTransform(scale, scale);
+            // 점검은 상단바만 따로 배치해서 (장면에 따라 상단바를 잘라 그림으로 넣기도 함)
+            g.Measure(new Size(W, double.PositiveInfinity));
+            g.Arrange(new Rect(0, 0, W, g.DesiredSize.Height));
+            g.UpdateLayout();
+            CheckBarOverlap(g);
             return g;
+        }
+
+        /// <summary>점검: 장면 속 상단바의 왼쪽(앱 이름·메뉴)과 오른쪽(와이파이·소리·배터리·시계)이 겹치면 문제.</summary>
+        private void CheckBarOverlap(FrameworkElement scene)
+        {
+            if (_problems is null) return;
+            var all = Descendants(scene).OfType<FrameworkElement>().Where(e => !string.IsNullOrEmpty(e.Uid) && e.Visibility == Visibility.Visible && e.ActualWidth > 0).ToList();
+            var leftEls = all.Where(e => e.Uid == "app" || e.Uid.StartsWith("menu:", StringComparison.Ordinal)).ToList();
+            var rightEls = all.Where(e => e.Uid is "wifi" or "volume" or "battery" or "clock").ToList();
+            foreach (var a in leftEls)
+                foreach (var b in rightEls)
+                {
+                    var ra = Bounds(a, scene);
+                    var rb = Bounds(b, scene);
+                    if (ra.IntersectsWith(rb) && Rect.Intersect(ra, rb).Width > 0.5)
+                        _problems.Add($"상단바 \"{(a is Border { Child: TextBlock t } ? t.Text : (a as TextBlock)?.Text ?? a.Uid)}\"가 오른쪽 {b.Uid}와 겹침");
+                }
         }
 
         private static FrameworkElement? ByUid(DependencyObject root, string uid) =>
