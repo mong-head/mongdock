@@ -896,6 +896,17 @@ internal static class Program
             CaseFav("씨앗의 윈도우 기본 앱 뺌", Run(new() { "sys" }, seeds, null, id => id != "w1" && id != "w2"), new[] { "sys", "w3", "w4" }, 2); // 1순위의 기본 앱(sys)은 그대로, 씨앗에서만 w1·w2(기본 앱) 뺌, 억지로 안 채움
             CaseFav("몽독 기록만 4칸", Run(new() { "m1", "m2", "m3", "m4", "m5" }, seeds), new[] { "m1", "m2", "m3", "m4" }, 0);
         }
+        // 추천 칸 수: 즐겨찾기 0개 4칸 · 1개 3칸 · 2개 이상 2칸
+        {
+            var slots = asm.GetType("Mongdock.Views.AllAppsPanel")!.GetMethod("SuggestionSlots", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+            foreach (var (favs, expect) in new[] { (0, 4), (1, 3), (2, 2), (3, 2), (8, 2) })
+            {
+                int got = (int)slots.Invoke(null, new object[] { favs })!;
+                bool ok = got == expect;
+                if (!ok) fail++;
+                Console.WriteLine($"  {(ok ? "통과" : "실패")}  {$"추천 칸 수: 즐겨찾기 {favs}개",-34} → {got}칸 (기대 {expect})");
+            }
+        }
         // 루틴 링크 해석·허용 (리뷰 H1·H2·M2)
         var links = asm.GetType("Mongdock.Services.RoutineLinks")!;
         var parse = links.GetMethod("Parse")!;

@@ -288,9 +288,9 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         // 루틴 (맨 위 — 루틴 칸 + [+ 루틴 추가], 0개면 설명 카드)
         root.Children.Add(RoutineSection());
 
-        // ★ 즐겨찾기 (내가 고른 것) + 줄 끝 추천 칸 (0개면 4개 + 제목 옆 안내, 있으면 2개). 추천 후보도 없고 0개면 점선 안내 칸
+        // ★ 즐겨찾기 (내가 고른 것) + 줄 끝 추천 칸 (0개 4칸 + 제목 옆 안내, 1개 3칸, 2개 이상 2칸). 추천 후보도 없고 0개면 점선 안내 칸
         var fav = Favorites(visible);
-        var suggestions = S.ShowSuggestions ? Suggestions(Services.Settings.Current, visible, fav.Count == 0 ? 4 : 2) : new List<AppEntry>();
+        var suggestions = S.ShowSuggestions ? Suggestions(Services.Settings.Current, visible, SuggestionSlots(fav.Count)) : new List<AppEntry>();
         var title = new StackPanel { Orientation = Orientation.Horizontal };
         title.Children.Add(SectionTitle("★ " + Loc.T("즐겨찾기")));
         if (fav.Count == 0 && suggestions.Count > 0)
@@ -391,6 +391,9 @@ internal sealed partial class AllAppsPanel : DockStackPanel
 
     /// <summary>시험 그림에서만: 첫 추천 칸에 마우스를 올린 모습으로.</summary>
     internal static bool ShowSuggestionHoverForTest { get; set; }
+
+    /// <summary>추천 칸 수 (2026-10-13 사용자 확정): 즐겨찾기 0개 4칸, 1개 3칸, 2개 이상 2칸 = max(2, 4 − 즐겨찾기 수).</summary>
+    internal static int SuggestionSlots(int favorites) => Math.Max(2, 4 - favorites);
 
     /// <summary>
     /// 추천 칸 묶음 (2026-10-13 사용자 C안): 연보라 연한 바탕(둥근 12)으로 감싸고, 왼쪽 위 모서리에 작은 알약 라벨 "✦ 추천"
