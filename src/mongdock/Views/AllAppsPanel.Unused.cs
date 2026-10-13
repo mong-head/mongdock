@@ -194,7 +194,8 @@ internal sealed partial class AllAppsPanel
         var size = new TextBlock { Text = UnusedApps.SizeText(r.Bytes), FontSize = 12, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 0, 6, 0) };
         System.Windows.Controls.Grid.SetColumn(size, 4);
         grid.Children.Add(size);
-        var row = new Border { CornerRadius = new CornerRadius(6), Child = grid, ContextMenu = LazyMenu(m => FillAppMenu(m, app)), ToolTip = app.Name, Uid = "m:u:" + app.Key };
+        var row = new Border { CornerRadius = new CornerRadius(6), Child = grid, ContextMenu = LazyMenu(m => FillAppMenu(m, app)), Uid = "m:u:" + app.Key };
+        MongToolTip.IfTrimmed(row, name, app.Name); // 잘렸을 때만 전체 이름
         row.MouseEnter += (_, _) => row.Background = P.Hover;
         row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
         // 줄을 누르면 체크 (실행은 오른쪽 클릭 메뉴 — 정리 화면에서 실수로 켜지 않게)

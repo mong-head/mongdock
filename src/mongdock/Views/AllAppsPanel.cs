@@ -394,7 +394,8 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         LoadIcon(image, app);
         var stack = new StackPanel();
         stack.Children.Add(image);
-        stack.Children.Add(new TextBlock { Uid = "name", Text = app.Name, TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 11.5, Opacity = 0.75, Margin = new Thickness(0, 4, 0, 0) });
+        var nameText = new TextBlock { Uid = "name", Text = app.Name, TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = UiText.Sub, Opacity = 0.75, Margin = new Thickness(0, 4, 0, 0) };
+        stack.Children.Add(nameText);
         stack.Children.Add(new TextBlock { Text = Loc.T("추천"), TextAlignment = TextAlignment.Center, FontSize = 9.5, Foreground = P.SubText });
         Border Mini(string glyph, string tip, Action run)
         {
@@ -441,10 +442,10 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             CornerRadius = new CornerRadius(8),
             Background = Brushes.Transparent,
             Child = host,
-            ToolTip = app.Name,
             Cursor = Cursors.Hand,
             Tag = new DropTag("suggest", app.Key),
         };
+        MongToolTip.IfTrimmed(cell, nameText, app.Name); // 잘렸을 때만 전체 이름
         cell.MouseEnter += (_, _) => overlay.Visibility = Visibility.Visible;
         cell.MouseLeave += (_, _) => overlay.Visibility = Visibility.Hidden;
         Pressable(cell, () => Launch(app), null, null); // 추천 칸은 끌기 없음 (내가 넣은 게 아니라서) — 넣기는 [+]·오른쪽 클릭
@@ -475,17 +476,18 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             });
         var stack = new StackPanel();
         stack.Children.Add(iconHost);
-        stack.Children.Add(new TextBlock
+        // 앱 이름: 한 줄, 넘치면 … — 즐겨찾기·추천·폴더 안·모든 앱 칸 모두 같은 크기 (2026-10-13 사용자: 이름이 크고 두 줄로 넘어감)
+        var nameText = new TextBlock
         {
-            Uid = "name", // 앱 이름은 아이콘과 같이 커짐 (판 글자 배율 예외)
+            Uid = "name",
             Text = app.Name,
-            TextWrapping = TextWrapping.Wrap,
+            TextWrapping = TextWrapping.NoWrap,
             TextTrimming = TextTrimming.CharacterEllipsis,
             TextAlignment = TextAlignment.Center,
-            MaxHeight = 30,
-            FontSize = 11.5,
+            FontSize = UiText.Sub,
             Margin = new Thickness(0, 4, 0, 0),
-        });
+        };
+        stack.Children.Add(nameText);
         var cell = new Border
         {
             Width = AppCell - 4,
@@ -496,10 +498,10 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             BorderBrush = selected ? P.SoftAccentLine : Brushes.Transparent,
             BorderThickness = new Thickness(1.5),
             Child = stack,
-            ToolTip = app.Name,
             Cursor = Cursors.Hand,
             ContextMenu = LazyMenu(m => FillAppMenu(m, app)),
         };
+        MongToolTip.IfTrimmed(cell, nameText, app.Name); // 잘렸을 때만 전체 이름
         cell.MouseEnter += (_, _) => { if (!selected) cell.Background = P.Tile; HoverIcon(image, true); };
         cell.MouseLeave += (_, _) => { if (!selected) cell.Background = Brushes.Transparent; HoverIcon(image, false); };
         cell.Tag = new DropTag(inFavorites ? "favapp" : "app", app.Key);

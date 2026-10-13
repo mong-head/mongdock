@@ -28,7 +28,7 @@ internal sealed partial class AllAppsPanel
         if (root is null || UiScale <= 1.001 || TextMode == "A") return;
         foreach (var d in Logical(root))
         {
-            if (d is not FrameworkElement fe || fe.Uid == "name") continue;
+            if (d is not FrameworkElement fe) continue; // 앱·폴더 이름도 같은 글자 배율 (2026-10-13 사용자: 이름이 다른 글자보다 큼)
             var prop = fe is Control ? Control.FontSizeProperty : fe is TextBlock ? TextBlock.FontSizeProperty : null;
             if (prop is null) continue;
             if (fe.ReadLocalValue(prop) == DependencyProperty.UnsetValue) continue; // 물려받는 크기는 위에서 이미 줄임

@@ -25,7 +25,10 @@ internal static class Program
         {
             try
             {
+                if (Application.Current is null) _ = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
                 typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.FocusRing")!.GetMethod("Init", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.Invoke(null, null);
+                typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.MongToolTip")!.GetMethod("Init", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.Invoke(null, null);
+                bool tipStyle = Application.Current!.Resources.Contains(typeof(System.Windows.Controls.ToolTip));
                 _ = new System.Windows.Controls.ContextMenu();
                 _ = new System.Windows.Controls.MenuItem();
                 _ = new System.Windows.Controls.ComboBox();
@@ -39,7 +42,7 @@ internal static class Program
                 host.Activate();
                 System.Windows.Input.Keyboard.Focus(b);
                 System.Windows.Input.Keyboard.Focus(cb);
-                Console.WriteLine($"포커스 점검: 통과 (붙음 {b.IsLoaded}, 버튼 점선 {(b.FocusVisualStyle is null ? "없음" : "있음")}, 체크 점선 {(cb.FocusVisualStyle is null ? "없음" : "있음")})");
+                Console.WriteLine($"포커스 점검: 통과 (몽독 툴팁 스타일 {tipStyle}, 붙음 {b.IsLoaded}, 버튼 점선 {(b.FocusVisualStyle is null ? "없음" : "있음")}, 체크 점선 {(cb.FocusVisualStyle is null ? "없음" : "있음")})");
                 return 0;
             }
             catch (Exception ex) { Console.WriteLine("포커스 점검: 실패 " + ex); return 1; }

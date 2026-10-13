@@ -602,6 +602,36 @@ internal static class Program
             }
         }
 
+        // A9) 몽독 툴팁 그림 (라이트·다크): 앱 칸 위에 툴팁을 띄워 그 자리를 찍음
+        {
+            typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.MongToolTip")!.GetMethod("Init", Any)!.Invoke(null, null);
+            foreach (var theme in new[] { DockTheme.Light, DockTheme.Dark })
+            {
+                settings.Current.Dock.Theme = theme;
+                Mongdock.ViewModels.UiTheme.Apply(settings.Current);
+                var w = open();
+                w.Show();
+                Pump(1000);
+                var cell = Descendants((DependencyObject)w.Content).OfType<System.Windows.Controls.Border>().FirstOrDefault(b => b.Tag is not null && b.Tag.GetType().Name == "DropTag" && b.IsVisible && b.ActualWidth > 0);
+                if (cell is not null)
+                {
+                    var tip = new System.Windows.Controls.ToolTip { Content = "Microsoft Defender 보안 센터", PlacementTarget = cell };
+                    tip.IsOpen = true;
+                    Pump(500);
+                    var at = cell.PointToScreen(new Point(0, 0));
+                    double sc = Monitors.GetPrimary().Scale;
+                    var r = new Rect(at.X / sc - 90, at.Y / sc - 60, cell.ActualWidth + 180, cell.ActualHeight + 70);
+                    SaveStrip(Path.Combine(outDir, $"tooltip-{theme.ToString().ToLowerInvariant()}.png"), new List<(long, byte[])> { (0, Grab(r)) }, (int)r.Width, (int)r.Height);
+                    Check($"몽독 툴팁({theme}): 몽독 스타일로 열림", tip.IsOpen && tip.Template?.VisualTree is not null);
+                    tip.IsOpen = false;
+                }
+                close(w);
+                Pump(400);
+            }
+            settings.Current.Dock.Theme = DockTheme.Light;
+            Mongdock.ViewModels.UiTheme.Apply(settings.Current);
+        }
+
         // B) 튀기기 애니메이션 (실제 창)
         {
             var layout = Mongdock.ViewModels.DockLayout.From(settings.Current.Dock, true);
