@@ -1306,22 +1306,28 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         Child = glyph,
     };
 
-    /// <summary>"폴더+" 선 아이콘 (폴더 윤곽 + 가운데 +), 굵기 2, 칸의 42%.</summary>
+    /// <summary>
+    /// "폴더+" 선 아이콘 (폴더 윤곽 + 가운데 +), 칸의 36% (2026-10-13 사용자: 굵어서 안 어울림 — 42%·굵기 2 → 36%·1.2).
+    /// 굵기 1.2·둥근 끝 = 판의 다른 선 아이콘(검색 돋보기·편집 연필, Segoe Fluent)과 같은 느낌. [앱 넣기] + 도 같은 굵기.
+    /// </summary>
     internal System.Windows.Shapes.Path FolderPlusMark(double box) => new()
     {
         Data = Geometry.Parse("M3,6.5 Q3,5 4.5,5 L9,5 L11,7 L19.5,7 Q21,7 21,8.5 L21,17.5 Q21,19 19.5,19 L4.5,19 Q3,19 3,17.5 Z M12,10 L12,16 M9,13 L15,13"),
         Stroke = P.AddGlyph,
-        StrokeThickness = 2,
+        StrokeThickness = AddStroke,
         StrokeLineJoin = PenLineJoin.Round,
         StrokeStartLineCap = PenLineCap.Round,
         StrokeEndLineCap = PenLineCap.Round,
         Stretch = Stretch.Uniform,
-        Width = Math.Round(box * 0.42),
-        Height = Math.Round(box * 0.42),
+        Width = Math.Round(box * 0.36),
+        Height = Math.Round(box * 0.36),
         HorizontalAlignment = HorizontalAlignment.Center,
         VerticalAlignment = VerticalAlignment.Center,
         IsHitTestVisible = false,
     };
+
+    /// <summary>"추가" 칸 기호 선 굵기 (+ · 폴더+ 같게).</summary>
+    private const double AddStroke = 1.2; // 그림에서 재 보니 1.5 는 돋보기 선(약 2px)보다 굵음(3px) — 1.2 가 같음
 
     /// <summary>"추가" 칸 이름 (옆 칸 이름과 같은 크기, 보통 굵기, 회보라).</summary>
     private TextBlock AddLabel(string text, double size, double top) => new()
@@ -1337,7 +1343,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     };
 
     /// <summary>
-    /// "추가" 칸 가운데 "+" — 글자가 아니라 선 두 개(굵기 2, 길이 = 칸의 35%)라 기준선 없이 정확히 가운데 (2026-10-13 사용자: "+"가 아래로 치우침). 진한 보라.
+    /// "추가" 칸 가운데 "+" — 글자가 아니라 선 두 개(굵기 1.2, 길이 = 칸의 35%)라 기준선 없이 정확히 가운데 (2026-10-13 사용자: "+"가 아래로 치우침). 진한 보라.
     /// </summary>
     internal System.Windows.Shapes.Path PlusMark(double box)
     {
@@ -1349,7 +1355,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         {
             Data = g,
             Stroke = P.AddGlyph,
-            StrokeThickness = 2,
+            StrokeThickness = AddStroke,
             StrokeStartLineCap = PenLineCap.Round,
             StrokeEndLineCap = PenLineCap.Round,
             Width = len,
