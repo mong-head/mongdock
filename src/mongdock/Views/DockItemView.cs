@@ -21,6 +21,9 @@ namespace Mongdock.Views;
 /// </summary>
 internal sealed class DockItemView : Grid
 {
+    /// <summary>배치 잘림 없음 — 확대 아이콘이 칸 밖으로 그려지는 게 정상 (NoClipBorder 참고).</summary>
+    protected override Geometry? GetLayoutClip(Size layoutSlotSize) => null;
+
     private readonly DockLayout _layout;
     private readonly ScaleTransform? _scale;
     private readonly Ellipse? _runningDot;

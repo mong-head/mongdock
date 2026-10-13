@@ -57,6 +57,7 @@ internal static class Program
         int allApps = Array.FindIndex(args, a => a == "--allapps");
         if (allApps >= 0 && allApps + 1 < args.Length) RenderAllAppsPanel(args[allApps + 1]);
         if (Array.IndexOf(args, "--dockfit") >= 0) { DockFitReport(); return 0; }
+        if (Array.IndexOf(args, "--clipdemo") >= 0) { ClipDemo(); return 0; }
 
         int trashIcons = Array.FindIndex(args, a => a == "--trash-icons");
         if (trashIcons >= 0 && trashIcons + 1 < args.Length) RenderTrashIcons(args[trashIcons + 1]);
@@ -634,6 +635,37 @@ internal static class Program
     /// </summary>
     [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SendMessageW")]
     private static extern IntPtr NcHit(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    /// <summary>
+    /// --clipdemo: 오른쪽 세로 독 구조(창 Grid → 오른쪽 정렬 판 Border → StackPanel → 확대 아이콘)에서 판이 원하는 길이가 창보다 길 때
+    /// 판 밖(왼쪽)으로 튀어나온 확대 아이콘이 잘리는지 (WPF 배치 잘림). 왼쪽 튀어나온 자리의 픽셀이 칠해졌으면 "보임".
+    /// </summary>
+    private static void ClipDemo()
+    {
+        foreach (var (longer, fixedPanels) in new[] { (false, false), (true, false), (true, true) })
+        {
+            var root = new System.Windows.Controls.Grid { Width = 100, Height = 200, Background = Brushes.White };
+            System.Windows.Controls.Border panel = fixedPanels ? new Mongdock.Views.NoClipBorder() : new System.Windows.Controls.Border();
+            panel.HorizontalAlignment = HorizontalAlignment.Right; panel.VerticalAlignment = VerticalAlignment.Center; panel.Width = 50; panel.Background = Brushes.LightGray;
+            var unused = new System.Windows.Controls.Border { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Width = 50, Background = Brushes.LightGray };
+            System.Windows.Controls.StackPanel stack = fixedPanels ? new Mongdock.Views.NoClipStackPanel() : new System.Windows.Controls.StackPanel();
+            var item = new System.Windows.Controls.Grid { Width = 50, Height = longer ? 260 : 150 };
+            var icon = new System.Windows.Shapes.Rectangle { Width = 40, Height = 40, Fill = Brushes.Red, HorizontalAlignment = HorizontalAlignment.Right, RenderTransformOrigin = new Point(1, 0.5), RenderTransform = new ScaleTransform(2, 2) };
+            item.Children.Add(icon);
+            stack.Children.Add(item);
+            panel.Child = stack;
+            root.Children.Add(panel);
+            root.Measure(new Size(100, 200));
+            root.Arrange(new Rect(0, 0, 100, 200));
+            root.UpdateLayout();
+            var rtb = new RenderTargetBitmap(100, 200, 96, 96, PixelFormats.Pbgra32);
+            rtb.Render(root);
+            var px = new byte[4];
+            rtb.CopyPixels(new Int32Rect(20, 100, 1, 1), px, 4, 0); // 판(50~100) 왼쪽, 확대 아이콘이 덮어야 할 자리
+            bool red = px[2] > 200 && px[1] < 80;
+            Console.WriteLine($"  {(fixedPanels ? "고친 판" : "예전 판")}, 판이 원하는 길이가 창보다 {(longer ? "김" : "짧음")}: 판 밖 확대 아이콘 {(red ? "보임" : "잘림")}");
+        }
+    }
 
     private static void DockFitReport()
     {
