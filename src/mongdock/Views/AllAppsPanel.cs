@@ -63,14 +63,17 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     /// <summary>앱 모음 판은 "특별대우": 독 버튼 옆이 아니라 화면 가운데.</summary>
     protected override bool Centered => true;
 
-    /// <summary>판 폭: 작업 영역 72% (세로 모니터 90%), 640~1500 DIP.</summary>
+    /// <summary>판 폭: 작업 영역 80% (세로 모니터 92%), 640~1800 DIP.</summary>
     private static bool _sizeLogged; // 판 크기는 몽독 실행마다 한 번만 로그
 
-    internal static double PanelWidth(Rect work) =>
-        Math.Clamp(work.Width * (work.Height > work.Width ? 0.90 : 0.72), Math.Min(640, work.Width - 40), 1500);
+    /// <summary>시험 그림(report-test 크기 비교)에서만: 판 폭·높이를 정함.</summary>
+    internal static (double W, double H)? SizeForTest { get; set; }
 
-    /// <summary>판 높이 기준: 작업 영역 82% (최소 480).</summary>
-    internal static double PanelHeight(Rect work) => Math.Max(480, work.Height * 0.82);
+    internal static double PanelWidth(Rect work) => SizeForTest is { } t ? t.W :
+        Math.Clamp(work.Width * (work.Height > work.Width ? 0.92 : 0.80), Math.Min(640, work.Width - 40), 1800);
+
+    /// <summary>판 높이 기준: 작업 영역 88% (최소 480).</summary>
+    internal static double PanelHeight(Rect work) => SizeForTest is { } t ? t.H : Math.Max(480, work.Height * 0.88);
 
     /// <summary>크기가 커서 레이어드 창 대신 일반 창 (열 때 투명 구간 없이).</summary>
     protected override bool Layered => false;
@@ -80,7 +83,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     {
         _style = services.Settings.Current.Dock.IconStyle;
         // 크기 = 독이 있는 모니터 작업 영역 비율 (열 때마다 계산 — 배율·모니터가 바뀌어도 맞게):
-        // 폭 72% (세로 모니터 90%), 640~1500 DIP / 높이 82% (최소 480) — 2026-10-13 사용자: 더 크게 (아이콘·글자는 그대로, 한 줄에 더 많이)
+        // 폭 80% (세로 모니터 92%), 640~1800 DIP / 높이 88% (최소 480) — 2026-10-13 사용자: 더 크게 (72%·82% 도 "커진 건지 모르겠다", 아이콘·글자는 그대로)
         var work = monitor.WorkArea;
         double width = PanelWidth(work);
         Cols = Math.Max(4, (int)((width - 32) / AppCell));

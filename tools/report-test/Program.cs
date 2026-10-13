@@ -1034,8 +1034,16 @@ internal static class Program
             settings.Current.AllApps.UsageSeededAt = DateTime.Now.AddDays(-60);
             settings.Current.AllApps.CleanupPromptMonth = null;
             asm.GetType("Mongdock.Services.AppFolders")!.GetMethod("RefreshAuto")!.Invoke(null, new object[] { settings.Current, appsForFolders(), true });
-            foreach (var mode in new[] { "home", "group", "search", "edit", "cleanup", "unused" })
+            foreach (var mode in new[] { "home", "group", "search", "edit", "cleanup", "unused", "size-old", "size-now", "size-new" })
             {
+                // 크기 비교 (2026-10-13 사용자 "커진 건지 모르겠다"): 1536x838 DIP 화면에서 예전 60%·75% / 72%·82% / 새 80%·88%
+                panelType.GetProperty("SizeForTest", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, mode switch
+                {
+                    "size-old" => (922.0, 628.0),
+                    "size-now" => (1106.0, 687.0),
+                    "size-new" => (1536 * 0.80, 838 * 0.88),
+                    _ => ((double, double)?)null,
+                });
                 // 처음 화면엔 정리 띠가 보이게 (이 셸 기록엔 두 달 넘은 앱이 없어 기준을 줄임)
                 panelType.GetProperty("StaleDaysForTest", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, mode == "home" ? 3 : null);
                 var w = (Window)panelType.GetConstructors(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)[0]
@@ -1078,6 +1086,7 @@ internal static class Program
                 Console.WriteLine($"  저장  {path}");
                 w.Close();
             }
+            panelType.GetProperty("SizeForTest", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, null);
             settings.Dispose();
         }
         GC.KeepAlive(app);
