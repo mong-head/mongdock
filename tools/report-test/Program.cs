@@ -164,7 +164,20 @@ internal static class Program
         }
         int tour = Array.FindIndex(args, a => a == "--tour");
         if (tour >= 0 && tour + 1 < args.Length) return RenderTour(args[tour + 1], checkOnly: false);
-        if (Array.IndexOf(args, "--tourcheck") >= 0) return RenderTour(null, checkOnly: true); // 둘러보기 장면 점검 (시작 점검처럼 매번)
+        if (Array.IndexOf(args, "--tourcheck") >= 0)
+        {
+            // 둘러보기 장면·카드 점검 (시작 점검처럼 매번). --lang 없으면 모든 언어를 하나씩 (문구가 시작 때 정해져 언어마다 따로 실행)
+            if (langAt >= 0 || args.Contains("--en")) return RenderTour(null, checkOnly: true);
+            int failed = 0;
+            foreach (var l in new[] { "ko", "en", "de", "fr", "es", "ja", "zh-Hans", "zh-Hant" })
+            {
+                using var child = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!, $"--tourcheck --lang {l}") { UseShellExecute = false })!;
+                child.WaitForExit();
+                if (child.ExitCode != 0) failed++;
+            }
+            Console.WriteLine(failed == 0 ? "둘러보기 점검: 모든 언어 통과" : $"둘러보기 점검: {failed}개 언어 실패");
+            return failed == 0 ? 0 : 1;
+        }
         int types = Array.FindIndex(args, a => a == "--types");
         if (types >= 0 && types + 1 < args.Length) { _typesOnly = true; RenderAllAppsPanel(args[types + 1]); return 0; }
         int allApps = Array.FindIndex(args, a => a == "--allapps");
@@ -1228,6 +1241,68 @@ internal static class Program
     /// 첫 설치 흐름(안내 + 6단계)과 0.4.x → 0.5.0 업데이트 흐름(새 기능 4장 + 그 밖에 바뀐 것)을 시트 한 장씩.
     /// --tourcheck: 모든 장을 그려 가리킬 요소·빈 그림을 점검, 하나라도 문제면 실패(종료 코드 1).
     /// </summary>
+    /// <summary>
+    /// 둘러보기 카드 글이 잘리지 않는지 (첫 설치 흐름·0.4.x → 0.5.0 업데이트 흐름): 앱처럼 모든 단계로 높이를 정한 뒤
+    /// 단계마다 채워서 본문이 받은 높이보다 크면(아래 버튼 줄에 가림) 문제, 한 줄 글이 말줄임되면 문제, 단계 중간에 카드가 늘어나면 문제.
+    /// </summary>
+    private static int CardFit(AppServices services, Mongdock.ViewModels.UiPalette palette, string theme)
+    {
+        var asm = typeof(Mongdock.App).Assembly;
+        var any = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static;
+        var coach = asm.GetType("Mongdock.Views.CoachMarks")!;
+        var scenes = asm.GetType("Mongdock.Views.TourScenes")!;
+        var cardType = asm.GetType("Mongdock.Views.TourCard")!;
+        var stepType = asm.GetType("Mongdock.Views.TourStep")!;
+        coach.GetMethod("Init", any)!.Invoke(null, new object?[] { services, (Func<Mongdock.Services.CoachAnchor, (Rect, MonitorInfo)?>)(_ => null), null });
+        var problems = new List<string>();
+        foreach (var flow in new[] { "tour", "update" })
+        {
+            var pages = (flow == "tour"
+                ? (System.Collections.IEnumerable)coach.GetMethod("BuildTourPages", any)!.Invoke(null, null)!
+                : (System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, new object[] { new Version(0, 4, 2), new Version(0, 5, 0) })!).Cast<object>().ToList();
+            var steps = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(stepType))!;
+            var titles = new List<string>();
+            foreach (var pg in pages)
+            {
+                T? P<T>(string n) => (T?)pg.GetType().GetProperty(n)!.GetValue(pg);
+                string? key = P<string>("Pictures");
+                var step = Activator.CreateInstance(stepType, P<string>("Title"), P<string>("Body"), new List<ImageSource>())!;
+                void Set(string n, object? v) => stepType.GetProperty(n)!.SetValue(step, v);
+                if (P<object>("Groups") is { } groups) Set("Groups", groups);
+                Set("More", P<int>("More"));
+                if (P<bool>("ChangelogLink")) Set("Link", P<string>("LinkText"));
+                if (P<object>("Action") is { } act) Set("Action", act);
+                Set("Footnote", P<string>("Footnote"));
+                Set("NextText", P<string>("NextText"));
+                Set("ShowLogo", P<bool>("ShowLogo"));
+                Set("CanTry", P<object>("Anchor")?.ToString() != "Center");
+                Set("FramesPending", key is not null && (int)scenes.GetMethod("Count", any)!.Invoke(null, new object?[] { key })! > 0);
+                steps.Add(step);
+                titles.Add(P<string>("Title") ?? "");
+            }
+            var card = (FrameworkElement)Activator.CreateInstance(cardType, any, null, new object[] { palette }, null)!;
+            var host = new System.Windows.Controls.Border { Child = card }; // 앱처럼 부모 아래 (상속 글꼴)
+            cardType.GetMethod("FixHeight", any)!.Invoke(card, new object[] { steps });
+            double fixedHeight = card.Height;
+            for (int i = 0; i < steps.Count; i++)
+            {
+                cardType.GetMethod("Show", any)!.Invoke(card, new object[] { steps[i]!, i, steps.Count });
+                var fit = cardType.GetMethod("FitForTest", any)!.Invoke(card, null)!;
+                double overflow = (double)fit.GetType().GetField("Item1")!.GetValue(fit)!;
+                var trimmed = (List<string>)fit.GetType().GetField("Item2")!.GetValue(fit)!;
+                string where = $"{(flow == "tour" ? "첫 설치" : "업데이트")} {i + 1}/{steps.Count} \"{titles[i]}\"";
+                if (overflow > 0.5) problems.Add($"{where}: 글이 {overflow:0}px 잘림");
+                if (trimmed.Count > 0) problems.Add($"{where}: 말줄임 {string.Join(" · ", trimmed)}");
+                if (card.Height > fixedHeight + 0.5) problems.Add($"{where}: 카드 높이가 늘어남 ({fixedHeight:0} → {card.Height:0}) — 높이 재기에서 빠짐");
+            }
+            Console.WriteLine($"  카드 글 잘림 점검 ({_lang}, {theme}, {(flow == "tour" ? "첫 설치" : "업데이트")} {steps.Count}장, 높이 {fixedHeight:0})");
+            host.Child = null;
+        }
+        Console.WriteLine($"  카드 글 잘림 점검 ({_lang}, {theme}): {(problems.Count == 0 ? "통과" : $"문제 {problems.Count}개")}");
+        foreach (var x in problems) Console.WriteLine($"    - {x}");
+        return problems.Count;
+    }
+
     private static int RenderTour(string? dir, bool checkOnly)
     {
         if (dir is not null) Directory.CreateDirectory(dir);
@@ -1280,6 +1355,7 @@ internal static class Program
             Console.WriteLine($"  둘러보기 장면 점검 ({_lang}, {theme}): {(list.Count == 0 ? "통과" : $"문제 {list.Count}개")} ({sw.ElapsedMilliseconds}ms)");
             foreach (var x in list) Console.WriteLine($"    - {x}");
             problems += list.Count;
+            problems += CardFit(services, palette, theme);
             if (checkOnly) { settings.Dispose(); continue; }
 
             // 장 저장
@@ -1306,6 +1382,7 @@ internal static class Program
                     stepType.GetProperty("More")!.SetValue(step, P<int>("More"));
                     if (P<bool>("ChangelogLink")) stepType.GetProperty("Link")!.SetValue(step, P<string>("LinkText"));
                     if (P<object>("Action") is { } act) stepType.GetProperty("Action")!.SetValue(step, act);
+                    stepType.GetProperty("ShowLogo")!.SetValue(step, P<bool>("ShowLogo"));
                     var card = (FrameworkElement)Activator.CreateInstance(cardType, any, null, new object[] { palette }, null)!;
                     cardType.GetMethod("Show", any)!.Invoke(card, new object[] { step, pi, pages.Count });
                     var host = new System.Windows.Controls.Border { Padding = new Thickness(24), Background = new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x24, 0x24, 0x2C) : Color.FromRgb(0xE4, 0xE6, 0xEE)), Child = card };

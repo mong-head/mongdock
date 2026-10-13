@@ -161,6 +161,7 @@ internal sealed class TourSession : ICoachRun
         More = page.More,
         Link = page.ChangelogLink ? page.LinkText : null,
         FramesPending = page.Pictures is { } k && TourScenes.Count(k) > 0,
+        ShowLogo = page.ShowLogo,
     };
 
     /// <summary>나머지 장을 뒤에서 그려 카드에 채움 (그 사이 단계가 바뀌었으면 버림 — 캐시에는 남음).</summary>
@@ -458,5 +459,6 @@ internal sealed class TourCardWindow : Window
         }
         Left = Math.Round(left);
         Top = Math.Round(top);
+        if (SizeToContent == SizeToContent.Manual) { Width = w; Height = h; }
     }
 }

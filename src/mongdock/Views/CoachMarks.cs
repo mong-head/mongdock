@@ -33,6 +33,8 @@ internal sealed class CoachPage
     public string? Footnote { get; init; }
     /// <summary>둘러보기 카드 그림 키 (Assets/Tour/tour-{key}-…). null 이면 그림 없음.</summary>
     public string? Pictures { get; init; }
+    /// <summary>그림 없는 목록 카드에서도 위에 몽독 아이콘 (둘러보기 정리 카드 "그 밖에 알아 두면 좋은 것").</summary>
+    public bool ShowLogo { get; init; }
 }
 
 /// <summary>둘러보기가 끝난 이유 (설정 창이 다시 나타날 때 포커스를 가져갈지 정하는 데 씀).</summary>
@@ -603,15 +605,24 @@ internal static class CoachMarks
                 Log.Info("둘러보기 마무리: 로그인 시 자동 실행 켬");
             })
             : null;
+        // 설정 카드는 설명만, "이 밖에도" 목록은 마지막 정리 카드 한 장으로 따로 (2026-10-14 PM: 설정 카드에서 목록이 잘림)
         pages.Add(new CoachPage
         {
             Title = final.Title,
             Body = final.Body,
             Anchor = final.Anchor,
             Pictures = final.Pictures,
-            Groups = extras.Count > 0 ? new() { (Loc.T("이 밖에도"), extras.ToList()) } : null,
-            Action = startup,
+            Action = extras.Count > 0 ? null : startup,
         });
+        if (extras.Count > 0)
+            pages.Add(new CoachPage
+            {
+                Title = Loc.T("그 밖에 알아 두면 좋은 것"),
+                Body = Loc.T("처음 써 볼 때 짧게 알려 드려요."),
+                Groups = new() { ("", extras.ToList()) },
+                ShowLogo = true,
+                Action = startup,
+            });
         return pages;
     }
 

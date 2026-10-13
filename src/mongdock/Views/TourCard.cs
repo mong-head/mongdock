@@ -27,6 +27,8 @@ internal sealed record TourStep(string Title, string Body, IReadOnlyList<ImageSo
     public int More { get; init; }
     /// <summary>"변경 내역 보기 ›" 링크.</summary>
     public string? Link { get; init; }
+    /// <summary>그림 없는 목록 카드에서도 위에 몽독 아이콘.</summary>
+    public bool ShowLogo { get; init; }
     /// <summary>그림을 뒤에서 그리는 중 (그림 영역 크기를 미리 잡아 둠).</summary>
     public bool FramesPending { get; init; }
 }
@@ -61,6 +63,7 @@ internal sealed class TourCard : Border
     private readonly StackPanel _list = new() { Margin = new Thickness(0, 10, 0, 0) };
     private readonly TextBlock _link;
     private readonly Grid _picture;
+    private readonly StackPanel _content = new();
     private readonly Image _logo = new() { Width = 72, Height = 72, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
     private Action? _runAction;
     private readonly DispatcherTimer _slide = new() { Interval = TimeSpan.FromMilliseconds(SlideMs) };
@@ -154,7 +157,7 @@ internal sealed class TourCard : Border
         var bottom = new StackPanel();
         bottom.Children.Add(footer);
         bottom.Children.Add(_footnote);
-        var content = new StackPanel();
+        var content = _content;
         content.Children.Add(_title);
         content.Children.Add(_body);
         content.Children.Add(_list);
@@ -236,7 +239,7 @@ internal sealed class TourCard : Border
         // 그림이 없는 단계: 그림 영역을 낮추고 큰 몽독 아이콘, 목록 카드는 그림 영역 없음.
         // 그림이 아직 그려지는 중이면(FramesPending) 그림 영역 크기는 그대로
         bool pictures = step.Frames.Count > 0 || step.FramesPending;
-        _picture.Visibility = step.Groups is not null && !pictures ? Visibility.Collapsed : Visibility.Visible;
+        _picture.Visibility = step.Groups is not null && !pictures && !step.ShowLogo ? Visibility.Collapsed : Visibility.Visible;
         _picture.Height = pictures ? PictureHeight : 150;
         _logo.Visibility = pictures ? Visibility.Collapsed : Visibility.Visible;
         _stepDots.Children.Clear();
@@ -251,6 +254,7 @@ internal sealed class TourCard : Border
         _back.Opacity = 0;
         ShowFrame(0, animate: false);
         StartSlides();
+        GrowToFit();
     }
 
     /// <summary>
@@ -336,11 +340,66 @@ internal sealed class TourCard : Border
         for (int i = 0; i < steps.Count; i++)
         {
             Show(steps[i], i, steps.Count);
-            Measure(new Size(CardWidth, double.PositiveInfinity));
-            max = Math.Max(max, DesiredSize.Height);
+            max = Math.Max(max, NaturalHeight());
         }
         _slide.Stop();
         if (max > 0) Height = Math.Ceiling(max);
+    }
+
+    /// <summary>지금 내용이 잘리지 않는 높이 (카드 폭 그대로, 높이 제한 없이 잰 값).</summary>
+    private double NaturalHeight()
+    {
+        if (Child is not FrameworkElement inner) return 0;
+        // 앞 단계에서 잰 값이 남지 않게 전부 다시 재게 함 (안 그러면 같은 폭이면 예전 크기를 그대로 씀 — 독일어 상단바 단계가 20px 덜 잡힘)
+        inner.InvalidateMeasure();
+        foreach (var d in Descendants(inner).OfType<UIElement>()) d.InvalidateMeasure();
+        inner.Measure(new Size(CardWidth - BorderThickness.Left - BorderThickness.Right, double.PositiveInfinity));
+        return inner.DesiredSize.Height + BorderThickness.Top + BorderThickness.Bottom;
+    }
+
+    /// <summary>높이를 고정한 뒤에도 이 단계 내용이 더 길면 늘림 (잘리지 않게 — 창이 가운데 기준으로 다시 맞춤).</summary>
+    private void GrowToFit()
+    {
+        if (double.IsNaN(Height)) return;
+        double need = Math.Ceiling(NaturalHeight());
+        if (need > Height + 0.5)
+        {
+            Services.Log.Info($"둘러보기 카드 높이 늘림 {Height:0} → {need:0}");
+            Height = need;
+        }
+    }
+
+    /// <summary>
+    /// 점검: 지금 단계가 카드 안에 다 들어가는지. 넘치는 높이(px)와 말줄임된 글 목록.
+    /// 카드를 지금 높이로 배치한 뒤, 본문이 받은 높이보다 원하는 높이가 크면 넘침.
+    /// </summary>
+    internal (double Overflow, List<string> Trimmed) FitForTest()
+    {
+        double h = double.IsNaN(Height) ? NaturalHeight() : Height;
+        Measure(new Size(CardWidth, h));
+        Arrange(new Rect(0, 0, CardWidth, h));
+        UpdateLayout();
+        double overflow = Math.Max(0, _content.DesiredSize.Height - _content.RenderSize.Height);
+        var trimmed = new List<string>();
+        foreach (var t in Descendants(this).OfType<TextBlock>())
+        {
+            if (t.Visibility != Visibility.Visible || t.ActualWidth <= 0 || string.IsNullOrEmpty(t.Text) || t.TextWrapping != TextWrapping.NoWrap) continue;
+            var probe = new TextBlock { Text = t.Text, FontFamily = t.FontFamily, FontSize = t.FontSize, FontWeight = t.FontWeight };
+            probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            if (probe.DesiredSize.Width > t.ActualWidth + 0.5) trimmed.Add(t.Text);
+        }
+        return (overflow, trimmed);
+    }
+
+    private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
+    {
+        int n = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < n; i++)
+        {
+            var c = VisualTreeHelper.GetChild(root, i);
+            yield return c;
+            foreach (var d in Descendants(c)) yield return d;
+        }
     }
 
     internal bool ManualForTest => _manual;
