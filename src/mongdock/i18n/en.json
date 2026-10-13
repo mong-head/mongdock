@@ -1287,5 +1287,17 @@
  "{0} · 묶음 전체": "{0} · whole bundle",
  "{0}개 선택됨": "{0} selected",
  "숨기기": "Hide",
- "선택 해제": "Clear selection"
+ "선택 해제": "Clear selection",
+ "앱 지우는 중": "Removing apps",
+ "{0}/{1} · {2} 제거 중…": "{0}/{1} · Uninstalling {2}…",
+ "제거 창에서 안내대로 진행해 주세요. 창을 닫거나 취소하면 다음 앱으로 넘어가요.": "Follow the steps in the uninstaller window. Closing or canceling it moves on to the next app.",
+ "나머지 취소": "Cancel the rest",
+ "{0}개 앱을 지울까요?": "Uninstall {0} apps?",
+ "지울 수 없음": "Can't uninstall",
+ "각 앱의 제거 프로그램이 차례로 열려요. 지운 앱은 되돌릴 수 없어요.": "Each app's uninstaller opens in turn. Uninstalled apps can't be restored.",
+ "스토어 앱은 Windows 설정의 그 앱 화면이 열려요. 거기서 [제거]를 눌러 주세요.": "For Store apps, the app's page in Windows Settings opens. Click Uninstall there.",
+ "{0}개 지움 · {1}개 남음 · {2}개는 설정에서 지워 주세요": "{0} removed · {1} left · Remove {2} in Settings",
+ "{0}개 지움 · {1}개 남음 (취소 또는 실패)": "{0} removed · {1} left (canceled or failed)",
+ "보호된 앱이에요": "It's a protected app",
+ "제거 프로그램이 없어요": "No uninstaller"
 }

@@ -34,8 +34,10 @@ internal sealed partial class AllAppsPanel
         var now = DateTime.Now;
         UnusedOverride = visible => visible.Where(a => !UnusedApps.IsBuiltIn(a)).Take(7)
             .Select((a, i) => i is 1 or 2
-                ? new UnusedApps.Row(a, now.AddDays(-90 - 30 * i), 1_930_000_000, "uninstall:test", "한컴오피스 2020") // 같은 설치 묶음 둘 (크기는 묶음 전체)
-                : new UnusedApps.Row(a, i % 3 == 2 ? null : now.AddDays(-70 - 45 * i), i == 4 ? null : (long)(i + 1) * 180_000_000 % 2_400_000_000))
+                ? new UnusedApps.Row(a, now.AddDays(-90 - 30 * i), 1_930_000_000, "uninstall:test", "한컴오피스 2020", // 같은 설치 묶음 둘 (크기는 묶음 전체)
+                    new AppUninstall.Removal("uninstall:test", "한컴오피스 2020", "test", null, null, null))
+                : new UnusedApps.Row(a, i % 3 == 2 ? null : now.AddDays(-70 - 45 * i), i == 4 ? null : (long)(i + 1) * 180_000_000 % 2_400_000_000,
+                    Removal: new AppUninstall.Removal("app:" + a.Key, a.Name, i == 3 ? null : "test", null, null, i == 3 ? Loc.T("보호된 앱이에요") : null)))
             .ToList();
         _allOpen = true;
         _allFilter = AllFilter.Unused;
@@ -44,7 +46,11 @@ internal sealed partial class AllAppsPanel
         // 체크 2개(묶음 앱 둘 — 합계는 묶음 한 번만) + 하나 → 선택 막대가 보이는 상태
         var rows = UnusedOverride(_apps.Where(a => !S.Hidden.Contains(a.Key, StringComparer.OrdinalIgnoreCase)).ToList());
         foreach (var r in rows.Skip(1).Take(2)) _unusedChecked.Add(r.App.Key);
+        if (RemoveForTest is not null) foreach (var r in rows.Skip(3).Take(2)) _unusedChecked.Add(r.App.Key); // 지우기 그림: 묶음 + 보호된 앱 + 하나
     }
+
+    /// <summary>시험 그림에서만: 잠자는 앱을 고른 뒤 지우기 확인 카드("confirm") 또는 진행("running").</summary>
+    internal static string? RemoveForTest { get; set; }
 
     /// <summary>"모든 앱"을 펼쳤을 때의 내용 (칩 + 고른 보기).</summary>
     private void AddAllApps(StackPanel root, List<AppEntry> visible)
@@ -149,6 +155,7 @@ internal sealed partial class AllAppsPanel
         head.Children.Add(sort);
         head.Children.Add(new TextBlock { Text = Loc.T("몽독이 본 기록 기준이에요 (60일 넘게 안 연 앱)"), FontSize = 11.5, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center });
         box.Children.Add(head);
+        if (_removeSummary is { } done) box.Children.Add(Note(done)); // 지우기 끝 한 줄 (AllAppsPanel.Remove.cs)
         if (_unused.Count == 0) { box.Children.Add(Note(Loc.T("잠자는 앱이 없어요."))); return box; }
 
         var rows = _unusedSort switch
@@ -290,16 +297,6 @@ internal sealed partial class AllAppsPanel
         Services.Settings.Save();
         Log.Info($"잠자는 앱: {n}개 숨김");
         Rebuild();
-    }
-
-    /// <summary>윈도우 앱 설정 열기 — 스토어 앱 하나면 그 앱 페이지, 아니면 설치된 앱 목록. 몽독은 직접 지우지 않음.</summary>
-    private void RemoveChecked()
-    {
-        var apps = _unused?.Where(r => _unusedChecked.Contains(r.App.Key)).Select(r => r.App).ToList() ?? new();
-        string uri = apps.Count == 1 && apps[0].Family is { Length: > 0 } fam ? "ms-settings:appsfeatures-app?" + fam : "ms-settings:appsfeatures";
-        try { using (Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true })) { } }
-        catch (Exception ex) { Log.Warn($"앱 설정 열기 실패: {ex.GetType().Name}"); }
-        Log.Info($"잠자는 앱: Windows 앱 설정 열기 ({apps.Count}개 고름)");
     }
 
     private Border Chip(string text, bool on, Action click)

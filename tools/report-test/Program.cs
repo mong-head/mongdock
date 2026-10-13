@@ -169,6 +169,8 @@ internal static class Program
         if (Array.IndexOf(args, "--dockfit") >= 0) { DockFitReport(); return 0; }
         if (Array.IndexOf(args, "--clipdemo") >= 0) { ClipDemo(); return 0; }
         if (Array.IndexOf(args, "--suggest") >= 0) return SuggestTable();
+        int unin = Array.FindIndex(args, a => a == "--uninstall");
+        if (unin >= 0) return UninstallTest(unin + 1 < args.Length ? args[unin + 1] : null);
         if (Array.IndexOf(args, "--games") >= 0)
         {
             // 이 PC 의 게임 목록 (§15-3): 런처별 개수와 앞 몇 개 (이름·링크·exe 있는지)
@@ -795,6 +797,110 @@ internal static class Program
     /// <summary>--types: 판 글자 배율 안 A/B/C 그림만 (빠르게).</summary>
     private static bool _typesOnly;
 
+    /// <summary>
+    /// 잠자는 앱 지우기 시험 (--uninstall [결과 파일]): 진짜 앱은 실행하지 않고, 시험용 제거 프로그램 레지스트리 항목(HKCU, mongdock-test-*)만 만들어
+    /// 그 UninstallString(cmd·reg 만 씀)을 돌림. 끝나면 시험 항목을 모두 지움.
+    /// 경우: 지움 / 아무것도 안 함(= 사용자 취소) / 자식을 띄우고 먼저 끝남(NSIS 처럼) / 같은 묶음 앱 둘 = 한 번 / 보호된 앱 건너뜀 / [나머지 취소].
+    /// </summary>
+    private static int UninstallTest(string? outFile)
+    {
+        var asm = typeof(Mongdock.App).Assembly;
+        var un = asm.GetType("Mongdock.Services.AppUninstall")!;
+        var removalType = un.GetNestedType("Removal", System.Reflection.BindingFlags.NonPublic)!;
+        var rowType = asm.GetType("Mongdock.Services.UnusedApps")!.GetNestedType("Row")!;
+        var entryType = asm.GetType("Mongdock.Services.AppEntry")!;
+        const string root = @"Software\Microsoft\Windows\CurrentVersion\Uninstall";
+        var lines = new List<string>();
+        int fail = 0;
+        void Check(string what, bool ok) { if (!ok) fail++; lines.Add($"{(ok ? "통과" : "실패")}  {what}"); Console.WriteLine(lines[^1]); }
+        string Key(string id) => "mongdock-test-" + id;
+        void Make(string id, string cmd)
+        {
+            using var k = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(root + "\\" + Key(id));
+            k.SetValue("DisplayName", "mongdock test " + id);
+            k.SetValue("UninstallString", cmd);
+        }
+        string Del(string id) => $"reg delete \"HKCU\\{root}\\{Key(id)}\" /f";
+        object Entry(string id) => System.Runtime.Serialization.FormatterServices.GetUninitializedObject(entryType) is var e && SetKey(e, "test:" + id) ? e : e;
+        bool SetKey(object e, string key)
+        {
+            foreach (var (name, value) in new[] { ("Key", key), ("Name", key) })
+            {
+                var f = entryType.GetField($"<{name}>k__BackingField", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                f?.SetValue(e, value);
+            }
+            return true;
+        }
+        object Removal(string id, string? cmd, string? cannot = null, string? group = null) =>
+            Activator.CreateInstance(removalType, "uninstall:" + (group ?? id), "test " + (group ?? id), cmd, "HKCU|" + Key(group ?? id), null, cannot)!;
+        object Row(string id, object removal) => Activator.CreateInstance(rowType, Entry(id), null, (long?)1000, null, null, removal)!;
+        var plan = un.GetMethod("Plan")!;
+        var run = un.GetMethod("RunAsync")!;
+        un.GetProperty("WaitLimit", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, TimeSpan.FromSeconds(40));
+        (int Removed, int Failed, int Settings, int Skipped) Run(List<object> rows, int cancelAfter = -1)
+        {
+            var list = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(rowType))!;
+            foreach (var r in rows) list.Add(r);
+            var jobs = plan.Invoke(null, new object[] { list })!;
+            using var cts = new CancellationTokenSource();
+            Action<int, int, string> progress = (i, n, name) => { if (i - 1 == cancelAfter) cts.Cancel(); };
+            var task = (Task)run.Invoke(null, new object[] { jobs, progress, cts.Token })!;
+            task.GetAwaiter().GetResult();
+            var res = task.GetType().GetProperty("Result")!.GetValue(task)!;
+            int P(string n) => (int)res.GetType().GetProperty(n)!.GetValue(res)!;
+            return (P("Removed"), P("Failed"), P("Settings"), P("Skipped"));
+        }
+        bool Exists(string id) { using var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(root + "\\" + Key(id)); return k is not null; }
+        var ids = new[] { "a", "b", "c", "d", "e", "f", "g" };
+        try
+        {
+            // 1) 제거 프로그램이 자기 항목을 지움 → 지움
+            Make("a", $"cmd.exe /c {Del("a")}");
+            var r1 = Run(new() { Row("a", Removal("a", $"cmd.exe /c {Del("a")}")) });
+            Check($"제거 프로그램이 지움 → 지움 1 (지움 {r1.Removed}, 실패 {r1.Failed})", r1.Removed == 1 && r1.Failed == 0 && !Exists("a"));
+            // 2) 아무것도 안 하고 끝남 (= 사용자가 제거 창에서 취소) → 실패
+            Make("b", "cmd.exe /c exit 0");
+            var r2 = Run(new() { Row("b", Removal("b", "cmd.exe /c exit 0")) });
+            Check($"제거 창 취소(항목 남음) → 실패 1 (지움 {r2.Removed}, 실패 {r2.Failed})", r2.Removed == 0 && r2.Failed == 1 && Exists("b"));
+            // 3) 자식을 띄우고 먼저 끝남, 자식이 3초 뒤 지움 (NSIS 처럼) → 자식까지 기다려 지움
+            string late = $"cmd.exe /c start \"\" /min cmd.exe /c \"ping -n 4 127.0.0.1 >nul & {Del("c")}\"";
+            Make("c", late);
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var r3 = Run(new() { Row("c", Removal("c", late)) });
+            Check($"자식 프로세스가 늦게 지움 → 기다려서 지움 1 ({sw.Elapsed.TotalSeconds:0.0}초)", r3.Removed == 1 && !Exists("c") && sw.Elapsed.TotalSeconds >= 2.5);
+            // 4) 같은 묶음 앱 둘 → 제거 프로그램 한 번 (두 번 돌면 두 번째는 항목이 없어 reg 가 실패하지만 결과는 지움 2 가 됨)
+            string cnt = Path.Combine(Path.GetTempPath(), "mongdock-test-count.txt");
+            File.Delete(cnt);
+            string bundleCmd = $"cmd.exe /c echo x>>\"{cnt}\" & {Del("d")}";
+            Make("d", bundleCmd);
+            var r4 = Run(new() { Row("d1", Removal("d1", bundleCmd, group: "d")), Row("d2", Removal("d2", bundleCmd, group: "d")) });
+            int runs = File.Exists(cnt) ? File.ReadAllLines(cnt).Length : 0;
+            Check($"같은 묶음 앱 둘 → 제거 프로그램 1번 (실행 {runs}번, 지움 {r4.Removed})", runs == 1 && r4.Removed == 1);
+            File.Delete(cnt);
+            // 5) 보호된 앱·제거 프로그램 없음 → 건너뜀 (실행 안 함)
+            Make("e", $"cmd.exe /c {Del("e")}");
+            var r5 = Run(new() { Row("e", Removal("e", $"cmd.exe /c {Del("e")}", cannot: "보호된 앱")), Row("f", Removal("f", null, cannot: "제거 프로그램 없음")) });
+            Check($"보호된 앱·제거 프로그램 없음 → 건너뜀 2, 실행 안 함 (건너뜀 {r5.Skipped}, 항목 남음 {Exists("e")})", r5.Skipped == 2 && r5.Removed == 0 && Exists("e"));
+            // 6) [나머지 취소]: 첫 번째가 도는 중 취소 → 첫 번째는 끝까지, 나머지는 실행 안 함(실패로 셈)
+            Make("g", $"cmd.exe /c {Del("g")}");
+            Make("a", $"cmd.exe /c {Del("a")}");
+            var r6 = Run(new() { Row("g", Removal("g", $"cmd.exe /c {Del("g")}")), Row("a", Removal("a", $"cmd.exe /c {Del("a")}")) }, cancelAfter: 0);
+            Check($"[나머지 취소] → 지움 1·남음 1, 두 번째는 실행 안 함 (지움 {r6.Removed}, 실패 {r6.Failed}, 두 번째 항목 남음 {Exists("a")})", r6.Removed == 1 && r6.Failed == 1 && Exists("a"));
+            // 7) UninstallString 나누기
+            var split = un.GetMethod("Split", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+            string S(string c) => split.Invoke(null, new object[] { c }) is { } t ? $"{t.GetType().GetField("Item1")!.GetValue(t)}|{t.GetType().GetField("Item2")!.GetValue(t)}" : "null";
+            Check($"나누기: 따옴표 경로 → {S("\"C:\\Program Files\\X\\uninst.exe\" /S")}", S("\"C:\\Program Files\\X\\uninst.exe\" /S") == "C:\\Program Files\\X\\uninst.exe|/S");
+            Check($"나누기: msiexec → {S("MsiExec.exe /X{ABC}")}", S("MsiExec.exe /X{ABC}") == "MsiExec.exe|/X{ABC}");
+        }
+        finally
+        {
+            foreach (var id in ids) Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(root + "\\" + Key(id), false); // 시험 항목 모두 지움
+            lines.Add($"시험 항목 남음: {ids.Count(Exists)}개");
+        }
+        if (outFile is not null) File.WriteAllLines(outFile, lines);
+        return fail == 0 ? 0 : 1;
+    }
+
     private static int SuggestTable()
     {
         var asm = typeof(Mongdock.App).Assembly;
@@ -1180,7 +1286,7 @@ internal static class Program
             settings.Current.AllApps.UsageSeededAt = DateTime.Now.AddDays(-60);
             settings.Current.AllApps.CleanupPromptMonth = null;
             asm.GetType("Mongdock.Services.AppFolders")!.GetMethod("RefreshAuto")!.Invoke(null, new object[] { settings.Current, appsForFolders(), true });
-            var modes = _typesOnly ? new[] { "type-A", "type-B", "type-C" } : new[] { "home", "group", "feedback", "search", "edit", "cleanup", "unused", "size-old", "size-now", "size-new" };
+            var modes = _typesOnly ? new[] { "type-A", "type-B", "type-C" } : new[] { "home", "group", "feedback", "search", "edit", "cleanup", "unused", "remove-confirm", "remove-running", "size-old", "size-now", "size-new" };
             if (_typesOnly && theme == "dark") continue;
             foreach (var mode in modes)
             {
@@ -1212,7 +1318,14 @@ internal static class Program
                     panelType.GetMethod("OpenCleanup", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(w, null);
                     panelType.GetProperty("StaleDaysForTest", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, null);
                 }
-                if (mode == "unused") panelType.GetMethod("ShowUnusedForTest", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(w, null);
+                panelType.GetProperty("RemoveForTest", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, mode.StartsWith("remove-") ? mode : null);
+                if (mode == "unused" || mode.StartsWith("remove-")) panelType.GetMethod("ShowUnusedForTest", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(w, null);
+                if (mode.StartsWith("remove-"))
+                {
+                    // 잠자는 앱 목록을 한 번 그려 센 다음, 지우기 확인 카드 / 진행 화면으로
+                    panelType.GetMethod("Rebuild", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(w, null);
+                    panelType.GetMethod("ShowRemoveForTest", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(w, new object[] { mode == "remove-running" });
+                }
                 if (mode == "search") ((System.Windows.Controls.TextBox)panelType.GetField("_search", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(w)!).Text = "ch";
                 panelType.GetMethod("Rebuild", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(w, null);
                 var content = (FrameworkElement)w.Content;

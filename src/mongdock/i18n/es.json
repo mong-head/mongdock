@@ -1287,5 +1287,17 @@
  "{0} · 묶음 전체": "{0} · paquete completo",
  "{0}개 선택됨": "{0} seleccionadas",
  "숨기기": "Ocultar",
- "선택 해제": "Quitar selección"
+ "선택 해제": "Quitar selección",
+ "앱 지우는 중": "Eliminando aplicaciones",
+ "{0}/{1} · {2} 제거 중…": "{0}/{1} · Desinstalando {2}…",
+ "제거 창에서 안내대로 진행해 주세요. 창을 닫거나 취소하면 다음 앱으로 넘어가요.": "Sigue las indicaciones de la ventana de desinstalación. Si la cierras o cancelas, se pasa a la siguiente aplicación.",
+ "나머지 취소": "Cancelar el resto",
+ "{0}개 앱을 지울까요?": "¿Desinstalar {0} aplicaciones?",
+ "지울 수 없음": "No se puede desinstalar",
+ "각 앱의 제거 프로그램이 차례로 열려요. 지운 앱은 되돌릴 수 없어요.": "El desinstalador de cada aplicación se abrirá por turnos. Las aplicaciones desinstaladas no se pueden recuperar.",
+ "스토어 앱은 Windows 설정의 그 앱 화면이 열려요. 거기서 [제거]를 눌러 주세요.": "En las aplicaciones de Store se abre su página en Configuración de Windows. Pulsa Desinstalar allí.",
+ "{0}개 지움 · {1}개 남음 · {2}개는 설정에서 지워 주세요": "{0} eliminadas · {1} pendientes · Elimina {2} en Configuración",
+ "{0}개 지움 · {1}개 남음 (취소 또는 실패)": "{0} eliminadas · {1} pendientes (canceladas o con error)",
+ "보호된 앱이에요": "Es una aplicación protegida",
+ "제거 프로그램이 없어요": "No tiene desinstalador"
 }

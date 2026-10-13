@@ -220,7 +220,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         _groupOf = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var f in _folders) foreach (var a in f.Apps) _groupOf.TryAdd(a.Key, f.Id);
         _unusedViewShown = false;
-        _body.Content = _adding is not null ? BuildAddApps() : _cleanup is not null ? BuildCleanup() : _search.Text.Trim().Length > 0 ? BuildResults() : BuildHome();
+        _body.Content = _removeJobs is not null ? BuildRemove() : _adding is not null ? BuildAddApps() : _cleanup is not null ? BuildCleanup() : _search.Text.Trim().Length > 0 ? BuildResults() : BuildHome();
         UnscaleText(_body.Content as DependencyObject); // 글자는 판 배율을 받지 않음
         UpdateSelectionBar();
         _shownEditing = _editing;

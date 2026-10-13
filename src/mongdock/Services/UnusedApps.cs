@@ -17,7 +17,7 @@ internal static class UnusedApps
     /// 잠자는 앱 한 줄. Bundle = 같은 설치 묶음(제거 프로그램 항목·스토어 패키지 하나)에 앱이 둘 이상이면 그 묶음 키와 이름 —
     /// 크기는 묶음 전체라 "1.8 GB · 한컴오피스 2020 전체"로 보이고, 선택 합계에서는 묶음마다 한 번만 더함 (2026-10-13 사용자: 한글·한셀·한쇼가 모두 1.8 GB).
     /// </summary>
-    public sealed record Row(AppEntry App, DateTime? Last, long? Bytes, string? BundleKey = null, string? BundleName = null)
+    public sealed record Row(AppEntry App, DateTime? Last, long? Bytes, string? BundleKey = null, string? BundleName = null, AppUninstall.Removal? Removal = null)
     {
         /// <summary>크기를 한 번만 셀 단위 (묶음이면 묶음, 아니면 앱).</summary>
         public string SizeKey => BundleKey ?? "app:" + App.Key;
@@ -92,7 +92,8 @@ internal static class UnusedApps
     /// <summary>기록을 끄면 센 것도 버림.</summary>
     public static void Forget() => Latest = null;
 
-    private sealed record Uninstall(string Name, string? Location, string? Icon, DateTime? Installed, long? Bytes);
+    private sealed record Uninstall(string Name, string? Location, string? Icon, DateTime? Installed, long? Bytes,
+        string? Command = null, string? RegKey = null, bool Protected = false);
 
     /// <summary>
     /// 후보(마지막 사용이 60일 넘었거나 없음, 실행 중 아님 — UI 스레드에서 거른 것) → 기본 도구·시작 프로그램·새로 설치한 앱을 빼고 용량을 붙임.
@@ -114,21 +115,26 @@ internal static class UnusedApps
             DateTime? installed = null;
             long? bytes = null;
             (string Key, string? Name)? bundle = null;
+            AppUninstall.Removal remove;
             if (app.Family is { Length: > 0 } fam && packages.TryGetValue(fam, out var pkg))
             {
                 installed = pkg.Installed;
                 bytes = PackageBytes(pkg.Path);
                 bundle = ("pkg:" + fam, pkg.Name);
+                remove = new AppUninstall.Removal("pkg:" + fam, pkg.Name ?? app.Name, null, null, fam, null);
             }
             else if (Match(app, uninstall) is { } u)
             {
                 installed = u.Installed;
                 bytes = u.Bytes;
                 bundle = ("uninstall:" + uninstall.IndexOf(u), u.Name);
+                string? cannot = u.Protected ? Loc.T("보호된 앱이에요") : u.Command is not { Length: > 0 } ? Loc.T("제거 프로그램이 없어요") : null;
+                remove = new AppUninstall.Removal("uninstall:" + (u.RegKey ?? u.Name), u.Name, u.Command, u.RegKey, null, cannot);
             }
+            else remove = new AppUninstall.Removal("app:" + app.Key, app.Name, null, null, null, Loc.T("제거 프로그램이 없어요"));
             installed ??= ShortcutDate(app);
             if (installed is { } d ? now - d < TimeSpan.FromDays(NewInstallDays) : youngRecords) continue;
-            rows.Add(new Row(app, last, bytes));
+            rows.Add(new Row(app, last, bytes, Removal: remove));
             bundles.Add(bundle);
         }
         // 같은 설치 묶음에서 크기를 가져온 앱이 둘 이상이면 묶음 표시 (크기는 묶음 전체라 앱마다 같음)
@@ -186,7 +192,7 @@ internal static class UnusedApps
     private static List<Uninstall> ReadUninstall()
     {
         var list = new List<Uninstall>();
-        foreach (var (hive, view) in new[] { (RegistryHive.LocalMachine, RegistryView.Registry64), (RegistryHive.LocalMachine, RegistryView.Registry32), (RegistryHive.CurrentUser, RegistryView.Default) })
+        foreach (var (hive, view, tag) in new[] { (RegistryHive.LocalMachine, RegistryView.Registry64, "HKLM64"), (RegistryHive.LocalMachine, RegistryView.Registry32, "HKLM32"), (RegistryHive.CurrentUser, RegistryView.Default, "HKCU") })
         {
             try
             {
@@ -199,7 +205,9 @@ internal static class UnusedApps
                     DateTime? installed = k.GetValue("InstallDate") is string d && DateTime.TryParseExact(d, "yyyyMMdd", null, System.Globalization.DateTimeStyles.None, out var dt) ? dt : null;
                     long? bytes = k.GetValue("EstimatedSize") is int kb && kb > 0 ? kb * 1024L : null;
                     string? icon = (k.GetValue("DisplayIcon") as string)?.Split(',')[0].Trim().Trim('"');
-                    list.Add(new Uninstall(display, (k.GetValue("InstallLocation") as string)?.Trim().Trim('"').TrimEnd('\\'), icon, installed, bytes));
+                    bool prot = k.GetValue("SystemComponent") is int sc && sc == 1 || k.GetValue("NoRemove") is int nr && nr == 1;
+                    list.Add(new Uninstall(display, (k.GetValue("InstallLocation") as string)?.Trim().Trim('"').TrimEnd('\\'), icon, installed, bytes,
+                        k.GetValue("UninstallString") as string, tag + "|" + name, prot));
                 }
             }
             catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException) { }
