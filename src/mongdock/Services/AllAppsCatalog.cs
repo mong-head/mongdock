@@ -474,21 +474,64 @@ internal static class AppUsage
         }
     }
 
-    /// <summary>즐겨찾기 추천 후보: 최근 14일 동안 2일 이상·3회 이상 실행한 앱, 실행 횟수 많은 순 (같으면 최근 순).</summary>
-    public static List<string> Suggestions(int max)
+    /// <summary>
+    /// 즐겨찾기 추천 후보: 최근 14일 동안 2일 이상·3회 이상 실행한 앱, 실행 횟수 많은 순 (같으면 최근 순).
+    /// 셈: 판·독에서 연 기록(usage-local) + 새 창이 뜬 기록(루틴 추천용 usage-launches — 작업 표시줄·시작 메뉴·바탕 화면으로 연 앱도).
+    /// 같은 날 두 기록에 다 있으면 많은 쪽만 (같은 실행을 두 번 세지 않게). 기록이 적은 처음 며칠은 윈도우 기록(UserAssist — 실행 3회 이상,
+    /// 최근 30일 안 마지막 실행)으로 채움 (2026-10-13 — 사용자 PC 에서 추천이 하나도 안 떴음).
+    /// </summary>
+    public static List<string> Suggestions(int max) => SuggestionStages(max).Result;
+
+    /// <summary>추천을 단계별로 (진단·시험용): 판·독 기록 후보 수, 새 창 기록을 더한 후보 수, 윈도우 기록으로 채운 수, 결과.</summary>
+    internal static (List<string> PanelOnly, int WithLaunches, int FromWindows, List<string> Result) SuggestionStages(int max)
     {
+        var since = DateTime.Now.Date.AddDays(-14);
+        var perDay = new Dictionary<string, Dictionary<DateTime, (int Panel, int Launch)>>();
+        void Add(string id, DateTime day, bool panel)
+        {
+            if (!perDay.TryGetValue(id, out var days)) perDay[id] = days = new();
+            var c = days.GetValueOrDefault(day);
+            days[day] = panel ? (c.Panel + 1, c.Launch) : (c.Panel, c.Launch + 1);
+        }
         lock (Gate)
         {
             var data = Data();
             Prune(data);
-            string cutoff = DateTime.Now.AddDays(-14).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
-            return data
-                .Select(kv => (Key: kv.Key, Days: kv.Value.Where(d => string.CompareOrdinal(d, cutoff) >= 0).ToList()))
-                .Where(x => x.Days.Count >= 3 && x.Days.Distinct().Count() >= 2)
-                .OrderByDescending(x => x.Days.Count).ThenByDescending(x => x.Days.Max())
-                .Take(max).Select(x => x.Key).ToList();
+            foreach (var (id, list) in data)
+                foreach (var d in list)
+                    if (DateTime.TryParseExact(d, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var day) && day >= since)
+                        Add(id, day, panel: true);
         }
+        var panelOnly = Rank(perDay, p => p.Panel);
+        foreach (var (id, day) in RoutineSuggest.RecentLaunchDays(14)) Add(id, day, panel: false);
+        var ranked = Rank(perDay, p => Math.Max(p.Panel, p.Launch));
+        int withLaunches = ranked.Count;
+        var result = ranked.Take(max).ToList();
+        int fromWindows = 0;
+        if (result.Count < max)
+        {
+            // 처음 며칠: 윈도우가 적어 둔 실행 횟수(씨앗)와 마지막 실행일 (최근 30일 안, 3회 이상), 많이 연 순
+            string cutoff = DateTime.Now.AddDays(-30).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            lock (Gate)
+            {
+                var last = Last();
+                foreach (var (id, runs) in Seed().OrderByDescending(kv => kv.Value))
+                {
+                    if (result.Count >= max) break;
+                    if (runs < 3 || result.Contains(id) || !last.TryGetValue(id, out var day) || string.CompareOrdinal(day, cutoff) < 0) continue;
+                    result.Add(id);
+                    fromWindows++;
+                }
+            }
+        }
+        return (panelOnly, withLaunches, fromWindows, result);
     }
+
+    private static List<string> Rank(Dictionary<string, Dictionary<DateTime, (int Panel, int Launch)>> perDay, Func<(int Panel, int Launch), int> count) =>
+        perDay.Select(kv => (Id: kv.Key, Runs: kv.Value.Values.Sum(count), Days: kv.Value.Count(d => count(d.Value) > 0), Last: kv.Value.Where(d => count(d.Value) > 0).Select(d => d.Key).DefaultIfEmpty().Max()))
+            .Where(x => x.Runs >= 3 && x.Days >= 2)
+            .OrderByDescending(x => x.Runs).ThenByDescending(x => x.Last)
+            .Select(x => x.Id).ToList();
 
     public static void Clear()
     {

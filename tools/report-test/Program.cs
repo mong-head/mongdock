@@ -78,6 +78,49 @@ internal static class Program
         int routinesAt = Array.FindIndex(args, a => a == "--routines");
         if (routinesAt >= 0 && routinesAt + 1 < args.Length) { RenderRoutines(args[routinesAt + 1]); return _failed == 0 ? 0 : 1; }
 
+        // --favdiag FILE: 이 PC 실제 기록으로 즐겨찾기 추천이 단계마다 몇 개 남는지 (앱 이름은 FILE 에만 — 로그에 안 남김). 읽기만.
+        int favdiag = Array.FindIndex(args, a => a == "--favdiag");
+        if (favdiag >= 0 && favdiag + 1 < args.Length)
+        {
+            var asm = typeof(Mongdock.App).Assembly;
+            var flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+            var settings = new SettingsService();
+            var s = settings.Current;
+            var catalog = asm.GetType("Mongdock.Services.AllAppsCatalog")!;
+            var apps = ((System.Collections.IEnumerable)catalog.GetMethod("Apps")!.Invoke(null, new object[] { false })!).Cast<object>().ToList();
+            string Key(object a) => (string)a.GetType().GetProperty("Key")!.GetValue(a)!;
+            string Name(object a) => (string)a.GetType().GetProperty("Name")!.GetValue(a)!;
+            var identity = catalog.GetMethods(flags).First(m => m.Name == "Identity" && m.GetParameters()[0].ParameterType.Name == "AppEntry");
+            var visible = apps.Where(a => !s.AllApps.Hidden.Contains(Key(a), StringComparer.OrdinalIgnoreCase)).ToList();
+            var byId = new Dictionary<string, object>();
+            foreach (var a in visible) byId.TryAdd((string)identity.Invoke(null, new[] { a })!, a);
+            var pinId = catalog.GetMethods(flags).First(m => m.Name == "Identity" && m.GetParameters()[0].ParameterType == typeof(PinItem));
+            var docked = s.Pins.Select(p => (string?)pinId.Invoke(null, new object[] { p })).OfType<string>().ToHashSet();
+            var usage = asm.GetType("Mongdock.Services.AppUsage")!;
+            var stages = usage.GetMethod("SuggestionStages", flags)!.Invoke(null, new object[] { 16 })!;
+            int Item(int i) => (int)stages.GetType().GetField("Item" + i)!.GetValue(stages)!;
+            var result = (List<string>)stages.GetType().GetField("Item4")!.GetValue(stages)!;
+            var panelOnly = (List<string>)stages.GetType().GetField("Item1")!.GetValue(stages)!;
+            int oldShown = panelOnly.Where(byId.ContainsKey).Where(id => !docked.Contains(id) && !s.AllApps.Favorites.Contains(Key(byId[id]), StringComparer.OrdinalIgnoreCase)).Count();
+            var mapped = result.Where(byId.ContainsKey).ToList();
+            var notDocked = mapped.Where(id => !docked.Contains(id)).ToList();
+            var notFav = notDocked.Where(id => !s.AllApps.Favorites.Contains(Key(byId[id]), StringComparer.OrdinalIgnoreCase)).ToList();
+            var final = notFav.Where(id => !(s.AllApps.DismissedSuggestions.TryGetValue(Key(byId[id]), out var when) && DateTime.Now - when < TimeSpan.FromDays(30))).ToList();
+            var lines = new List<string>
+            {
+                $"기록 켜짐: {s.AllApps.ShowSuggestions}",
+                $"1) 판·독에서 연 기록만으로 후보(14일·2일·3회): {panelOnly.Count}개 — 독 고정 {panelOnly.Count(docked.Contains)}개, 앱 목록에 없음 {panelOnly.Count(id => !byId.ContainsKey(id))}개 → 예전 방식이면 보이는 추천 {oldShown}개",
+                $"2) 새 창 기록까지 더한 후보: {Item(2)}개",
+                $"3) 윈도우 기록(UserAssist)으로 채움: {Item(3)}개 → 후보 합계 {result.Count}개 (최대 16개까지 봄)",
+                $"4) 앱 모음 목록에 있는 앱: {mapped.Count}개",
+                $"5) 독 고정 앱 뺌: {notDocked.Count}개",
+                $"6) 즐겨찾기 이미 든 앱 뺌: {notFav.Count}개",
+                $"7) 30일 안에 뺀(×) 앱 뺌: {final.Count}개 → 판에 보이는 추천 {Math.Min(4, final.Count)}개",
+                "추천 (PM 보고용): " + string.Join(", ", final.Take(4).Select(id => Name(byId[id]))),
+            };
+            File.WriteAllLines(args[favdiag + 1], lines);
+            return 0;
+        }
         int types = Array.FindIndex(args, a => a == "--types");
         if (types >= 0 && types + 1 < args.Length) { _typesOnly = true; RenderAllAppsPanel(args[types + 1]); return 0; }
         int allApps = Array.FindIndex(args, a => a == "--allapps");

@@ -27,6 +27,17 @@ internal static class RoutineSuggest
 
     private static AppServices? _services;
     private static List<Launch> _log = new();
+
+    /// <summary>
+    /// 즐겨찾기 추천에도 쓰는 실행 기록 (2026-10-13 — 어떤 방법으로 열었든 새 창이 뜨면 남는 기록이라, 작업 표시줄·시작 메뉴로 연 앱도 셈).
+    /// 최근 days 일의 (식별자, 날짜). 아직 읽지 않았으면 파일에서 (판이 먼저 열려도 되게). "자주 쓰는 앱 기록"을 끄면 비어 있음.
+    /// </summary>
+    internal static List<(string Id, DateTime Day)> RecentLaunchDays(int days)
+    {
+        var log = _log.Count > 0 || _services is not null ? _log : Load();
+        var since = DateTime.Now.AddDays(-days);
+        return log.Where(l => l is not null && !string.IsNullOrEmpty(l.Id) && l.At >= since).Select(l => (l.Id, l.At.Date)).ToList();
+    }
     private static HashSet<string> _present = new();
     private static readonly Dictionary<string, DateTime> _lastSeen = new();
     private static DispatcherTimer? _timer;
