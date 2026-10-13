@@ -135,17 +135,11 @@ internal sealed partial class AllAppsPanel
     {
         double body = Math.Round(AppIcon * 0.805); // 맥 아이콘 그리드: 256 캔버스 안 본체 206 (MacIconRenderer)
         var slot = new Grid { Width = AppIcon, Height = AppIcon, HorizontalAlignment = HorizontalAlignment.Center };
-        var dashed = DashedRect(body * 0.225);
-        dashed.Width = body;
-        dashed.Height = body;
-        dashed.HorizontalAlignment = HorizontalAlignment.Center;
-        dashed.VerticalAlignment = VerticalAlignment.Center;
-        slot.Children.Add(dashed);
-        var glyph = PlusMark(body);
-        slot.Children.Add(glyph);
+        var tile = AddTile(body, body * 0.225, PlusMark(body), onTint: false); // 추가 칸 A안 (점선 없이 채움)
+        slot.Children.Add(tile);
         var stack = new StackPanel();
         stack.Children.Add(slot);
-        stack.Children.Add(new TextBlock { Text = Loc.T("루틴 추가"), TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 11.5, Margin = new Thickness(0, NameTop, 0, 0) });
+        stack.Children.Add(AddLabel(Loc.T("루틴 추가"), 11.5, NameTop));
         var cell = new Border
         {
             Width = AppCell - 4,
@@ -158,9 +152,7 @@ internal sealed partial class AllAppsPanel
             Child = stack,
             Cursor = Cursors.Hand,
         };
-        CellFeedback(cell, slot, onTint: false);
-        cell.MouseEnter += (_, _) => glyph.Stroke = P.SoftAccentText;
-        cell.MouseLeave += (_, _) => glyph.Stroke = P.SubText;
+        CellFeedback(cell, tile, onTint: false);
         cell.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;

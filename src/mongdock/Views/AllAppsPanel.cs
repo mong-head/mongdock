@@ -384,10 +384,14 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     /// <summary>즐겨찾기 0개 + 추천 후보도 없음: 끌어다 놓으라는 안내 (점선 자리).</summary>
     private UIElement DropHint()
     {
-        var grid = new Grid { Height = 64 };
-        grid.Children.Add(DashedRect(10));
-        grid.Children.Add(new TextBlock { Text = Loc.T("앱을 여기로 끌어다 놓으면 즐겨찾기에 들어가요"), Foreground = P.SubText, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
-        return grid;
+        // 점선 대신 연한 채움 (추가 칸 A안과 같은 바탕)
+        return new Border
+        {
+            Height = 64,
+            CornerRadius = new CornerRadius(10),
+            Background = P.PanelTint,
+            Child = new TextBlock { Text = Loc.T("앱을 여기로 끌어다 놓으면 즐겨찾기에 들어가요"), Foreground = P.PanelTintText, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+        };
     }
 
     /// <summary>시험 그림에서만: 첫 추천 칸에 마우스를 올린 모습으로.</summary>
@@ -400,6 +404,32 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     /// 추천 칸 묶음 (2026-10-13 사용자 C안): 연보라 연한 바탕(둥근 12)으로 감싸고, 왼쪽 위 모서리에 작은 알약 라벨 "✦ 추천"
     /// (반짝이 + 글자). 바탕·글자는 팔레트의 회보라 PanelTint* (다크 포함). 즐겨찾기가 0개여도 같은 묶음.
     /// </summary>
+    /// <summary>
+    /// 라벨 [반짝이] 추천 — 반짝이는 글자(✦)가 아니라 Path (2026-10-13 사용자 시안: 큰 네 갈래 별 + 오른쪽 위 작은 별 + 아래 더 작은 별, 끝이 오목하게 휜 모양).
+    /// 크기 = 라벨 글자 높이(약 12px — 판 배율을 빼고 글자 배율만 받게), 색 = 라벨 글자와 같음, 간격 4.
+    /// </summary>
+    private FrameworkElement PillContent(TextBlock text)
+    {
+        double size = 12 * TextScale / UiScale; // 글자처럼 판 배율(LayoutTransform)은 빼고 글자 배율만
+        var sparkle = new System.Windows.Shapes.Path
+        {
+            Data = Geometry.Parse(
+                "M9,8 Q10,13 15,14 Q10,15 9,20 Q8,15 3,14 Q8,13 9,8 Z " +      // 큰 별
+                "M18,3 Q18.5,5.5 21,6 Q18.5,6.5 18,9 Q17.5,6.5 15,6 Q17.5,5.5 18,3 Z " + // 오른쪽 위 작은 별
+                "M19,16 Q19.3,17.7 21,18 Q19.3,18.3 19,20 Q18.7,18.3 17,18 Q18.7,17.7 19,16 Z"), // 아래 더 작은 별
+            Fill = text.Foreground,
+            Stretch = Stretch.Uniform,
+            Width = size,
+            Height = size,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 4 * TextScale / UiScale, 0),
+        };
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(sparkle);
+        row.Children.Add(text);
+        return row;
+    }
+
     private FrameworkElement SuggestionGroup(List<AppEntry> suggestions, bool sameLine)
     {
         var cells = new StackPanel { Orientation = Orientation.Horizontal };
@@ -412,7 +442,6 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             Child = cells,
         };
         var pillText = new TextBlock { FontSize = UiText.Sub - 1, FontWeight = FontWeights.SemiBold, Foreground = P.PanelTintText, VerticalAlignment = VerticalAlignment.Center };
-        pillText.Inlines.Add(new System.Windows.Documents.Run("✦ "));
         pillText.Inlines.Add(new System.Windows.Documents.Run(Loc.T("추천")));
         var pill = new Border
         {
@@ -425,7 +454,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             VerticalAlignment = VerticalAlignment.Top,
             Margin = new Thickness(10, -8, 0, 0), // 묶음 위 테두리에 반쯤 걸침
             IsHitTestVisible = false,
-            Child = pillText,
+            Child = PillContent(pillText),
         };
         var host = new Grid { Margin = new Thickness(4, sameLine ? -10 : 10, 0, 0) }; // 같은 줄이면 바탕 위 여백만큼 올려 칸 높이를 맞춤
         host.Children.Add(box);
@@ -1259,25 +1288,56 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     }
 
     /// <summary>폴더 줄 끝 [+ 새 폴더] (늘 보임).</summary>
-    /// <summary>"추가"·"추천" 칸 공통 점선 (2026-10-10 사용자: 실선·진한 보라는 구림) — 연한 회보라 1.5px, 대시 4/3.</summary>
-    internal Brush DashBrush => P.IsLight ? DashLight : DashDark;
-    private static readonly Brush DashLight = Frozen(Color.FromRgb(0xC9, 0xC3, 0xDC)), DashDark = Frozen(Color.FromRgb(0x5E, 0x59, 0x74));
-    private static Brush Frozen(Color c) { var b = new SolidColorBrush(c); b.Freeze(); return b; }
-
-    internal System.Windows.Shapes.Rectangle DashedRect(double radius) => new()
+    /// <summary>
+    /// 판 "추가" 칸 공통 (2026-10-13 사용자 A안 — [+ 앱 넣기]·[+ 새 폴더]·[+ 루틴 추가]의 크기·점선·굵기가 제각각이었음):
+    /// 점선 없이 옆 칸 그림과 같은 크기·모서리의 채운 사각형(PanelTint, 연한 판 위에서는 흰색 반투명 AddTileOnTint) + 가운데 진한 보라 기호(선 굵기 2).
+    /// 이름은 옆 칸 이름과 같은 크기·기준선, 보통 굵기, PanelTintText. 올림·누름은 다른 칸과 같음(CellFeedback — 이 사각형이 1.06/0.94).
+    /// </summary>
+    internal Border AddTile(double size, double radius, UIElement glyph, bool onTint, double inset = 0) => new()
     {
-        Stroke = DashBrush,
-        StrokeThickness = 1.5,
-        StrokeDashArray = new DoubleCollection { 4, 3 },
-        RadiusX = radius,
-        RadiusY = radius,
-        Fill = Brushes.Transparent,
+        Width = size,
+        Height = size,
+        CornerRadius = new CornerRadius(radius),
+        BorderThickness = new Thickness(inset), // 폴더 칸처럼 투명 테두리만큼 바탕이 안쪽 (보이는 크기를 옆 칸과 같게)
+        BorderBrush = Brushes.Transparent,
+        Background = onTint ? P.AddTileOnTint : P.PanelTint,
+        HorizontalAlignment = HorizontalAlignment.Center,
+        VerticalAlignment = VerticalAlignment.Center,
+        Child = glyph,
+    };
+
+    /// <summary>"폴더+" 선 아이콘 (폴더 윤곽 + 가운데 +), 굵기 2, 칸의 42%.</summary>
+    internal System.Windows.Shapes.Path FolderPlusMark(double box) => new()
+    {
+        Data = Geometry.Parse("M3,6.5 Q3,5 4.5,5 L9,5 L11,7 L19.5,7 Q21,7 21,8.5 L21,17.5 Q21,19 19.5,19 L4.5,19 Q3,19 3,17.5 Z M12,10 L12,16 M9,13 L15,13"),
+        Stroke = P.AddGlyph,
+        StrokeThickness = 2,
+        StrokeLineJoin = PenLineJoin.Round,
+        StrokeStartLineCap = PenLineCap.Round,
+        StrokeEndLineCap = PenLineCap.Round,
+        Stretch = Stretch.Uniform,
+        Width = Math.Round(box * 0.42),
+        Height = Math.Round(box * 0.42),
+        HorizontalAlignment = HorizontalAlignment.Center,
+        VerticalAlignment = VerticalAlignment.Center,
         IsHitTestVisible = false,
     };
 
+    /// <summary>"추가" 칸 이름 (옆 칸 이름과 같은 크기, 보통 굵기, 회보라).</summary>
+    private TextBlock AddLabel(string text, double size, double top) => new()
+    {
+        Uid = "name",
+        Text = text,
+        TextWrapping = TextWrapping.NoWrap,
+        TextTrimming = TextTrimming.CharacterEllipsis,
+        TextAlignment = TextAlignment.Center,
+        FontSize = size,
+        Foreground = P.PanelTintText,
+        Margin = new Thickness(0, top, 0, 0),
+    };
+
     /// <summary>
-    /// 점선 칸 가운데 "+" — 글자가 아니라 선 두 개(굵기 2, 길이 = 칸의 35%)라 기준선 없이 정확히 가운데 (2026-10-13 사용자: "+"가 아래로 치우침).
-    /// 중간 회색, 마우스를 올리면 연보라 (Stroke 를 바꿈).
+    /// "추가" 칸 가운데 "+" — 글자가 아니라 선 두 개(굵기 2, 길이 = 칸의 35%)라 기준선 없이 정확히 가운데 (2026-10-13 사용자: "+"가 아래로 치우침). 진한 보라.
     /// </summary>
     internal System.Windows.Shapes.Path PlusMark(double box)
     {
@@ -1288,7 +1348,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         return new System.Windows.Shapes.Path
         {
             Data = g,
-            Stroke = P.SubText,
+            Stroke = P.AddGlyph,
             StrokeThickness = 2,
             StrokeStartLineCap = PenLineCap.Round,
             StrokeEndLineCap = PenLineCap.Round,
@@ -1302,14 +1362,13 @@ internal sealed partial class AllAppsPanel : DockStackPanel
 
     private Border NewFolderTile()
     {
-        // 폴더 칸과 같은 크기·모서리, 이름도 폴더 이름과 같은 글자 (점선·회색 "+"만 다름)
-        var plus = new Grid { Width = GroupTile, Height = GroupTile, HorizontalAlignment = HorizontalAlignment.Center };
-        plus.Children.Add(DashedRect(14));
-        var glyph = PlusMark(GroupTile);
-        plus.Children.Add(glyph);
+        // 폴더 칸과 같은 크기·모서리(14)의 채운 사각형 + "폴더+" 기호, 이름은 폴더 이름과 같은 크기·기준선 (A안)
+        var plus = AddTile(GroupTile, 14, FolderPlusMark(GroupTile), onTint: false, inset: 1.5); // 폴더 칸도 테두리 1.5 안쪽이 바탕
+        var tileHost = new Grid { HorizontalAlignment = HorizontalAlignment.Center }; // 누름 막을 겹치려고
+        tileHost.Children.Add(plus);
         var stack = new StackPanel();
-        stack.Children.Add(plus);
-        stack.Children.Add(new TextBlock { Text = Loc.T("새 폴더"), TextAlignment = TextAlignment.Center, FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 5, 0, 0) });
+        stack.Children.Add(tileHost);
+        stack.Children.Add(AddLabel(Loc.T("새 폴더"), 12, 5));
         stack.Children.Add(new TextBlock { Text = " ", FontSize = 11 }); // 폴더 칸의 "n개" 줄 자리
         var cell = new Border
         {
@@ -1324,8 +1383,6 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             Tag = new DropTag("newfolder", ""),
         };
         CellFeedback(cell, plus, onTint: false);
-        cell.MouseEnter += (_, _) => glyph.Stroke = P.SoftAccentText;
-        cell.MouseLeave += (_, _) => glyph.Stroke = P.SubText;
         cell.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;

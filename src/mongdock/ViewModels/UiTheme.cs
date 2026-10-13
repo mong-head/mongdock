@@ -42,6 +42,9 @@ public sealed class UiPalette
     public Brush CellHover { get; private init; } = Brushes.WhiteSmoke;
     public Brush CellHoverOnTint { get; private init; } = Brushes.White;
     public Brush CellPress { get; private init; } = Brushes.Gainsboro;
+    /// <summary>판 "추가" 칸 기호 (+ · 폴더+): 진한 보라. 칸 바탕은 PanelTint, 연한 판 위에서는 AddTileOnTint.</summary>
+    public Brush AddGlyph { get; private init; } = Brushes.SlateBlue;
+    public Brush AddTileOnTint { get; private init; } = Brushes.White;
     /// <summary>몽독 체크 (안 켜짐 바탕·테두리). 켜지면 하늘~연보라 그라데이션.</summary>
     public Brush CheckOff { get; private init; } = Brushes.White;
     public Brush CheckBorder { get; private init; } = Brushes.Gray;
@@ -86,6 +89,8 @@ public sealed class UiPalette
         CellHover = F("#146E6A86"),
         CellHoverOnTint = F("#66FFFFFF"),
         CellPress = F("#246E6A86"),
+        AddGlyph = F("#FF534AB7"),
+        AddTileOnTint = F("#99FFFFFF"),
         CheckOff = F("#FFFFFFFF"),
         CheckBorder = F("#40000000"),
         Hover = F("#0F000000"),
@@ -127,6 +132,8 @@ public sealed class UiPalette
         CellHover = F("#17FFFFFF"),
         CellHoverOnTint = F("#17FFFFFF"),
         CellPress = F("#26FFFFFF"),
+        AddGlyph = F("#FFC3B8FF"),
+        AddTileOnTint = F("#14FFFFFF"),
         CheckOff = F("#FF3A3A3C"),
         CheckBorder = F("#4DFFFFFF"),
         Hover = F("#14FFFFFF"),

@@ -43,25 +43,9 @@ internal sealed partial class AllAppsPanel
         // 사각형은 앱 아이콘 그림 본체와 같은 크기 (맥 아이콘 그리드: 칸의 80.5% — 루틴 [+] 칸과 같은 규칙), 칸 가운데
         double body = Math.Round(AppIcon * 0.805);
         var iconHost = new Grid { Width = AppIcon, Height = AppIcon, HorizontalAlignment = HorizontalAlignment.Center };
-        var dashed = DashedRect(body * 0.225);
-        dashed.Width = body;
-        dashed.Height = body;
-        dashed.HorizontalAlignment = HorizontalAlignment.Center;
-        dashed.VerticalAlignment = VerticalAlignment.Center;
-        iconHost.Children.Add(dashed);
-        var glyph = PlusMark(body);
-        iconHost.Children.Add(glyph);
-        var label = new TextBlock
-        {
-            Uid = "name",
-            Text = Loc.T("앱 넣기"),
-            TextWrapping = TextWrapping.NoWrap,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            TextAlignment = TextAlignment.Center,
-            FontSize = UiText.Sub,
-            Foreground = P.SubText,
-            Margin = new Thickness(0, 4, 0, 0),
-        };
+        var tile = AddTile(body, body * 0.225, PlusMark(body), onTint: true); // 펼친 폴더 판(연한 채움) 위 = 흰색 반투명 바탕
+        iconHost.Children.Add(tile);
+        var label = AddLabel(Loc.T("앱 넣기"), UiText.Sub, 4);
         var stack = new StackPanel();
         stack.Children.Add(iconHost);
         stack.Children.Add(label);
@@ -78,9 +62,7 @@ internal sealed partial class AllAppsPanel
             Cursor = Cursors.Hand,
             Uid = "m:addapps:" + folderId,
         };
-        CellFeedback(cell, iconHost, onTint: true); // 펼친 폴더 판 위
-        cell.MouseEnter += (_, _) => glyph.Stroke = P.SoftAccentText;
-        cell.MouseLeave += (_, _) => glyph.Stroke = P.SubText;
+        CellFeedback(cell, tile, onTint: true); // 펼친 폴더 판 위
         cell.MouseLeftButtonUp += (_, e) => { e.Handled = true; OpenAddApps(folderId); };
         return cell;
     }
