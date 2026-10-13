@@ -105,7 +105,11 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         if (iconPx != SmallIconPx) { SmallIconPx = iconPx; SmallIcons.Clear(); }
         if (!_sizeLogged) { _sizeLogged = true; Log.Info($"앱 모음 판 크기: 폭 {width:0} DIP (한 줄 {Cols}칸, 크기 {UiScale:0.00}배 — 아이콘 {AppIcon * UiScale:0} DIP), 높이 최대 {PanelHeight(work):0} DIP — 작업 영역 {work.Width:0}x{work.Height:0} DIP"); }
         var shell = BuildShell();
-        if (UiScale > 1.001 && shell is FrameworkElement fe) fe.LayoutTransform = new ScaleTransform(UiScale, UiScale);
+        if (UiScale > 1.001 && shell is FrameworkElement fe)
+        {
+            fe.LayoutTransform = new ScaleTransform(UiScale, UiScale); // 아이콘·칸 크기만 키우는 배율
+            ApplyBaseText(fe); // 글자는 공통 크기 그대로 (AllAppsPanel.Text.cs)
+        }
         SetBody(shell);
         _apps = AllAppsCatalog.Cached ?? Array.Empty<AppEntry>();
         Rebuild();
@@ -148,7 +152,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     private UIElement BuildShell()
     {
         var root = new StackPanel { Width = Cols * AppCell + 8 };
-        _search.FontSize = 15;
+        _search.FontSize = UiText.Body;
         _search.Background = Brushes.Transparent;
         _search.BorderThickness = new Thickness(0);
         _search.Foreground = P.Text;
@@ -164,7 +168,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             Rebuild();
         };
         _placeholder.Text = Loc.T("앱 검색");
-        _placeholder.FontSize = 15;
+        _placeholder.FontSize = UiText.Body;
         _placeholder.Foreground = P.Disabled;
         _placeholder.IsHitTestVisible = false;
         _placeholder.VerticalAlignment = VerticalAlignment.Center;
@@ -212,6 +216,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         _groupOf = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var f in _folders) foreach (var a in f.Apps) _groupOf.TryAdd(a.Key, f.Id);
         _body.Content = _adding is not null ? BuildAddApps() : _cleanup is not null ? BuildCleanup() : _search.Text.Trim().Length > 0 ? BuildResults() : BuildHome();
+        UnscaleText(_body.Content as DependencyObject); // 글자는 판 배율을 받지 않음
         _shownEditing = _editing;
         _shownExpanded = _expanded;
         AnimateAfterRebuild(before, wasEditing, wasExpanded);

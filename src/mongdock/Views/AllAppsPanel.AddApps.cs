@@ -1,3 +1,4 @@
+using Mongdock.ViewModels;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -148,7 +149,7 @@ internal sealed partial class AllAppsPanel
                 var line = new StackPanel { Orientation = Orientation.Horizontal };
                 line.Children.Add(check);
                 line.Children.Add(img);
-                line.Children.Add(new TextBlock { Text = a.Name, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
+                line.Children.Add(new TextBlock { Text = a.Name, FontSize = UiText.Body, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
                 if (inside) line.Children.Add(new TextBlock { Text = Loc.T("이미 들어 있어요"), FontSize = 11.5, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) });
                 var row = new Border { CornerRadius = new CornerRadius(6), Child = line, Opacity = inside ? 0.5 : 1, Background = Brushes.Transparent, Cursor = inside ? Cursors.Arrow : Cursors.Hand, Focusable = !inside, FocusVisualStyle = null };
                 if (!inside)
@@ -161,6 +162,7 @@ internal sealed partial class AllAppsPanel
                 }
                 list.Children.Add(row);
             }
+            UnscaleText(list); // 검색으로 다시 채운 줄도 공통 글자 크기
         }
         // 키보드: 검색 칸에서 ↓ = 첫 줄, 목록에서 ↑↓(2열이면 ←→도) 이동, Space 체크, Enter = [넣기]/[만들기]
         search.PreviewKeyDown += (_, e) => { if (e.Key == Key.Down && rows.Count > 0) { e.Handled = true; Keyboard.Focus(rows[0]); } };
