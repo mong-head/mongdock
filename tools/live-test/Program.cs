@@ -418,6 +418,33 @@ internal static class Program
             bool pictureStep = Pics(pages[i]!) is not null;
             Check($"둘러보기 {i + 1}/{count} \"{title}\": 카드가 강조 자리를 안 가림 (자리 {(hole is null ? "없음" : $"{hole.Value.Top:0}~{hole.Value.Bottom:0}")}, 카드 {cardRect.Top:0}~{cardRect.Bottom:0}), 그림 {frames.Count}장",
                 (hole is null || !cardRect.IntersectsWith(hole.Value)) && (!pictureStep || frames.Count >= 2) && cardRect.Top >= work.Top - 1 && cardRect.Bottom <= work.Bottom + 1);
+            if (i == 1 && pictureStep)
+            {
+                // 장 넘김: 2.5초, 마지막 장 3초, 직접 넘기면 이 단계는 멈춤, 다음 단계에서 다시 자동
+                var ct = tourCard.GetType();
+                T Get<T>(string name) => (T)ct.GetProperty(name, Any)!.GetValue(tourCard)!;
+                Check($"장 넘김: 첫 장 간격 {Get<TimeSpan>("SlideIntervalForTest").TotalMilliseconds}ms (2500 기대), 자동 {Get<bool>("SlidingForTest")}", Get<TimeSpan>("SlideIntervalForTest").TotalMilliseconds == 2500 && Get<bool>("SlidingForTest"));
+                ct.GetMethod("ShowFrameForTest", Any)!.Invoke(tourCard, new object[] { frames.Count - 1 });
+                ct.GetMethod("StartSlides", Any)!.Invoke(tourCard, null);
+                Check($"장 넘김: 마지막 장 간격 {Get<TimeSpan>("SlideIntervalForTest").TotalMilliseconds}ms (3000 기대)", Get<TimeSpan>("SlideIntervalForTest").TotalMilliseconds == 3000);
+                ct.GetField("_slide", Any)!.GetValue(tourCard)!.GetType().GetMethod("Stop")!.Invoke(ct.GetField("_slide", Any)!.GetValue(tourCard), null);
+                // 마지막 장 다음 = 처음 (자동 넘김 틱과 같은 코드)
+                ct.GetMethod("ShowFrame", Any)!.Invoke(tourCard, new object[] { frames.Count, false });
+                Check($"장 넘김: 마지막 다음은 처음 ({Get<int>("FrameForTest")})", Get<int>("FrameForTest") == 0);
+                ct.GetMethod("StartSlides", Any)!.Invoke(tourCard, null);
+                Check($"장 점: {Get<int>("FrameDotCountForTest")}개 (장 {frames.Count}개)", Get<int>("FrameDotCountForTest") == frames.Count);
+                ct.GetMethod("ClickFrameDotForTest", Any)!.Invoke(tourCard, new object[] { 2 });
+                Pump(300);
+                Check($"장 점 누름: 3번째 장 ({Get<int>("FrameForTest") + 1}), 직접 넘김 {Get<bool>("ManualForTest")}, 자동 멈춤 {!Get<bool>("SlidingForTest")}", Get<int>("FrameForTest") == 2 && Get<bool>("ManualForTest") && !Get<bool>("SlidingForTest"));
+                ct.GetMethod("StepFrame", Any)!.Invoke(tourCard, new object[] { -1 });
+                Pump(300);
+                Check($"‹: 2번째 장 ({Get<int>("FrameForTest") + 1})", Get<int>("FrameForTest") == 1);
+                st.GetMethod("Next", Any)!.Invoke(session, null);
+                Pump(500);
+                Check($"다음 단계: 다시 자동 (직접 {Get<bool>("ManualForTest")}, 자동 {Get<bool>("SlidingForTest")})", !Get<bool>("ManualForTest") && Get<bool>("SlidingForTest"));
+                st.GetMethod("Prev", Any)!.Invoke(session, null);
+                Pump(500);
+            }
             if (i == 2)
             {
                 // 이전 → 다시 다음

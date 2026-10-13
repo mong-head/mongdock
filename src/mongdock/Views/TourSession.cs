@@ -387,10 +387,21 @@ internal sealed class TourCardWindow : Window
         Card = new TourCard(palette);
         Content = new Border { Padding = new Thickness(ShadowPad), Child = Card };
         UiFonts.Apply(services.Settings.Current);
-        SourceInitialized += (_, _) => services.DesktopWindows.MakeOverlay(this);
+        SourceInitialized += (_, _) =>
+        {
+            services.DesktopWindows.MakeOverlay(this);
+            // 가로 스크롤(WM_MOUSEHWHEEL)은 WPF 이벤트가 없어 창 메시지로 받음
+            System.Windows.Interop.HwndSource.FromHwnd(new System.Windows.Interop.WindowInteropHelper(this).Handle)?.AddHook((IntPtr h, int msg, IntPtr w, IntPtr l, ref bool handled) =>
+            {
+                if (msg == 0x020E) handled = Card.HorizontalWheel((short)((long)w >> 16));
+                return IntPtr.Zero;
+            });
+        };
         PreviewKeyDown += (_, e) =>
         {
-            if (e.Key is Key.Left or Key.Right or Key.Escape) { e.Handled = true; KeyPressed?.Invoke(e.Key); }
+            // Shift+←→ 는 장 넘기기, ←→ 는 단계 넘기기
+            if (e.Key is Key.Left or Key.Right && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) { e.Handled = true; Card.StepFrame(e.Key == Key.Right ? +1 : -1); }
+            else if (e.Key is Key.Left or Key.Right or Key.Escape) { e.Handled = true; KeyPressed?.Invoke(e.Key); }
         };
     }
 

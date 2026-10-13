@@ -41,12 +41,13 @@ internal sealed class TourCard : Border
 {
     public const double CardWidth = 560;
     private const double PictureHeight = CardWidth * 10 / 16;
-    private const int SlideMs = 3500, FadeMs = 300;
+    // 장 넘김 2.5초, 마지막 장은 3초 머문 뒤 처음으로, 교차 흐림 250ms (2026-10-14 사용자: 느림)
+    private const int SlideMs = 2500, LastSlideMs = 3000, FadeMs = 250;
 
     private readonly UiPalette _p;
     private readonly Image _front = new() { Stretch = Stretch.Uniform };
     private readonly Image _back = new() { Stretch = Stretch.Uniform, Opacity = 0 };
-    private readonly StackPanel _frameDots = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 10) };
+    private readonly StackPanel _frameDots = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 4) };
     private readonly TextBlock _title;
     private readonly TextBlock _body;
     private readonly StackPanel _stepDots = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -64,6 +65,11 @@ internal sealed class TourCard : Border
     private readonly DispatcherTimer _slide = new() { Interval = TimeSpan.FromMilliseconds(SlideMs) };
     private IReadOnlyList<ImageSource> _frames = Array.Empty<ImageSource>();
     private int _frame;
+    private bool _manual; // 사용자가 직접 넘긴 단계는 자동 넘김 멈춤 (다음 단계에서 다시 자동)
+    private readonly Border _left, _right;
+    private Point? _dragFrom;
+    private int _wheel;
+    private DateTime _wheelFlip;
 
     public event Action? PrevClicked;
     public event Action? NextClicked;
@@ -93,8 +99,23 @@ internal sealed class TourCard : Border
         _logo.Source = AppIcon.WindowIcon; // 그림 없는 단계 (작업 표시줄 안내 등)
         picture.Children.Add(_logo);
         picture.Children.Add(_frameDots);
-        picture.MouseEnter += (_, _) => _slide.Stop(); // 마우스를 올리면 멈춤
-        picture.MouseLeave += (_, _) => StartSlides();
+        // 직접 넘기기: 마우스를 올리면 좌우 가운데 ‹ › 동그라미, 장 점 누르기, 좌우로 끌기, 가로 스크롤(창이 넘겨줌), Shift+←→
+        _left = Arrow("‹", -1, HorizontalAlignment.Left);
+        _right = Arrow("›", +1, HorizontalAlignment.Right);
+        picture.Children.Add(_left);
+        picture.Children.Add(_right);
+        picture.MouseEnter += (_, _) => { _slide.Stop(); ShowArrows(true); }; // 마우스를 올리면 멈춤
+        picture.MouseLeave += (_, _) => { ShowArrows(false); StartSlides(); };
+        picture.MouseLeftButtonDown += (_, e) => { if (_frames.Count > 1) { _dragFrom = e.GetPosition(picture); picture.CaptureMouse(); } };
+        picture.MouseLeftButtonUp += (_, e) =>
+        {
+            if (_dragFrom is not { } from) return;
+            _dragFrom = null;
+            picture.ReleaseMouseCapture();
+            double dx = e.GetPosition(picture).X - from.X;
+            if (Math.Abs(dx) >= 40) { e.Handled = true; StepFrame(dx < 0 ? +1 : -1); } // 왼쪽으로 끌면 다음 장
+        };
+        picture.LostMouseCapture += (_, _) => _dragFrom = null;
 
         _title = new TextBlock { FontSize = 18, FontWeight = FontWeights.SemiBold, Foreground = p.Text, TextWrapping = TextWrapping.Wrap };
         _body = new TextBlock { FontSize = UiText.Body, Foreground = p.SubText, TextWrapping = TextWrapping.Wrap, LineHeight = 20, Margin = new Thickness(0, 6, 0, 0) };
@@ -141,7 +162,7 @@ internal sealed class TourCard : Border
         stack.Children.Add(picture);
         stack.Children.Add(text);
         Child = stack;
-        _slide.Tick += (_, _) => ShowFrame(_frame + 1, animate: true);
+        _slide.Tick += (_, _) => { ShowFrame(_frame + 1, animate: true); StartSlides(); }; // 마지막 장은 조금 더 머묾
         Unloaded += (_, _) => _slide.Stop();
     }
 
@@ -203,6 +224,8 @@ internal sealed class TourCard : Border
         _frames = step.Frames;
         _frameDots.Visibility = _frames.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
         _frame = 0;
+        _manual = false;
+        ShowArrows(_picture.IsMouseOver);
         _back.Source = null;
         _back.Opacity = 0;
         ShowFrame(0, animate: false);
@@ -220,8 +243,73 @@ internal sealed class TourCard : Border
         _logo.Visibility = Visibility.Collapsed;
         if (first) ShowFrame(0, animate: false);
         else ShowFrame(_frame, animate: false);
+        ShowArrows(_picture.IsMouseOver);
         StartSlides();
     }
+
+    private Border Arrow(string glyph, int dir, HorizontalAlignment side)
+    {
+        var tint = ((SolidColorBrush)_p.CardBackground).Color;
+        var b = new Border
+        {
+            Width = 30, Height = 30, CornerRadius = new CornerRadius(15),
+            Background = new SolidColorBrush(Color.FromArgb(0xCC, tint.R, tint.G, tint.B)),
+            Effect = new DropShadowEffect { BlurRadius = 8, ShadowDepth = 1, Direction = 270, Opacity = 0.18, Color = _p.ShadowColor },
+            HorizontalAlignment = side, VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(10, 0, 10, 8),
+            Cursor = Cursors.Hand, Opacity = 0, IsHitTestVisible = false,
+            Child = new TextBlock { Text = glyph, FontSize = 20, Foreground = _p.Text, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(dir < 0 ? -1 : 1, -4, 0, 0) },
+        };
+        b.MouseLeftButtonDown += (_, e) => e.Handled = true;
+        b.MouseLeftButtonUp += (_, e) => { e.Handled = true; StepFrame(dir); };
+        return b;
+    }
+
+    private void ShowArrows(bool on)
+    {
+        on &= _frames.Count > 1;
+        foreach (var b in new[] { _left, _right })
+        {
+            b.IsHitTestVisible = on;
+            if (Anim.Enabled) b.BeginAnimation(OpacityProperty, new DoubleAnimation(on ? 1 : 0, TimeSpan.FromMilliseconds(120)));
+            else { b.BeginAnimation(OpacityProperty, null); b.Opacity = on ? 1 : 0; }
+        }
+    }
+
+    /// <summary>사용자가 장을 직접 넘김 (‹ ›, 끌기, 가로 스크롤, Shift+←→) — 이 단계는 자동 넘김 멈춤.</summary>
+    public void StepFrame(int dir) => GoFrame(_frame + dir);
+
+    /// <summary>사용자가 장 점이나 화살표로 고른 장으로.</summary>
+    public void GoFrame(int i)
+    {
+        if (_frames.Count < 2) return;
+        _manual = true;
+        _slide.Stop();
+        int target = (i % _frames.Count + _frames.Count) % _frames.Count;
+        if (target != _frame) ShowFrame(target, animate: Anim.Enabled);
+    }
+
+    /// <summary>가로 스크롤(트랙패드·기울이는 휠): 그림 위에서만, 한 칸(120)씩 한 장, 넘긴 직후 잠깐은 무시 (트랙패드가 계속 보냄).</summary>
+    public bool HorizontalWheel(int delta)
+    {
+        if (!_picture.IsMouseOver || _frames.Count < 2) return false;
+        if ((DateTime.UtcNow - _wheelFlip).TotalMilliseconds < 350) { _wheel = 0; return true; }
+        _wheel += delta;
+        if (Math.Abs(_wheel) >= 120)
+        {
+            StepFrame(_wheel > 0 ? +1 : -1);
+            _wheel = 0;
+            _wheelFlip = DateTime.UtcNow;
+        }
+        return true;
+    }
+
+    internal bool ManualForTest => _manual;
+    internal int FrameForTest => _frame;
+    internal bool SlidingForTest => _slide.IsEnabled;
+    internal TimeSpan SlideIntervalForTest => _slide.Interval;
+    internal int FrameDotCountForTest => _frameDots.Children.Count;
+    internal void ClickFrameDotForTest(int k) => GoFrame(k);
 
     /// <summary>시험 그림에서만: 몇 번째 그림을 보여 줄지.</summary>
     internal void ShowFrameForTest(int i) => ShowFrame(i, animate: false);
@@ -229,6 +317,8 @@ internal sealed class TourCard : Border
     private void StartSlides()
     {
         _slide.Stop();
+        if (_manual || _picture.IsMouseOver) return;
+        _slide.Interval = TimeSpan.FromMilliseconds(_frame == _frames.Count - 1 ? LastSlideMs : SlideMs);
         if (_frames.Count > 1 && Anim.Enabled) _slide.Start(); // 윈도우 애니메이션이 꺼져 있으면 첫 장만
     }
 
@@ -257,7 +347,18 @@ internal sealed class TourCard : Border
         else _front.Source = next;
         _frameDots.Children.Clear();
         for (int k = 0; k < _frames.Count; k++)
-            _frameDots.Children.Add(new Ellipse { Width = 6, Height = 6, Margin = new Thickness(3, 0, 3, 0), Fill = k == _frame ? _p.PanelTintText : _p.PanelTintLine });
+        {
+            // 점은 6px, 누르는 자리는 18px (넉넉하게)
+            int at = k;
+            var hit = new Border
+            {
+                Width = 18, Height = 18, Background = Brushes.Transparent, Cursor = Cursors.Hand,
+                Child = new Ellipse { Width = 6, Height = 6, Fill = k == _frame ? _p.PanelTintText : _p.PanelTintLine },
+            };
+            hit.MouseLeftButtonDown += (_, e) => e.Handled = true;
+            hit.MouseLeftButtonUp += (_, e) => { e.Handled = true; GoFrame(at); };
+            _frameDots.Children.Add(hit);
+        }
     }
 }
 
