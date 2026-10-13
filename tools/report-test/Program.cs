@@ -672,7 +672,7 @@ internal static class Program
     /// </summary>
     /// <summary>
     /// --suggest: 루틴 추천(spec-routines §15) 판정표 — 가짜 실행 기록으로 RoutineSuggest.Find 를 돌려 기대와 맞는지.
-    /// (설치 7일·주 1회·전체 화면·방해 금지·일시 정지·3번 거절은 묻는 단계에서 거름 — 표 아래 따로)
+    /// (설치 3일·주 1회·전체 화면·방해 금지·일시 정지·3번 거절은 묻는 단계에서 거름 — 표 아래 따로)
     /// </summary>
     private static int SuggestTable()
     {
@@ -696,7 +696,7 @@ internal static class Program
                 for (int i = 0; i < apps.Length; i++)
                     yield return (apps[i], monday.AddDays(d) + start + TimeSpan.FromMinutes(4 * i));
         }
-        var weekdays = new[] { 0, 1, 2, 3, 4, 7, 8, 9 }; // 2주 평일 8일
+        var weekdays = new[] { 7, 8, 9, 10, 11 }; // 지난주 월~이번 금 평일 5일 (판정은 최근 7일 = 10/9 18시 뒤)
         var none = new HashSet<string>();
         var empty = new List<IReadOnlyCollection<string>>();
         int fail = 0;
@@ -711,15 +711,15 @@ internal static class Program
             Console.WriteLine($"  {(ok ? "통과" : "실패")}  {name,-34} → {got}");
         }
         var nine = TimeSpan.FromHours(9);
-        Case("평일 아침 3앱 8일", Days(weekdays, nine, "exe:outlook", "exe:chrome", "exe:hwp"), true);
+        Case("평일 아침 3앱 5일", Days(weekdays, nine, "exe:outlook", "exe:chrome", "exe:hwp"), true);
         Case("앱 2개뿐", Days(weekdays, nine, "exe:outlook", "exe:chrome"), false);
-        Case("3일만 반복", Days(new[] { 7, 8, 9 }, nine, "exe:outlook", "exe:chrome", "exe:hwp"), false);
-        Case("4일 반복 (최소)", Days(new[] { 2, 7, 8, 9 }, nine, "exe:outlook", "exe:chrome", "exe:hwp"), true);
-        Case("시각이 날마다 2시간 이상 다름", Days(new[] { 0, 7 }, nine, "exe:outlook", "exe:chrome", "exe:hwp")
-            .Concat(Days(new[] { 1, 8 }, TimeSpan.FromHours(11.5), "exe:outlook", "exe:chrome", "exe:hwp"))
-            .Concat(Days(new[] { 2, 9 }, TimeSpan.FromHours(14), "exe:outlook", "exe:chrome", "exe:hwp")), false);
-        Case("시각 ±40분 흔들림", Days(new[] { 0, 7 }, nine, "exe:outlook", "exe:chrome", "exe:hwp")
-            .Concat(Days(new[] { 1, 8 }, TimeSpan.FromHours(9.6), "exe:outlook", "exe:chrome", "exe:hwp")), true);
+        Case("2일만 반복", Days(new[] { 8, 9 }, nine, "exe:outlook", "exe:chrome", "exe:hwp"), false);
+        Case("3일 반복 (최소)", Days(new[] { 7, 8, 9 }, nine, "exe:outlook", "exe:chrome", "exe:hwp"), true);
+        Case("시각이 날마다 2시간 이상 다름", Days(new[] { 7, 10 }, nine, "exe:outlook", "exe:chrome", "exe:hwp")
+            .Concat(Days(new[] { 8, 11 }, TimeSpan.FromHours(11.5), "exe:outlook", "exe:chrome", "exe:hwp"))
+            .Concat(Days(new[] { 9 }, TimeSpan.FromHours(14), "exe:outlook", "exe:chrome", "exe:hwp")), false);
+        Case("시각 ±40분 흔들림", Days(new[] { 7, 8 }, nine, "exe:outlook", "exe:chrome", "exe:hwp")
+            .Concat(Days(new[] { 9, 10 }, TimeSpan.FromHours(9.6), "exe:outlook", "exe:chrome", "exe:hwp")), true);
         Case("30분 넘게 흩어져 켬", weekdays.SelectMany(d => new[] { ("exe:outlook", monday.AddDays(d) + nine), ("exe:chrome", monday.AddDays(d) + nine + TimeSpan.FromMinutes(25)), ("exe:hwp", monday.AddDays(d) + nine + TimeSpan.FromMinutes(55)) }), false);
         Case("시작 프로그램(카톡) 끼면 2앱", Days(weekdays, nine, "exe:kakaotalk", "exe:outlook", "exe:chrome"), false, new HashSet<string> { "exe:kakaotalk" });
         Case("시작 프로그램 빼고도 3앱", Days(weekdays, nine, "exe:kakaotalk", "exe:outlook", "exe:chrome", "exe:hwp"), true, new HashSet<string> { "exe:kakaotalk" });
@@ -729,11 +729,11 @@ internal static class Program
             declined: new List<IReadOnlyCollection<string>> { new[] { "exe:outlook", "exe:chrome", "exe:hwp" } });
         Case("거절한 묶음과 1개만 겹침", Days(weekdays, nine, "exe:code", "exe:slack", "exe:figma"), true,
             declined: new List<IReadOnlyCollection<string>> { new[] { "exe:outlook", "exe:chrome", "exe:code" } });
-        Case("15일보다 오래된 기록", Days(weekdays, nine, "exe:outlook", "exe:chrome", "exe:hwp").Select(x => (x.Item1, x.Item2.AddDays(-14))), false);
-        Case("주말 저녁 게임 묶음 (2주말)", Days(new[] { -2, -1, 5, 6 }, TimeSpan.FromHours(20), "exe:steam", "exe:discord", "exe:chrome"), true);
-        Case("주말 저녁 3일만 (15일 전 하루는 빠짐)", Days(new[] { -12, 5, 6, -2 }, TimeSpan.FromHours(20), "exe:steam", "exe:discord", "exe:chrome"), false);
-        Case("매일 4앱 중 하루 1개 빠짐", Days(new[] { 0, 1, 7, 8, 9 }, nine, "exe:outlook", "exe:chrome", "exe:hwp", "exe:teams")
-            .Concat(Days(new[] { 2 }, nine, "exe:outlook", "exe:chrome", "exe:hwp")), true);
+        Case("7일보다 오래된 기록 (보관은 14일)", Days(weekdays, nine, "exe:outlook", "exe:chrome", "exe:hwp").Select(x => (x.Item1, x.Item2.AddDays(-7))), false);
+        Case("금·토·일 저녁 게임 묶음", Days(new[] { 4, 5, 6 }, TimeSpan.FromHours(20), "exe:steam", "exe:discord", "exe:chrome"), true);
+        Case("주말 저녁 3일 (8일 전 하루는 빠짐)", Days(new[] { -1, 5, 6 }, TimeSpan.FromHours(20), "exe:steam", "exe:discord", "exe:chrome"), false);
+        Case("매일 4앱 중 하루 1개 빠짐", Days(new[] { 7, 8, 10 }, nine, "exe:outlook", "exe:chrome", "exe:hwp", "exe:teams")
+            .Concat(Days(new[] { 9 }, nine, "exe:outlook", "exe:chrome", "exe:hwp")), true);
         // 브라우저 페이지 힌트 (§15-1): 제목 정리
         var clean = t.GetMethod("CleanTitle", any)!;
         foreach (var (raw, want) in new[]
@@ -752,7 +752,7 @@ internal static class Program
             Console.WriteLine($"  {(ok ? "통과" : "실패")}  제목 정리 {raw[..Math.Min(30, raw.Length)],-30} → {got ?? "(없음)"}");
         }
         Console.WriteLine(fail == 0 ? "루틴 추천 판정: 모두 통과" : $"루틴 추천 판정: {fail}개 실패");
-        Console.WriteLine("  (묻는 단계에서 거름: 설치 7일 안, 지난 추천 7일 안, 전체 화면·방해 금지, 일시 정지, 루틴 추천 끔·자주 쓰는 앱 기록 끔, 3번 연속 거절이면 끔)");
+        Console.WriteLine("  (묻는 단계에서 거름: 설치 3일 안, 지난 추천 7일 안, 전체 화면·방해 금지, 일시 정지, 루틴 추천 끔·자주 쓰는 앱 기록 끔, 3번 연속 거절이면 끔)");
         // 루틴 링크 해석·허용 (리뷰 H1·H2·M2)
         var links = asm.GetType("Mongdock.Services.RoutineLinks")!;
         var parse = links.GetMethod("Parse")!;

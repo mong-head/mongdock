@@ -12,14 +12,14 @@ namespace Mongdock.Services;
 /// 쓰는 패턴을 보고 루틴 추천 (spec-routines §15, 2026-10-13 사용자 승인).
 /// 기록: 앱이 첫 창을 띄운 시각과 앱 식별자만 PC 안 usage-launches.json 에 (14일·2000건, 같은 앱 30분 안 다시 켬은 한 번).
 /// "자주 쓰는 앱 기록"이 꺼져 있으면 기록하지 않고 지움. 밖으로 보내지 않고 설정 옮기기에도 넣지 않음.
-/// 찾기: 날마다 30분 안에 함께 켠 서로 다른 앱 3개 이상 묶음 → 14일 안 서로 다른 날 4번 이상, 시작 시각 ±1시간, 2/3 이상 겹치면 같은 묶음.
-/// 묻기: 배너 10초 [만들기] [괜찮아요] — 설치 7일 안·지난 추천 7일 안·전체 화면·방해 금지·일시 정지면 안 물음. 3번 연속 거절이면 끔.
+/// 찾기: 날마다 30분 안에 함께 켠 서로 다른 앱 3개 이상 묶음 → 최근 7일 안 서로 다른 날 3번 이상 (2026-10-13 사용자: 14일·4번 → 7일·3번), 시작 시각 ±1시간, 2/3 이상 겹치면 같은 묶음.
+/// 묻기: 배너 10초 [만들기] [괜찮아요] — 설치 3일 안·지난 추천 7일 안·전체 화면·방해 금지·일시 정지면 안 물음. 3번 연속 거절이면 끔.
 /// </summary>
 internal static class RoutineSuggest
 {
     private static readonly string LogPath = Path.Combine(AppInfo.DataDirectory, "usage-launches.json");
-    private static readonly TimeSpan Keep = TimeSpan.FromDays(14), Window = TimeSpan.FromMinutes(30), TimeTolerance = TimeSpan.FromHours(1);
-    private const int MaxEntries = 2000, MinApps = 3, MinDays = 4, DeclinesToStop = 3;
+    private static readonly TimeSpan Keep = TimeSpan.FromDays(14), Observe = TimeSpan.FromDays(7), FirstAsk = TimeSpan.FromDays(3), Window = TimeSpan.FromMinutes(30), TimeTolerance = TimeSpan.FromHours(1);
+    private const int MaxEntries = 2000, MinApps = 3, MinDays = 3, DeclinesToStop = 3;
 
     public sealed record Launch(string Id, DateTime At);
     /// <summary>찾은 묶음: 앱 식별자, 나온 날짜들, 시작 시각 중앙값, 요일들.</summary>
@@ -168,7 +168,8 @@ internal static class RoutineSuggest
     internal static Bundle? Find(IReadOnlyList<Launch> launches, DateTime now, ISet<string> startup,
         IEnumerable<IReadOnlyCollection<string>> routines, IEnumerable<IReadOnlyCollection<string>> declined)
     {
-        var recent = launches.Where(l => l.At >= now - Keep && l.At <= now && !startup.Contains(l.Id)).OrderBy(l => l.At).ToList();
+        var recent = launches.Where(l => l.At >= now - Observe && // 판정은 최근 7일 (기록 보관은 14일)
+             l.At <= now && !startup.Contains(l.Id)).OrderBy(l => l.At).ToList();
         // 날마다 30분 창 묶음 (서로 다른 앱 3개 이상)
         var occ = new List<(DateTime Day, DateTime Start, HashSet<string> Apps)>();
         foreach (var day in recent.GroupBy(l => l.At.Date))
@@ -279,7 +280,7 @@ internal static class RoutineSuggest
         if (services is null || _asking || _checking) return;
         var s = services.Settings.Current;
         if (!s.RoutineSuggest || !s.AllApps.ShowSuggestions || AppState.Paused) return;
-        if (s.FirstRunAt is { } first && DateTime.Now - first < TimeSpan.FromDays(7)) return;
+        if (s.FirstRunAt is { } first && DateTime.Now - first < FirstAsk) return; // 설치 후 3일
         if (s.RoutineSuggestLastAt is { } lastAt && DateTime.Now - lastAt < TimeSpan.FromDays(7)) return;
         if (!RoutineUi.CanAdd(services) || RoutineTriggers.IsBusy()) return;
         var apps = AllAppsCatalog.Cached;
