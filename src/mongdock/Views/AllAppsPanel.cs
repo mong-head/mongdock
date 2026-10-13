@@ -209,7 +209,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         _folders = AppFolders.Visible(Services.Settings.Current, _apps);
         _groupOf = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var f in _folders) foreach (var a in f.Apps) _groupOf.TryAdd(a.Key, f.Id);
-        _body.Content = _cleanup is not null ? BuildCleanup() : _search.Text.Trim().Length > 0 ? BuildResults() : BuildHome();
+        _body.Content = _adding is not null ? BuildAddApps() : _cleanup is not null ? BuildCleanup() : _search.Text.Trim().Length > 0 ? BuildResults() : BuildHome();
         _shownEditing = _editing;
         _shownExpanded = _expanded;
         AnimateAfterRebuild(before, wasEditing, wasExpanded);
@@ -874,6 +874,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             _groupApps.Add(app);
             grid.Children.Add(c);
         }
+        grid.Children.Add(AddAppsCell(id)); // 마지막 칸 [+] — 앱 고르기로 넣기
         stack.Children.Add(grid);
         if (apps.Count > perRow * ExpandedRows)
             stack.Children.Add(Toggle(_showAll.Contains(id) ? Loc.T("접기") : Loc.F($"더 보기 ({apps.Count - limit}개)"), _showAll.Contains(id), () =>
@@ -1236,10 +1237,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         cell.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;
-            string id = AppFolders.Create(Services.Settings.Current, _apps, Loc.T("새 폴더"));
-            _expanded = id;
-            _renaming = id;
-            Save();
+            OpenAddApps(null); // 이름 입력 + 앱 고르기 (AllAppsPanel.AddApps.cs)
         };
         return cell;
     }
