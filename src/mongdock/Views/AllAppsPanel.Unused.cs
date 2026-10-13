@@ -1,0 +1,248 @@
+using System.Diagnostics;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using Mongdock.Services;
+
+namespace Mongdock.Views;
+
+/// <summary>
+/// "모든 앱" 머리 칩 [전체] [최근 사용] [안 쓰는 앱 n] (spec-all-apps-panel.md 마지막 절).
+/// 안 쓰는 앱: 체크·아이콘·이름·"n개월 전/쓴 적 없음"·용량, 정렬(오래된 순/용량 큰 순/이름순), [선택한 앱 숨기기] [Windows에서 제거…].
+/// 몽독은 직접 지우지 않고 윈도우 앱 설정만 연다. "자주 쓰는 앱 기록"이 꺼져 있으면 칩을 보이지 않음(근거가 없어서).
+/// </summary>
+internal sealed partial class AllAppsPanel
+{
+    private enum AllFilter { All, Recent, Unused }
+    private enum UnusedSort { Oldest, Largest, Name }
+
+    private AllFilter _allFilter = AllFilter.All;
+    private UnusedSort _unusedSort = UnusedSort.Oldest;
+    private List<UnusedApps.Row>? _unused;
+    private DateTime _unusedAt;
+    private bool _unusedLoading;
+    private readonly HashSet<string> _unusedChecked = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>시험 그림에서만: 안 쓰는 앱 목록 (이 PC 기록 대신).</summary>
+    internal static Func<List<AppEntry>, List<UnusedApps.Row>>? UnusedOverride { get; set; }
+
+    /// <summary>시험 그림(report-test --allapps)에서만: 앱 몇 개를 안 쓰는 앱으로, [안 쓰는 앱] 보기를 펼친 상태로.</summary>
+    internal void ShowUnusedForTest()
+    {
+        var now = DateTime.Now;
+        UnusedOverride = visible => visible.Where(a => !UnusedApps.IsBuiltIn(a)).Take(7)
+            .Select((a, i) => new UnusedApps.Row(a, i % 3 == 2 ? null : now.AddDays(-70 - 45 * i), i == 4 ? null : (long)(i + 1) * 180_000_000 % 2_400_000_000))
+            .ToList();
+        _allOpen = true;
+        _allFilter = AllFilter.Unused;
+        _unusedChecked.Clear();
+        _unused = null;
+    }
+
+    /// <summary>"모든 앱"을 펼쳤을 때의 내용 (칩 + 고른 보기).</summary>
+    private void AddAllApps(StackPanel root, List<AppEntry> visible)
+    {
+        bool chips = S.ShowSuggestions;
+        if (!chips) _allFilter = AllFilter.All;
+        if (chips)
+        {
+            EnsureUnused(visible);
+            string unusedLabel = _unused is { } u ? Loc.F($"안 쓰는 앱 {u.Count}") : Loc.T("안 쓰는 앱 …");
+            var row = new WrapPanel { Margin = new Thickness(4, 2, 0, 8) };
+            row.Children.Add(Chip(Loc.T("전체"), _allFilter == AllFilter.All, () => SetFilter(AllFilter.All)));
+            row.Children.Add(Chip(Loc.T("최근 사용"), _allFilter == AllFilter.Recent, () => SetFilter(AllFilter.Recent)));
+            row.Children.Add(Chip(unusedLabel, _allFilter == AllFilter.Unused, () => SetFilter(AllFilter.Unused)));
+            root.Children.Add(row);
+        }
+        switch (_allFilter)
+        {
+            case AllFilter.Recent:
+            {
+                var cutoff = DateTime.Now.AddDays(-30);
+                var recent = visible.Select(a => (a, last: AppUsage.LastUsed(AllAppsCatalog.Identities(a))))
+                    .Where(x => x.last is { } l && l >= cutoff).OrderByDescending(x => x.last).Select(x => x.a).ToList();
+                if (recent.Count == 0) { root.Children.Add(Note(Loc.T("최근 30일 동안 연 앱이 없어요."))); break; }
+                var wrap = new WrapPanel { Width = Cols * AppCell };
+                foreach (var app in recent) wrap.Children.Add(AppCellView(app));
+                root.Children.Add(wrap);
+                break;
+            }
+            case AllFilter.Unused:
+                root.Children.Add(UnusedView());
+                break;
+            default:
+            {
+                var all = new WrapPanel { Width = Cols * AppCell };
+                foreach (var app in visible.OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase)) all.Children.Add(AppCellView(app));
+                root.Children.Add(all);
+                break;
+            }
+        }
+    }
+
+    private void SetFilter(AllFilter f)
+    {
+        _allFilter = f;
+        if (f == AllFilter.Unused && !Services.Settings.Current.AllAppsUnusedViewOpened)
+        {
+            Services.Settings.Current.AllAppsUnusedViewOpened = true; // 통계: 하루에 한 번이라도 열었는지
+            Services.Settings.Save();
+        }
+        Rebuild();
+    }
+
+    /// <summary>안 쓰는 앱 계산 (판을 열고 처음 "모든 앱"을 펼칠 때, 10분 지나면 다시). 무거운 부분은 백그라운드.</summary>
+    private void EnsureUnused(List<AppEntry> visible)
+    {
+        if (_unusedLoading || _unused is not null && DateTime.Now - _unusedAt < TimeSpan.FromMinutes(10)) return;
+        if (UnusedOverride is { } fake) { _unused = fake(visible); _unusedAt = DateTime.Now; return; }
+        var cutoff = DateTime.Now.AddDays(-UnusedApps.StaleDays);
+        var running = Services.Windows.Windows.Select(w => System.IO.Path.GetFileNameWithoutExtension(w.ProcessPath).ToLowerInvariant())
+            .Where(e => e.Length > 0).Select(e => "exe:" + e).ToHashSet();
+        var candidates = visible
+            .Select(a => (App: a, Last: AppUsage.LastUsed(AllAppsCatalog.Identities(a))))
+            .Where(x => (x.Last is not { } l || l < cutoff) && !AllAppsCatalog.Identities(x.App).Any(running.Contains))
+            .ToList();
+        DateTime? recordStart = S.UsageSeededAt ?? Services.Settings.Current.FirstRunAt;
+        _unusedLoading = true;
+        var sw = Stopwatch.StartNew();
+        Task.Run(() => UnusedApps.Find(candidates, recordStart)).ContinueWith(t => Dispatcher.BeginInvoke(() =>
+        {
+            _unusedLoading = false;
+            _unused = t.Status == TaskStatus.RanToCompletion ? t.Result : new List<UnusedApps.Row>();
+            _unusedAt = DateTime.Now;
+            Log.Info($"안 쓰는 앱: 후보 {candidates.Count}개 → {_unused.Count}개 ({sw.ElapsedMilliseconds}ms)");
+            if (IsVisible && _allOpen) Rebuild();
+        }), TaskScheduler.Default);
+    }
+
+    private UIElement UnusedView()
+    {
+        var box = new StackPanel { Margin = new Thickness(4, 0, 4, 0) };
+        if (_unused is null) { box.Children.Add(Note(Loc.T("찾는 중…"))); return box; }
+        var head = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
+        var sort = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var (s, label) in new[] { (UnusedSort.Oldest, Loc.T("오래된 순")), (UnusedSort.Largest, Loc.T("용량 큰 순")), (UnusedSort.Name, Loc.T("이름순")) })
+        {
+            var link = SmallLink(label, () => { _unusedSort = s; Rebuild(); });
+            link.Margin = new Thickness(10, 0, 0, 0);
+            if (s == _unusedSort) { link.FontWeight = FontWeights.SemiBold; link.Foreground = P.Text; }
+            sort.Children.Add(link);
+        }
+        DockPanel.SetDock(sort, Dock.Right);
+        head.Children.Add(sort);
+        head.Children.Add(new TextBlock { Text = Loc.T("몽독이 본 기록 기준이에요 (60일 넘게 안 연 앱)"), FontSize = 11.5, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center });
+        box.Children.Add(head);
+        if (_unused.Count == 0) { box.Children.Add(Note(Loc.T("한동안 안 쓴 앱이 없어요."))); return box; }
+
+        var rows = _unusedSort switch
+        {
+            UnusedSort.Largest => _unused.OrderByDescending(r => r.Bytes ?? -1).ThenBy(r => r.App.Name, StringComparer.CurrentCultureIgnoreCase),
+            UnusedSort.Name => _unused.OrderBy(r => r.App.Name, StringComparer.CurrentCultureIgnoreCase),
+            _ => _unused.OrderBy(r => r.Last ?? DateTime.MinValue).ThenBy(r => r.App.Name, StringComparer.CurrentCultureIgnoreCase),
+        };
+        _unusedChecked.IntersectWith(_unused.Select(r => r.App.Key));
+        var hide = PanelButton(Loc.T("선택한 앱 숨기기"), HideChecked);
+        var remove = PanelButton(Loc.T("Windows에서 제거…"), RemoveChecked);
+        void UpdateButtons() { hide.IsEnabled = remove.IsEnabled = _unusedChecked.Count > 0; }
+        foreach (var r in rows) box.Children.Add(UnusedRowView(r, UpdateButtons));
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 8, 0, 4) };
+        remove.Margin = new Thickness(8, 0, 0, 0);
+        buttons.Children.Add(hide);
+        buttons.Children.Add(remove);
+        box.Children.Add(buttons);
+        UpdateButtons();
+        return box;
+    }
+
+    private UIElement UnusedRowView(UnusedApps.Row r, Action changed)
+    {
+        var app = r.App;
+        var grid = new System.Windows.Controls.Grid { Margin = new Thickness(0, 1, 0, 1), Background = Brushes.Transparent, Cursor = Cursors.Hand };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition());
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
+        var check = DockMenus.Check(P, null, _unusedChecked.Contains(app.Key));
+        check.VerticalAlignment = VerticalAlignment.Center;
+        check.Margin = new Thickness(4, 0, 10, 0);
+        check.Checked += (_, _) => { _unusedChecked.Add(app.Key); changed(); };
+        check.Unchecked += (_, _) => { _unusedChecked.Remove(app.Key); changed(); };
+        grid.Children.Add(check);
+        var image = new Image { Width = 24, Height = 24, Margin = new Thickness(0, 3, 10, 3) };
+        RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
+        LoadIcon(image, app);
+        System.Windows.Controls.Grid.SetColumn(image, 1);
+        grid.Children.Add(image);
+        var name = new TextBlock { Text = app.Name, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+        System.Windows.Controls.Grid.SetColumn(name, 2);
+        grid.Children.Add(name);
+        var last = new TextBlock { Text = LastText(r.Last), FontSize = 12, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center };
+        System.Windows.Controls.Grid.SetColumn(last, 3);
+        grid.Children.Add(last);
+        var size = new TextBlock { Text = UnusedApps.SizeText(r.Bytes), FontSize = 12, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 0, 6, 0) };
+        System.Windows.Controls.Grid.SetColumn(size, 4);
+        grid.Children.Add(size);
+        var row = new Border { CornerRadius = new CornerRadius(6), Child = grid, ContextMenu = LazyMenu(m => FillAppMenu(m, app)), ToolTip = app.Name };
+        row.MouseEnter += (_, _) => row.Background = P.Hover;
+        row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
+        // 줄을 누르면 체크 (실행은 오른쪽 클릭 메뉴 — 정리 화면에서 실수로 켜지 않게)
+        row.MouseLeftButtonUp += (_, e) => { if (e.OriginalSource is not CheckBox) check.IsChecked = check.IsChecked != true; };
+        return row;
+    }
+
+    private void HideChecked()
+    {
+        int n = 0;
+        foreach (var key in _unusedChecked.ToList())
+            if (!S.Hidden.Contains(key, StringComparer.OrdinalIgnoreCase)) { S.Hidden.Add(key); n++; }
+        _unusedChecked.Clear();
+        _unused = _unused?.Where(r => !S.Hidden.Contains(r.App.Key, StringComparer.OrdinalIgnoreCase)).ToList();
+        Services.Settings.Save();
+        Log.Info($"안 쓰는 앱: {n}개 숨김");
+        Rebuild();
+    }
+
+    /// <summary>윈도우 앱 설정 열기 — 스토어 앱 하나면 그 앱 페이지, 아니면 설치된 앱 목록. 몽독은 직접 지우지 않음.</summary>
+    private void RemoveChecked()
+    {
+        var apps = _unused?.Where(r => _unusedChecked.Contains(r.App.Key)).Select(r => r.App).ToList() ?? new();
+        string uri = apps.Count == 1 && apps[0].Family is { Length: > 0 } fam ? "ms-settings:appsfeatures-app?" + fam : "ms-settings:appsfeatures";
+        try { using (Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true })) { } }
+        catch (Exception ex) { Log.Warn($"앱 설정 열기 실패: {ex.GetType().Name}"); }
+        Log.Info($"안 쓰는 앱: Windows 앱 설정 열기 ({apps.Count}개 고름)");
+    }
+
+    private Border Chip(string text, bool on, Action click)
+    {
+        var b = new Border
+        {
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(12, 3, 12, 4),
+            Margin = new Thickness(0, 0, 6, 0),
+            Background = on ? P.Accent : P.Tile,
+            Cursor = Cursors.Hand,
+            Child = new TextBlock { Text = text, FontSize = 12, FontWeight = on ? FontWeights.SemiBold : FontWeights.Normal, Foreground = on ? P.AccentText : P.Text },
+        };
+        b.MouseLeftButtonUp += (_, e) => { e.Handled = true; click(); };
+        return b;
+    }
+
+    private Button PanelButton(string text, Action click)
+    {
+        var b = new Button
+        {
+            Style = (Style)Application.Current.FindResource("CardButton"),
+            Content = text,
+            Background = P.Tile,
+            Foreground = P.Text,
+            Padding = new Thickness(12, 4, 12, 5),
+        };
+        b.Click += (_, _) => click();
+        return b;
+    }
+
+    private TextBlock Note(string text) => new() { Text = text, FontSize = 12, Foreground = P.SubText, Margin = new Thickness(6, 4, 0, 8), TextWrapping = TextWrapping.Wrap };
+}

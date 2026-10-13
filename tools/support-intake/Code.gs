@@ -146,7 +146,8 @@ var STATS_COLUMNS = [
   ['routineSettingSteps', int_(0, 12)], // 함께 바꿀 것을 쓰는 루틴 수
   ['routineSuggestShown', int_(0, 1000)], // 지난 신호 뒤 루틴 추천을 보여 준 횟수 (§15)
   ['routineSuggestCreated', int_(0, 1000)], // 그중 [만들기]를 누른 횟수
-  ['reportAttachments', int_(0, 1000)] // 지난 신호 뒤 문제 신고에 붙인 첨부 개수 (#26)
+  ['reportAttachments', int_(0, 1000)], // 지난 신호 뒤 문제 신고에 붙인 첨부 개수 (#26)
+  ['allAppsUnusedViewOpened', bool_] // 앱 모음 [안 쓰는 앱] 보기를 열었는지
 ];
 
 function oneOf_(list) { return function (v) { v = String(v); return list.indexOf(v) >= 0 ? v : null; }; }

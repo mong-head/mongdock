@@ -155,10 +155,18 @@ public sealed class UsageStatsService : IDisposable
             ["routineSuggestShown"] = Take(s.RoutineSuggestShownSinceSignal, v => s.RoutineSuggestShownSinceSignal = v), // 루틴 추천을 보여 준 횟수 (§15)
             ["routineSuggestCreated"] = Take(s.RoutineSuggestCreatedSinceSignal, v => s.RoutineSuggestCreatedSinceSignal = v), // [만들기]를 누른 횟수
             ["reportAttachments"] = Take(s.ReportAttachmentsSinceSignal, v => s.ReportAttachmentsSinceSignal = v), // 문제 신고 첨부 개수 (#26)
+            ["allAppsUnusedViewOpened"] = TakeFlag(s), // [안 쓰는 앱] 보기를 열었는지
             ["routineSettingSteps"] = s.Routines.Count(r => r.More?.Change is { } c && (c.Dnd || c.DockHide || c.OutputDevice is not null || c.Volume is not null)),
             ["errors"] = errors,
             ["nonce"] = Guid.NewGuid().ToString("N"),
         };
+    }
+
+    private static bool TakeFlag(Models.Settings s)
+    {
+        bool v = s.AllAppsUnusedViewOpened;
+        s.AllAppsUnusedViewOpened = false;
+        return v;
     }
 
     private static int Take(int value, Action<int> reset)

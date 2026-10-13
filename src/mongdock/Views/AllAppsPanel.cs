@@ -285,12 +285,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
 
         // 모든 앱 (가나다순, 접힘)
         root.Children.Add(Toggle(Loc.F($"모든 앱 ({visible.Count})"), _allOpen, () => { _allOpen = !_allOpen; Rebuild(); }));
-        if (_allOpen)
-        {
-            var all = new WrapPanel { Width = Cols * AppCell };
-            foreach (var app in visible.OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase)) all.Children.Add(AppCellView(app));
-            root.Children.Add(all);
-        }
+        if (_allOpen) AddAllApps(root, visible); // [전체] [최근 사용] [안 쓰는 앱 n] (AllAppsPanel.Unused.cs)
         var hidden = _apps.Where(a => S.Hidden.Contains(a.Key, StringComparer.OrdinalIgnoreCase)).ToList();
         if (hidden.Count > 0)
         {

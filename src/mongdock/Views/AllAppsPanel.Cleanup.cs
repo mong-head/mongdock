@@ -192,6 +192,11 @@ internal sealed partial class AllAppsPanel
         buttons.Children.Add(cancel);
         buttons.Children.Add(apply);
         root.Children.Add(buttons);
+        // 독·즐겨찾기·폴더 밖의 앱까지 보려면 → 모든 앱 [안 쓰는 앱]
+        var more = SmallLink(Loc.T("모든 앱에서 안 쓰는 앱 보기 ›"), () => { _cleanup = null; _allOpen = true; SetFilter(AllFilter.Unused); });
+        more.HorizontalAlignment = HorizontalAlignment.Right;
+        more.Margin = new Thickness(0, 4, 2, 0);
+        root.Children.Add(more);
         return root;
     }
 
