@@ -398,30 +398,27 @@ internal sealed partial class AllAppsPanel : DockStackPanel
 
     /// <summary>
     /// 추천 칸 묶음 (2026-10-13 사용자 C안): 연보라 연한 바탕(둥근 12)으로 감싸고, 왼쪽 위 모서리에 작은 알약 라벨 "✦ 추천"
-    /// (반짝이 + 글자, 바탕 연보라·글자 진보라). 즐겨찾기가 0개여도 같은 묶음. 다크 테마는 팔레트의 SoftAccent 색을 따라감.
+    /// (반짝이 + 글자). 바탕·글자는 팔레트의 회보라 PanelTint* (다크 포함). 즐겨찾기가 0개여도 같은 묶음.
     /// </summary>
     private FrameworkElement SuggestionGroup(List<AppEntry> suggestions, bool sameLine)
     {
         var cells = new StackPanel { Orientation = Orientation.Horizontal };
         foreach (var app in suggestions) cells.Children.Add(SuggestionCell(app));
-        var tint = P.SoftAccent.Clone();
-        tint.Opacity = 0.55;
-        tint.Freeze();
         var box = new Border
         {
             CornerRadius = new CornerRadius(12),
-            Background = tint,
+            Background = P.PanelTint,
             Padding = new Thickness(2, 10, 2, 2), // 위는 라벨이 걸칠 자리
             Child = cells,
         };
-        var pillText = new TextBlock { FontSize = UiText.Sub - 1, FontWeight = FontWeights.SemiBold, Foreground = P.SoftAccentText, VerticalAlignment = VerticalAlignment.Center };
+        var pillText = new TextBlock { FontSize = UiText.Sub - 1, FontWeight = FontWeights.SemiBold, Foreground = P.PanelTintText, VerticalAlignment = VerticalAlignment.Center };
         pillText.Inlines.Add(new System.Windows.Documents.Run("✦ "));
         pillText.Inlines.Add(new System.Windows.Documents.Run(Loc.T("추천")));
         var pill = new Border
         {
             CornerRadius = new CornerRadius(8),
-            Background = P.SoftAccent,
-            BorderBrush = P.SoftAccentLine,
+            Background = P.CardBackground, // 묶음 바탕 위에서 라벨이 보이게 판 바탕색 + 회보라 테두리
+            BorderBrush = P.PanelTintLine,
             BorderThickness = new Thickness(0.75),
             Padding = new Thickness(7, 1, 8, 1),
             HorizontalAlignment = HorizontalAlignment.Left,
@@ -480,7 +477,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         iconHost.Children.Add(badges);
         var stack = new StackPanel();
         stack.Children.Add(iconHost);
-        var nameText = new TextBlock { Uid = "name", Text = app.Name, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = TextAlignment.Center, FontSize = UiText.Sub, Foreground = P.SoftAccentText, Margin = new Thickness(0, 4, 0, 0) };
+        var nameText = new TextBlock { Uid = "name", Text = app.Name, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = TextAlignment.Center, FontSize = UiText.Sub, Foreground = P.PanelTintText, Margin = new Thickness(0, 4, 0, 0) };
         stack.Children.Add(nameText);
         ShowSuggestionHoverForTest = false; // 첫 칸만
         var cell = new Border
@@ -497,7 +494,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             Tag = new DropTag("suggest", app.Key),
         };
         MongToolTip.IfTrimmed(cell, nameText, app.Name); // 잘렸을 때만 전체 이름
-        cell.MouseEnter += (_, _) => { cell.Background = P.SoftAccent; badges.Visibility = Visibility.Visible; HoverIcon(image, true); };
+        cell.MouseEnter += (_, _) => { cell.Background = P.Hover; badges.Visibility = Visibility.Visible; HoverIcon(image, true); };
         cell.MouseLeave += (_, _) => { cell.Background = Brushes.Transparent; badges.Visibility = Visibility.Hidden; HoverIcon(image, false); };
         Pressable(cell, () => Launch(app), null, null); // 추천 칸은 끌기 없음 (내가 넣은 게 아니라서) — 넣기는 [+]·오른쪽 클릭
         cell.ContextMenu = LazyMenu(m => FillAppMenu(m, app));
@@ -777,8 +774,8 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             Width = GroupTile,
             Height = GroupTile,
             CornerRadius = new CornerRadius(14),
-            // 펼쳐 둔 폴더는 테두리가 아니라 바탕으로 (2026-10-13 사용자: 놓을 곳 강조 테두리와 헷갈림) — 연보라 아주 연한 채움
-            Background = open ? P.SoftAccent : P.Tile,
+            // 펼쳐 둔 폴더는 테두리가 아니라 바탕으로 (2026-10-13 사용자: 놓을 곳 강조 테두리와 헷갈림) — 회보라 연한 채움 (PanelTint)
+            Background = open ? P.PanelTint : P.Tile,
             BorderBrush = Brushes.Transparent,
             BorderThickness = new Thickness(1.5),
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -849,11 +846,11 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     /// <summary>펼친 묶음: 이름(연필로 바꾸기) + 앱 칸.</summary>
     private UIElement ExpandedGroup(string id, List<AppEntry> apps, double tailX)
     {
-        // 펼친 판 = 열린 폴더 칸과 같은 연보라 아주 연한 바탕의 둥근 판(16) + 윗변에 붙은 말풍선 꼬리 ▲ (열린 폴더 칸 가운데 바로 아래).
+        // 펼친 판 = 열린 폴더 칸과 같은 회보라 연한 바탕(PanelTint)의 둥근 판(16) + 윗변에 붙은 말풍선 꼬리 ▲ (열린 폴더 칸 가운데 바로 아래).
         // 칸 → 꼬리 → 판이 한 덩어리로 이어져 "이 폴더에서 펼쳐진 판"으로 읽힘 (2026-10-13 사용자: 흰 바탕 위 ▾ 만 떠 있어 어색함)
         var box = new Border
         {
-            Background = P.SoftAccent,
+            Background = P.PanelTint,
             CornerRadius = new CornerRadius(16),
             Padding = new Thickness(8, 8, 8, 6),
         };
@@ -953,7 +950,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         var tail = new System.Windows.Shapes.Path
         {
             Data = Geometry.Parse($"M0,{tailH} L{tailW / 2},0 L{tailW},{tailH} Z"),
-            Fill = P.SoftAccent,
+            Fill = P.PanelTint,
             Width = tailW,
             Height = tailH,
             HorizontalAlignment = HorizontalAlignment.Left,

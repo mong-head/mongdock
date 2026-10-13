@@ -78,8 +78,7 @@ internal sealed partial class AllAppsPanel
                 if (item is null || (Math.Abs(p.X - _press.X) < DragStartPx && Math.Abs(p.Y - _press.Y) < DragStartPx)) return;
                 if (Environment.TickCount64 - _pressTicks < DragMinHoldMs) return;
                 Log.Info($"앱 모음 판: 끌기 시작 ({(item.IsGroup ? "묶음" : "앱")})");
-                BeginDrag(el, item, oleData, e.GetPosition(el));
-                UpdateDrag(p);
+                DragFromPress(el, item, oleData, p);
                 return;
             }
             // 그림은 바로 커서로, 놓을 곳 찾기(판 전체 HitTest)는 프레임마다 한 번 — 마우스 이벤트가 밀려 그림이 늦게 따라오지 않게.
@@ -109,6 +108,36 @@ internal sealed partial class AllAppsPanel
                 EndDrag(drop: false);
             }
         };
+    }
+
+    /// <summary>
+    /// 끌기 시작 (마우스 이벤트 경로): 잡은 지점은 "누른 자리"(_press) — 8px·150ms 뒤의 지금 커서 자리가 아님.
+    /// 예전엔 시작하는 순간의 커서 자리를 잡은 지점으로 써서, 빨리 끌면 그만큼(수십 px) 아이콘이 커서와 떨어진 채 따라왔음
+    /// (2026-10-13 사용자: 즐겨찾기·폴더 어디서나 아이콘이 멀리 떨어져 따라옴 — 스크립트 끌기는 잡은 지점을 바로 넘겨 재현 안 됐음).
+    /// 그림은 첫 프레임에 커서 밑(누른 지점이 커서에 오게)으로 옮겨 붙음.
+    /// </summary>
+    private void DragFromPress(Border el, DragItem item, Func<DataObject>? oleData, Point now)
+    {
+        BeginDrag(el, item, oleData, TranslatePoint(_press, el));
+        LogDragDpi(now);
+        UpdateDrag(now);
+    }
+
+    private static bool _dpiLogged;
+
+    /// <summary>끌기 배율 점검 로그 (몽독 실행마다 한 번): 모니터 배율·판 창 DPI·커서 물리 픽셀과 WPF 좌표 차이.</summary>
+    private void LogDragDpi(Point now)
+    {
+        if (_dpiLogged) return;
+        _dpiLogged = true;
+        try
+        {
+            var dpi = VisualTreeHelper.GetDpi(this);
+            var wpf = PointToScreen(now);
+            string cursor = Native.DesktopApi.GetCursorPos(out var c) ? $"{c.X},{c.Y}" : "?";
+            Log.Info($"앱 모음 판 끌기 배율: 판 창 DPI {dpi.DpiScaleX:0.00}, 판 배율 {UiScale:0.00}, 커서 물리 {cursor}, 이벤트 자리→화면 {wpf.X:0},{wpf.Y:0}");
+        }
+        catch (Exception ex) { Log.Warn($"끌기 배율 로그 실패: {ex.GetType().Name}"); }
     }
 
     private void BeginDrag(Border source, DragItem item, Func<DataObject>? oleData, Point grab)

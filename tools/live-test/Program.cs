@@ -356,7 +356,7 @@ internal static class Program
         var dropTag = panelType.GetNestedType("DropTag", BindingFlags.NonPublic)!;
         var dpi = VisualTreeHelper.GetDpi(w);
         Results.Add($"폴더 {folders.Count}개, 판 배율 {panelType.GetProperty("UiScale", Any)!.GetValue(w):0.00}, 화면 배율 {dpi.DpiScaleX:0.00}");
-        Results.Add("폴더 | 첫 프레임 오프셋 | 스크립트 좌표 최대 | 프레임마다 커서 최대 | 아이콘 | 변환·스크롤");
+        Results.Add("폴더 | 첫 프레임 오프셋 | 스크립트 좌표 최대 | 프레임마다 커서 최대 | 빨리 끌기 | 아이콘 | 변환·스크롤");
         foreach (var f in folders)
         {
             string id = (string)f.GetType().GetProperty("Id")!.GetValue(f)!, name = (string)f.GetType().GetProperty("Name")!.GetValue(f)!;
@@ -436,11 +436,74 @@ internal static class Program
             }
             panelType.GetMethod("EndDrag", Any)!.Invoke(w, new object[] { false });
             Pump(400);
-            Results.Add($"{name} | {first:0.0}px{firstRel} | {worst:0.0}px | {worstFollow:0.0}px | {iconInfo} | {(chain.Count == 0 ? "없음" : string.Join(" ", chain))}, 스크롤 {sv?.VerticalOffset:0}");
-            Check($"끌기 따라오기 폴더 \"{name}\": 첫 프레임·이동 중 커서와 거리 ≤ 2px", first <= 2 && worst <= 2 && worstFollow <= 2);
+            double press = PressDrag(panelType, w, cell, start, new Vector(60, 25));
+            Results.Add($"{name} | {first:0.0}px{firstRel} | {worst:0.0}px | {worstFollow:0.0}px | 누르고 60px 빨리 끌기 {press:0.0}px | {iconInfo} | {(chain.Count == 0 ? "없음" : string.Join(" ", chain))}, 스크롤 {sv?.VerticalOffset:0}");
+            Check($"끌기 따라오기 폴더 \"{name}\": 첫 프레임·이동 중·빨리 끌기 커서와 거리 ≤ 2px", first <= 2 && worst <= 2 && worstFollow <= 2 && press <= 2);
+        }
+        // 모든 앱: 판 왼쪽 위 근처 칸과 오른쪽 아래 근처 칸에서 빨리 끌기 (배율이 틀리면 왼쪽 위에서 멀수록 간격이 커짐)
+        panelType.GetField("_expanded", Any)!.SetValue(w, null);
+        panelType.GetField("_allOpen", Any)!.SetValue(w, true);
+        panelType.GetMethod("Rebuild", Any)!.Invoke(w, null);
+        Pump(600);
+        var tagType = panelType.GetNestedType("DropTag", BindingFlags.NonPublic)!;
+        var appCells = Descendants((DependencyObject)w.Content).OfType<System.Windows.Controls.Border>()
+            .Where(b => b.Tag is { } t && t.GetType() == tagType && (string)tagType.GetProperty("Kind")!.GetValue(t)! == "app" && b.IsVisible && b.ActualWidth > 0).ToList();
+        var visibleCells = appCells.Where(c => { var o = c.TranslatePoint(new Point(0, 0), w); return o.Y > 60 && o.Y + c.ActualHeight < w.ActualHeight - 60; }).ToList();
+        if (visibleCells.Count > 0)
+        {
+            var tl = visibleCells.OrderBy(c => { var o = c.TranslatePoint(new Point(0, 0), w); return o.X + o.Y; }).First();
+            var br = visibleCells.OrderByDescending(c => { var o = c.TranslatePoint(new Point(0, 0), w); return o.X + o.Y; }).First();
+            foreach (var (where, c) in new[] { ("왼쪽 위", tl), ("오른쪽 아래", br) })
+            {
+                var at = c.TranslatePoint(new Point(c.ActualWidth * 0.5, c.ActualHeight * 0.3), w);
+                double d = PressDrag(panelType, w, c, at, new Vector(where == "왼쪽 위" ? 60 : -60, where == "왼쪽 위" ? 25 : -25));
+                Results.Add($"모든 앱 {where} (판 좌표 {at.X:0},{at.Y:0}) | 빨리 끌기 {d:0.0}px");
+                Check($"끌기 따라오기 모든 앱 {where}: 누르고 60px 빨리 끌어도 커서와 거리 ≤ 2px", d <= 2);
+            }
         }
         close(w);
         Pump(400);
+    }
+
+    /// <summary>
+    /// 실제 마우스 경로 흉내: start 를 누르고(_press) move 만큼 빨리 움직인 뒤에 끌기가 시작될 때(8px·150ms 문턱),
+    /// 그림의 누른 지점이 커서에 붙는지 (커서는 시험용 자리 — 진짜 마우스는 안 씀). 반환 = 다음 프레임의 거리(DIP).
+    /// </summary>
+    private static double PressDrag(Type panelType, Window w, System.Windows.Controls.Border cell, Point start, Vector move)
+    {
+        var dropTag = panelType.GetNestedType("DropTag", BindingFlags.NonPublic)!;
+        var dragItem = panelType.GetNestedType("DragItem", BindingFlags.NonPublic)!;
+        var dpi = VisualTreeHelper.GetDpi(w);
+        panelType.GetField("_press", Any)!.SetValue(w, start);
+        var now = start + move;
+        var fake = w.PointToScreen(now);
+        panelType.GetProperty("CursorForTest", Any)!.SetValue(null, new Func<Point>(() => fake));
+        panelType.GetProperty("FollowRealCursor", Any)!.SetValue(null, true);
+        string key = (string)dropTag.GetProperty("Key")!.GetValue(cell.Tag)!;
+        var cellOrigin = cell.TranslatePoint(new Point(0, 0), w); // 끌기 전 칸 자리 (끌면 폴더 안 칸이 비켜나 움직일 수 있음)
+        panelType.GetMethod("DragFromPress", Any)!.Invoke(w, new object?[] { cell, Activator.CreateInstance(dragItem, false, key, false), null, now });
+        Pump(40);
+        var drag = panelType.GetField("_drag", Any)!.GetValue(w);
+        double dist = double.NaN;
+        if (drag is not null)
+        {
+            var gh = new WindowInteropHelper((Window)drag.GetType().GetField("Ghost")!.GetValue(drag)!).Handle;
+            var grabPx = (Point)drag.GetType().GetField("Grab")!.GetValue(drag)!;
+            GetWindowRect(gh, out var r);
+            double cx = r.Left + (12 + grabPx.X) * dpi.DpiScaleX, cy = r.Top + (12 + grabPx.Y) * dpi.DpiScaleY;
+            double toCursor = Math.Max(Math.Abs(cx - fake.X), Math.Abs(cy - fake.Y)) / dpi.DpiScaleX; // 그림의 잡은 지점 ↔ 커서
+            // 잡은 지점이 누른 자리인지 (예전처럼 끌기 시작 때 자리면 move 만큼 어긋남): 칸 왼쪽 위 + 아이콘 자리 + 잡은 자리(1.05배 들어올림 뺌)
+            var off = (Vector)drag.GetType().GetField("IconOffset")!.GetValue(drag)!;
+            var grabPanel = new Point(cellOrigin.X + off.X + grabPx.X / 1.05, cellOrigin.Y + off.Y + grabPx.Y / 1.05);
+            double toPress = Math.Max(Math.Abs(grabPanel.X - start.X), Math.Abs(grabPanel.Y - start.Y));
+            dist = Math.Max(toCursor, toPress);
+            panelType.GetMethod("EndDrag", Any)!.Invoke(w, new object[] { false });
+            Pump(400);
+        }
+        panelType.GetProperty("CursorForTest", Any)!.SetValue(null, null);
+        panelType.GetProperty("FollowRealCursor", Any)!.SetValue(null, false);
+        panelType.GetMethod("StopFollow", Any)!.Invoke(w, null);
+        return dist;
     }
 
     private static void NewFeatures(AppServices services, SettingsService settings, Type panelType, Func<Window> open, Action<Window> close, string outDir, Rect work, WindowTracker tracker)

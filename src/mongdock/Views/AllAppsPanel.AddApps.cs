@@ -122,8 +122,8 @@ internal sealed partial class AllAppsPanel
         var add = new Button
         {
             Style = (Style)Application.Current.FindResource("CardButton"),
-            Background = P.SoftAccent,
-            Foreground = P.SoftAccentText,
+            Background = P.PanelTint,
+            Foreground = P.PanelTintText,
             Height = 28,
             Padding = new Thickness(18, 0, 18, 0),
             Margin = new Thickness(8, 0, 0, 0),

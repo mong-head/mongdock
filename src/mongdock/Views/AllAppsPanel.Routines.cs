@@ -212,8 +212,8 @@ internal sealed partial class AllAppsPanel
                 {
                     Style = (Style)Application.Current.FindResource("CardButton"),
                     Content = new TextBlock { Text = label, FontWeight = primary ? FontWeights.SemiBold : FontWeights.Normal },
-                    Background = primary ? P.SoftAccent : P.CardBackground,
-                    Foreground = primary ? P.SoftAccentText : P.Text,
+                    Background = primary ? P.PanelTint : P.CardBackground,
+                    Foreground = primary ? P.PanelTintText : P.Text,
                     Height = 28,
                     Padding = new Thickness(14, 0, 14, 0),
                     Margin = new Thickness(0, 0, 8, 0),

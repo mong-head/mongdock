@@ -187,7 +187,7 @@ internal sealed partial class AllAppsPanel
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 10, 0, 4) };
         var cancel = new Button { Style = (Style)Application.Current.FindResource("CardButton"), Content = new TextBlock { Text = Loc.T("취소") }, Background = P.Tile, Foreground = P.Text, Height = 28, Padding = new Thickness(18, 0, 18, 0) };
         cancel.Click += (_, _) => { _cleanup = null; Rebuild(); };
-        var apply = new Button { Style = (Style)Application.Current.FindResource("CardButton"), Content = new TextBlock { Text = Loc.T("적용"), FontWeight = FontWeights.SemiBold }, Background = P.SoftAccent, Foreground = P.SoftAccentText, Height = 28, Padding = new Thickness(18, 0, 18, 0), Margin = new Thickness(8, 0, 0, 0), IsEnabled = rows.Count > 0 };
+        var apply = new Button { Style = (Style)Application.Current.FindResource("CardButton"), Content = new TextBlock { Text = Loc.T("적용"), FontWeight = FontWeights.SemiBold }, Background = P.PanelTint, Foreground = P.PanelTintText, Height = 28, Padding = new Thickness(18, 0, 18, 0), Margin = new Thickness(8, 0, 0, 0), IsEnabled = rows.Count > 0 };
         apply.Click += (_, _) => ApplyCleanup(rows);
         buttons.Children.Add(cancel);
         buttons.Children.Add(apply);

@@ -31,6 +31,13 @@ public sealed class UiPalette
     public Brush SoftAccentText { get; private init; } = Brushes.DarkSlateBlue;
     /// <summary>몽독 톤 선 (놓을 곳 강조·고른 칸 테두리·검색 선택).</summary>
     public Brush SoftAccentLine { get; private init; } = Brushes.MediumPurple;
+    /// <summary>
+    /// 앱 모음 판의 "연한 채움" (2026-10-13 사용자: 연보라 바탕이 아이콘 색과 안 어울림 → 회색기 도는 연보라): 추천 묶음·열린 폴더 칸·펼친 폴더 판·카드 버튼 바탕.
+    /// 판 바탕보다 한 단계 진하게(다크는 한 단계 밝게). 글자·테두리는 PanelTintText·PanelTintLine. "지금 고른 것"(포커스·체크·토글·놓을 곳)은 SoftAccent* 그대로.
+    /// </summary>
+    public Brush PanelTint { get; private init; } = Brushes.Lavender;
+    public Brush PanelTintText { get; private init; } = Brushes.DimGray;
+    public Brush PanelTintLine { get; private init; } = Brushes.LightGray;
     /// <summary>몽독 체크 (안 켜짐 바탕·테두리). 켜지면 하늘~연보라 그라데이션.</summary>
     public Brush CheckOff { get; private init; } = Brushes.White;
     public Brush CheckBorder { get; private init; } = Brushes.Gray;
@@ -69,6 +76,9 @@ public sealed class UiPalette
         SoftAccent = F("#FFECE7FF"),
         SoftAccentText = F("#FF4A3AA8"),
         SoftAccentLine = F("#FFB4A3FF"),
+        PanelTint = F("#FFEEEDF3"),
+        PanelTintText = F("#FF6E6A86"),
+        PanelTintLine = F("#FFCFCCDB"),
         CheckOff = F("#FFFFFFFF"),
         CheckBorder = F("#40000000"),
         Hover = F("#0F000000"),
@@ -104,6 +114,9 @@ public sealed class UiPalette
         SoftAccent = F("#FF3D3763"),
         SoftAccentText = F("#FFD8CFFF"),
         SoftAccentLine = F("#FF8E7EE0"),
+        PanelTint = F("#FF3A3946"),
+        PanelTintText = F("#FFC3BFD6"),
+        PanelTintLine = F("#FF55536A"),
         CheckOff = F("#FF3A3A3C"),
         CheckBorder = F("#4DFFFFFF"),
         Hover = F("#14FFFFFF"),
