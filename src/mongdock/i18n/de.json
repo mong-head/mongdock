@@ -1282,5 +1282,10 @@
  "흐림 없이 반투명 단색. 모서리를 크게 둥글릴 수 있고 원격 접속에서 더 가벼워요.": "Halbtransparente Farbe ohne Unschärfe. Erlaubt stärkere Eckenrundung und ist bei Remoteverbindungen leichter.",
  "흰 아이콘이 안 보일 때 바 색에 맞춰 칠해요.": "Färbt weiße Symbole passend zur Leiste, wenn sie schlecht sichtbar sind.",
  "흰색": "Weiß",
- "＋를 누르거나, 아래 앱을 여기로 끌어다 놓으면 즐겨찾기에 들어가요": "Auf ＋ klicken oder eine App von unten hierher ziehen, um sie zu den Favoriten hinzuzufügen"
+ "＋를 누르거나, 아래 앱을 여기로 끌어다 놓으면 즐겨찾기에 들어가요": "Auf ＋ klicken oder eine App von unten hierher ziehen, um sie zu den Favoriten hinzuzufügen",
+ "{0} · {1} 전체": "{0} · gesamtes {1}",
+ "{0} · 묶음 전체": "{0} · ganzes Paket",
+ "{0}개 선택됨": "{0} ausgewählt",
+ "숨기기": "Ausblenden",
+ "선택 해제": "Auswahl aufheben"
 }

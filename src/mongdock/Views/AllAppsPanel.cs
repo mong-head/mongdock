@@ -196,7 +196,11 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         var scroll = ThinScroll(_body, _bodyMaxHeight);
         _bodyScroll = scroll;
         scroll.Height = _bodyMaxHeight;
-        root.Children.Add(scroll);
+        // 본문 위에 떠 있는 잠자는 앱 선택 막대 (스크롤과 상관없이 늘 아래쪽에 — AllAppsPanel.Unused.cs)
+        var bodyHost = new Grid();
+        bodyHost.Children.Add(scroll);
+        bodyHost.Children.Add(BuildSelectionBar());
+        root.Children.Add(bodyHost);
         root.Children.Add(Link(Loc.T("Windows 시작 메뉴 열기"), () =>
         {
             CloseAnimated();
@@ -215,8 +219,10 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         _folders = AppFolders.Visible(Services.Settings.Current, _apps);
         _groupOf = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var f in _folders) foreach (var a in f.Apps) _groupOf.TryAdd(a.Key, f.Id);
+        _unusedViewShown = false;
         _body.Content = _adding is not null ? BuildAddApps() : _cleanup is not null ? BuildCleanup() : _search.Text.Trim().Length > 0 ? BuildResults() : BuildHome();
         UnscaleText(_body.Content as DependencyObject); // 글자는 판 배율을 받지 않음
+        UpdateSelectionBar();
         _shownEditing = _editing;
         _shownExpanded = _expanded;
         AnimateAfterRebuild(before, wasEditing, wasExpanded);

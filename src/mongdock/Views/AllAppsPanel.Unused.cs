@@ -4,12 +4,13 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using Mongdock.Services;
+using Mongdock.ViewModels;
 
 namespace Mongdock.Views;
 
 /// <summary>
 /// "모든 앱" 머리 칩 [전체] [최근 사용] [안 쓰는 앱 n] (spec-all-apps-panel.md 마지막 절).
-/// 안 쓰는 앱: 체크·아이콘·이름·"n개월 전/쓴 적 없음"·용량, 정렬(오래된 순/용량 큰 순/이름순), [선택한 앱 숨기기] [Windows에서 제거…].
+/// 안 쓰는 앱: 체크·아이콘·이름·"n개월 전/쓴 적 없음"·용량, 정렬(오래된 순/용량 큰 순/이름순), 체크하면 떠 있는 선택 막대 [숨기기] [Windows에서 제거…] [선택 해제].
 /// 몽독은 직접 지우지 않고 윈도우 앱 설정만 연다. "자주 쓰는 앱 기록"이 꺼져 있으면 칩을 보이지 않음(근거가 없어서).
 /// </summary>
 internal sealed partial class AllAppsPanel
@@ -32,12 +33,17 @@ internal sealed partial class AllAppsPanel
     {
         var now = DateTime.Now;
         UnusedOverride = visible => visible.Where(a => !UnusedApps.IsBuiltIn(a)).Take(7)
-            .Select((a, i) => new UnusedApps.Row(a, i % 3 == 2 ? null : now.AddDays(-70 - 45 * i), i == 4 ? null : (long)(i + 1) * 180_000_000 % 2_400_000_000))
+            .Select((a, i) => i is 1 or 2
+                ? new UnusedApps.Row(a, now.AddDays(-90 - 30 * i), 1_930_000_000, "uninstall:test", "한컴오피스 2020") // 같은 설치 묶음 둘 (크기는 묶음 전체)
+                : new UnusedApps.Row(a, i % 3 == 2 ? null : now.AddDays(-70 - 45 * i), i == 4 ? null : (long)(i + 1) * 180_000_000 % 2_400_000_000))
             .ToList();
         _allOpen = true;
         _allFilter = AllFilter.Unused;
         _unusedChecked.Clear();
         _unused = null;
+        // 체크 2개(묶음 앱 둘 — 합계는 묶음 한 번만) + 하나 → 선택 막대가 보이는 상태
+        var rows = UnusedOverride(_apps.Where(a => !S.Hidden.Contains(a.Key, StringComparer.OrdinalIgnoreCase)).ToList());
+        foreach (var r in rows.Skip(1).Take(2)) _unusedChecked.Add(r.App.Key);
     }
 
     /// <summary>"모든 앱"을 펼쳤을 때의 내용 (칩 + 고른 보기).</summary>
@@ -152,20 +158,15 @@ internal sealed partial class AllAppsPanel
             _ => _unused.OrderBy(r => r.Last ?? DateTime.MinValue).ThenBy(r => r.App.Name, StringComparer.CurrentCultureIgnoreCase),
         };
         _unusedChecked.IntersectWith(_unused.Select(r => r.App.Key));
-        var hide = PanelButton(Loc.T("선택한 앱 숨기기"), HideChecked);
-        var remove = PanelButton(Loc.T("Windows에서 제거…"), RemoveChecked);
-        void UpdateButtons() { hide.IsEnabled = remove.IsEnabled = _unusedChecked.Count > 0; }
-        foreach (var r in rows) box.Children.Add(UnusedRowView(r, UpdateButtons));
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 8, 0, 4) };
-        remove.Margin = new Thickness(8, 0, 0, 0);
-        buttons.Children.Add(hide);
-        buttons.Children.Add(remove);
-        box.Children.Add(buttons);
-        UpdateButtons();
+        double sizeCol = _unused.Any(r => r.BundleKey is not null) ? 210 : 80; // 묶음 표시가 있으면 크기 열을 넓게 (모든 줄 같은 폭 — 열이 어긋나지 않게)
+        foreach (var r in rows) box.Children.Add(UnusedRowView(r, UpdateSelectionBar, sizeCol));
+        // 목록 끝 버튼 대신 떠 있는 선택 막대 — 마지막 줄을 가리지 않게 막대 높이만큼 아래 여백
+        box.Margin = new Thickness(4, 0, 4, SelectionBarSpace);
+        _unusedViewShown = true;
         return box;
     }
 
-    private UIElement UnusedRowView(UnusedApps.Row r, Action changed)
+    private UIElement UnusedRowView(UnusedApps.Row r, Action changed, double sizeCol)
     {
         var app = r.App;
         var grid = new System.Windows.Controls.Grid { Margin = new Thickness(0, 1, 0, 1), Background = Brushes.Transparent, Cursor = Cursors.Hand };
@@ -173,7 +174,7 @@ internal sealed partial class AllAppsPanel
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition());
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(sizeCol) }); // 묶음이면 "1.8 GB · 한컴오피스 2020 전체"
         var check = DockMenus.Check(P, null, _unusedChecked.Contains(app.Key));
         check.VerticalAlignment = VerticalAlignment.Center;
         check.Margin = new Thickness(4, 0, 10, 0);
@@ -191,7 +192,7 @@ internal sealed partial class AllAppsPanel
         var last = new TextBlock { Text = LastText(r.Last), FontSize = 12, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center };
         System.Windows.Controls.Grid.SetColumn(last, 3);
         grid.Children.Add(last);
-        var size = new TextBlock { Text = UnusedApps.SizeText(r.Bytes), FontSize = 12, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 0, 6, 0) };
+        var size = new TextBlock { Text = UnusedApps.RowSizeText(r), FontSize = 12, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right, TextAlignment = TextAlignment.Right, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 6, 0) };
         System.Windows.Controls.Grid.SetColumn(size, 4);
         grid.Children.Add(size);
         var row = new Border { CornerRadius = new CornerRadius(6), Child = grid, ContextMenu = LazyMenu(m => FillAppMenu(m, app)), Uid = "m:u:" + app.Key };
@@ -201,6 +202,83 @@ internal sealed partial class AllAppsPanel
         // 줄을 누르면 체크 (실행은 오른쪽 클릭 메뉴 — 정리 화면에서 실수로 켜지 않게)
         row.MouseLeftButtonUp += (_, e) => { if (e.OriginalSource is not CheckBox) check.IsChecked = check.IsChecked != true; };
         return row;
+    }
+
+    // ───────── 떠 있는 선택 막대 (2026-10-13 사용자: 체크해도 버튼이 목록 맨 아래라 한참 스크롤해야 보임) ─────────
+
+    private const double SelectionBarSpace = 64; // 막대 높이(약 44) + 아래 띄움(12) + 여유
+    private bool _unusedViewShown;
+    private Border? _selBar;
+    private TextBlock? _selText;
+    private bool _selShown;
+
+    /// <summary>
+    /// 하나라도 체크하면 판 아래쪽에 떠 있는 막대가 아래에서 미끄러져 올라옴(150ms): "n개 선택됨 · 합계" [숨기기] [Windows에서 제거…] [선택 해제].
+    /// 둥근 12, 은은한 그림자, 목록 위에 고정(스크롤과 상관없음). 0개가 되면 내려가며 사라짐. 합계는 같은 설치 묶음을 한 번만 셈.
+    /// </summary>
+    private Border BuildSelectionBar()
+    {
+        _selText = new TextBlock { FontSize = UiText.Button, FontWeight = FontWeights.SemiBold, Foreground = P.Text, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 14, 0) };
+        var hide = PanelButton(Loc.T("숨기기"), HideChecked);
+        var remove = PanelButton(Loc.T("Windows에서 제거…"), RemoveChecked);
+        var clear = PanelButton(Loc.T("선택 해제"), () => { _unusedChecked.Clear(); Rebuild(); });
+        clear.Background = Brushes.Transparent;
+        clear.Foreground = P.SubText;
+        remove.Margin = clear.Margin = new Thickness(6, 0, 0, 0);
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(_selText);
+        row.Children.Add(hide);
+        row.Children.Add(remove);
+        row.Children.Add(clear);
+        _selBar = new Border
+        {
+            CornerRadius = new CornerRadius(12),
+            Background = P.CardBackground,
+            BorderBrush = P.Divider,
+            BorderThickness = new Thickness(0.5),
+            Padding = new Thickness(12, 7, 7, 7),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(0, 0, 0, 12),
+            Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 18, ShadowDepth = 3, Direction = 270, Opacity = 0.18 },
+            RenderTransform = new TranslateTransform(),
+            Visibility = Visibility.Collapsed,
+            Child = row,
+        };
+        return _selBar;
+    }
+
+    /// <summary>체크가 바뀌거나 판을 다시 그린 뒤: 막대 글자와 보이기·숨기기.</summary>
+    private void UpdateSelectionBar()
+    {
+        if (_selBar is null || _selText is null) return;
+        bool want = _unusedViewShown && _unusedChecked.Count > 0 && _unused is not null;
+        if (want)
+        {
+            string text = Loc.F($"{_unusedChecked.Count}개 선택됨");
+            if (UnusedApps.TotalBytes(_unused!.Where(r => _unusedChecked.Contains(r.App.Key))) is { } total) text += " · " + UnusedApps.SizeText(total);
+            _selText.Text = text;
+        }
+        if (want == _selShown) return;
+        _selShown = want;
+        var tt = (TranslateTransform)_selBar.RenderTransform;
+        int ms = Anim.Enabled && IsVisible ? 150 : 0;
+        if (want) _selBar.Visibility = Visibility.Visible;
+        if (ms == 0)
+        {
+            tt.BeginAnimation(TranslateTransform.YProperty, null);
+            _selBar.BeginAnimation(OpacityProperty, null);
+            tt.Y = 0;
+            _selBar.Opacity = 1;
+            if (!want) _selBar.Visibility = Visibility.Collapsed;
+            return;
+        }
+        var ease = new System.Windows.Media.Animation.CubicEase { EasingMode = want ? System.Windows.Media.Animation.EasingMode.EaseOut : System.Windows.Media.Animation.EasingMode.EaseIn };
+        var dur = TimeSpan.FromMilliseconds(ms);
+        tt.BeginAnimation(TranslateTransform.YProperty, new System.Windows.Media.Animation.DoubleAnimation(want ? 24 : 0, want ? 0 : 24, dur) { EasingFunction = ease });
+        var fade = new System.Windows.Media.Animation.DoubleAnimation(want ? 0 : 1, want ? 1 : 0, dur) { EasingFunction = ease };
+        if (!want) fade.Completed += (_, _) => { if (!_selShown) _selBar.Visibility = Visibility.Collapsed; };
+        _selBar.BeginAnimation(OpacityProperty, fade);
     }
 
     private void HideChecked()

@@ -13,7 +13,33 @@ internal static class UnusedApps
 {
     public const int StaleDays = 60, NewInstallDays = 30;
 
-    public sealed record Row(AppEntry App, DateTime? Last, long? Bytes);
+    /// <summary>
+    /// 잠자는 앱 한 줄. Bundle = 같은 설치 묶음(제거 프로그램 항목·스토어 패키지 하나)에 앱이 둘 이상이면 그 묶음 키와 이름 —
+    /// 크기는 묶음 전체라 "1.8 GB · 한컴오피스 2020 전체"로 보이고, 선택 합계에서는 묶음마다 한 번만 더함 (2026-10-13 사용자: 한글·한셀·한쇼가 모두 1.8 GB).
+    /// </summary>
+    public sealed record Row(AppEntry App, DateTime? Last, long? Bytes, string? BundleKey = null, string? BundleName = null)
+    {
+        /// <summary>크기를 한 번만 셀 단위 (묶음이면 묶음, 아니면 앱).</summary>
+        public string SizeKey => BundleKey ?? "app:" + App.Key;
+    }
+
+    /// <summary>고른 줄들의 크기 합 — 같은 묶음은 한 번만.</summary>
+    public static long? TotalBytes(IEnumerable<Row> rows)
+    {
+        long sum = 0;
+        bool any = false;
+        foreach (var g in rows.GroupBy(r => r.SizeKey, StringComparer.OrdinalIgnoreCase))
+            if (g.First().Bytes is { } b) { sum += b; any = true; }
+        return any ? sum : null;
+    }
+
+    /// <summary>줄의 크기 글자: 묶음이면 "1.8 GB · 묶음 이름 전체".</summary>
+    public static string RowSizeText(Row r)
+    {
+        string size = SizeText(r.Bytes);
+        if (r.BundleKey is null || size.Length == 0) return size;
+        return r.BundleName is { Length: > 0 } n ? Loc.F($"{size} · {n} 전체") : Loc.F($"{size} · 묶음 전체");
+    }
 
     // ── 미리 세기 (2026-10-13 사용자: "계산 중 …" 없이 판을 열면 숫자가 바로) ──
 
@@ -80,26 +106,35 @@ internal static class UnusedApps
         var now = DateTime.Now;
         bool youngRecords = recordStart is not { } rs || now - rs < TimeSpan.FromDays(NewInstallDays);
         var rows = new List<Row>();
+        var bundles = new List<(string Key, string? Name)?>(); // rows 와 같은 순서 — 크기를 가져온 설치 묶음
         foreach (var (app, last) in candidates)
         {
             if (IsBuiltIn(app, packages)) continue;
             if (AllAppsCatalog.Identities(app).Any(startup.Contains)) continue;
             DateTime? installed = null;
             long? bytes = null;
+            (string Key, string? Name)? bundle = null;
             if (app.Family is { Length: > 0 } fam && packages.TryGetValue(fam, out var pkg))
             {
                 installed = pkg.Installed;
                 bytes = PackageBytes(pkg.Path);
+                bundle = ("pkg:" + fam, pkg.Name);
             }
             else if (Match(app, uninstall) is { } u)
             {
                 installed = u.Installed;
                 bytes = u.Bytes;
+                bundle = ("uninstall:" + uninstall.IndexOf(u), u.Name);
             }
             installed ??= ShortcutDate(app);
             if (installed is { } d ? now - d < TimeSpan.FromDays(NewInstallDays) : youngRecords) continue;
             rows.Add(new Row(app, last, bytes));
+            bundles.Add(bundle);
         }
+        // 같은 설치 묶음에서 크기를 가져온 앱이 둘 이상이면 묶음 표시 (크기는 묶음 전체라 앱마다 같음)
+        var shared = bundles.OfType<(string Key, string? Name)>().GroupBy(b => b.Key).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
+        for (int i = 0; i < rows.Count; i++)
+            if (bundles[i] is { } b && shared.Contains(b.Key)) rows[i] = rows[i] with { BundleKey = b.Key, BundleName = b.Name };
         return rows;
     }
 
@@ -194,7 +229,7 @@ internal static class UnusedApps
 
     // ── 스토어 패키지 ──
 
-    internal sealed record Pkg(DateTime? Installed, string? Path, bool Inbox);
+    internal sealed record Pkg(DateTime? Installed, string? Path, bool Inbox, string? Name = null);
 
     private static Dictionary<string, Pkg> ReadPackages()
     {
@@ -215,7 +250,9 @@ internal static class UnusedApps
                     try { installed = p.InstalledDate.LocalDateTime; } catch { /* 일부 패키지는 날짜 없음 */ }
                     string? path = null;
                     try { path = p.InstalledLocation?.Path; } catch { /* 위치 못 읽음 */ }
-                    map[fam] = new Pkg(installed, path, inbox);
+                    string? name = null;
+                    try { name = p.DisplayName; } catch { /* 이름 못 읽음 */ }
+                    map[fam] = new Pkg(installed, path, inbox, name);
                 }
                 catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or UnauthorizedAccessException or FileNotFoundException) { }
             }

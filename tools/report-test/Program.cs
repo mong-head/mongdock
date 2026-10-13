@@ -1205,7 +1205,7 @@ internal static class Program
                 var content = (FrameworkElement)w.Content;
                 content.Opacity = 1;
                 // 그림에는 판 전체가 보이게 (스크롤 높이 제한 풀기 — 펼친 폴더 그림은 본문 높이도 풀어 [+] 칸까지)
-                foreach (var sv in Descendants(content).OfType<System.Windows.Controls.ScrollViewer>()) { sv.MaxHeight = double.PositiveInfinity; if (mode == "group") sv.Height = double.NaN; }
+                foreach (var sv in Descendants(content).OfType<System.Windows.Controls.ScrollViewer>()) { sv.MaxHeight = double.PositiveInfinity; if (mode is "group" or "unused") sv.Height = double.NaN; }
                 content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
                 var size = content.DesiredSize;
                 content.Arrange(new Rect(size));
@@ -1223,6 +1223,16 @@ internal static class Program
                 enc.Frames.Add(BitmapFrame.Create(rtb));
                 using (var fs = File.Create(path)) enc.Save(fs);
                 Console.WriteLine($"  저장  {path}");
+                if (mode == "unused") // 선택 막대 그림: 판 아래쪽만 (막대·목록 끝)
+                {
+                    int ch = Math.Min(rtb.PixelHeight, 520);
+                    var crop = new CroppedBitmap(rtb, new Int32Rect(0, rtb.PixelHeight - ch, rtb.PixelWidth, ch));
+                    var cenc = new PngBitmapEncoder();
+                    cenc.Frames.Add(BitmapFrame.Create(crop));
+                    string cpath = Path.Combine(dir, $"allapps-{theme}-unused-bar.png");
+                    using (var fs = File.Create(cpath)) cenc.Save(fs);
+                    Console.WriteLine($"  저장  {cpath}");
+                }
                 w.Close();
             }
             panelType.GetProperty("SizeForTest", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, null);
