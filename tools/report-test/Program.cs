@@ -96,7 +96,7 @@ internal static class Program
             var lastMap = (Dictionary<string, string>)usage.GetMethod("Last", flags)!.Invoke(null, null)!;
             string d90 = DateTime.Now.AddDays(-90).ToString("yyyy-MM-dd");
             string seedLine = $"씨앗 단계: 전체 {seedMap.Count}, 3회 이상 {seedMap.Count(kv => kv.Value >= 3)}, 그중 마지막 실행일 있음 {seedMap.Count(kv => kv.Value >= 3 && lastMap.ContainsKey(kv.Key))}, 90일 안 {seedMap.Count(kv => kv.Value >= 3 && lastMap.TryGetValue(kv.Key, out var l) && string.CompareOrdinal(l, d90) >= 0)}, 앱 모음에 있음(3회 이상) {seedMap.Count(kv => kv.Value >= 3 && ids.Contains(kv.Key))}";
-            var stages = usage.GetMethod("SuggestionStages", flags)!.Invoke(null, new object[] { 16 })!;
+            var stages = usage.GetMethod("SuggestionStages", flags)!.Invoke(null, new object?[] { 16, null })!;
             var result = (List<string>)stages.GetType().GetField("Item4")!.GetValue(stages)!;
             int fromWin = (int)stages.GetType().GetField("Item3")!.GetValue(stages)!;
             File.WriteAllLines(args[seedcheck + 1], new[]
@@ -127,7 +127,7 @@ internal static class Program
             var pinId = catalog.GetMethods(flags).First(m => m.Name == "Identity" && m.GetParameters()[0].ParameterType == typeof(PinItem));
             var docked = s.Pins.Select(p => (string?)pinId.Invoke(null, new object[] { p })).OfType<string>().ToHashSet();
             var usage = asm.GetType("Mongdock.Services.AppUsage")!;
-            var stages = usage.GetMethod("SuggestionStages", flags)!.Invoke(null, new object[] { 16 })!;
+            var stages = usage.GetMethod("SuggestionStages", flags)!.Invoke(null, new object?[] { 16, null })!;
             int Item(int i) => (int)stages.GetType().GetField("Item" + i)!.GetValue(stages)!;
             var result = (List<string>)stages.GetType().GetField("Item4")!.GetValue(stages)!;
             var panelOnly = (List<string>)stages.GetType().GetField("Item1")!.GetValue(stages)!;
