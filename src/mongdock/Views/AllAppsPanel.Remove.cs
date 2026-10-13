@@ -57,11 +57,29 @@ internal sealed partial class AllAppsPanel
             track.SizeChanged += (_, _) => fill.Width = track.ActualWidth * Math.Clamp((i - 0.5) / Math.Max(1, n), 0, 1);
             root.Children.Add(track);
             root.Children.Add(new TextBlock { Text = Loc.F($"{i}/{n} · {name} 제거 중…"), Margin = new Thickness(2, 0, 0, 4) });
+            root.Children.Add(new TextBlock { Text = Loc.T("제거 창이 열렸어요 — 그 창에서 계속해 주세요"), Margin = new Thickness(2, 6, 0, 2) });
             root.Children.Add(new TextBlock { Text = Loc.T("제거 창에서 안내대로 진행해 주세요. 창을 닫거나 취소하면 다음 앱으로 넘어가요."), FontSize = UiText.Sub, Foreground = P.SubText, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(2, 0, 0, 10) });
-            var stop = PanelButton(Loc.T("나머지 취소"), () => _removeCancel?.Cancel());
-            stop.HorizontalAlignment = HorizontalAlignment.Right;
+            var runButtons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var show = PanelButton(Loc.T("제거 창 보기"), () =>
+            {
+                bool found = AppUninstall.BringWindowToFront();
+                Log.Info($"잠자는 앱 지우기: 제거 창 보기 ({(found ? "앞으로 가져옴" : "창 없음")})");
+            });
+            show.Background = P.PanelTint;
+            show.Foreground = P.PanelTintText;
+            runButtons.Children.Add(show);
+            // 오래 걸리면(15초) [기다리지 않기] — 제거 창을 닫지 않고 다음으로
+            if (AppUninstall.CurrentStarted is { } at && DateTime.Now - at > TimeSpan.FromSeconds(SkipAfterSec))
+            {
+                var skip = PanelButton(Loc.T("기다리지 않기"), AppUninstall.SkipWait);
+                skip.Margin = new Thickness(8, 0, 0, 0);
+                runButtons.Children.Add(skip);
+            }
+            var stop = PanelButton(Loc.T("나머지 취소"), () => { Log.Info("잠자는 앱 지우기: 나머지 취소 누름"); _removeCancel?.Cancel(); });
+            stop.Margin = new Thickness(8, 0, 0, 0);
             stop.IsEnabled = _removeCancel?.IsCancellationRequested != true;
-            root.Children.Add(stop);
+            runButtons.Children.Add(stop);
+            root.Children.Add(runButtons);
             return root;
         }
         root.Children.Add(new TextBlock { Text = Loc.F($"{removable}개 앱을 지울까요?"), FontSize = UiText.CardTitle, FontWeight = FontWeights.SemiBold, Margin = new Thickness(2, 0, 0, 8) });
@@ -108,10 +126,30 @@ internal sealed partial class AllAppsPanel
         return root;
     }
 
+    private const int SkipAfterSec = 15;
+
     private async Task StartRemove(List<AppUninstall.Job> jobs)
     {
         if (AppUninstall.Running) return;
+        Log.Info($"잠자는 앱 지우기: [지우기] 누름 (지울 단위 {jobs.Count(j => j.What.Cannot is null)}개, 지울 수 없음 {jobs.Count(j => j.What.Cannot is not null)}개)");
         _removeRunning = true;
+        // 제거 창이 판 뒤에 숨지 않게: 지우는 동안 판은 맨 위에서 내림, 제거 창이 뜨면 한 번 앞으로 가져옴 (2026-10-14 사용자: 멈춘 느낌)
+        Topmost = false;
+        HoldOpen = true; // 제거 창을 눌러도 판(진행 화면)은 그대로
+        bool brought = false;
+        DateTime? job = null;
+        var watch = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        watch.Tick += (_, _) =>
+        {
+            var started = AppUninstall.CurrentStarted;
+            if (started != job) { job = started; brought = false; }
+            if (started is null) return;
+            if (!brought && AppUninstall.BringWindowToFront()) { brought = true; Log.Info("잠자는 앱 지우기: 제거 창을 앞으로 가져옴"); }
+            // [기다리지 않기] 를 보여 줄 때가 되면 한 번 다시 그림
+            double sec = (DateTime.Now - started.Value).TotalSeconds;
+            if (sec > SkipAfterSec && sec < SkipAfterSec + 0.6 && !IsClosing) Rebuild();
+        };
+        watch.Start();
         _removeCancel = new CancellationTokenSource();
         _removeProgress = (1, Math.Max(1, jobs.Count(j => j.What.Cannot is null)), jobs.FirstOrDefault(j => j.What.Cannot is null)?.Name ?? "");
         Rebuild();
@@ -120,6 +158,9 @@ internal sealed partial class AllAppsPanel
             _removeProgress = (i, n, name);
             if (!IsClosing) Rebuild();
         }, _removeCancel.Token);
+        watch.Stop();
+        Topmost = true;
+        HoldOpen = false;
         int asked = jobs.Count;
         int left = asked - result.Removed - result.Settings;
         _removeSummary = result.Settings > 0

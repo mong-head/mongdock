@@ -73,41 +73,162 @@ internal static class AppUninstall
     /// <summary>시험에서만: 몇 분까지 기다릴지 (기본 30분 — 사용자가 제거 창을 오래 둘 수 있음).</summary>
     internal static TimeSpan WaitLimit { get; set; } = TimeSpan.FromMinutes(30);
 
+    /// <summary>시험에서만: 스토어판처럼 셸로 실행 (패키지가 아닌 시험에서 그 경로를 돌려 보려고).</summary>
+    internal static bool ShellForTest { get; set; }
+
+    // ── 지금 도는 제거 프로그램 (판의 [제거 창 보기]·[기다리지 않기]) ──
+
+    private static volatile int[] _currentPids = Array.Empty<int>();
+    private static volatile bool _skipWait;
+    /// <summary>지금 제거 프로그램이 시작된 때 (판이 "오래 걸리면 [기다리지 않기]"를 정하려고).</summary>
+    public static DateTime? CurrentStarted { get; private set; }
+
+    /// <summary>[기다리지 않기]: 지금 것은 기다리지 않고(항목이 남았으면 실패로) 다음으로.</summary>
+    public static void SkipWait() { _skipWait = true; Log.Info("잠자는 앱 지우기: 기다리지 않기 누름"); }
+
+    /// <summary>
+    /// [제거 창 보기]·제거 창이 처음 뜰 때: 제거 프로그램(과 그 자식)의 보이는 창 중 가장 큰 것을 앞으로.
+    /// 판이 맨 위(Topmost)라 제거 창을 가려 "멈춘 것처럼" 보였음 (2026-10-14 사용자: 지우는데 갑자기 안 지워짐). 찾으면 true.
+    /// </summary>
+    public static bool BringWindowToFront()
+    {
+        var pids = _currentPids;
+        if (pids.Length == 0) return false;
+        IntPtr best = IntPtr.Zero;
+        long bestArea = 0;
+        EnumWindows((h, _) =>
+        {
+            if (!IsWindowVisible(h)) return true;
+            GetWindowThreadProcessId(h, out uint pid);
+            if (Array.IndexOf(pids, (int)pid) < 0 || !GetWindowRect(h, out var r)) return true;
+            long area = (long)(r.Right - r.Left) * (r.Bottom - r.Top);
+            if (area > bestArea) { bestArea = area; best = h; }
+            return true;
+        }, IntPtr.Zero);
+        if (best == IntPtr.Zero) return false;
+        if (IsIconic(best)) ShowWindow(best, 9 /* SW_RESTORE */);
+        SetForegroundWindow(best);
+        return true;
+    }
+
+    /// <summary>제거 프로그램이 띄우는 웹 브라우저(설문 페이지)·탐색기는 기다리지 않음 — 끝나지 않아 "멈춘" 것처럼 됨.</summary>
+    private static readonly HashSet<string> NotUninstaller = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "chrome.exe", "msedge.exe", "firefox.exe", "whale.exe", "opera.exe", "brave.exe", "iexplore.exe", "explorer.exe", "conhost.exe", "msedgewebview2.exe",
+    };
+
     private static Outcome RunOne(Removal what)
     {
         if (what.Family is { Length: > 0 } fam)
         {
             // 스토어 앱: 몽독이 직접 지우지 않고 그 앱의 설정 페이지 (패키지 관리 권한은 Store 제한 기능이라)
-            try { using (Process.Start(new ProcessStartInfo("ms-settings:appsfeatures-app?" + fam) { UseShellExecute = true })) { } return Outcome.OpenedSettings; }
+            try { using (Process.Start(new ProcessStartInfo("ms-settings:appsfeatures-app?" + fam) { UseShellExecute = true })) { } Log.Info("잠자는 앱 지우기: 스토어 앱 — 설정 페이지 엶"); return Outcome.OpenedSettings; }
             catch (Exception ex) { Log.Warn($"앱 설정 열기 실패: {ex.GetType().Name}"); return Outcome.Failed; }
         }
-        if (what.Command is not { Length: > 0 } cmd || Split(cmd) is not { } start) return Outcome.Skipped;
-        Process? p;
-        var started = DateTime.Now;
-        try { p = Process.Start(new ProcessStartInfo(start.Exe, start.Args) { UseShellExecute = true }); }
-        catch (Win32Exception ex) when (ex.NativeErrorCode == 1223) { return Outcome.Failed; } // UAC 에서 아니요
-        catch (Exception ex) { Log.Warn($"제거 프로그램 실행 실패: {ex.GetType().Name}"); return Outcome.Failed; }
-        if (p is null) return Exists(what.RegKey) ? Outcome.Failed : Outcome.Removed;
-        using (p)
+        if (what.Command is not { Length: > 0 } cmd || Split(cmd) is not { } start)
         {
-            // 제거 프로그램 + 그것이 띄운 자식(임시 폴더로 자기를 복사해 다시 띄우는 NSIS 같은 것)이 모두 끝날 때까지
-            var family = new HashSet<int> { p.Id };
-            var limit = Stopwatch.StartNew();
+            Log.Info("잠자는 앱 지우기: 제거 명령을 못 읽음 — 건너뜀");
+            return Outcome.Skipped;
+        }
+        start = (start.Exe, MsiRemoveArgs(start.Exe, start.Args));
+        string exeName = Path.GetFileName(start.Exe);
+        string kind = exeName.Equals("msiexec.exe", StringComparison.OrdinalIgnoreCase) || exeName.Equals("msiexec", StringComparison.OrdinalIgnoreCase) ? "msiexec" : "exe";
+        _skipWait = false;
+        var started = DateTime.Now;
+        CurrentStarted = started;
+        Process? root = null;
+        try
+        {
+            if (AppInfo.IsPackaged || ShellForTest)
+            {
+                // 스토어(MSIX)판: 몽독의 자식으로 띄우면 패키지 가상화 안에서 돌아 제거가 제대로 안 될 수 있음 → 셸(탐색기)에게 실행을 맡김
+                ShellRun(start.Exe, start.Args);
+                Log.Info($"잠자는 앱 지우기: 제거 프로그램 시작 ({kind}, 셸로 실행 — 패키지 밖)");
+            }
+            else
+            {
+                root = Process.Start(new ProcessStartInfo(start.Exe, start.Args) { UseShellExecute = true });
+                Log.Info($"잠자는 앱 지우기: 제거 프로그램 시작 ({kind}{(root is null ? ", 프로세스 없음" : "")})");
+            }
+        }
+        catch (Win32Exception ex) when (ex.NativeErrorCode == 1223) { Log.Info("잠자는 앱 지우기: 관리자 권한 창에서 [아니요]"); CurrentStarted = null; return Outcome.Failed; }
+        catch (Exception ex) { Log.Warn($"제거 프로그램 실행 실패: {ex.GetType().Name} {ex.Message}"); CurrentStarted = null; return Outcome.Failed; }
+
+        var family = new HashSet<int>();
+        if (root is not null) family.Add(root.Id);
+        var limit = Stopwatch.StartNew();
+        string end = "시간 넘음";
+        try
+        {
             while (limit.Elapsed < WaitLimit)
             {
                 Thread.Sleep(500);
+                // 1) 항목이 사라졌으면 지움 — 제거 프로그램 마지막 창(완료 안내)이 떠 있어도 다음으로
+                if (!Exists(what.RegKey)) { end = "항목 사라짐"; break; }
+                if (_skipWait) { end = "기다리지 않기"; break; }
+                // 2) 제거 프로그램과 그 자식: 시작 뒤에 생긴 같은 이름 프로세스(자기를 다시 띄우는 것·셸로 띄운 것)도 포함, 브라우저·탐색기는 뺌
                 var alive = Snapshot();
-                foreach (var (pid, parent) in alive) if (family.Contains(parent)) family.Add(pid);
-                bool any = alive.Any(x => family.Contains(x.Pid) && ProcessStartedAfter(x.Pid, started));
-                if (!any)
+                foreach (var x in alive)
                 {
-                    // 끝나고 레지스트리가 늦게 지워지는 제거 프로그램도 있어서 조금 더 봄
+                    if (NotUninstaller.Contains(x.Name)) continue;
+                    if (family.Contains(x.Parent) || (x.Name.Equals(exeName, StringComparison.OrdinalIgnoreCase) && !family.Contains(x.Pid) && ProcessStartedAfter(x.Pid, started)))
+                        family.Add(x.Pid);
+                }
+                var live = alive.Where(x => family.Contains(x.Pid) && !NotUninstaller.Contains(x.Name) && ProcessStartedAfter(x.Pid, started)).Select(x => x.Pid).ToArray();
+                _currentPids = live;
+                // 셸로 띄운 경우 처음 몇 초는 프로세스가 아직 안 보일 수 있음
+                if (live.Length == 0 && (root is not null || limit.Elapsed > TimeSpan.FromSeconds(5)))
+                {
+                    // 끝나고 레지스트리가 늦게 지워지는 제거 프로그램도 있어서 3초 더 봄
                     for (int t = 0; t < 6 && Exists(what.RegKey); t++) Thread.Sleep(500);
+                    end = "제거 프로그램 끝남";
                     break;
                 }
             }
         }
-        return Exists(what.RegKey) ? Outcome.Failed : Outcome.Removed;
+        finally
+        {
+            _currentPids = Array.Empty<int>();
+            CurrentStarted = null;
+        }
+        string code = "";
+        if (root is not null)
+        {
+            try { if (root.HasExited) code = $", 종료 코드 {root.ExitCode}"; } catch { /* 관리자 권한 프로세스 — 못 읽음 */ }
+            root.Dispose();
+        }
+        bool removed = !Exists(what.RegKey);
+        Log.Info($"잠자는 앱 지우기: {end} ({limit.Elapsed.TotalSeconds:0}초{code}) → {(removed ? "지움" : "항목 남음")}");
+        return removed ? Outcome.Removed : Outcome.Failed;
+    }
+
+    /// <summary>MsiExec /I{GUID} (설치·고치기 창) → /X{GUID} (제거). 제어판처럼 제거 화면이 바로 뜨게.</summary>
+    internal static string MsiRemoveArgs(string exe, string args)
+    {
+        string name = Path.GetFileName(exe);
+        if (!name.Equals("msiexec.exe", StringComparison.OrdinalIgnoreCase) && !name.Equals("msiexec", StringComparison.OrdinalIgnoreCase)) return args;
+        return System.Text.RegularExpressions.Regex.Replace(args, @"(^|\s)[/-][Ii]\s*(\{[0-9A-Fa-f-]{36}\})", "$1/X$2");
+    }
+
+    /// <summary>셸(Shell.Application)로 실행 — 탐색기가 띄우므로 몽독 패키지 밖. STA 스레드에서.</summary>
+    private static void ShellRun(string exe, string args)
+    {
+        Exception? error = null;
+        var t = new Thread(() =>
+        {
+            try
+            {
+                var type = Type.GetTypeFromProgID("Shell.Application") ?? throw new InvalidOperationException("Shell.Application 없음");
+                object shell = Activator.CreateInstance(type)!;
+                try { type.InvokeMember("ShellExecute", System.Reflection.BindingFlags.InvokeMethod, null, shell, new object[] { exe, args, "", "open", 1 }); }
+                finally { Marshal.FinalReleaseComObject(shell); }
+            }
+            catch (Exception ex) { error = ex; }
+        });
+        t.SetApartmentState(ApartmentState.STA);
+        t.Start();
+        t.Join();
+        if (error is not null) throw error;
     }
 
     private static bool ProcessStartedAfter(int pid, DateTime t)
@@ -176,16 +297,26 @@ internal static class AppUninstall
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern bool Process32NextW(IntPtr snap, ref PROCESSENTRY32 e);
     [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr h);
 
-    private static List<(int Pid, int Parent)> Snapshot()
+    private delegate bool EnumWindowsProc(IntPtr h, IntPtr l);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc f, IntPtr l);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr h);
+    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr h, int cmd);
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr h, out WinRect r);
+    [StructLayout(LayoutKind.Sequential)] private struct WinRect { public int Left, Top, Right, Bottom; }
+
+    private static List<(int Pid, int Parent, string Name)> Snapshot()
     {
-        var list = new List<(int, int)>();
+        var list = new List<(int, int, string)>();
         var snap = CreateToolhelp32Snapshot(0x2 /* PROCESS */, 0);
         if (snap == IntPtr.Zero || snap == new IntPtr(-1)) return list;
         try
         {
             var e = new PROCESSENTRY32 { dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32>() };
             if (Process32FirstW(snap, ref e))
-                do list.Add(((int)e.th32ProcessID, (int)e.th32ParentProcessID)); while (Process32NextW(snap, ref e));
+                do list.Add(((int)e.th32ProcessID, (int)e.th32ParentProcessID, e.szExeFile ?? "")); while (Process32NextW(snap, ref e));
         }
         finally { CloseHandle(snap); }
         return list;

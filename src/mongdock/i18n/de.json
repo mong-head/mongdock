@@ -1299,5 +1299,8 @@
  "{0}개 지움 · {1}개 남음 · {2}개는 설정에서 지워 주세요": "{0} entfernt · {1} übrig · {2} bitte in den Einstellungen entfernen",
  "{0}개 지움 · {1}개 남음 (취소 또는 실패)": "{0} entfernt · {1} übrig (abgebrochen oder fehlgeschlagen)",
  "보호된 앱이에요": "Geschützte App",
- "제거 프로그램이 없어요": "Kein Deinstallationsprogramm"
+ "제거 프로그램이 없어요": "Kein Deinstallationsprogramm",
+ "제거 창이 열렸어요 — 그 창에서 계속해 주세요": "Das Deinstallationsprogramm ist geöffnet – mach dort weiter",
+ "제거 창 보기": "Deinstallationsprogramm zeigen",
+ "기다리지 않기": "Nicht warten"
 }

@@ -853,7 +853,7 @@ internal static class Program
             return (P("Removed"), P("Failed"), P("Settings"), P("Skipped"));
         }
         bool Exists(string id) { using var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(root + "\\" + Key(id)); return k is not null; }
-        var ids = new[] { "a", "b", "c", "d", "e", "f", "g" };
+        var ids = new[] { "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l" };
         try
         {
             // 1) 제거 프로그램이 자기 항목을 지움 → 지움
@@ -888,6 +888,62 @@ internal static class Program
             Make("a", $"cmd.exe /c {Del("a")}");
             var r6 = Run(new() { Row("g", Removal("g", $"cmd.exe /c {Del("g")}")), Row("a", Removal("a", $"cmd.exe /c {Del("a")}")) }, cancelAfter: 0);
             Check($"[나머지 취소] → 지움 1·남음 1, 두 번째는 실행 안 함 (지움 {r6.Removed}, 실패 {r6.Failed}, 두 번째 항목 남음 {Exists("a")})", r6.Removed == 1 && r6.Failed == 1 && Exists("a"));
+            // 8) 따옴표 없는 공백 경로 (실제 앱에 흔함): cmd.exe 를 "공백 있는 폴더\fake uninst.exe" 로 복사해 실행
+            string fakeDir = Path.Combine(Path.GetTempPath(), "mongdock test dir");
+            Directory.CreateDirectory(fakeDir);
+            string fakeExe = Path.Combine(fakeDir, "fake uninst.exe");
+            File.Copy(Path.Combine(Environment.SystemDirectory, "cmd.exe"), fakeExe, true);
+            string unquoted = $"{fakeExe} /c {Del("h")}";
+            Make("h", unquoted);
+            var r8 = Run(new() { Row("h", Removal("h", unquoted)) });
+            Check($"따옴표 없는 공백 경로 → 실행되어 지움 (지움 {r8.Removed})", r8.Removed == 1 && !Exists("h"));
+            // 9) 항목을 먼저 지우고 완료 창을 띄운 채 있는 제거 프로그램 → 항목이 사라지면 바로 다음으로 (예전엔 창이 닫힐 때까지 기다림)
+            string stay = $"cmd.exe /c {Del("i")} & ping -n 20 127.0.0.1 >nul";
+            Make("i", stay);
+            sw.Restart();
+            var r9 = Run(new() { Row("i", Removal("i", stay)) });
+            Check($"항목 먼저 사라짐 + 제거 프로그램 계속 열림 → 바로 지움 ({sw.Elapsed.TotalSeconds:0.0}초)", r9.Removed == 1 && sw.Elapsed.TotalSeconds < 6);
+            // 10) 제거 프로그램이 브라우저(설문 페이지)를 띄우고 끝남, 항목은 남음 → 브라우저는 기다리지 않음 (예전엔 브라우저가 닫힐 때까지 "멈춤")
+            string fakeBrowser = Path.Combine(fakeDir, "msedge.exe");
+            File.Copy(Path.Combine(Environment.SystemDirectory, "cmd.exe"), fakeBrowser, true);
+            string survey = $"cmd.exe /c start \"\" /min \"{fakeBrowser}\" /c ping -n 25 127.0.0.1";
+            Make("j", survey);
+            sw.Restart();
+            var r10 = Run(new() { Row("j", Removal("j", survey)) });
+            Check($"브라우저를 띄우고 끝남(항목 남음) → 브라우저는 안 기다리고 실패 ({sw.Elapsed.TotalSeconds:0.0}초)", r10.Failed == 1 && sw.Elapsed.TotalSeconds < 10);
+            // 11) [기다리지 않기]: 오래 열려 있는 제거 프로그램 → 2초 뒤 기다리지 않기 → 실패로 넘어감
+            string slow = "cmd.exe /c ping -n 30 127.0.0.1 >nul";
+            Make("k", slow);
+            var skipTimer = new System.Threading.Timer(_ => un.GetMethod("SkipWait")!.Invoke(null, null), null, 2500, Timeout.Infinite);
+            sw.Restart();
+            var r11 = Run(new() { Row("k", Removal("k", slow)) });
+            skipTimer.Dispose();
+            Check($"[기다리지 않기] → 바로 다음으로, 실패 1 ({sw.Elapsed.TotalSeconds:0.0}초)", r11.Failed == 1 && sw.Elapsed.TotalSeconds < 6);
+            // 12) 스토어판 경로: 셸(탐색기)로 실행해도 기다리고 판정 (프로세스 핸들 없이 같은 이름 프로세스로 찾음)
+            un.GetProperty("ShellForTest", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, true);
+            string viaShell = $"\"{fakeExe}\" /c ping -n 4 127.0.0.1 >nul & {Del("l")}";
+            Make("l", viaShell);
+            sw.Restart();
+            var r12 = Run(new() { Row("l", Removal("l", viaShell)) });
+            un.GetProperty("ShellForTest", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, false);
+            Check($"셸로 실행(스토어판) → 끝까지 기다려 지움 ({sw.Elapsed.TotalSeconds:0.0}초)", r12.Removed == 1 && sw.Elapsed.TotalSeconds >= 2.5);
+            try { Directory.Delete(fakeDir, true); } catch { /* 아직 쓰는 중이면 남음 */ }
+            // 13) MsiExec /I{GUID} → /X{GUID} (실행하지 않고 바꾸기만)
+            var msi = un.GetMethod("MsiRemoveArgs", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+            string M(string exe, string a) => (string)msi.Invoke(null, new object[] { exe, a })!;
+            const string G = "{12345678-1234-1234-1234-123456789ABC}";
+            Check($"MsiExec /I{{GUID}} → {M("MsiExec.exe", "/I" + G)}", M("MsiExec.exe", "/I" + G) == "/X" + G);
+            Check($"MsiExec /qb /i {{GUID}} → {M("msiexec", "/qb /i " + G)}", M("msiexec", "/qb /i " + G) == "/qb /X" + G);
+            Check("msiexec 아닌 프로그램의 /I 는 그대로", M("setup.exe", "/I" + G) == "/I" + G);
+            // 14) 64·32비트 레지스트리 자리 (읽기만): HKLM 64 의 실제 항목 하나·32(WOW6432Node) 항목 하나가 각각 자기 자리에서 보이는지
+            foreach (var (tag, view) in new[] { ("HKLM64", Microsoft.Win32.RegistryView.Registry64), ("HKLM32", Microsoft.Win32.RegistryView.Registry32) })
+            {
+                using var baseKey = Microsoft.Win32.RegistryKey.OpenBaseKey(Microsoft.Win32.RegistryHive.LocalMachine, view).OpenSubKey(root);
+                string? any = baseKey?.GetSubKeyNames().FirstOrDefault();
+                var exists = un.GetMethod("Exists", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+                bool found = any is not null && (bool)exists.Invoke(null, new object?[] { tag + "|" + any })!;
+                Check($"레지스트리 {tag} 항목을 그 자리에서 찾음", found);
+            }
             // 7) UninstallString 나누기
             var split = un.GetMethod("Split", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
             string S(string c) => split.Invoke(null, new object[] { c }) is { } t ? $"{t.GetType().GetField("Item1")!.GetValue(t)}|{t.GetType().GetField("Item2")!.GetValue(t)}" : "null";

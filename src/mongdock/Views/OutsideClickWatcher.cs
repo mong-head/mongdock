@@ -38,6 +38,9 @@ internal sealed class OutsideClickWatcher
     /// <summary>있으면 닫는 이유(바깥 클릭 위치·활성화된 창의 프로세스)를 로그에 남김 — 확인 카드처럼 드물게 뜨는 창만 (메뉴는 너무 잦음).</summary>
     public string? LogName { get; set; }
 
+    /// <summary>true 인 동안은 바깥 클릭으로 닫지 않음 (지켜보기는 계속).</summary>
+    public Func<bool>? Hold { get; set; }
+
     public OutsideClickWatcher(AppServices services, Func<IEnumerable<Rect>> insideAreas, Action close)
     {
         _services = services;
@@ -92,6 +95,7 @@ internal sealed class OutsideClickWatcher
     private void OnGlobalMouseDown(object? sender, Point? position)
     {
         if (!_running || Environment.TickCount64 - _startedAt < IgnoreAfterOpenMs) return;
+        if (Hold?.Invoke() == true) return;
         if (position is Point c)
         {
             foreach (var r in _insideAreas())

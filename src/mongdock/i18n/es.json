@@ -1299,5 +1299,8 @@
  "{0}개 지움 · {1}개 남음 · {2}개는 설정에서 지워 주세요": "{0} eliminadas · {1} pendientes · Elimina {2} en Configuración",
  "{0}개 지움 · {1}개 남음 (취소 또는 실패)": "{0} eliminadas · {1} pendientes (canceladas o con error)",
  "보호된 앱이에요": "Es una aplicación protegida",
- "제거 프로그램이 없어요": "No tiene desinstalador"
+ "제거 프로그램이 없어요": "No tiene desinstalador",
+ "제거 창이 열렸어요 — 그 창에서 계속해 주세요": "Se abrió el desinstalador: continúa en esa ventana",
+ "제거 창 보기": "Mostrar desinstalador",
+ "기다리지 않기": "No esperar"
 }

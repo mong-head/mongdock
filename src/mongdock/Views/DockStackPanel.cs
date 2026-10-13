@@ -31,6 +31,8 @@ internal abstract class DockStackPanel : Window
     private Point _pressAt;
     private string? _pressKey;
     protected bool Dragging;
+    /// <summary>바깥 클릭으로 닫지 않음 (앱 모음 판에서 앱 지우는 동안 — 제거 창을 누르면 판이 닫혀 진행 화면이 사라졌음). Esc·버튼으로는 닫힘.</summary>
+    protected bool HoldOpen;
 
     /// <summary>머리줄 연필: 아이콘 바꾸기 카드를 열어 달라는 요청 (판은 닫힘).</summary>
     public event Action? EditIconRequested;
@@ -88,6 +90,7 @@ internal abstract class DockStackPanel : Window
             .Concat(_openMenu is { IsOpen: true } m ? OutsideClickWatcher.MenuAreas(m) : Enumerable.Empty<Rect>()), CloseAnimated)
         {
             LogName = title, // 닫는 이유(바깥 클릭 위치·활성화된 창)를 로그에
+            Hold = () => HoldOpen,
             ActivationGraceMs = 600,
             // 다른 창이 활성화된 것만으로는 닫지 않음 (사용자 "켜지다 말고 닫힘" — 2026-10-10). 닫기 = 바깥 클릭·Esc·앱 실행·버튼 다시 누르기
             CloseOnActivation = false,

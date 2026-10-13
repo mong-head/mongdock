@@ -1299,5 +1299,8 @@
  "{0}개 지움 · {1}개 남음 · {2}개는 설정에서 지워 주세요": "{0} removed · {1} left · Remove {2} in Settings",
  "{0}개 지움 · {1}개 남음 (취소 또는 실패)": "{0} removed · {1} left (canceled or failed)",
  "보호된 앱이에요": "It's a protected app",
- "제거 프로그램이 없어요": "No uninstaller"
+ "제거 프로그램이 없어요": "No uninstaller",
+ "제거 창이 열렸어요 — 그 창에서 계속해 주세요": "The uninstaller is open — continue in that window",
+ "제거 창 보기": "Show uninstaller",
+ "기다리지 않기": "Don't wait"
 }
