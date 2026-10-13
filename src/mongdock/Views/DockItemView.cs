@@ -339,6 +339,35 @@ internal sealed class DockItemView : Grid
         _bounce.BeginAnimation(BounceAxis, a);
     }
 
+    /// <summary>알림 튀기기 전체 길이 (ms): 2번 × (올라감 200 + 내려옴 250).</summary>
+    public const int NotifyBounceMs = 900;
+
+    /// <summary>
+    /// 알림이 오면 2번만 튀고 멈춤 (#27): 아이콘 높이의 35%, 한 번 0.45초(올라감 EaseOut 200ms → 내려옴 EaseIn 250ms), 출렁임 없음.
+    /// 실행 튀기가 진행 중이면 그쪽이 먼저(이건 건너뜀). 확대된 만큼 높이를 줄여 창 밖으로 잘리지 않게.
+    /// </summary>
+    public void NotifyBounce()
+    {
+        if (_bouncing || !Anim.Enabled) return;
+        int gen = ++_bounceGen;
+        double h = Math.Max(3, _layout.IconSize * 0.35 - _layout.IconSize * (Scale - 1)) * BounceSign;
+        const double up = 200, down = 250;
+        var a = new DoubleAnimationUsingKeyFrames { Duration = Anim.Ms(NotifyBounceMs) };
+        for (int i = 0; i < 2; i++)
+        {
+            double t0 = i * (up + down);
+            a.KeyFrames.Add(new EasingDoubleKeyFrame(h, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(t0 + up)), new QuadraticEase { EasingMode = EasingMode.EaseOut }));
+            a.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(t0 + up + down)), new QuadraticEase { EasingMode = EasingMode.EaseIn }));
+        }
+        a.Completed += (_, _) =>
+        {
+            if (gen != _bounceGen) return;
+            _bounce.BeginAnimation(BounceAxis, null);
+            if (WantBounce) StartBounce(); // 그사이 실행 대기가 시작됐으면 이어서
+        };
+        _bounce.BeginAnimation(BounceAxis, a);
+    }
+
     /// <summary>튀기를 즉시 멈추고 제자리로 (드래그 시작·뷰 버림).</summary>
     private void StopBounce()
     {

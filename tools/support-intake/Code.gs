@@ -147,7 +147,8 @@ var STATS_COLUMNS = [
   ['routineSuggestShown', int_(0, 1000)], // 지난 신호 뒤 루틴 추천을 보여 준 횟수 (§15)
   ['routineSuggestCreated', int_(0, 1000)], // 그중 [만들기]를 누른 횟수
   ['reportAttachments', int_(0, 1000)], // 지난 신호 뒤 문제 신고에 붙인 첨부 개수 (#26)
-  ['allAppsUnusedViewOpened', bool_] // 앱 모음 [안 쓰는 앱] 보기를 열었는지
+  ['allAppsUnusedViewOpened', bool_], // 앱 모음 [안 쓰는 앱] 보기를 열었는지
+  ['dockBounce', bool_] // 알림 오면 독 아이콘 튀기기 켜짐 (#27)
 ];
 
 function oneOf_(list) { return function (v) { v = String(v); return list.indexOf(v) >= 0 ? v : null; }; }

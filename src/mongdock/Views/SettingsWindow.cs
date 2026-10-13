@@ -733,6 +733,62 @@ internal sealed partial class SettingsWindow : Window
             more.Add(Row(Loc.T("배터리 부족 알림"), Loc.T("배터리로 쓰는 중에 20%·10%·5% 가 되면 한 번씩 알려 줘요.") + (mongdock ? "" : Loc.T(" (몽독 배너일 때만)")),
                 Toggle(n.LowBatteryAlerts, on => Commit(() => N().LowBatteryAlerts = on))));
         body.Children.Add(Group(more.ToArray()));
+
+        // 알림 오면 독 아이콘 튀기기 (#27)
+        body.Children.Add(SectionTitle(Loc.T("독 아이콘")));
+        var bounce = new List<UIElement>
+        {
+            Row(Loc.T("알림이 오면 독 아이콘 튀기기"), Loc.T("독에 있는 앱에 알림이 오면 아이콘이 두 번 튀고 멈춰요. 같은 앱은 10초에 한 번만."),
+                Toggle(n.BounceOnNotify, on => Commit(() => N().BounceOnNotify = on, rebuild: true))),
+        };
+        if (n.BounceOnNotify)
+        {
+            bounce.Add(Row(Loc.T("숨은 독도 잠깐 꺼내기"), Loc.T("독 자동 숨김 중이면 잠깐 나왔다가 1.5초 뒤 다시 숨어요. 끄면 숨은 동안엔 알림 점만 남아요."),
+                Toggle(n.BouncePeekHidden, on => Commit(() => N().BouncePeekHidden = on))));
+            bounce.Add(BounceAppsRow());
+        }
+        body.Children.Add(Group(bounce.ToArray()));
+    }
+
+    private bool _bounceAppsOpen;
+
+    /// <summary>"앱마다 고르기 ▸": 독에 고정한 앱 + 지금 실행 중인 앱마다 스위치 (기본 켬).</summary>
+    private UIElement BounceAppsRow()
+    {
+        var box = new StackPanel();
+        var head = new TextBlock
+        {
+            Text = (_bounceAppsOpen ? "▾  " : "▸  ") + Loc.T("앱마다 고르기"),
+            Foreground = _p.SoftAccentText,
+            Cursor = System.Windows.Input.Cursors.Hand,
+            Margin = new Thickness(0, 2, 0, 2),
+        };
+        head.MouseLeftButtonUp += (_, _) => { _bounceAppsOpen = !_bounceAppsOpen; Commit(() => { }, rebuild: true); };
+        box.Children.Add(head);
+        if (!_bounceAppsOpen) return box;
+        var apps = new List<(string Key, string Name)>();
+        foreach (var pin in _services.Settings.Current.Pins)
+            if (DockWindow.BounceKey(pin) is { } k && apps.All(a => a.Key != k))
+                apps.Add((k, string.IsNullOrWhiteSpace(pin.Name) ? System.IO.Path.GetFileNameWithoutExtension(pin.Target) : pin.Name));
+        foreach (var w in _services.Windows.Windows)
+            if (DockWindow.BounceKey(w) is { } k && apps.All(a => a.Key != k) && !k.Equals("exe:mongdock", StringComparison.OrdinalIgnoreCase))
+                apps.Add((k, Mongdock.ViewModels.AppNames.Get(w)));
+        var off = _services.Settings.Current.Notifications.BounceOff;
+        foreach (var (key, name) in apps)
+        {
+            var line = new DockPanel { Margin = new Thickness(18, 3, 0, 3), LastChildFill = true };
+            var t = Toggle(!off.Contains(key, StringComparer.OrdinalIgnoreCase), on => Commit(() =>
+            {
+                var list = _services.Settings.Current.Notifications.BounceOff;
+                list.RemoveAll(x => string.Equals(x, key, StringComparison.OrdinalIgnoreCase));
+                if (!on) list.Add(key);
+            }));
+            DockPanel.SetDock(t, Dock.Right);
+            line.Children.Add(t);
+            line.Children.Add(new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
+            box.Children.Add(line);
+        }
+        return box;
     }
 
     // ───────────────────────── 페이지: 캘린더 ─────────────────────────

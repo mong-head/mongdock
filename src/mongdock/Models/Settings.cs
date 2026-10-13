@@ -277,6 +277,13 @@ public sealed class TrayIconPlacement
 
 public sealed class NotificationSettings
 {
+    /// <summary>알림이 오면 독 아이콘 2번 튀기기 (#27, 기본 켬).</summary>
+    public bool BounceOnNotify { get; set; } = true;
+    /// <summary>자동 숨김 중인 독도 잠깐 꺼내서 튀기 (끄면 숨은 동안엔 점만).</summary>
+    public bool BouncePeekHidden { get; set; } = true;
+    /// <summary>튀기지 않을 앱 (실행 기록과 같은 이름 "exe:…"/"app:…").</summary>
+    public List<string> BounceOff { get; set; } = new();
+
     /// <summary>윈도우 알림이 오면 맥처럼 상단바 아래 오른쪽에 몽독 배너를 띄움 (윈도우 알림 DB 를 읽기만 함).</summary>
     public bool ShowNotificationBanners { get; set; } = true;
 

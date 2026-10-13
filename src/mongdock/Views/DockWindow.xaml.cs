@@ -120,6 +120,7 @@ public partial class DockWindow : Window
 
         _services.Windows.WindowsChanged += OnWindowsChanged;
         _services.Windows.WindowFlashed += OnWindowFlashed;
+        _services.Notifications.Arrived += OnNotificationArrived; // 알림 오면 아이콘 튀기기 (#27)
         _services.Windows.WindowActivated += OnWindowActivated;
         _services.Settings.SettingsChanged += OnSettingsChanged;
         _services.DesktopWindows.DisplayChanged += OnDisplayChanged;
@@ -147,6 +148,7 @@ public partial class DockWindow : Window
         {
             _services.Windows.WindowsChanged -= OnWindowsChanged;
             _services.Windows.WindowFlashed -= OnWindowFlashed;
+            _services.Notifications.Arrived -= OnNotificationArrived;
             _services.Windows.WindowActivated -= OnWindowActivated;
             _services.Settings.SettingsChanged -= OnSettingsChanged;
             _services.DesktopWindows.DisplayChanged -= OnDisplayChanged;
@@ -183,8 +185,9 @@ public partial class DockWindow : Window
     {
         // 이미 보고 있는 창이면 알림 점 불필요
         if (hwnd == _services.Windows.ForegroundWindow) return;
-        _flashed.Add(hwnd);
+        bool fresh = _flashed.Add(hwnd);
         UpdateStates();
+        if (fresh) BounceForFlash(hwnd); // 깜빡임이 새로 시작될 때만 (#27)
     }
 
     private void OnWindowActivated(object? sender, IntPtr hwnd)
@@ -648,6 +651,7 @@ public partial class DockWindow : Window
             return;
         }
 
+        if (Environment.TickCount64 < _peekUntil) return; // 알림으로 잠깐 꺼낸 독 (#27) — 튄 뒤 1.5초까지는 숨기지 않음
         var inside = _shownRect;
         inside.Inflate(4, 4);
         // 터치를 뗀 뒤엔 커서가 독 위에 남아 있어도 바깥으로 봄 (진짜 마우스가 움직이면 다시 판정)
@@ -1651,6 +1655,7 @@ public partial class DockWindow : Window
             if (item.IsRunning)
                 menu.Items.Add(Item(Loc.T("창 닫기"), () => CloseAll(item)));
             if (RoutineUi.ItemFromPin(pin) is not null) menu.Items.Add(RoutineUi.AddToRoutineMenu(_services, () => RoutineUi.ItemFromPin(pin)));
+            AddBounceItem(menu, item);
             menu.Items.Add(new Separator());
             menu.Items.Add(Item(Loc.T("아이콘 변경…"), () => ChangeIcon(pin)));
             menu.Items.Add(DockMenus.Item(Loc.T("기본 아이콘으로"), () => ModifyPins(_ => pin.IconPath = null), enabled: pin.IconPath != null));
@@ -1764,6 +1769,7 @@ public partial class DockWindow : Window
         }
         if (item.IsRunning)
             menu.Items.Add(Item(Loc.T("창 닫기"), () => CloseAll(item)));
+        AddBounceItem(menu, item);
     }
 
     private void BuildEmptyAreaMenu(ContextMenu menu)
