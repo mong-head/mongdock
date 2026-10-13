@@ -27,7 +27,8 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        if (args.Length == 0) { Console.WriteLine("live-test OUT [--idle 초] [--new]"); return 2; }
+        if (args.Length == 0) { Console.WriteLine("live-test OUT [--idle 초] [--new] | live-test --demo [횟수] [간격초]"); return 2; }
+        if (args[0] == "--demo") return Demo(args.Length > 1 ? int.Parse(args[1]) : 3, args.Length > 2 ? int.Parse(args[2]) : 12);
         string outDir = Path.GetFullPath(args[0]);
         Directory.CreateDirectory(outDir);
         int idleAt = Array.IndexOf(args, "--idle");
@@ -247,9 +248,49 @@ internal static class Program
         }
     }
 
+    /// <summary>
+    /// --demo: 사용자 앞 튀기기 시연 — "몽독 튀기기 시연" 시험 창을 띄워(독에 실행 중 앱으로 나타남) 다른 시험 창으로 앞을 넘긴 뒤
+    /// 작업 표시줄 깜빡임을 간격(쿨다운 10초보다 길게)을 두고 보냄. 사용자 앱은 건드리지 않음. 끝나면 창을 모두 닫음.
+    /// </summary>
+    private static int Demo(int times, int gapSeconds)
+    {
+        var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        var work = SystemParameters.WorkArea;
+        // 회마다 다른 시험 창을 깜빡임 (같은 창을 다시 깜빡이려면 활성화해야 하는데, 앞을 다시 넘기는 게 막힐 수 있어서)
+        var tests = new List<Window>();
+        for (int i = 0; i < times; i++)
+        {
+            var t = new Window { Title = $"몽독 튀기기 시연 {i + 1}", Width = 300, Height = 120, Left = work.Left + 60 + i * 24, Top = work.Top + 60 + i * 24, ShowInTaskbar = true,
+                Content = new System.Windows.Controls.TextBlock { Text = "몽독 튀기기 시연 창 (곧 닫혀요)", Margin = new Thickness(16) } };
+            t.Show();
+            tests.Add(t);
+        }
+        Pump(2500); // 독에 나타날 시간
+        var other = new Window { Title = "시연 도우미", Width = 220, Height = 100, Left = work.Left + 420, Top = work.Top + 60, ShowInTaskbar = false };
+        other.Show();
+        other.Activate();
+        Pump(800);
+        for (int i = 0; i < times; i++)
+        {
+            Console.WriteLine($"{DateTime.Now:HH:mm:ss} 깜빡임 {i + 1}/{times} (앞 창 {(GetForegroundWindow() == new WindowInteropHelper(other).Handle ? "도우미" : "다른 창")})");
+            var fi = new FLASHWINFO { cbSize = (uint)Marshal.SizeOf<FLASHWINFO>(), hwnd = new WindowInteropHelper(tests[i]).Handle, dwFlags = 2, uCount = 2, dwTimeout = 0 };
+            FlashWindowEx(ref fi);
+            Pump(1500);
+            fi.dwFlags = 0;
+            FlashWindowEx(ref fi);
+            if (i < times - 1) Pump(gapSeconds * 1000 - 1500);
+        }
+        Pump(4000);
+        other.Close();
+        foreach (var t in tests) t.Close();
+        Pump(300);
+        return 0;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct FLASHWINFO { public uint cbSize; public IntPtr hwnd; public uint dwFlags; public uint uCount; public uint dwTimeout; }
     [DllImport("user32.dll")] private static extern bool FlashWindowEx(ref FLASHWINFO info);
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
 
     private static void Check(string what, bool ok)
     {
