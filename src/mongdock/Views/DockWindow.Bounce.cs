@@ -9,12 +9,12 @@ namespace Mongdock.Views;
 /// 알림 오면 독 아이콘 2번 튀기기 (#27, spec-dock-bounce.md — 사용자가 이번에 직접 요청한 "튀기" 예외. 다른 곳에 되튐 넣지 않음).
 /// 신호: 윈도우 알림(토스트, 배너와 같은 신호) · 작업 표시줄 깜빡임(FlashWindow 가 새로 시작될 때).
 /// 독에 있는 앱만, 같은 앱은 10초에 한 번. 방해 금지(예외 앱은 튐)·전체 화면·일시 정지·이미 앞에 있는 앱·끌기·커서가 독 위면 안 튐.
-/// 자동 숨김 중이면 "숨은 독도 잠깐 꺼내기"일 때 꺼냈다가 1.5초 뒤 숨김 (그사이 커서가 오면 그대로).
+/// 자동 숨김 중이면 "숨은 독도 잠깐 꺼내기"일 때 꺼냈다가 튀기 끝나고 2.5초 뒤 숨김 (그사이 커서가 오면 그대로).
 /// </summary>
 public partial class DockWindow
 {
     private static readonly TimeSpan BounceCooldown = TimeSpan.FromSeconds(10);
-    private const int PeekMs = 1500;
+    private const int PeekMs = 2500; // 튀기 끝나고 2.5초 뒤 숨김 (2026-10-13 사용자)
     private readonly Dictionary<string, DateTime> _bouncedAt = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>알림으로 잠깐 꺼낸 독을 이 시각(TickCount64)까지 숨기지 않음.</summary>
     private long _peekUntil;

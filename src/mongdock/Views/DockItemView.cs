@@ -339,25 +339,26 @@ internal sealed class DockItemView : Grid
         _bounce.BeginAnimation(BounceAxis, a);
     }
 
-    /// <summary>알림 튀기기 전체 길이 (ms): 2번 × (올라감 200 + 내려옴 250).</summary>
-    public const int NotifyBounceMs = 900;
+    /// <summary>알림 튀기기 전체 길이 (ms): 2번 × (올라감 300 + 위에서 머무름 80 + 내려옴 320) = 1.4초 (2026-10-13 사용자: "너무 짧다").</summary>
+    private const double NotifyUp = 300, NotifyHold = 80, NotifyDown = 320;
+    public const int NotifyBounceMs = (int)(2 * (NotifyUp + NotifyHold + NotifyDown));
 
     /// <summary>
-    /// 알림이 오면 2번만 튀고 멈춤 (#27): 아이콘 높이의 35%, 한 번 0.45초(올라감 EaseOut 200ms → 내려옴 EaseIn 250ms), 출렁임 없음.
+    /// 알림이 오면 2번만 튀고 멈춤 (#27): 아이콘 높이의 60%(창 여유 안), 한 번 0.7초(올라감 EaseOut → 위에서 잠깐 → 내려옴 EaseIn), 출렁임 없음.
     /// 실행 튀기가 진행 중이면 그쪽이 먼저(이건 건너뜀). 확대된 만큼 높이를 줄여 창 밖으로 잘리지 않게.
     /// </summary>
     public void NotifyBounce()
     {
         if (_bouncing || !Anim.Enabled) return;
         int gen = ++_bounceGen;
-        double h = Math.Max(3, _layout.IconSize * 0.35 - _layout.IconSize * (Scale - 1)) * BounceSign;
-        const double up = 200, down = 250;
+        double h = Math.Max(3, _layout.NotifyBounceHeight - _layout.IconSize * (Scale - 1)) * BounceSign;
         var a = new DoubleAnimationUsingKeyFrames { Duration = Anim.Ms(NotifyBounceMs) };
         for (int i = 0; i < 2; i++)
         {
-            double t0 = i * (up + down);
-            a.KeyFrames.Add(new EasingDoubleKeyFrame(h, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(t0 + up)), new QuadraticEase { EasingMode = EasingMode.EaseOut }));
-            a.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(t0 + up + down)), new QuadraticEase { EasingMode = EasingMode.EaseIn }));
+            double t0 = i * (NotifyUp + NotifyHold + NotifyDown);
+            a.KeyFrames.Add(new EasingDoubleKeyFrame(h, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(t0 + NotifyUp)), new QuadraticEase { EasingMode = EasingMode.EaseOut }));
+            a.KeyFrames.Add(new LinearDoubleKeyFrame(h, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(t0 + NotifyUp + NotifyHold))));
+            a.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(t0 + NotifyUp + NotifyHold + NotifyDown)), new QuadraticEase { EasingMode = EasingMode.EaseIn }));
         }
         a.Completed += (_, _) =>
         {

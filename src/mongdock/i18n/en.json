@@ -327,7 +327,7 @@
  "독 아이콘 크기를 설정값으로 되돌림": "Dock icon size restored to the setting",
  "독 위치": "Dock position",
  "독 자동 숨김": "Auto-hide the Dock",
- "독 자동 숨김 중이면 잠깐 나왔다가 1.5초 뒤 다시 숨어요. 끄면 숨은 동안엔 알림 점만 남아요.": "If the dock is auto-hidden, it slides out and hides again 1.5 seconds later. When off, only the notification dot shows while hidden.",
+ "독 자동 숨김 중이면 잠깐 나왔다가 2.5초 뒤 다시 숨어요. 끄면 숨은 동안엔 알림 점만 남아요.": "If the dock is auto-hidden, it slides out and hides again 2.5 seconds later. When off, only the notification dot shows while hidden.",
  "독 자동으로 숨기기": "Automatically hide the Dock",
  "독 테마": "Dock theme",
  "독 폴더": "Dock Folder",

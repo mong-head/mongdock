@@ -53,6 +53,8 @@ public sealed class DockLayout
     public double BounceHeight => Math.Max(4, Math.Min(IconSize * 0.35, IconSize * (HoverScale - 1) + 8 + Padding - 2));
 
     /// <summary>확대로 패널이 독 방향으로 늘어날 수 있는 길이 (한쪽).</summary>
+    /// <summary>알림 튀기기 높이 (#27): 아이콘의 60%, 확대가 쓰는 창 여유 안에서 (잘리지 않게).</summary>
+    public double NotifyBounceHeight => Math.Max(4, Math.Min(IconSize * 0.6, IconSize * (HoverScale - 1) + 8 + Padding - 2));
     public double GrowthRoom => Math.Ceiling(IconSize * GrowthFactor(HoverScale, Wave) + 12);
 
     /// <summary>확대로 한쪽에 튀어나오는 길이 / 아이콘 크기 (DockFit 이 맞춤 계산에 씀).</summary>

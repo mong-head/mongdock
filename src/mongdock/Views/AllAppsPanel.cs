@@ -64,6 +64,8 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     protected override bool Centered => true;
 
     /// <summary>판 폭: 작업 영역 72% (세로 모니터 90%), 640~1500 DIP.</summary>
+    private static bool _sizeLogged; // 판 크기는 몽독 실행마다 한 번만 로그
+
     internal static double PanelWidth(Rect work) =>
         Math.Clamp(work.Width * (work.Height > work.Width ? 0.90 : 0.72), Math.Min(640, work.Width - 40), 1500);
 
@@ -84,6 +86,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         Cols = Math.Max(4, (int)((width - 32) / AppCell));
         GroupCols = Math.Clamp((int)(Cols * AppCell / GroupCell), 4, 8);
         _bodyMaxHeight = PanelHeight(work) - 130; // 검색 칸·아래 링크·여백 빼고
+        if (!_sizeLogged) { _sizeLogged = true; Log.Info($"앱 모음 판 크기: 폭 {width:0} DIP (한 줄 {Cols}칸), 높이 최대 {PanelHeight(work):0} DIP — 작업 영역 {work.Width:0}x{work.Height:0} DIP"); }
         SetBody(BuildShell());
         _apps = AllAppsCatalog.Cached ?? Array.Empty<AppEntry>();
         Rebuild();

@@ -200,8 +200,8 @@ internal static class Program
             var samples = new List<(long Ms, double Y)>();
             var sw = Stopwatch.StartNew();
             viewType.GetMethod("NotifyBounce", Any)!.Invoke(view, null);
-            while (sw.ElapsedMilliseconds < 1300) { Pump(16); samples.Add((sw.ElapsedMilliseconds, bounce.Y)); }
-            double expect = layout.IconSize * 0.35;
+            while (sw.ElapsedMilliseconds < 1900) { Pump(16); samples.Add((sw.ElapsedMilliseconds, bounce.Y)); }
+            double expect = layout.NotifyBounceHeight;
             double maxUp = samples.Max(x => -x.Y);
             int peaks = 0;
             for (int i = 1; i + 1 < samples.Count; i++)
@@ -211,9 +211,9 @@ internal static class Program
             Check($"튀기기: 애니메이션 설정 켜짐 (꺼져 있으면 튀지 않는 게 맞음)", animOn);
             if (animOn)
             {
-                Check($"튀기기: 높이 아이콘의 약 35% (최고 {maxUp:0.0} / 기대 {expect:0.0})", Math.Abs(maxUp - expect) <= expect * 0.15);
+                Check($"튀기기: 높이 아이콘의 60%·창 여유 안 (최고 {maxUp:0.0} / 기대 {expect:0.0})", Math.Abs(maxUp - expect) <= expect * 0.15);
                 Check($"튀기기: 딱 2번 ({peaks}번)", peaks == 2);
-                Check($"튀기기: 1초 안에 제자리 ({settled}ms)", settled > 0 && settled <= 1000);
+                Check($"튀기기: 1.5초 안에 제자리 ({settled}ms)", settled > 0 && settled <= 1500);
             }
             host.Close();
             Pump(300);

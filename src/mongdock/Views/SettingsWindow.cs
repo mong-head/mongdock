@@ -743,7 +743,7 @@ internal sealed partial class SettingsWindow : Window
         };
         if (n.BounceOnNotify)
         {
-            bounce.Add(Row(Loc.T("숨은 독도 잠깐 꺼내기"), Loc.T("독 자동 숨김 중이면 잠깐 나왔다가 1.5초 뒤 다시 숨어요. 끄면 숨은 동안엔 알림 점만 남아요."),
+            bounce.Add(Row(Loc.T("숨은 독도 잠깐 꺼내기"), Loc.T("독 자동 숨김 중이면 잠깐 나왔다가 2.5초 뒤 다시 숨어요. 끄면 숨은 동안엔 알림 점만 남아요."),
                 Toggle(n.BouncePeekHidden, on => Commit(() => N().BouncePeekHidden = on))));
             bounce.Add(BounceAppsRow());
         }
