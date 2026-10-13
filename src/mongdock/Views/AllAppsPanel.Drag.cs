@@ -20,7 +20,7 @@ namespace Mongdock.Views;
 internal sealed partial class AllAppsPanel
 {
     /// <summary>끌기 시작: 8px 이상 움직이고 150ms 이상 눌렀을 때 (원격 접속에서 클릭 중 흔들림은 클릭으로).</summary>
-    private const double DragStartPx = 8, LiftScale = 1.08, ShiftMs = 120, SettleMs = 150;
+    private const double DragStartPx = 8, LiftScale = 1.05, ShiftMs = 120, SettleMs = 150;
     private const long DragMinHoldMs = 150;
     private long _pressTicks;
 
@@ -38,7 +38,10 @@ internal sealed partial class AllAppsPanel
         public required Size GhostSize;
         public required Point Grab;          // 칸 안에서 누른 자리
         public Func<DataObject>? OleData;
-        public Border? Highlight;
+        public Border? Highlight;            // 놓을 곳 칸
+        public FrameworkElement? HighlightPart; // 그 칸에서 실제로 커지는 부분 (폴더 = 폴더 그림, 앱 = 아이콘)
+        public Brush? HighlightOldBorder;
+        public Vector IconOffset;            // 칸 왼쪽 위 → 끄는 그림(아이콘) 왼쪽 위 (판 좌표, 배율 반영)
         public int FavIndex = -1;
         public DropTag? Target;
     }
@@ -111,16 +114,20 @@ internal sealed partial class AllAppsPanel
     private void BeginDrag(Border source, DragItem item, Func<DataObject>? oleData, Point grab)
     {
         double k = UiScale; // 판 안이 커져 있으면(LayoutTransform) 끄는 그림·잡은 자리도 그만큼
-        var size = new Size(source.ActualWidth * k, source.ActualHeight * k);
-        grab = new Point(grab.X * k, grab.Y * k);
+        // 끄는 그림은 아이콘만 (2026-10-13 사용자: 카드 바탕+이름 덩어리가 무거워 보임 — 맥 런치패드처럼). 즐겨찾기·모든 앱·폴더 안 모두 같은 그림
+        var icon = DragIconOf(source);
+        var off = icon == source ? new Point() : icon.TranslatePoint(new Point(0, 0), source);
+        var size = new Size(icon.ActualWidth * k, icon.ActualHeight * k);
+        grab = new Point((grab.X - off.X) * k, (grab.Y - off.Y) * k); // 아이콘 안에서 잡은 자리 (이름 쪽을 잡았으면 아이콘 밖 — 아이콘은 원래처럼 커서 위쪽에)
         _drag = new DragState
         {
             Item = item,
             Source = source,
-            Ghost = CreateGhost(source, size),
+            Ghost = CreateGhost(icon, size),
             GhostSize = new Size(size.Width * LiftScale, size.Height * LiftScale),
             Grab = new Point(grab.X * LiftScale, grab.Y * LiftScale),
             OleData = oleData,
+            IconOffset = new Vector(off.X * k, off.Y * k),
         };
         source.Opacity = 0.25; // 원래 자리는 흐린 빈 칸
         source.ToolTip = null;
@@ -206,8 +213,23 @@ internal sealed partial class AllAppsPanel
         _edgeScroll.Start();
     }
 
-    /// <summary>끄는 아이콘: 칸을 그대로 찍은 그림, 1.08배, 반투명, 그림자. 클릭이 통과하고 포커스를 가져가지 않는 창.</summary>
-    private Window CreateGhost(Border source, Size size)
+    /// <summary>칸에서 끄는 그림·강조로 쓸 부분: 폴더 칸 = 폴더 그림, 앱 칸 = 아이콘, 그 밖(루틴·새 폴더 등) = 칸 전체.</summary>
+    private static FrameworkElement DragIconOf(Border cell)
+    {
+        FrameworkElement? found = null;
+        void Walk(DependencyObject o)
+        {
+            if (found is not null) return;
+            if (o is Border { Uid: { } uid } t && uid.StartsWith("tile:", StringComparison.Ordinal)) { found = t; return; }
+            if (o is Image { ActualWidth: >= 20 } img) { found = img; return; }
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(o); i++) Walk(VisualTreeHelper.GetChild(o, i));
+        }
+        Walk(cell);
+        return found ?? cell;
+    }
+
+    /// <summary>끄는 아이콘: 아이콘만 찍은 그림, 1.05배, 불투명도 0.9, 은은한 그림자 하나 (카드 바탕·이름 없음). 클릭이 통과하고 포커스를 가져가지 않는 창.</summary>
+    private Window CreateGhost(FrameworkElement source, Size size)
     {
         var dpi = VisualTreeHelper.GetDpi(source);
         var rtb = new RenderTargetBitmap((int)Math.Ceiling(size.Width * dpi.DpiScaleX), (int)Math.Ceiling(size.Height * dpi.DpiScaleY),
@@ -215,7 +237,6 @@ internal sealed partial class AllAppsPanel
         var dv = new DrawingVisual();
         using (var dc = dv.RenderOpen())
         {
-            dc.DrawRoundedRectangle(P.CardBackground, null, new Rect(size), 10 * UiScale, 10 * UiScale);
             dc.DrawRectangle(new VisualBrush(source) { Stretch = Stretch.Fill }, null, new Rect(size)); // 판 배율만큼 (size 가 이미 배율 반영)
         }
         rtb.Render(dv);
@@ -226,7 +247,7 @@ internal sealed partial class AllAppsPanel
             Width = size.Width * LiftScale,
             Height = size.Height * LiftScale,
             Opacity = 0.9,
-            Effect = new DropShadowEffect { BlurRadius = 16, ShadowDepth = 4, Direction = 270, Opacity = 0.25 },
+            Effect = new DropShadowEffect { BlurRadius = 12, ShadowDepth = 3, Direction = 270, Opacity = 0.2 },
         };
         var w = new Window
         {
@@ -343,10 +364,13 @@ internal sealed partial class AllAppsPanel
             "favapp" => true,
             "groupgrid" => _groupApps.All(a => a.Key != item.Key) || tag.Key != _groupGridId, // 이미 이 폴더면 놓을 곳 아님
             "newfolder" => !item.IsGroup,
-            "group" => true,
+            "group" => !InFolder(tag.Key, item.Key), // 이미 그 폴더에 든 앱이면 놓을 곳 아님 (놓아도 아무 일 없음 — 강조하지 않음)
             "app" => tag.Key != item.Key,
             _ => false,
         } is var ok && ok;
+
+    private bool InFolder(string folderId, string appKey) =>
+        _folders.FirstOrDefault(f => f.Id == folderId)?.Apps.Any(a => a.Key.Equals(appKey, StringComparison.OrdinalIgnoreCase)) == true;
 
     private Border? FindCell(DropTag tag)
     {
@@ -366,22 +390,31 @@ internal sealed partial class AllAppsPanel
     {
         var d = _drag;
         if (d is null || d.Highlight == cell) return;
-        if (d.Highlight is { } old)
-        {
-            Animate(old, 1);
-            old.BorderBrush = Brushes.Transparent;
-        }
+        if (d.Highlight is not null) RestoreHighlight(d);
         d.Highlight = cell;
         if (cell is not null)
         {
-            // 폴더 칸 위: 1.08배 + 진한 테두리 ("놓으면 들어감" — 2026-10-13 사용자), 앱 칸 위: 1.05배 + 연한 테두리
-            bool folder = cell.Tag is DropTag { Kind: "group" };
-            Animate(cell, folder ? 1.08 : 1.05);
-            if (cell.BorderThickness.Left < 1) cell.BorderThickness = new Thickness(1.5);
-            cell.BorderBrush = folder ? P.Accent : P.SoftAccentLine;
+            // 강조는 한 가지만 (2026-10-13 사용자: 두 겹 테두리가 어색함): 폴더 칸 = 폴더 그림만 1.08배 + 연보라 테두리, 앱 칸 = 아이콘만 1.08배 (새 폴더).
+            // 이름까지 감싸는 바깥 사각형은 없음. 그 밖(새 폴더 칸)은 칸 1.05배 + 연한 테두리
+            var part = DragIconOf(cell);
+            d.HighlightPart = part;
+            if (part is Border { Uid: { } uid } tile && uid.StartsWith("tile:", StringComparison.Ordinal))
+            {
+                d.HighlightOldBorder = tile.BorderBrush;
+                tile.BorderBrush = P.SoftAccentLine;
+                Animate(tile, 1.08);
+            }
+            else if (part is Image) Animate(part, 1.08);
+            else
+            {
+                d.HighlightOldBorder = cell.BorderBrush;
+                Animate(cell, 1.05);
+                if (cell.BorderThickness.Left < 1) cell.BorderThickness = new Thickness(1.5);
+                cell.BorderBrush = P.SoftAccentLine;
+            }
         }
 
-        static void Animate(Border b, double to)
+        static void Animate(FrameworkElement b, double to)
         {
             if (b.RenderTransform is not ScaleTransform st)
             {
@@ -475,12 +508,27 @@ internal sealed partial class AllAppsPanel
 
     private void SetHighlightOff(DragState d)
     {
-        if (d.Highlight is { } h)
-        {
-            if (h.RenderTransform is ScaleTransform st) { st.BeginAnimation(ScaleTransform.ScaleXProperty, null); st.BeginAnimation(ScaleTransform.ScaleYProperty, null); st.ScaleX = st.ScaleY = 1; }
-            h.BorderBrush = Brushes.Transparent;
-        }
+        if (d.Highlight is not null) RestoreHighlight(d, animate: false);
         d.Highlight = null;
+    }
+
+    /// <summary>강조했던 부분을 원래 크기·테두리로.</summary>
+    private void RestoreHighlight(DragState d, bool animate = true)
+    {
+        var part = d.HighlightPart ?? d.Highlight;
+        if (part?.RenderTransform is ScaleTransform st)
+        {
+            if (animate)
+            {
+                var a = new DoubleAnimation(1, TimeSpan.FromMilliseconds(ShiftMs)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
+                st.BeginAnimation(ScaleTransform.ScaleXProperty, a);
+                st.BeginAnimation(ScaleTransform.ScaleYProperty, a);
+            }
+            else { st.BeginAnimation(ScaleTransform.ScaleXProperty, null); st.BeginAnimation(ScaleTransform.ScaleYProperty, null); st.ScaleX = st.ScaleY = 1; }
+        }
+        if (part is Border b) b.BorderBrush = d.HighlightOldBorder ?? Brushes.Transparent;
+        d.HighlightPart = null;
+        d.HighlightOldBorder = null;
     }
 
     private void ResetFavShift()
@@ -551,7 +599,7 @@ internal sealed partial class AllAppsPanel
         SetHighlightOff(d);
         Log.Info($"앱 모음 판: 끌기 끝 — {(apply is null ? (drop ? "놓을 곳 없음, 원래 자리로" : "취소, 원래 자리로") : $"{target!.Kind} 에 놓음{(target.Kind is "fav" or "favapp" ? $" (자리 {d.FavIndex})" : "")}")}");
         var dpi = VisualTreeHelper.GetDpi(this);
-        var destPx = PointToScreen(to.TopLeft);
+        var destPx = PointToScreen(to.TopLeft + d.IconOffset); // 아이콘만 끄므로 칸 안의 아이콘 자리로
         SlideGhost(d.Ghost, new Point(destPx.X - 12 * dpi.DpiScaleX, destPx.Y - 12 * dpi.DpiScaleY), () =>
         {
             d.Source.Opacity = 1;

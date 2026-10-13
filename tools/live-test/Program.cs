@@ -68,6 +68,13 @@ internal static class Program
         void Close(Window w) => w.GetType().GetMethod("CloseAnimated", Any)!.Invoke(w, null);
 
         panelType.GetProperty("FollowRealCursor", Any)!.SetValue(null, false); // 끌기는 스크립트 좌표로 — 진짜 커서는 안 움직임
+        if (Array.IndexOf(args, "--dragpic") >= 0)
+        {
+            panelType.GetProperty("EdgeScrollEnabled", Any)!.SetValue(null, false);
+            DragPicture(panelType, Open, Close, outDir);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            return _fail == 0 ? 0 : 1;
+        }
         if (Array.IndexOf(args, "--dragfollow") >= 0)
         {
             panelType.GetProperty("EdgeScrollEnabled", Any)!.SetValue(null, false);
@@ -249,6 +256,67 @@ internal static class Program
             panelType.GetMethod("EndDrag", Any)!.Invoke(w, new object[] { false });
             Pump(500);
         }
+        close(w);
+        Pump(400);
+    }
+
+    /// <summary>
+    /// 끌기 모양 그림 (2026-10-13 사용자: 카드+이름 덩어리·두 겹 강조가 어색함): 펼친 폴더 안 앱을 끌어
+    /// ① 다른 폴더 칸 위(폴더 그림만 1.08배 + 연보라 테두리) ② 자기 폴더 칸 위(강조 없음)에 둔 화면을 찍음.
+    /// </summary>
+    private static void DragPicture(Type panelType, Func<Window> open, Action<Window> close, string outDir)
+    {
+        var w = open();
+        var folders = (System.Collections.IList)panelType.GetField("_folders", Any)!.GetValue(w)!;
+        if (folders.Count < 2) { Check("끌기 그림: 폴더가 둘 이상 필요", false); close(w); return; }
+        string Id(int i) => (string)folders[i]!.GetType().GetProperty("Id")!.GetValue(folders[i])!;
+        panelType.GetField("_expanded", Any)!.SetValue(w, Id(0));
+        w.Show();
+        Pump(1200);
+        panelType.GetMethod("Rebuild", Any)!.Invoke(w, null);
+        Pump(500);
+        var dropTag = panelType.GetNestedType("DropTag", BindingFlags.NonPublic)!;
+        var dragItem = panelType.GetNestedType("DragItem", BindingFlags.NonPublic)!;
+        var groupCells = ((System.Collections.IEnumerable)panelType.GetField("_groupCells", Any)!.GetValue(w)!).Cast<System.Windows.Controls.Border>().ToList();
+        FrameworkElement? Tile(string id) => Descendants((DependencyObject)w.Content).OfType<FrameworkElement>().FirstOrDefault(e => e.Uid == "tile:" + id);
+        if (groupCells.Count == 0 || Tile(Id(0)) is null || Tile(Id(1)) is null) { Check("끌기 그림: 펼친 폴더 칸·폴더 그림을 찾지 못함", false); close(w); return; }
+        // 폴더 줄이 위쪽에 오게
+        if (panelType.GetField("_bodyScroll", Any)!.GetValue(w) is System.Windows.Controls.ScrollViewer sv)
+        {
+            sv.ScrollToVerticalOffset(sv.VerticalOffset + Tile(Id(0))!.TranslatePoint(new Point(0, 0), sv).Y - 40);
+            Pump(400);
+        }
+        var cell = groupCells[0];
+        string key = (string)dropTag.GetProperty("Key")!.GetValue(cell.Tag)!;
+        var grab = new Point(cell.ActualWidth * 0.5, cell.ActualHeight * 0.35);
+        panelType.GetMethod("BeginDrag", Any)!.Invoke(w, new object?[] { cell, Activator.CreateInstance(dragItem, false, key, false), null, grab });
+        var dpiScale = Monitors.GetPrimary().Scale;
+        foreach (var (name, id) in new[] { ("other-folder", Id(1)), ("own-folder", Id(0)) })
+        {
+            var tile = Tile(id)!;
+            var over = tile.TranslatePoint(new Point(tile.ActualWidth * 0.55, tile.ActualHeight * 0.45), w);
+            panelType.GetMethod("UpdateDrag", Any)!.Invoke(w, new object[] { over });
+            Pump(400);
+            var drag = panelType.GetField("_drag", Any)!.GetValue(w)!;
+            var target = drag.GetType().GetField("Target")!.GetValue(drag);
+            double scale = tile.RenderTransform is ScaleTransform st ? st.ScaleX : 1;
+            if (name == "other-folder")
+                Check($"끌기 그림: 다른 폴더 칸 위 → 폴더 그림만 1.08배 ({scale:0.00})", Math.Abs(scale - 1.08) < 0.01);
+            else
+                Check($"끌기 그림: 자기 폴더 칸 위 → 강조 없음 (배율 {scale:0.00}, 놓을 곳 {(target is null ? "없음" : "있음")})", Math.Abs(scale - 1) < 0.01 && target is null);
+            // 폴더 줄 둘레를 찍음 (판 창 안만)
+            var topLeft = w.PointToScreen(new Point(0, 0));
+            var origin = tile.TranslatePoint(new Point(0, 0), w);
+            var rect = new Rect(topLeft.X / dpiScale + Math.Max(0, origin.X - 260), topLeft.Y / dpiScale + Math.Max(0, origin.Y - 60), 640, 300);
+            var px = Grab(rect);
+            int pw = (int)(rect.Width * dpiScale), ph = (int)(rect.Height * dpiScale);
+            var bmp = BitmapSource.Create(pw, ph, 96, 96, PixelFormats.Bgra32, null, px, pw * 4);
+            var enc = new PngBitmapEncoder();
+            enc.Frames.Add(BitmapFrame.Create(bmp));
+            using (var fs = File.Create(Path.Combine(outDir, $"drag-{name}.png"))) enc.Save(fs);
+        }
+        panelType.GetMethod("EndDrag", Any)!.Invoke(w, new object[] { false });
+        Pump(500);
         close(w);
         Pump(400);
     }
