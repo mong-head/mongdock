@@ -362,16 +362,13 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         var byIdentity = new Dictionary<string, AppEntry>();
         foreach (var a in visible) byIdentity.TryAdd(AllAppsCatalog.Identity(a), a);
         var docked = settings.Pins.Select(AllAppsCatalog.Identity).OfType<string>().ToHashSet();
-        var list = new List<AppEntry>();
-        foreach (var id in SuggestionsOverride?.Invoke() ?? AppUsage.Suggestions(max * 4))
-        {
-            if (list.Count >= max) break;
-            if (!byIdentity.TryGetValue(id, out var app) || docked.Contains(id)) continue;
-            if (S.Favorites.Contains(app.Key, StringComparer.OrdinalIgnoreCase)) continue;
-            if (S.DismissedSuggestions.TryGetValue(app.Key, out var when) && DateTime.Now - when < TimeSpan.FromDays(30)) continue;
-            list.Add(app);
-        }
-        return list;
+        // 빼는 규칙: 앱 모음에 없음(숨김 포함 — visible 은 숨긴 앱 제외)·독 고정·이미 즐겨찾기·× 뒤 30일 — 빼고 나서 1순위→2순위로 칸을 채움
+        bool Keep(string id) =>
+            byIdentity.TryGetValue(id, out var app) && !docked.Contains(id)
+            && !S.Favorites.Contains(app.Key, StringComparer.OrdinalIgnoreCase)
+            && !(S.DismissedSuggestions.TryGetValue(app.Key, out var when) && DateTime.Now - when < TimeSpan.FromDays(30));
+        var ids = SuggestionsOverride?.Invoke().Where(Keep).Take(max).ToList() ?? AppUsage.Suggestions(max, Keep);
+        return ids.Select(id => byIdentity[id]).ToList();
     }
 
     /// <summary>즐겨찾기 0개 + 추천 후보도 없음: 끌어다 놓으라는 안내 (점선 자리).</summary>

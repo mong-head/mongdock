@@ -863,6 +863,27 @@ internal static class Program
         }
         Console.WriteLine(fail == 0 ? "루틴 추천 판정: 모두 통과" : $"루틴 추천 판정: {fail}개 실패");
         Console.WriteLine("  (묻는 단계에서 거름: 설치 3일 안, 지난 추천 7일 안, 전체 화면·방해 금지, 일시 정지, 루틴 추천 끔·자주 쓰는 앱 기록 끔, 3번 연속 거절이면 끔)");
+        // 즐겨찾기 추천 순서 (2026-10-13 사용자 확정): 1순위 몽독 기록 → 남은 칸만 2순위 윈도우 씨앗(90일·2회 이상), 섞어 더하지 않음, 빼기 먼저
+        {
+            var pick = asm.GetType("Mongdock.Services.AppUsage")!.GetMethod("Pick", any)!;
+            var today = new DateTime(2026, 10, 13);
+            string D(int daysAgo) => today.AddDays(-daysAgo).ToString("yyyy-MM-dd");
+            (List<string> R, int W) Run(List<string> mongdock, List<(string, int, string)> seeds, Func<string, bool>? keep = null)
+            {
+                var r = pick.Invoke(null, new object[] { mongdock, seeds, 4, keep ?? (_ => true), today })!;
+                return ((List<string>)r.GetType().GetField("Item1")!.GetValue(r)!, (int)r.GetType().GetField("Item2")!.GetValue(r)!);
+            }
+            void CaseFav(string name, (List<string> R, int W) got, string[] expect, int expectWin)
+            {
+                bool ok = got.R.SequenceEqual(expect) && got.W == expectWin;
+                if (!ok) fail++;
+                Console.WriteLine($"  {(ok ? "통과" : "실패")}  즐겨찾기 추천 {name,-22} → {string.Join(",", got.R)} (씨앗 {got.W}칸)");
+            }
+            var seeds = new List<(string, int, string)> { ("w1", 9, D(3)), ("w2", 5, D(1)), ("w3", 5, D(10)), ("w4", 2, D(80)), ("w5", 1, D(0)), ("w6", 7, D(120)) };
+            CaseFav("첫날: 씨앗만 4칸", Run(new(), seeds), new[] { "w1", "w2", "w3", "w4" }, 4); // 1회(w5)·90일 넘은(w6) 빼고, 같은 횟수는 최근 순
+            CaseFav("몽독 2 + 씨앗 2", Run(new() { "m1", "w1", "m2" }, seeds, id => id != "w1"), new[] { "m1", "m2", "w2", "w3" }, 2); // w1 은 독 고정 → 씨앗으로도 안 들어옴
+            CaseFav("몽독 기록만 4칸", Run(new() { "m1", "m2", "m3", "m4", "m5" }, seeds), new[] { "m1", "m2", "m3", "m4" }, 0);
+        }
         // 루틴 링크 해석·허용 (리뷰 H1·H2·M2)
         var links = asm.GetType("Mongdock.Services.RoutineLinks")!;
         var parse = links.GetMethod("Parse")!;

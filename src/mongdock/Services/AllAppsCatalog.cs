@@ -480,10 +480,10 @@ internal static class AppUsage
     /// 같은 날 두 기록에 다 있으면 많은 쪽만 (같은 실행을 두 번 세지 않게). 기록이 적은 처음 며칠은 윈도우 기록(UserAssist — 실행 3회 이상,
     /// 2회 이상, 최근 90일 안 마지막 실행)으로 채움 (2026-10-13 — 사용자 PC 에서 추천이 하나도 안 떴음).
     /// </summary>
-    public static List<string> Suggestions(int max) => SuggestionStages(max).Result;
+    public static List<string> Suggestions(int max, Func<string, bool>? keep = null) => SuggestionStages(max, keep).Result;
 
-    /// <summary>추천을 단계별로 (진단·시험용): 판·독 기록 후보 수, 새 창 기록을 더한 후보 수, 윈도우 기록으로 채운 수, 결과.</summary>
-    internal static (List<string> PanelOnly, int WithLaunches, int FromWindows, List<string> Result) SuggestionStages(int max)
+    /// <summary>추천을 단계별로 (진단·시험용): 판·독 기록 후보, 새 창 기록까지 더한 후보 수, 윈도우 기록으로 채운 수, 결과.</summary>
+    internal static (List<string> PanelOnly, int WithLaunches, int FromWindows, List<string> Result) SuggestionStages(int max, Func<string, bool>? keep = null)
     {
         var since = DateTime.Now.Date.AddDays(-14);
         var perDay = new Dictionary<string, Dictionary<DateTime, (int Panel, int Launch)>>();
@@ -493,6 +493,7 @@ internal static class AppUsage
             var c = days.GetValueOrDefault(day);
             days[day] = panel ? (c.Panel + 1, c.Launch) : (c.Panel, c.Launch + 1);
         }
+        List<(string Id, int Runs, string Last)> seeds;
         lock (Gate)
         {
             var data = Data();
@@ -501,34 +502,40 @@ internal static class AppUsage
                 foreach (var d in list)
                     if (DateTime.TryParseExact(d, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var day) && day >= since)
                         Add(id, day, panel: true);
+            var last = Last();
+            seeds = Seed().Select(kv => (kv.Key, kv.Value, last.GetValueOrDefault(kv.Key) ?? "")).ToList();
         }
         var panelOnly = Rank(perDay, p => p.Panel);
         foreach (var (id, day) in RoutineSuggest.RecentLaunchDays(14)) Add(id, day, panel: false);
-        var ranked = Rank(perDay, p => Math.Max(p.Panel, p.Launch));
-        int withLaunches = ranked.Count;
-        var result = ranked.Take(max).ToList();
+        var mongdock = Rank(perDay, p => Math.Max(p.Panel, p.Launch)); // 판·독·새 창 기록 (같은 날 같은 실행은 한 번)
+        var (result, fromWindows) = Pick(mongdock, seeds, max, keep ?? (_ => true), DateTime.Now);
+        return (panelOnly, mongdock.Count, fromWindows, result);
+    }
+
+    /// <summary>
+    /// 즐겨찾기 추천 고르기 (순수 — report-test --suggest 판정표, 2026-10-13 사용자 확정):
+    /// 1순위 몽독 기록(이미 순서대로 — 14일 이틀·3회 이상, 횟수 순·같으면 최근 순)에서 keep 을 통과한 것으로 칸을 채우고,
+    /// 칸이 남으면 그 칸만 2순위 윈도우 씨앗(90일 안·2회 이상, 횟수 순·같으면 최근 순)으로. 두 기록을 섞어 더하지 않고,
+    /// 같은 앱은 1순위 쪽으로 한 번만. keep = 즐겨찾기·독 고정·숨김·× 30일 빼기 (판에서 줌 — 빼고 나서 채워야 칸이 비지 않음).
+    /// </summary>
+    internal static (List<string> Result, int FromWindows) Pick(List<string> mongdock, List<(string Id, int Runs, string Last)> seeds, int max, Func<string, bool> keep, DateTime now)
+    {
+        var result = mongdock.Where(keep).Distinct().Take(max).ToList();
         int fromWindows = 0;
         if (result.Count < max)
         {
-            // 처음 며칠: 윈도우가 적어 둔 실행 횟수(씨앗)와 마지막 실행일 — 90일 안·2회 이상, 많이 연 순(같으면 최근 순).
-            // 1회 앱은 넣지 않음 (한 번 써 본 앱까지 추천하면 엉뚱함 — 2026-10-13 PM 결정)
-            string cutoff = DateTime.Now.AddDays(-90).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
-            lock (Gate)
+            string cutoff = now.AddDays(-90).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            var taken = new HashSet<string>(mongdock); // 1순위에 있던 앱(빠졌어도)은 씨앗으로 다시 넣지 않음
+            foreach (var s in seeds.Where(x => x.Runs >= 2 && string.CompareOrdinal(x.Last, cutoff) >= 0) // 1회 앱은 안 넣음
+                         .OrderByDescending(x => x.Runs).ThenByDescending(x => x.Last, StringComparer.Ordinal))
             {
-                var last = Last();
-                var seeds = Seed()
-                    .Where(kv => kv.Value >= 2 && !result.Contains(kv.Key) && last.TryGetValue(kv.Key, out var day) && string.CompareOrdinal(day, cutoff) >= 0)
-                    .OrderByDescending(kv => kv.Value).ThenByDescending(kv => last[kv.Key], StringComparer.Ordinal)
-                    .Select(kv => kv.Key).ToList();
-                foreach (var id in seeds)
-                {
-                    if (result.Count >= max) break;
-                    result.Add(id);
-                    fromWindows++;
-                }
+                if (result.Count >= max) break;
+                if (taken.Contains(s.Id) || result.Contains(s.Id) || !keep(s.Id)) continue;
+                result.Add(s.Id);
+                fromWindows++;
             }
         }
-        return (panelOnly, withLaunches, fromWindows, result);
+        return (result, fromWindows);
     }
 
     private static List<string> Rank(Dictionary<string, Dictionary<DateTime, (int Panel, int Launch)>> perDay, Func<(int Panel, int Launch), int> count) =>
