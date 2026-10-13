@@ -26,7 +26,7 @@ internal static class RoutineTriggers
     private static readonly HashSet<string> _audio = new(StringComparer.OrdinalIgnoreCase);
     private static readonly HashSet<IntPtr> _knownWindows = new();
     private static readonly HashSet<Guid> _declinedDesktops = new();
-    private static readonly List<(string Key, RoutineDef Routine, int Index, DateTime Since)> _pending = new();
+    private static readonly List<(string Key, RoutineDef Routine, int Index, DateTime Since, string What)> _pending = new();
     private static readonly HashSet<string> _askedEnd = new();
     private static bool _locked;
     private static DispatcherTimer? _similarTimer;
@@ -70,7 +70,7 @@ internal static class RoutineTriggers
             login.Stop();
             // 부팅·로그인 직후 시작한 몽독일 때만 "켜면" (낮에 업데이트로 다시 켜진 몽독이 묻지 않게)
             if (Environment.TickCount64 < TimeSpan.FromMinutes(10).TotalMilliseconds)
-                foreach (var (r, i, s) in Starts(RoutineStartKind.Login)) Fire(r, i, s);
+                FireAll(Starts(RoutineStartKind.Login));
             CheckMissedTimes();
         };
         login.Start();
@@ -111,9 +111,8 @@ internal static class RoutineTriggers
         _monitors.Clear();
         foreach (var m in now) _monitors.Add(m.DeviceName);
         if (added.Count == 0) return;
-        foreach (var (r, i, s) in Starts(RoutineStartKind.Monitor))
-            if (s.Device is null ? added.Any(m => !m.IsPrimary) : added.Any(m => m.DeviceName.Equals(s.Device, StringComparison.OrdinalIgnoreCase)))
-                Fire(r, i, s);
+        FireAll(Starts(RoutineStartKind.Monitor)
+            .Where(x => x.S.Device is null ? added.Any(m => !m.IsPrimary) : added.Any(m => m.DeviceName.Equals(x.S.Device, StringComparison.OrdinalIgnoreCase))).ToList());
     }
 
     private static void OnAudio()
@@ -125,8 +124,9 @@ internal static class RoutineTriggers
         var removed = _audio.Where(id => !now.Contains(id)).ToList();
         _audio.Clear();
         foreach (var id in now) _audio.Add(id);
-        foreach (var (r, i, st) in Starts(RoutineStartKind.Audio))
-            if (st.Device is not null && added.Contains(st.Device, StringComparer.OrdinalIgnoreCase)) Fire(r, i, st);
+        // 장치마다 한 사건 (같은 헤드셋에 걸린 루틴이 여럿이면 배너 하나로 — §14-1)
+        foreach (var dev in added)
+            FireAll(Starts(RoutineStartKind.Audio).Where(x => string.Equals(x.S.Device, dev, StringComparison.OrdinalIgnoreCase)).ToList());
         // 끝 조건: 오디오 장치를 빼면
         foreach (var r in Routines.Where(r => r.More?.End.AudioRemoved is { } dev && removed.Contains(dev, StringComparer.OrdinalIgnoreCase) && RoutineService.IsRunning(r.Id)))
             if (_askedEnd.Add($"{r.Id}|audio|{Today}")) AskEnd(r, Loc.F($"{r.More!.End.AudioName ?? Loc.T("오디오 장치")} 연결이 끊겼어요."));
@@ -141,10 +141,13 @@ internal static class RoutineTriggers
         _knownWindows.Clear();
         foreach (var w in windows) _knownWindows.Add(w.Hwnd);
         if (fresh.Count > 0)
-            foreach (var (r, i, st) in Starts(RoutineStartKind.App))
-                if (st.App is { Length: > 0 } app && fresh.Any(w => AppKeyMatches(app, w))
+        {
+            var hits = Starts(RoutineStartKind.App)
+                .Where(x => x.S.App is { Length: > 0 } app && fresh.Any(w => AppKeyMatches(app, w))
                     && windows.Count(w => AppKeyMatches(app, w)) == fresh.Count(w => AppKeyMatches(app, w))) // 그 앱이 막 켜짐 (원래 떠 있던 앱의 새 창은 아님)
-                    Fire(r, i, st);
+                .ToList();
+            foreach (var g in hits.GroupBy(x => x.S.App!, StringComparer.OrdinalIgnoreCase)) FireAll(g.ToList()); // 앱마다 한 사건
+        }
         // 비슷하게 열면 물어보기: 창이 잠잠해진 2초 뒤에 한 번
         if (Routines.Any(r => r.More?.AskSimilar == true))
         {
@@ -164,8 +167,7 @@ internal static class RoutineTriggers
     {
         var now = DateTime.Now;
         string hm = now.ToString("HH:mm", CultureInfo.InvariantCulture);
-        foreach (var (r, i, s) in Starts(RoutineStartKind.Time))
-            if (s.Time == hm && DayOk(s, now)) Fire(r, i, s);
+        FireAll(Starts(RoutineStartKind.Time).Where(x => x.S.Time == hm && DayOk(x.S, now)).ToList());
         // 끝 조건: 시간
         foreach (var r in Routines.Where(r => r.More?.End.Time == hm && RoutineService.IsRunning(r.Id)))
             if (_askedEnd.Add($"{r.Id}|time|{Today}")) AskEnd(r, Loc.F($"{hm} 이 됐어요."));
@@ -175,7 +177,7 @@ internal static class RoutineTriggers
     /// <summary>잠금 해제·절전에서 깨어남: 그날 처음이면 "켜면"(같은 날 한 번 규칙), 놓친 시각(30분 안)도.</summary>
     private static void OnWake()
     {
-        foreach (var (r, i, s) in Starts(RoutineStartKind.Login)) Fire(r, i, s);
+        FireAll(Starts(RoutineStartKind.Login));
         CheckMissedTimes();
     }
 
@@ -185,49 +187,104 @@ internal static class RoutineTriggers
     private static void CheckMissedTimes()
     {
         var now = DateTime.Now;
-        foreach (var (r, i, s) in Starts(RoutineStartKind.Time))
-        {
-            if (!DayOk(s, now) || !TimeSpan.TryParse(s.Time, CultureInfo.InvariantCulture, out var t)) continue;
-            var at = now.Date + t;
-            if (now >= at && now - at <= TimeSpan.FromMinutes(30)) Fire(r, i, s);
-        }
+        var hits = Starts(RoutineStartKind.Time).Where(x =>
+            DayOk(x.S, now) && TimeSpan.TryParse(x.S.Time, CultureInfo.InvariantCulture, out var t) && now >= now.Date + t && now - (now.Date + t) <= TimeSpan.FromMinutes(30));
+        foreach (var g in hits.GroupBy(x => x.S.Time)) FireAll(g.ToList()); // 같은 시각끼리 한 사건
     }
 
-    /// <summary>조건이 맞음 → (같은 날 한 번만) 묻기 배너 또는 바로 열기. 전체 화면·방해 금지 중이면 미뤄 둠(30분).</summary>
-    private static void Fire(RoutineDef routine, int index, RoutineStart start)
+    private static string AskKey(RoutineDef r, int index, RoutineStart s) => $"{r.Id}|{index}|{s.Kind}";
+
+    /// <summary>
+    /// 한 사건(헤드셋 연결·켜기·같은 시각·같은 앱…)에 맞은 시작 조건들 → (같은 날 한 번만) 묻기 배너 또는 바로 열기.
+    /// 루틴이 하나면 그 루틴만 묻고, 여럿이면 배너 하나로 묶어 "어떤 루틴을 열까요?" (§14-1).
+    /// 바로 열기 루틴이 하나면 그것만 열고, 둘 이상이면 묶어서 물음 (데스크톱이 한꺼번에 여럿 생기지 않게).
+    /// 실행 중·오늘 이미 물은 루틴은 뺌. 전체 화면·방해 금지 중이면 미뤄 둠(30분).
+    /// </summary>
+    private static void FireAll(IEnumerable<(RoutineDef R, int I, RoutineStart S)> found, string? what = null)
     {
+        var hits = found.ToList();
         var s = _s;
-        if (s is null || Paused || RoutineService.IsRunning(routine.Id) || RoutineService.IsOpening(routine.Id)) return;
-        string key = $"{routine.Id}|{index}|{start.Kind}";
-        if (s.Settings.Current.RoutineAsked.TryGetValue(key, out var day) && day == Today) return;
+        if (s is null || Paused || hits.Count == 0) return;
+        var asked = s.Settings.Current.RoutineAsked;
+        var list = hits
+            .Where(h => !RoutineService.IsRunning(h.R.Id) && !RoutineService.IsOpening(h.R.Id))
+            .Where(h => !(asked.TryGetValue(AskKey(h.R, h.I, h.S), out var day) && day == Today))
+            .GroupBy(h => h.R.Id).Select(g => g.First()) // 한 루틴에 맞는 조건이 둘이어도 한 번
+            .ToList();
+        if (list.Count == 0) return;
+        what ??= EventTitle(list[0].S);
         if (Busy())
         {
-            if (_pending.All(p => p.Key != key)) _pending.Add((key, routine, index, DateTime.Now));
+            foreach (var h in list)
+                if (_pending.All(p => p.Key != AskKey(h.R, h.I, h.S))) _pending.Add((AskKey(h.R, h.I, h.S), h.R, h.I, DateTime.Now, what));
             Log.Info("루틴 시작 조건: 전체 화면·방해 금지라 나중에 물음");
             return;
         }
         void MarkAsked()
         {
-            s.Settings.Current.RoutineAsked[key] = Today;
-            foreach (var k in s.Settings.Current.RoutineAsked.Where(kv => kv.Value != Today).Select(kv => kv.Key).ToList()) s.Settings.Current.RoutineAsked.Remove(k);
+            foreach (var h in list) asked[AskKey(h.R, h.I, h.S)] = Today;
+            foreach (var k in asked.Where(kv => kv.Value != Today).Select(kv => kv.Key).ToList()) asked.Remove(k);
             s.Settings.Save();
         }
-        Log.Info($"루틴 시작 조건 맞음: {start.Kind}");
-        if (routine.More!.AutoOpen && start.Kind != RoutineStartKind.Time)
+        void Later()
         {
-            MarkAsked();
-            RoutineUi.Run(s, routine);
+            foreach (var h in list)
+                if (_pending.All(p => p.Key != AskKey(h.R, h.I, h.S))) _pending.Add((AskKey(h.R, h.I, h.S), h.R, h.I, DateTime.Now, what!)); // 못 띄웠으면 나중에 (30분 안)
+        }
+        Log.Info($"루틴 시작 조건 맞음: {list[0].S.Kind}, 루틴 {list.Count}개");
+        var auto = list.Where(h => h.R.More!.AutoOpen && h.S.Kind != RoutineStartKind.Time).ToList();
+        if (auto.Count == 1)
+        {
+            MarkAsked(); // 나머지는 묻지 않음
+            RoutineUi.Run(s, auto[0].R);
             return;
         }
-        var buttons = new List<NotificationBannerWindow.BannerButton>
+        if (list.Count == 1)
         {
-            new(Loc.T("열기"), () => RoutineUi.Run(s, routine), Primary: true),
-            new(Loc.T("오늘은 안 함"), () => { }),
-            new(Loc.T("다시 묻지 않기"), () => StopAsking(routine, start), Small: true),
-        };
-        if (Ask(routine, Loc.F($"{routine.Name} 루틴을 열까요?"), Describe(start), buttons)) MarkAsked();
-        else if (_pending.All(p => p.Key != key)) _pending.Add((key, routine, index, DateTime.Now)); // 못 띄웠으면 나중에 (30분 안)
+            var (routine, _, start) = list[0];
+            var one = new List<NotificationBannerWindow.BannerButton>
+            {
+                new(Loc.T("열기"), () => RoutineUi.Run(s, routine), Primary: true),
+                new(Loc.T("오늘은 안 함"), () => { }),
+                new(Loc.T("다시 묻지 않기"), () => StopAsking(routine, start), Small: true),
+            };
+            if (Ask(routine, Loc.F($"{routine.Name} 루틴을 열까요?"), Describe(start), one)) MarkAsked();
+            else Later();
+            return;
+        }
+        // 묶음: 최근 연 순, 버튼 최대 3개 (넘으면 2개 + [더 보기 ▾])
+        var ordered = list.OrderByDescending(h => h.R.LastRunAt ?? DateTime.MinValue).ToList();
+        var shown = ordered.Count <= 3 ? ordered : ordered.Take(2).ToList();
+        var buttons = shown.Select((h, n) => new NotificationBannerWindow.BannerButton(h.R.Name, () => RoutineUi.Run(s, h.R), Primary: n == 0)).ToList();
+        if (ordered.Count > 3)
+        {
+            var rest = ordered.Skip(2).ToList();
+            buttons.Add(new(Loc.T("더 보기 ▾"), () => Menu(rest.Select(h => DockMenus.Item(h.R.Name, () => RoutineUi.Run(s, h.R))))));
+        }
+        buttons.Add(new(Loc.T("안 열기"), () => { })); // 그 사건으로 묻는 것을 오늘 하루 멈춤 (묶인 루틴 모두 — 이미 물은 것으로 표시됨)
+        buttons.Add(new(Loc.T("다시 묻지 않기 ▸"), () => Menu(ordered.Select(h => DockMenus.Item(Loc.F($"{h.R.Name} — 이 조건으로 묻지 않기"), () => StopAsking(h.R, h.S)))), Small: true));
+        if (Ask(ordered[0].R, what, Loc.T("어떤 루틴을 열까요?"), buttons)) MarkAsked();
+        else Later();
     }
+
+    /// <summary>배너 버튼에서 여는 작은 메뉴 (마우스 자리).</summary>
+    private static void Menu(IEnumerable<System.Windows.Controls.MenuItem> items)
+    {
+        var menu = new System.Windows.Controls.ContextMenu();
+        foreach (var i in items) menu.Items.Add(i);
+        menu.IsOpen = true;
+    }
+
+    /// <summary>묶음 배너 제목 = 일어난 일 (§14-1).</summary>
+    private static string EventTitle(RoutineStart s) => s.Kind switch
+    {
+        RoutineStartKind.Login => Loc.T("컴퓨터를 켰어요"),
+        RoutineStartKind.Monitor => s.Device is null ? Loc.T("외부 모니터가 연결됐어요") : Loc.F($"{s.Name ?? s.Device} 연결됐어요"),
+        RoutineStartKind.Audio => Loc.F($"{s.Name ?? Loc.T("오디오 장치")} 연결됐어요"),
+        RoutineStartKind.Time => Loc.F($"{s.Time} 이 됐어요."),
+        RoutineStartKind.App => Loc.F($"{s.Name ?? s.App} 켜졌어요"),
+        _ => Loc.T("루틴"),
+    };
 
     /// <summary>방해 금지·전체 화면 중 (루틴 추천도 안 물음).</summary>
     internal static bool IsBusy() => Busy();
@@ -245,9 +302,15 @@ internal static class RoutineTriggers
         if (Busy()) return;
         var list = _pending.ToList();
         _pending.Clear();
-        foreach (var p in list)
-            if (Routines.FirstOrDefault(r => r.Id == p.Routine.Id) is { More: { } m } r2 && p.Index < m.Start.Count && p.Key == $"{r2.Id}|{p.Index}|{m.Start[p.Index].Kind}")
-                Fire(r2, p.Index, m.Start[p.Index]); // 편집으로 지워졌거나 순서가 바뀐 조건은 버림
+        // 같은 사건으로 미뤄 둔 것끼리 다시 한 배너로 (편집으로 지워졌거나 순서가 바뀐 조건은 버림)
+        foreach (var g in list.GroupBy(p => p.What))
+        {
+            var hits = new List<(RoutineDef R, int I, RoutineStart S)>();
+            foreach (var p in g)
+                if (Routines.FirstOrDefault(r => r.Id == p.Routine.Id) is { More: { } m } r2 && p.Index < m.Start.Count && p.Key == AskKey(r2, p.Index, m.Start[p.Index]))
+                    hits.Add((r2, p.Index, m.Start[p.Index]));
+            FireAll(hits, g.Key);
+        }
     }
 
     /// <summary>배너 "다시 묻지 않기": 그 시작 조건을 끔.</summary>
@@ -308,6 +371,7 @@ internal static class RoutineTriggers
     private static void OnStarted(RoutineDef routine)
     {
         var s = _s;
+        if (s is not null) { routine.LastRunAt = DateTime.Now; s.Settings.Save(); } // 묶음 배너 순서 (§14-1)
         if (s is null || routine.More?.Change is not { } c) { UpdateFocus(); return; }
         if (c.OutputDevice is null && c.Volume is null) { UpdateFocus(); return; }
         var restores = s.Settings.Current.RoutineRestores;

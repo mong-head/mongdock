@@ -138,6 +138,9 @@ public sealed class RoutineDef
     /// <summary>"▸ 더 보기" (spec-routines §14) — 없으면 전부 꺼짐.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public RoutineMore? More { get; set; }
+    /// <summary>마지막으로 연 시각 — 같은 사건에 루틴이 여럿일 때 묶음 배너 순서 (§14-1, 최근 연 것 먼저).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? LastRunAt { get; set; }
 }
 
 [JsonConverter(typeof(CamelEnumConverter<RoutineStartKind>))]
