@@ -124,11 +124,13 @@ internal sealed partial class AllAppsPanel
     }
 
     private System.Windows.Threading.DispatcherTimer? _edgeScroll;
+    /// <summary>시험(스크립트 끌기)에서는 끔 — 진짜 커서 자리를 보므로 사용자 커서가 판 끝에 있으면 시험 중 판이 스크롤됨.</summary>
+    internal static bool EdgeScrollEnabled { get; set; } = true;
 
     /// <summary>끄는 동안 판 본문 위·아래 끝(32px)에 닿으면 저절로 스크롤 — 끝에 가까울수록 빠르게, 마우스가 멈춰 있어도 (2026-10-13 사용자).</summary>
     private void StartEdgeScroll()
     {
-        if (_bodyScroll is not { } sv) return;
+        if (_bodyScroll is not { } sv || !EdgeScrollEnabled) return;
         _edgeScroll?.Stop();
         _edgeScroll = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(16) };
         _edgeScroll.Tick += (_, _) =>

@@ -69,6 +69,7 @@ internal static class Program
 
         if (Array.IndexOf(args, "--new") >= 0)
         {
+            panelType.GetProperty("EdgeScrollEnabled", Any)!.SetValue(null, false); // 끌기는 스크립트로 — 진짜 커서 자리로 판이 스크롤되지 않게
             NewFeatures(services, settings, panelType, Open, Close, outDir, work, tracker);
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
             Console.WriteLine(_fail == 0 ? "실제 창 시험: 모두 통과" : $"실제 창 시험: {_fail}개 실패");
