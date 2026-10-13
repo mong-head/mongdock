@@ -215,7 +215,6 @@ internal sealed class SpotlightWindow : Window
             Visibility = Visibility.Collapsed,
         };
         MongScroll.Apply(_scroll);
-        if (TryFindResource("ThinScrollBar") is Style thin) _scroll.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), thin);
 
         var content = new StackPanel();
         content.Children.Add(searchRow);

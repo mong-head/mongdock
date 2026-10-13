@@ -226,7 +226,6 @@ internal sealed partial class StatusPanelWindow
         };
         MongScroll.Apply(eventsScroll, _p);
         if (TryFindResource("OverlayScrollViewer") is Style overlay) eventsScroll.Style = overlay;
-        if (TryFindResource("ThinScrollBar") is Style thin) eventsScroll.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), thin);
         var connectLink = new TextBlock
         {
             Text = Loc.T("캘린더 일정 연결하기…"),

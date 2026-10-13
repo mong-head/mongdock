@@ -365,7 +365,6 @@ internal abstract class DockStackPanel : Window
         };
         MongScroll.Apply(scroll, P);
         if (TryFindResource("OverlayScrollViewer") is Style overlay) scroll.Style = overlay;
-        if (TryFindResource("ThinScrollBar") is Style thin) scroll.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), thin);
         return scroll;
     }
 

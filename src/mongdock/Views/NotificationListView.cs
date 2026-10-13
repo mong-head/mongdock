@@ -77,7 +77,6 @@ internal sealed class NotificationListView : Border
         };
         MongScroll.Apply(_scroll, _p);
         if (TryFindResource("OverlayScrollViewer") is Style overlay) _scroll.Style = overlay;
-        if (TryFindResource("ThinScrollBar") is Style thin) _scroll.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), thin);
 
         _clock = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(30) };
         _clock.Tick += (_, _) => Rebuild();
