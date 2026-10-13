@@ -92,13 +92,18 @@ internal static class Program
             var apps = ((System.Collections.IEnumerable)catalog.GetMethod("Apps")!.Invoke(null, new object[] { false })!).Cast<object>().ToList();
             var identity = catalog.GetMethods(flags).First(m => m.Name == "Identity" && m.GetParameters()[0].ParameterType.Name == "AppEntry");
             var ids = apps.Select(a => (string)identity.Invoke(null, new[] { a })!).ToHashSet();
+            var seedMap = (Dictionary<string, int>)usage.GetMethod("Seed", flags)!.Invoke(null, null)!;
+            var lastMap = (Dictionary<string, string>)usage.GetMethod("Last", flags)!.Invoke(null, null)!;
+            string d90 = DateTime.Now.AddDays(-90).ToString("yyyy-MM-dd");
+            string seedLine = $"씨앗 단계: 전체 {seedMap.Count}, 3회 이상 {seedMap.Count(kv => kv.Value >= 3)}, 그중 마지막 실행일 있음 {seedMap.Count(kv => kv.Value >= 3 && lastMap.ContainsKey(kv.Key))}, 90일 안 {seedMap.Count(kv => kv.Value >= 3 && lastMap.TryGetValue(kv.Key, out var l) && string.CompareOrdinal(l, d90) >= 0)}, 앱 모음에 있음(3회 이상) {seedMap.Count(kv => kv.Value >= 3 && ids.Contains(kv.Key))}";
             var stages = usage.GetMethod("SuggestionStages", flags)!.Invoke(null, new object[] { 16 })!;
             var result = (List<string>)stages.GetType().GetField("Item4")!.GetValue(stages)!;
             int fromWin = (int)stages.GetType().GetField("Item3")!.GetValue(stages)!;
             File.WriteAllLines(args[seedcheck + 1], new[]
             {
                 $"빈 데이터 폴더(새 설치)에서 윈도우 실행 기록 씨앗: {seeded}개",
-                $"추천 후보: {result.Count}개 (윈도우 기록으로 {fromWin}개), 앱 모음에 있는 앱 {result.Count(ids.Contains)}개 → 독 고정이 없으면 첫날 추천 {Math.Min(4, result.Count(ids.Contains))}칸",
+                seedLine,
+                $"추천 후보: {result.Count}개 (윈도우 기록으로 {fromWin}개), 앱 모음에 있는 앱 {result.Count(ids.Contains)}개 → 독 고정이 없으면 첫날 추천 {Math.Min(4, result.Count(ids.Contains))}칸 (기준: 90일 안·3회 이상)",
             });
             try { Directory.Delete(fresh, true); } catch { }
             return 0;

@@ -478,7 +478,7 @@ internal static class AppUsage
     /// 즐겨찾기 추천 후보: 최근 14일 동안 2일 이상·3회 이상 실행한 앱, 실행 횟수 많은 순 (같으면 최근 순).
     /// 셈: 판·독에서 연 기록(usage-local) + 새 창이 뜬 기록(루틴 추천용 usage-launches — 작업 표시줄·시작 메뉴·바탕 화면으로 연 앱도).
     /// 같은 날 두 기록에 다 있으면 많은 쪽만 (같은 실행을 두 번 세지 않게). 기록이 적은 처음 며칠은 윈도우 기록(UserAssist — 실행 3회 이상,
-    /// 최근 30일 안 마지막 실행)으로 채움 (2026-10-13 — 사용자 PC 에서 추천이 하나도 안 떴음).
+    /// 최근 90일 안 마지막 실행)으로 채움 (2026-10-13 — 사용자 PC 에서 추천이 하나도 안 떴음).
     /// </summary>
     public static List<string> Suggestions(int max) => SuggestionStages(max).Result;
 
@@ -510,8 +510,8 @@ internal static class AppUsage
         int fromWindows = 0;
         if (result.Count < max)
         {
-            // 처음 며칠: 윈도우가 적어 둔 실행 횟수(씨앗)와 마지막 실행일 (최근 30일 안, 3회 이상), 많이 연 순
-            string cutoff = DateTime.Now.AddDays(-30).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            // 처음 며칠: 윈도우가 적어 둔 실행 횟수(씨앗)와 마지막 실행일 (최근 90일 안, 3회 이상 — 2026-10-13 PM: 30일이면 첫날 2칸뿐), 많이 연 순
+            string cutoff = DateTime.Now.AddDays(-90).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
             lock (Gate)
             {
                 var last = Last();
