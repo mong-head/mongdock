@@ -10,11 +10,15 @@ internal static class DockFit
 {
     /// <summary>설정 슬라이더 최솟값보다 낮게 (설정값 범위 확인용).</summary>
     public const double MinIcon = 16;
-    /// <summary>자동 축소 하한 (#25 §1 — 그보다 작으면 알아보기 어려움). 넘치면 "⋯ +n" 칸으로. 설정값이 이보다 작으면 설정값까지.</summary>
-    public const double ShrinkFloor = 28;
+    /// <summary>자동 축소 하한의 바닥 (#25 사용자: 많이 켜면 ⋯ 대신 아이콘만 계속 작아짐) — 하한 = max(36, 설정의 75%), 설정값이 더 작으면 설정값.</summary>
+    public const double ShrinkFloor = 36;
 
-    /// <summary>줄일 수 있는 가장 작은 크기.</summary>
-    public static double Floor(double settingIcon) => Math.Min(ShrinkFloor, Math.Floor(Math.Clamp(double.IsNaN(settingIcon) ? 52 : settingIcon, MinIcon, 256)));
+    /// <summary>줄일 수 있는 가장 작은 크기 (52 → 39). 그보다 넘치면 "⋯ +n" 칸으로.</summary>
+    public static double Floor(double settingIcon)
+    {
+        double set = Math.Floor(Math.Clamp(double.IsNaN(settingIcon) ? 52 : settingIcon, MinIcon, 256));
+        return Math.Min(set, Math.Max(ShrinkFloor, Math.Floor(set * 0.75)));
+    }
     /// <summary>패널 양 끝과 화면 끝 사이에 남길 여유 (각 쪽).</summary>
     public const double EndGap = 8;
 
@@ -63,9 +67,7 @@ internal static class DockFit
         double icon = FitIcon(settingIcon, spacing, icons, separators, available, extra);
         double limit = available - EndGap * 2;
         if (icon > Floor(settingIcon) || icons <= 0 || PanelLength(icon, spacing, icons, separators, extra) <= limit) return (icon, spacing);
-        double sp = spacing;
-        while (sp > 1 && PanelLength(icon, sp, icons, separators, extra) > limit) sp--;
-        return (icon, sp);
+        return (icon, spacing); // 간격은 줄이지 않음 — 하한에서도 넘치면 바로 "⋯ +n" (#25 사용자: 빽빽하게 줄이기보다 ⋯)
     }
 
     /// <summary>

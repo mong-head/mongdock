@@ -41,7 +41,7 @@ public partial class DockWindow
             if (i.IsSeparator) seps++;
             else if (!IsOverflowItem(i)) icons++;
         }
-        icons += _hiddenPins.Count; // 감춘 앱까지 다 넣었을 때 기준 (넘침이 풀리는지 보려고)
+        icons += _hiddenItems.Count; // 감춘 앱까지 다 넣었을 때 기준 (넘침이 풀리는지 보려고)
         // 간격은 설정값 기준으로 계산 (지금 줄어 있는 간격 기준이면 다시 넓어지지 않음)
         double settingSpacing = double.IsNaN(s.IconSpacing) ? 5 : Math.Clamp(s.IconSpacing, 0, 64);
         // 확대 여유: 끝 아이콘을 확대해도 화면 안에 다 보이게 (가벼운 모드·확대 끔이면 0)
