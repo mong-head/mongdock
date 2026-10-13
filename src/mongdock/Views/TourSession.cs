@@ -141,7 +141,13 @@ internal sealed class TourSession : ICoachRun
         if (key is not null && count > 1) RenderRest(key, count, _index, palette);
         PrerenderNext(palette);
         _card.Place(monitor, anchor?.Rect);
-        if (!_card.IsVisible) { _card.Show(); _card.Activate(); }
+        if (!_card.IsVisible)
+        {
+            _card.Show();
+            _card.Activate();
+            // 카드 높이는 고정(FixHeight)이라 창 크기도 고정 — 내용을 바꿀 때 창 크기를 다시 재지 않음
+            _card.SizeToContent = SizeToContent.Manual;
+        }
         BringToFront();
     }
 
@@ -260,7 +266,28 @@ internal sealed class TourSession : ICoachRun
         ShowCurrent(animate: false);
     }
 
+    /// <summary>
+    /// 다른 맨 위 창(독·알림 배너 등)이 둘러보기 창 위로 올라왔을 때만 다시 올림 — 이미 맨 위면 Z 순서를 건드리지 않음
+    /// (괜히 다시 올리면 레이어드 창이 다시 합성돼 깜빡일 수 있음, 2026-10-14).
+    /// </summary>
     private void BringToFront()
+    {
+        const uint flags = 0x0001 | 0x0002 | User32Flags.NoActivate;
+        var ours = new HashSet<IntPtr>(new Window?[] { _dim, _card, _pill }.Where(w => w is not null && w.IsVisible).Select(w => new WindowInteropHelper(w!).Handle).Where(h => h != IntPtr.Zero));
+        if (ours.Count == 0) return;
+        bool covered = false;
+        foreach (var h in ours)
+        {
+            const uint GW_HWNDPREV = 3;
+            for (var above = Native.User32.GetWindow(h, GW_HWNDPREV); above != IntPtr.Zero; above = Native.User32.GetWindow(above, GW_HWNDPREV))
+                if (!ours.Contains(above) && Native.User32.IsWindowVisible(above)) { covered = true; break; }
+            if (covered) break;
+        }
+        if (!covered) return;
+        RaiseNow();
+    }
+
+    internal void RaiseNow()
     {
         const uint flags = 0x0001 | 0x0002 | User32Flags.NoActivate;
         foreach (Window? w in new Window?[] { _dim, _card, _pill })
@@ -376,7 +403,8 @@ internal sealed class TourCardWindow : Window
 {
     public TourCard Card { get; }
     public event Action<Key>? KeyPressed;
-    private const double ShadowPad = 28;
+    /// <summary>카드 둘레 그림자 여백.</summary>
+    public double ShadowPad { get; } = 28;
 
     public TourCardWindow(AppServices services, UiPalette palette)
     {

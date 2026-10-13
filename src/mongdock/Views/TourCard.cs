@@ -41,8 +41,8 @@ internal sealed class TourCard : Border
 {
     public const double CardWidth = 560;
     private const double PictureHeight = CardWidth * 10 / 16;
-    // 장 넘김 1.8초, 마지막 장은 2.5초 머문 뒤 처음으로, 교차 흐림 200ms (2026-10-14 사용자: 2.5초도 느림)
-    private const int SlideMs = 1800, LastSlideMs = 2500, FadeMs = 200;
+    // 장 넘김 1.4초, 마지막 장은 2초 머문 뒤 처음으로, 교차 흐림 180ms (2026-10-14 사용자: 2.5초·1.8초도 느림)
+    private const int SlideMs = 1400, LastSlideMs = 2000, FadeMs = 180;
 
     private readonly UiPalette _p;
     private readonly Image _front = new() { Stretch = Stretch.Uniform };

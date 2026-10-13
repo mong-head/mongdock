@@ -409,12 +409,14 @@ internal static class Program
         int count = pages.Count;
         int firstPicture = pages.Cast<object>().ToList().FindIndex(x => Pics(x) is not null);
         var heights = new List<double>();
+        FlickerDir = outDir;
         var flicker = new List<string>();
         for (int i = 0; i < count; i++)
         {
             var card = (Window)st.GetField("_card", Any)!.GetValue(session)!;
             var hole = (Rect?)st.GetField("_hole", Any)!.GetValue(session);
-            var cardRect = new Rect(card.Left + 28, card.Top + 28, card.ActualWidth - 56, card.ActualHeight - 56);
+            double pad = (double)card.GetType().GetProperty("ShadowPad")!.GetValue(card)!;
+            var cardRect = new Rect(card.Left + pad, card.Top + pad, card.ActualWidth - pad * 2, card.ActualHeight - pad * 2);
             var tourCard = card.GetType().GetProperty("Card")!.GetValue(card)!;
             var frames = (System.Collections.ICollection)tourCard.GetType().GetField("_frames", Any)!.GetValue(tourCard)!;
             string title = Title(pages[i]!);
@@ -427,10 +429,10 @@ internal static class Program
                 // 장 넘김: 1.8초, 마지막 장 2.5초, 직접 넘기면 이 단계는 멈춤, 다음 단계에서 다시 자동
                 var ct = tourCard.GetType();
                 T Get<T>(string name) => (T)ct.GetProperty(name, Any)!.GetValue(tourCard)!;
-                Check($"장 넘김: 첫 장 간격 {Get<TimeSpan>("SlideIntervalForTest").TotalMilliseconds}ms (1800 기대), 자동 {Get<bool>("SlidingForTest")}", Get<TimeSpan>("SlideIntervalForTest").TotalMilliseconds == 1800 && Get<bool>("SlidingForTest"));
+                Check($"장 넘김: 첫 장 간격 {Get<TimeSpan>("SlideIntervalForTest").TotalMilliseconds}ms (1400 기대), 자동 {Get<bool>("SlidingForTest")}", Get<TimeSpan>("SlideIntervalForTest").TotalMilliseconds == 1400 && Get<bool>("SlidingForTest"));
                 ct.GetMethod("ShowFrameForTest", Any)!.Invoke(tourCard, new object[] { frames.Count - 1 });
                 ct.GetMethod("StartSlides", Any)!.Invoke(tourCard, null);
-                Check($"장 넘김: 마지막 장 간격 {Get<TimeSpan>("SlideIntervalForTest").TotalMilliseconds}ms (2500 기대)", Get<TimeSpan>("SlideIntervalForTest").TotalMilliseconds == 2500);
+                Check($"장 넘김: 마지막 장 간격 {Get<TimeSpan>("SlideIntervalForTest").TotalMilliseconds}ms (2000 기대)", Get<TimeSpan>("SlideIntervalForTest").TotalMilliseconds == 2000);
                 ct.GetField("_slide", Any)!.GetValue(tourCard)!.GetType().GetMethod("Stop")!.Invoke(ct.GetField("_slide", Any)!.GetValue(tourCard), null);
                 // 마지막 장 다음 = 처음 (자동 넘김 틱과 같은 코드)
                 ct.GetMethod("ShowFrame", Any)!.Invoke(tourCard, new object[] { frames.Count, false });
@@ -446,6 +448,13 @@ internal static class Program
                 Pump(400);
                 flicker.Add(Flicker(card, "장 넘김 2→3", () => ct.GetMethod("StepFrame", Any)!.Invoke(tourCard, new object[] { +1 })));
                 flicker.Add(Flicker(card, "장 넘김 3→1", () => ct.GetMethod("StepFrame", Any)!.Invoke(tourCard, new object[] { +1 })));
+                // 가만히 두고(자동 넘김 1.4초) 8초 동안 카드가 한 프레임 비는지 (카드 글자 영역 흰 바탕이 갑자기 어두워짐)
+                st.GetMethod("Next", Any)!.Invoke(session, null);
+                Pump(500);
+                st.GetMethod("Prev", Any)!.Invoke(session, null);
+                Pump(500);
+                flicker.Add(CardBlank(card, 8000, "가만히 8초 (자동 넘김)"));
+                flicker.Add(CardBlank(card, 9000, "직접 넘김 12번", () => { for (int r = 0; r < 12; r++) { ct.GetMethod("StepFrame", Any)!.Invoke(tourCard, new object[] { +1 }); Pump(700); } }));
                 st.GetMethod("Next", Any)!.Invoke(session, null);
                 Pump(500);
                 Check($"다음 단계: 다시 자동 (직접 {Get<bool>("ManualForTest")}, 자동 {Get<bool>("SlidingForTest")})", !Get<bool>("ManualForTest") && Get<bool>("SlidingForTest"));
@@ -474,57 +483,97 @@ internal static class Program
         Check($"둘러보기: 독 고정 풀림 ({pinned ?? "속성 없음"})", pinned is null or false);
     }
 
-    [DllImport("gdi32.dll")] private static extern uint GetPixel(IntPtr dc, int x, int y);
-
-    /// <summary>
-    /// 넘기는 동안 화면 밝기를 찍어 깜빡임 점검: 어둡게 덮인 곳(카드 왼쪽·오른쪽 바깥)과 카드 그림 가운데를 다른 스레드에서 계속 읽음.
-    /// 어두운 곳은 넘기기 전 값에서 8 넘게 벗어나면, 그림은 전·후 값 범위에서 10 넘게 벗어나면 "튐".
+        /// <summary>
+    /// 넘기는 동안 화면을 프레임마다 받아(Desktop Duplication — DWM 이 합성한 모든 프레임) 깜빡임 점검.
+    /// 넘기기 전 300ms + 뒤 700ms. 어둡게 덮인 곳(카드 왼쪽·오른쪽 바깥 40px 상자 둘)은 전·후 값 범위에서 2 넘게 벗어나면 "튐",
+    /// 그림 가운데(60px 상자)는 교차 흐림이라 전·후 사이 값은 정상, 범위에서 3 넘게 벗어나면 "튐".
     /// </summary>
+    private static string FlickerDir = Path.GetTempPath();
+    private static bool FlickerDump;
+
     private static string Flicker(Window card, string label, Action act)
     {
-        var pts = new[]
+        (int, int, int, int) Box(Point dip, int size)
         {
-            card.PointToScreen(new Point(-140, card.ActualHeight / 2)),
-            card.PointToScreen(new Point(card.ActualWidth + 140, card.ActualHeight / 2)),
-            card.PointToScreen(new Point(card.ActualWidth / 2, 28 + 120)), // 그림 영역 가운데쯤 (그림자 여백 28)
+            var px = card.PointToScreen(dip);
+            return ((int)px.X - size / 2, (int)px.Y - size / 2, size, size);
+        }
+        var boxes = new[]
+        {
+            Box(new Point(-160, card.ActualHeight / 2), 40),
+            Box(new Point(card.ActualWidth + 160, card.ActualHeight / 2), 40),
+            Box(new Point(card.ActualWidth / 2, 28 + 90), 60), // 그림 영역 위·가운데·아래 (그림자 여백 28)
+            Box(new Point(card.ActualWidth / 2, 28 + 175), 60),
+            Box(new Point(card.ActualWidth * 0.4, 28 + 290), 60),
         };
-        var samples = new List<(long T, int[] V)>();
-        bool stop = false;
+        var frames = new List<(long T, double[] V)>();
+        string? error = null;
+        bool stop = false, ready = false;
         var sw = Stopwatch.StartNew();
         var th = new System.Threading.Thread(() =>
         {
-            var dc = GetDC(IntPtr.Zero);
-            while (!System.Threading.Volatile.Read(ref stop))
+            try
             {
-                var v = pts.Select(q => { uint c = GetPixel(dc, (int)q.X, (int)q.Y); return (int)((c & 0xFF) * 0.3 + ((c >> 8) & 0xFF) * 0.59 + ((c >> 16) & 0xFF) * 0.11); }).ToArray();
-                lock (samples) samples.Add((sw.ElapsedMilliseconds, v));
+                using var dup = new DesktopDup();
+                System.Threading.Volatile.Write(ref ready, true);
+                while (!System.Threading.Volatile.Read(ref stop))
+                    if (dup.Next(50, boxes) is { } v) lock (frames) frames.Add((sw.ElapsedMilliseconds, v));
             }
-            ReleaseDC(IntPtr.Zero, dc);
+            catch (Exception ex) { error = ex.Message; System.Threading.Volatile.Write(ref ready, true); }
         }) { IsBackground = true };
         th.Start();
-        Pump(150);
+        while (!System.Threading.Volatile.Read(ref ready)) Pump(20);
+        Pump(300);
         long at = sw.ElapsedMilliseconds;
         act();
-        Pump(650);
+        Pump(700);
         System.Threading.Volatile.Write(ref stop, true);
         th.Join();
-        var before = samples.Where(x => x.T < at).ToList();
-        var during = samples.Where(x => x.T >= at).ToList();
-        if (before.Count == 0 || during.Count < 3) return $"깜빡임 {label}: 찍은 장 수가 적음 (전 {before.Count}, 중 {during.Count}) 튐?";
-        var after = during.TakeLast(3).ToList();
-        int worstDim = 0, worstPic = 0;
-        for (int k = 0; k < 2; k++)
+        if (error is not null) return $"깜빡임 {label}: 화면 받기 실패 ({error}) 튐?";
+        var before = frames.Where(x => x.T < at).ToList();
+        var during = frames.Where(x => x.T >= at).ToList();
+        if (before.Count == 0) return $"깜빡임 {label}: 넘기기 전 프레임이 없음 튐?";
+        var last = during.Count > 0 ? during[^1].V : before[^1].V;
+        double Worst(int k) => during.Count == 0 ? 0 : during.Max(x => Math.Max(x.V[k] - Math.Max(before[^1].V[k], last[k]), Math.Min(before[^1].V[k], last[k]) - x.V[k]));
+        double dim = Math.Max(Worst(0), Worst(1)), pic = Math.Max(Worst(2), Math.Max(Worst(3), Worst(4)));
+        double dimShift = Math.Max(Math.Abs(last[0] - before[^1].V[0]), Math.Abs(last[1] - before[^1].V[1]));
+        bool bad = dim > 2 || pic > 3 || dimShift > 2;
+        double picShift = new[] { 2, 3, 4 }.Max(k => Math.Abs(last[k] - before[^1].V[k]));
+        if (bad || FlickerDump)
+            File.WriteAllLines(Path.Combine(FlickerDir, $"flicker-{string.Concat(label.Where(char.IsLetterOrDigit))}.csv"),
+                frames.Select(x => $"{x.T - at},{string.Join(",", x.V.Select(v => v.ToString("0.0")))}"));
+        return $"깜빡임 {label}: 프레임 {during.Count}개, 어두운 곳 벗어남 {dim:0.0} (전후 차 {dimShift:0.0}), 그림 벗어남 {pic:0.0} (전후 차 {picShift:0.0}){(bad ? " — 튐" : "")}";
+    }
+
+    /// <summary>카드 창이 한 프레임 비는(투명하게 그려지는) 횟수: 카드 아래쪽 글자 영역 빈 곳(흰 바탕)이 중앙값에서 15 넘게 벗어난 프레임.</summary>
+    private static string CardBlank(Window card, int ms, string label, Action? during = null)
+    {
+        var px = card.PointToScreen(new Point(card.ActualWidth - 28 - 60, card.ActualHeight - 28 - 70)); // 카드 오른쪽 아래 [다음] 위 빈 곳
+        var boxes = new[] { ((int)px.X - 10, (int)px.Y - 10, 20, 20) };
+        var frames = new List<(long T, double V)>();
+        bool stop = false;
+        string? error = null;
+        var sw = Stopwatch.StartNew();
+        var th = new System.Threading.Thread(() =>
         {
-            int b0 = before[^1].V[k], a0 = after[^1].V[k];
-            // 어둡게 덮인 곳: 전·후가 같아야 하고, 사이에 튀면 안 됨
-            worstDim = Math.Max(worstDim, during.Max(x => Math.Max(x.V[k] - Math.Max(b0, a0), Math.Min(b0, a0) - x.V[k])));
-        }
-        {
-            int b0 = before[^1].V[2], a0 = after[^1].V[2];
-            worstPic = during.Max(x => Math.Max(x.V[2] - Math.Max(b0, a0), Math.Min(b0, a0) - x.V[2]));
-        }
-        bool bad = worstDim > 8 || worstPic > 10;
-        return $"깜빡임 {label}: {during.Count}장 찍음, 어두운 곳 최대 벗어남 {worstDim}, 그림 최대 벗어남 {worstPic}{(bad ? " — 튐" : "")}";
+            try
+            {
+                using var dup = new DesktopDup();
+                while (!System.Threading.Volatile.Read(ref stop))
+                    if (dup.Next(50, boxes) is { } v) lock (frames) frames.Add((sw.ElapsedMilliseconds, v[0]));
+            }
+            catch (Exception ex) { error = ex.Message; }
+        }) { IsBackground = true };
+        th.Start();
+        if (during is not null) { Pump(200); during(); } else Pump(ms);
+        System.Threading.Volatile.Write(ref stop, true);
+        th.Join();
+        if (error is not null) return $"카드 빔 {label}: 화면 받기 실패 ({error}) 튐?";
+        var sorted = frames.Select(x => x.V).OrderBy(x => x).ToList();
+        double median = sorted.Count > 0 ? sorted[sorted.Count / 2] : 0;
+        var bad = frames.Where(x => Math.Abs(x.V - median) > 15).ToList();
+        File.WriteAllLines(Path.Combine(FlickerDir, $"cardblank-{string.Concat(label.Where(char.IsLetterOrDigit))}.csv"), frames.Select(x => $"{x.T},{x.V:0.0}"));
+        return $"카드 빔 {label}: 프레임 {frames.Count}개, 바탕 {median:0}, 빈 프레임 {bad.Count}개 ({string.Join(" ", bad.Select(x => $"{x.T}ms={x.V:0}"))}){(bad.Count > 0 ? " — 튐" : "")}";
     }
 
     private sealed class EndBox
