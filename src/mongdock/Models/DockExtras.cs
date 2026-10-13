@@ -91,6 +91,9 @@ public sealed class RoutineItem
     /// <summary>링크 항목의 두 번째부터의 탭 (브라우저 창 하나에 같이 열림, §15-2). 예전 데이터는 null = 탭 하나.</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public List<string>? Tabs { get; set; }
+    /// <summary>게임 링크 항목(steam://rungameid/… 등)의 게임 exe — 아이콘과 창 찾기를 런처가 아니라 게임으로 (§15-3).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? GameExe { get; set; }
     /// <summary>스토어 앱이면 AUMID (Target 대신).</summary>
     public string? Aumid { get; set; }
     /// <summary>표시 이름 (없으면 대상에서).</summary>

@@ -279,13 +279,18 @@ internal static class RoutineSuggest
             .Select(i => !string.IsNullOrEmpty(i.Aumid) ? "app:" + i.Aumid!.ToLowerInvariant() : "exe:" + Path.GetFileNameWithoutExtension(i.Target).ToLowerInvariant()).ToList()).ToList();
         var bundle = Find(_log, DateTime.Now, StartupApps(), routines, s.RoutineSuggestDeclined.Select(d => (IReadOnlyCollection<string>)d));
         if (bundle is null) return;
-        // 식별자 → 앱 모음 항목 (못 찾는 앱은 뺌 — 그래도 3개 이상일 때만)
-        var entries = bundle.Apps.Select(id => apps.FirstOrDefault(a => AllAppsCatalog.Identities(a).Contains(id))).OfType<AppEntry>().ToList();
-        if (entries.Count < MinApps) return;
-        Ask(services, bundle, entries);
+        // 식별자 → 루틴 항목: 게임 exe 는 런처가 아니라 그 게임(§15-3), 그 밖은 앱 모음 항목 (못 찾는 앱은 뺌 — 그래도 3개 이상일 때만)
+        var picks = new List<(string Name, RoutineItem Item, string? Exe)>();
+        foreach (var id in bundle.Apps)
+        {
+            if (id.StartsWith("exe:") && GameCatalog.FromExeName(id[4..]) is { } game) { picks.Add((game.Name, GameCatalog.ToItem(game), id[4..])); continue; }
+            if (apps.FirstOrDefault(a => AllAppsCatalog.Identities(a).Contains(id)) is { } app) picks.Add((app.Name, RoutineUi.ItemFromApp(services, app), app.Exe));
+        }
+        if (picks.Count < MinApps) return;
+        Ask(services, bundle, picks);
     }
 
-    private static void Ask(AppServices services, Bundle bundle, List<AppEntry> entries)
+    private static void Ask(AppServices services, Bundle bundle, List<(string Name, RoutineItem Item, string? Exe)> entries)
     {
         var s = services.Settings.Current;
         string names = string.Join("·", entries.Take(4).Select(e => e.Name)) + (entries.Count > 4 ? Loc.F($" 외 {entries.Count - 4}개") : "");
@@ -311,7 +316,7 @@ internal static class RoutineSuggest
         Log.Info($"루틴 추천: 앱 {entries.Count}개, {bundle.Days.Count}일, {bundle.Time:hh\\:mm}");
     }
 
-    private static void Create(AppServices services, Bundle bundle, List<AppEntry> entries)
+    private static void Create(AppServices services, Bundle bundle, List<(string Name, RoutineItem Item, string? Exe)> entries)
     {
         var s = services.Settings.Current;
         s.RoutineSuggestDeclines = 0;
@@ -321,13 +326,13 @@ internal static class RoutineSuggest
         var r = new RoutineDef
         {
             Name = Loc.F($"{WhenText(bundle)} 루틴"), // "평일 아침 루틴"
-            Items = entries.Select(e => RoutineUi.ItemFromApp(services, e)).ToList(),
+            Items = entries.Select(e => e.Item).ToList(),
         };
         (r.More ??= new RoutineMore()).Start.Add(new RoutineStart { Kind = RoutineStartKind.Time, Time = t.ToString(@"hh\:mm"), Days = StartDays(bundle) }); // 묻기만 (AutoOpen 끔)
         // 브라우저 페이지 힌트 (§15-1): 묶음에 브라우저가 있으면 자주 보인 페이지 이름 최대 3개
         string? browserExe = bundle.Apps.Select(id => id.StartsWith("exe:") ? id[4..] : "").FirstOrDefault(BrowserExes.Contains);
         var pages = browserExe is null ? new List<string>() : TopTitles(browserExe);
-        string? browserName = browserExe is null ? null : entries.FirstOrDefault(e => string.Equals(e.Exe, browserExe, StringComparison.OrdinalIgnoreCase))?.Name ?? browserExe;
+        string? browserName = browserExe is null ? null : entries.Where(e => string.Equals(e.Exe, browserExe, StringComparison.OrdinalIgnoreCase)).Select(e => e.Name).FirstOrDefault() ?? browserExe;
         Log.Info($"루틴 추천 → 만들기 (편집 창, 페이지 힌트 {pages.Count}개)");
         RoutineEditorWindow.OpenPrefilled(services, r, pages.Count > 0 ? (browserName!, pages) : null);
     }

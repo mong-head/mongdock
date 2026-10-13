@@ -729,6 +729,8 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
     {
         if (_picker.Visibility == Visibility.Visible) { _picker.Visibility = Visibility.Collapsed; return; }
         var box = new StackPanel();
+        bool games = false; // 앱 / 게임 (§15-4)
+        var chosenGames = new List<GameCatalog.Game>();
         var search = Field("");
         box.Children.Add(Hinted(search, Loc.T("앱 검색")));
         var rows = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
@@ -744,6 +746,7 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         add.Click += (_, _) =>
         {
             foreach (var a in chosen.Take(RoutineDef.MaxItems - _r.Items.Count)) _r.Items.Add(RoutineUi.ItemFromApp(Services, a));
+            foreach (var g in chosenGames.Take(RoutineDef.MaxItems - _r.Items.Count)) _r.Items.Add(GameCatalog.ToItem(g)); // 런처가 아니라 그 게임
             _picker.Visibility = Visibility.Collapsed;
             Rebuild();
         };
@@ -759,6 +762,44 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         _picker.Visibility = Visibility.Visible;
 
         IReadOnlyList<AppEntry> apps = AllAppsCatalog.Cached ?? Array.Empty<AppEntry>();
+        List<GameCatalog.Game>? gameList = null;
+        void FillAll() { if (games) FillGames(); else Fill(); }
+        void FillGames()
+        {
+            rows.Children.Clear();
+            if (gameList is null)
+            {
+                rows.Children.Add(Muted("…"));
+                Task.Run(GameCatalog.All).ContinueWith(t => Dispatcher.BeginInvoke(() =>
+                {
+                    gameList = t.Status == TaskStatus.RanToCompletion ? t.Result : new List<GameCatalog.Game>();
+                    if (IsLoaded && games) FillGames();
+                }), TaskScheduler.Default);
+                return;
+            }
+            string q = search.Text.Trim();
+            var list = gameList.Where(g => q.Length == 0 || g.Name.Contains(q, StringComparison.CurrentCultureIgnoreCase)).Take(60).ToList();
+            if (list.Count == 0) rows.Children.Add(Muted(gameList.Count == 0 ? Loc.T("설치된 게임을 찾지 못했어요 (스팀·에픽·GOG·시작 메뉴 게임 바로 가기)") : Loc.T("찾는 게임이 없어요")));
+            foreach (var game in list)
+            {
+                var g = game;
+                var check = DockMenus.Check(P, null, chosenGames.Contains(g));
+                check.Margin = new Thickness(0, 0, 8, 0);
+                var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 1, 0, 1) };
+                line.Children.Add(check);
+                var img = new Image { Width = 20, Height = 20, Margin = new Thickness(0, 0, 8, 0) };
+                try { img.Source = RoutineIcons.ItemIcon(Services, GameCatalog.ToItem(g), IconStyleNow); } catch { /* 아이콘 없이 */ }
+                line.Children.Add(img);
+                line.Children.Add(new TextBlock { Text = g.Name, VerticalAlignment = VerticalAlignment.Center });
+                var badge = Pill(g.Launcher); // 런처 작은 표시
+                badge.Margin = new Thickness(8, 0, 0, 0);
+                line.Children.Add(badge);
+                check.Checked += (_, _) => { if (!chosenGames.Contains(g)) chosenGames.Add(g); add.IsEnabled = true; };
+                check.Unchecked += (_, _) => { chosenGames.Remove(g); add.IsEnabled = chosen.Count + chosenGames.Count > 0; };
+                line.MouseLeftButtonUp += (_, e) => { if (e.OriginalSource is not CheckBox) check.IsChecked = check.IsChecked != true; };
+                rows.Children.Add(line);
+            }
+        }
         void Fill()
         {
             rows.Children.Clear();
@@ -780,12 +821,15 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
                 line.Children.Add(img);
                 line.Children.Add(new TextBlock { Text = a.Name, VerticalAlignment = VerticalAlignment.Center });
                 check.Checked += (_, _) => { if (!chosen.Contains(a)) chosen.Add(a); add.IsEnabled = true; };
-                check.Unchecked += (_, _) => { chosen.Remove(a); add.IsEnabled = chosen.Count > 0; };
+                check.Unchecked += (_, _) => { chosen.Remove(a); add.IsEnabled = chosen.Count + chosenGames.Count > 0; };
                 line.MouseLeftButtonUp += (_, e) => { if (e.OriginalSource is not CheckBox) check.IsChecked = check.IsChecked != true; };
                 rows.Children.Add(line);
             }
         }
-        search.TextChanged += (_, _) => Fill();
+        search.TextChanged += (_, _) => FillAll();
+        var tabs = Segments(new[] { Loc.T("앱"), Loc.T("게임") }, 0, i => { games = i == 1; FillAll(); }); // 앱 / 게임 (§15-4)
+        tabs.Margin = new Thickness(0, 0, 0, 6);
+        box.Children.Insert(0, tabs);
         Fill();
         if (AllAppsCatalog.Cached is null)
             Task.Run(() => AllAppsCatalog.Apps()).ContinueWith(t =>

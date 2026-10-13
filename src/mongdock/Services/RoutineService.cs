@@ -890,6 +890,14 @@ internal static class RoutineService
             }
             else
             {
+                // 스팀·에픽 라이브러리 안의 게임 exe 면 런처가 아니라 그 게임 링크로 (§15-3 — 루틴에서 게임이 바로 열림)
+                if (GameCatalog.FromExe(w.ProcessPath) is { LaunchIsExe: false } game)
+                {
+                    item = GameCatalog.ToItem(game);
+                    ReadPlacement(w.Hwnd, item);
+                    list.Add((item, w.Hwnd));
+                    continue;
+                }
                 PinItem? pin = null;
                 try { pin = services.Windows.CreatePin(w); } catch (Exception ex) { Log.Warn($"루틴 화면 읽기: 핀 만들기 실패 {ex.GetType().Name}"); }
                 bool packaged = pin?.Kind == PinKind.Aumid;
@@ -1103,7 +1111,7 @@ internal static class RoutineService
     private static string? ExpectedExe(RoutineItem item) => item.Kind switch
     {
         RoutineItemKind.App => ExeName(item.Target),
-        RoutineItemKind.Url => ExeName(RoutineLinks.HandlerExe(item)),
+        RoutineItemKind.Url => ExeName(item.GameExe is { Length: > 0 } game ? game : RoutineLinks.HandlerExe(item)), // 게임 링크는 게임 창
         _ => Directory.Exists(item.Target) ? "explorer" : ExeName(AssociatedExe(Path.GetExtension(item.Target))),
     };
 

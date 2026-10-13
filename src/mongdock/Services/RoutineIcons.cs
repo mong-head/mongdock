@@ -14,6 +14,7 @@ internal static class RoutineIcons
     {
         RoutineItemKind.App when !string.IsNullOrWhiteSpace(item.Aumid) => new PinItem { Kind = PinKind.Aumid, Target = item.Aumid! },
         RoutineItemKind.App when item.Target.Length > 0 => new PinItem { Kind = PinKind.Exe, Target = item.Target },
+        RoutineItemKind.Url when item.GameExe is { Length: > 0 } game && File.Exists(game) => new PinItem { Kind = PinKind.Exe, Target = game }, // 게임 아이콘
         RoutineItemKind.Url => RoutineLinks.HandlerExe(item) is { Length: > 0 } handler ? new PinItem { Kind = PinKind.Exe, Target = handler } : null, // 웹 = 브라우저, 앱 링크 = 그 앱
         RoutineItemKind.Path when item.Target.Length > 0 => new PinItem { Kind = PinKind.Exe, Target = item.Target },
         _ => null,

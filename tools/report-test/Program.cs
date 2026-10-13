@@ -59,6 +59,17 @@ internal static class Program
         if (Array.IndexOf(args, "--dockfit") >= 0) { DockFitReport(); return 0; }
         if (Array.IndexOf(args, "--clipdemo") >= 0) { ClipDemo(); return 0; }
         if (Array.IndexOf(args, "--suggest") >= 0) return SuggestTable();
+        if (Array.IndexOf(args, "--games") >= 0)
+        {
+            // 이 PC 의 게임 목록 (§15-3): 런처별 개수와 앞 몇 개 (이름·링크·exe 있는지)
+            var gc = typeof(Mongdock.App).Assembly.GetType("Mongdock.Services.GameCatalog")!;
+            var all = (System.Collections.IEnumerable)gc.GetMethod("All", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!.Invoke(null, null)!;
+            var games = all.Cast<object>().ToList();
+            string P(object g, string n) => g.GetType().GetProperty(n)!.GetValue(g)?.ToString() ?? "";
+            Console.WriteLine($"게임 {games.Count}개: " + string.Join(", ", games.GroupBy(g => P(g, "Launcher")).Select(x => $"{x.Key} {x.Count()}")));
+            foreach (var g in games.Take(15)) Console.WriteLine($"  [{P(g, "Launcher")}] {P(g, "Name")} → {P(g, "Launch")} (exe {(P(g, "Exe").Length > 0 ? (File.Exists(P(g, "Exe")) ? "있음" : "없음") : "모름")})");
+            return 0;
+        }
 
         int trashIcons = Array.FindIndex(args, a => a == "--trash-icons");
         if (trashIcons >= 0 && trashIcons + 1 < args.Length) RenderTrashIcons(args[trashIcons + 1]);
