@@ -288,7 +288,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         var title = new StackPanel { Orientation = Orientation.Horizontal };
         title.Children.Add(SectionTitle("★ " + Loc.T("즐겨찾기")));
         if (fav.Count == 0 && suggestions.Count > 0)
-            title.Children.Add(new TextBlock { Text = Loc.T("자주 여는 앱을 골라 봤어요 · +를 누르면 즐겨찾기에 들어가요"), FontSize = 11.5, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 6, 0, 4) });
+            title.Children.Add(new TextBlock { Text = Loc.T("+를 누르면 즐겨찾기에 들어가요"), FontSize = 11.5, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 6, 0, 4) });
         root.Children.Add(title);
         var row = new WrapPanel { Width = Cols * AppCell, Background = Brushes.Transparent };
         _favRow = row;
@@ -298,7 +298,8 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             _favCells.Add(c);
             row.Children.Add(c);
         }
-        foreach (var app in suggestions) row.Children.Add(SuggestionCell(app));
+        // 즐겨찾기와 같은 줄에 들어가면 추천 칸 아이콘·이름을 옆 칸과 같은 높이로 (라벨은 위 여백으로 올림)
+        if (suggestions.Count > 0) row.Children.Add(SuggestionGroup(suggestions, sameLine: fav.Count > 0 && fav.Count + suggestions.Count < Cols));
         UIElement favContent = fav.Count == 0 && suggestions.Count == 0 ? DropHint() : row;
         var favBox = new Border { CornerRadius = new CornerRadius(10), BorderThickness = new Thickness(1.5), BorderBrush = Brushes.Transparent, Child = favContent, Tag = new DropTag("fav", "") };
         DropTarget(favBox, AppFormat, key => !S.Favorites.Contains(key, StringComparer.OrdinalIgnoreCase), PinToTop);
@@ -386,13 +387,53 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     internal static bool ShowSuggestionHoverForTest { get; set; }
 
     /// <summary>
-    /// 줄 끝 추천 칸 (2026-10-13 사용자: 점선 상자 4개가 어색함): 즐겨찾기 앱 칸과 같은 틀(아이콘·이름 자리·크기 같음), 아이콘만 흐리게(0.6).
-    /// 마우스를 올리면 진해지고 오른쪽 위에 작은 [+](즐겨찾기에 넣기)·×(30일 동안 추천 안 함) 동그라미. "추천" 글자 없음.
+    /// 추천 칸 묶음 (2026-10-13 사용자 C안): 연보라 연한 바탕(둥근 12)으로 감싸고, 왼쪽 위 모서리에 작은 알약 라벨 "✦ 추천"
+    /// (반짝이 + 글자, 바탕 연보라·글자 진보라). 즐겨찾기가 0개여도 같은 묶음. 다크 테마는 팔레트의 SoftAccent 색을 따라감.
+    /// </summary>
+    private FrameworkElement SuggestionGroup(List<AppEntry> suggestions, bool sameLine)
+    {
+        var cells = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var app in suggestions) cells.Children.Add(SuggestionCell(app));
+        var tint = P.SoftAccent.Clone();
+        tint.Opacity = 0.55;
+        tint.Freeze();
+        var box = new Border
+        {
+            CornerRadius = new CornerRadius(12),
+            Background = tint,
+            Padding = new Thickness(2, 10, 2, 2), // 위는 라벨이 걸칠 자리
+            Child = cells,
+        };
+        var pillText = new TextBlock { FontSize = UiText.Sub - 1, FontWeight = FontWeights.SemiBold, Foreground = P.SoftAccentText, VerticalAlignment = VerticalAlignment.Center };
+        pillText.Inlines.Add(new System.Windows.Documents.Run("✦ "));
+        pillText.Inlines.Add(new System.Windows.Documents.Run(Loc.T("추천")));
+        var pill = new Border
+        {
+            CornerRadius = new CornerRadius(8),
+            Background = P.SoftAccent,
+            BorderBrush = P.SoftAccentLine,
+            BorderThickness = new Thickness(0.75),
+            Padding = new Thickness(7, 1, 8, 1),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(10, -8, 0, 0), // 묶음 위 테두리에 반쯤 걸침
+            IsHitTestVisible = false,
+            Child = pillText,
+        };
+        var host = new Grid { Margin = new Thickness(4, sameLine ? -10 : 10, 0, 0) }; // 같은 줄이면 바탕 위 여백만큼 올려 칸 높이를 맞춤
+        host.Children.Add(box);
+        host.Children.Add(pill);
+        return host;
+    }
+
+    /// <summary>
+    /// 줄 끝 추천 칸: 즐겨찾기 앱 칸과 같은 틀(아이콘·이름 자리·크기 같음). 추천 표시는 묶음(SuggestionGroup)의 연보라 바탕과 "✦ 추천" 라벨 —
+    /// 아이콘은 흐리게 하지 않고 이름은 진보라. 마우스를 올리면 오른쪽 위에 작은 [+](즐겨찾기에 넣기)·×(30일 동안 추천 안 함) 동그라미.
     /// 클릭은 실행, 끌기는 없음(넣기는 [+]·오른쪽 클릭). 추천 칸 위에 놓기도 안 됨(자리 바꾸기 없음).
     /// </summary>
     private Border SuggestionCell(AppEntry app)
     {
-        var image = new Image { Width = AppIcon, Height = AppIcon, Opacity = 0.6, HorizontalAlignment = HorizontalAlignment.Center };
+        var image = new Image { Width = AppIcon, Height = AppIcon, HorizontalAlignment = HorizontalAlignment.Center }; // 흐리게 하지 않음 (C안 — 묶음 바탕이 추천 표시)
         RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
         LoadIcon(image, app);
         var iconHost = new Grid { Width = AppIcon, Height = AppIcon, HorizontalAlignment = HorizontalAlignment.Center };
@@ -429,7 +470,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         iconHost.Children.Add(badges);
         var stack = new StackPanel();
         stack.Children.Add(iconHost);
-        var nameText = new TextBlock { Uid = "name", Text = app.Name, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = TextAlignment.Center, FontSize = UiText.Sub, Foreground = P.SubText, Margin = new Thickness(0, 4, 0, 0) };
+        var nameText = new TextBlock { Uid = "name", Text = app.Name, TextWrapping = TextWrapping.NoWrap, TextTrimming = TextTrimming.CharacterEllipsis, TextAlignment = TextAlignment.Center, FontSize = UiText.Sub, Foreground = P.SoftAccentText, Margin = new Thickness(0, 4, 0, 0) };
         stack.Children.Add(nameText);
         ShowSuggestionHoverForTest = false; // 첫 칸만
         var cell = new Border
@@ -446,8 +487,8 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             Tag = new DropTag("suggest", app.Key),
         };
         MongToolTip.IfTrimmed(cell, nameText, app.Name); // 잘렸을 때만 전체 이름
-        cell.MouseEnter += (_, _) => { cell.Background = P.Tile; image.Opacity = 1; nameText.Foreground = P.Text; badges.Visibility = Visibility.Visible; HoverIcon(image, true); };
-        cell.MouseLeave += (_, _) => { cell.Background = Brushes.Transparent; image.Opacity = 0.6; nameText.Foreground = P.SubText; badges.Visibility = Visibility.Hidden; HoverIcon(image, false); };
+        cell.MouseEnter += (_, _) => { cell.Background = P.SoftAccent; badges.Visibility = Visibility.Visible; HoverIcon(image, true); };
+        cell.MouseLeave += (_, _) => { cell.Background = Brushes.Transparent; badges.Visibility = Visibility.Hidden; HoverIcon(image, false); };
         Pressable(cell, () => Launch(app), null, null); // 추천 칸은 끌기 없음 (내가 넣은 게 아니라서) — 넣기는 [+]·오른쪽 클릭
         cell.ContextMenu = LazyMenu(m => FillAppMenu(m, app));
         return cell;

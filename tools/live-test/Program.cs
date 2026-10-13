@@ -67,6 +67,14 @@ internal static class Program
         bool GhostVisible() => introType.GetField("_ghost", Any)!.GetValue(null) is Window { IsVisible: true };
         void Close(Window w) => w.GetType().GetMethod("CloseAnimated", Any)!.Invoke(w, null);
 
+        panelType.GetProperty("FollowRealCursor", Any)!.SetValue(null, false); // 끌기는 스크립트 좌표로 — 진짜 커서는 안 움직임
+        if (Array.IndexOf(args, "--dragfollow") >= 0)
+        {
+            panelType.GetProperty("EdgeScrollEnabled", Any)!.SetValue(null, false);
+            DragFollow(panelType, Open, Close, settings);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            return _fail == 0 ? 0 : 1;
+        }
         if (Array.IndexOf(args, "--new") >= 0)
         {
             panelType.GetProperty("EdgeScrollEnabled", Any)!.SetValue(null, false); // 끌기는 스크립트로 — 진짜 커서 자리로 판이 스크롤되지 않게
@@ -147,6 +155,104 @@ internal static class Program
     /// C) 작업 표시줄 깜빡임 신호: 시험 창(live-test)을 FlashWindowEx → 이 시험의 창 추적이 깜빡임을 받는지.
     ///    설치된 몽독 독에도 이 시험 창이 실행 중 앱으로 보이므로 실제 독이 튀는지는 몽독 로그("독 아이콘 튀기기 (깜빡임")로 따로 확인.
     /// </summary>
+    /// <summary>
+    /// 끌기 그림이 커서에 붙어 다니는지 (2026-10-13 사용자: 폴더 안에서 끌면 무겁게, 거리를 두고 늦게 따라옴):
+    /// 즐겨찾기·모든 앱·펼친 폴더 안 칸을 스크립트로 끌며 매 프레임 그림 창 자리와 커서 자리 거리(≤ 2px)와 UpdateDrag 시간을 잼.
+    /// </summary>
+    private static void DragFollow(Type panelType, Func<Window> open, Action<Window> close, SettingsService settings)
+    {
+        // 시험 데이터 폴더는 즐겨찾기가 비어 있음 — 앱 셋을 즐겨찾기로 (시험 폴더 안에서만)
+        var catalog = (System.Collections.IEnumerable)typeof(Mongdock.App).Assembly.GetType("Mongdock.Services.AllAppsCatalog")!.GetProperty("Cached")!.GetValue(null)!;
+        foreach (var a in catalog.Cast<object>().Take(3)) settings.Current.AllApps.Favorites.Add((string)a.GetType().GetProperty("Key")!.GetValue(a)!);
+        var w = open();
+        panelType.GetField("_allOpen", Any)!.SetValue(w, true);
+        var folders = (System.Collections.IList)panelType.GetField("_folders", Any)!.GetValue(w)!;
+        if (folders.Count > 0) panelType.GetField("_expanded", Any)!.SetValue(w, (string)folders[0]!.GetType().GetProperty("Id")!.GetValue(folders[0])!);
+        w.Show();
+        Pump(1200);
+        panelType.GetMethod("Rebuild", Any)!.Invoke(w, null);
+        Pump(500);
+        var dropTag = panelType.GetNestedType("DropTag", BindingFlags.NonPublic)!;
+        var dragItem = panelType.GetNestedType("DragItem", BindingFlags.NonPublic)!;
+        var favCells = ((System.Collections.IEnumerable)panelType.GetField("_favCells", Any)!.GetValue(w)!).Cast<System.Windows.Controls.Border>().ToList();
+        var groupCells = ((System.Collections.IEnumerable)panelType.GetField("_groupCells", Any)!.GetValue(w)!).Cast<System.Windows.Controls.Border>().ToList();
+        string Kind(System.Windows.Controls.Border b) => b.Tag is { } t && t.GetType() == dropTag ? (string)dropTag.GetProperty("Kind")!.GetValue(t)! : "";
+        string KeyOf(System.Windows.Controls.Border b) => (string)dropTag.GetProperty("Key")!.GetValue(b.Tag)!;
+        var allCells = Descendants((DependencyObject)w.Content).OfType<System.Windows.Controls.Border>()
+            .Where(b => Kind(b) == "app" && !favCells.Contains(b) && !groupCells.Contains(b) && b.IsVisible && b.ActualWidth > 0).ToList();
+        // 펼친 폴더가 보이게 스크롤
+        if (groupCells.Count > 0 && panelType.GetField("_bodyScroll", Any)!.GetValue(w) is System.Windows.Controls.ScrollViewer sv)
+        {
+            sv.ScrollToVerticalOffset(sv.VerticalOffset + groupCells[0].TranslatePoint(new Point(0, 0), sv).Y - 60);
+            Pump(400);
+        }
+        var cases = new List<(string Name, System.Windows.Controls.Border? Cell)>
+        {
+            ("즐겨찾기", favCells.FirstOrDefault(c => Kind(c) is "app" or "favapp" && c.IsVisible)),
+            ("모든 앱", allCells.FirstOrDefault(c => c.TranslatePoint(new Point(0, 0), w).Y > 80 && c.TranslatePoint(new Point(0, 0), w).Y < w.ActualHeight - 200)),
+            ("폴더 안", groupCells.FirstOrDefault(c => c.IsVisible)),
+        };
+        var dpi = VisualTreeHelper.GetDpi(w);
+        foreach (var (name, cell) in cases)
+        {
+            if (cell is null) { Check($"끌기 따라오기({name}): 끌 칸을 찾지 못함", false); continue; }
+            var grab = new Point(cell.ActualWidth * 0.3, cell.ActualHeight * 0.4);
+            var start = cell.TranslatePoint(grab, w);
+            panelType.GetMethod("BeginDrag", Any)!.Invoke(w, new object?[] { cell, Activator.CreateInstance(dragItem, false, KeyOf(cell), false), null, grab });
+            var drag = panelType.GetField("_drag", Any)!.GetValue(w)!;
+            var gh = new WindowInteropHelper((Window)drag.GetType().GetField("Ghost")!.GetValue(drag)!).Handle;
+            var grabPx = (Point)drag.GetType().GetField("Grab")!.GetValue(drag)!;
+            double worst = 0, worstMs = 0, sumMs = 0;
+            int steps = 40;
+            for (int i = 1; i <= steps; i++)
+            {
+                // 오른쪽 아래로 갔다가 돌아오는 길 (한 프레임 7px — 보통 끄는 빠르기)
+                double t = i <= steps / 2 ? i : steps - i;
+                var p = new Point(start.X + t * 7, start.Y + t * 3);
+                var sw = Stopwatch.StartNew();
+                panelType.GetMethod("UpdateDrag", Any)!.Invoke(w, new object[] { p });
+                double ms = sw.Elapsed.TotalMilliseconds;
+                worstMs = Math.Max(worstMs, ms);
+                sumMs += ms;
+                Pump(16);
+                if (panelType.GetField("_drag", Any)!.GetValue(w) is null) break;
+                GetWindowRect(gh, out var r);
+                var cursorPx = w.PointToScreen(p);
+                double cx = r.Left + (12 + grabPx.X) * dpi.DpiScaleX, cy = r.Top + (12 + grabPx.Y) * dpi.DpiScaleY;
+                worst = Math.Max(worst, Math.Max(Math.Abs(cx - cursorPx.X), Math.Abs(cy - cursorPx.Y)) / dpi.DpiScaleX);
+            }
+            // 실제 끌기 경로: 커서만 움직이고 (UpdateDrag 없이) 프레임마다 그림이 커서 자리로 오는지 — 커서는 시험용 자리
+            panelType.GetProperty("FollowRealCursor", Any)!.SetValue(null, true);
+            panelType.GetMethod("StartFollow", Any)!.Invoke(w, null);
+            var fake = w.PointToScreen(start);
+            panelType.GetProperty("CursorForTest", Any)!.SetValue(null, new Func<Point>(() => fake));
+            double worstFollow = 0;
+            int frames = 0;
+            EventHandler count = (_, _) => frames++;
+            CompositionTarget.Rendering += count;
+            for (int i = 1; i <= 30; i++)
+            {
+                fake = w.PointToScreen(new Point(start.X + (i <= 15 ? i : 30 - i) * 9, start.Y - (i <= 15 ? i : 30 - i) * 2));
+                // 다음 프레임 한 번이 지나간 뒤 봄 (프레임 콜백 순서상 같은 프레임 안이면 판 쪽이 먼저 돌았을 수 있어 두 번)
+                int seen = frames;
+                var waited = Stopwatch.StartNew();
+                while (frames < seen + 2 && waited.ElapsedMilliseconds < 200) Pump(1);
+                GetWindowRect(gh, out var r);
+                double cx = r.Left + (12 + grabPx.X) * dpi.DpiScaleX, cy = r.Top + (12 + grabPx.Y) * dpi.DpiScaleY;
+                worstFollow = Math.Max(worstFollow, Math.Max(Math.Abs(cx - fake.X), Math.Abs(cy - fake.Y)) / dpi.DpiScaleX);
+            }
+            CompositionTarget.Rendering -= count;
+            panelType.GetProperty("CursorForTest", Any)!.SetValue(null, null);
+            panelType.GetProperty("FollowRealCursor", Any)!.SetValue(null, false);
+            Check($"끌기 따라오기({name}, 프레임마다 커서 자리): 다음 프레임에 그림과 커서 거리 ≤ 2px (가장 먼 {worstFollow:0.0}px)", worstFollow <= 2);
+            Check($"끌기 따라오기({name}): 프레임마다 그림과 커서 거리 ≤ 2px (가장 먼 {worst:0.0}px, 한 번 옮기기 평균 {sumMs / steps:0.0}ms·최대 {worstMs:0.0}ms)", worst <= 2);
+            panelType.GetMethod("EndDrag", Any)!.Invoke(w, new object[] { false });
+            Pump(500);
+        }
+        close(w);
+        Pump(400);
+    }
+
     private static void NewFeatures(AppServices services, SettingsService settings, Type panelType, Func<Window> open, Action<Window> close, string outDir, Rect work, WindowTracker tracker)
     {
         // A) 안 쓰는 앱 보기

@@ -76,8 +76,17 @@ internal sealed partial class AllAppsPanel
                 if (Environment.TickCount64 - _pressTicks < DragMinHoldMs) return;
                 Log.Info($"앱 모음 판: 끌기 시작 ({(item.IsGroup ? "묶음" : "앱")})");
                 BeginDrag(el, item, oleData, e.GetPosition(el));
+                UpdateDrag(p);
+                return;
             }
-            UpdateDrag(p);
+            // 그림은 바로 커서로, 놓을 곳 찾기(판 전체 HitTest)는 프레임마다 한 번 — 마우스 이벤트가 밀려 그림이 늦게 따라오지 않게.
+            // 판 밖으로 나가면 윈도우 끌기로 넘기는 건 바로 (프레임 콜백 안에서 끌기 루프를 돌리지 않게)
+            if (FollowRealCursor && p.X >= -6 && p.Y >= -6 && p.X <= ActualWidth + 6 && p.Y <= ActualHeight + 6)
+            {
+                _dragPending = p;
+                FollowCursor();
+            }
+            else UpdateDrag(p);
         };
         el.MouseLeftButtonUp += (_, e) =>
         {
@@ -121,7 +130,56 @@ internal sealed partial class AllAppsPanel
         MoveGhost(Mouse.GetPosition(this));
         _drag.Ghost.Show();
         StartEdgeScroll();
+        StartFollow();
     }
+
+    /// <summary>
+    /// 끄는 그림은 매 프레임 실제 커서 자리(잡은 지점 그대로)에 바로 놓음 — 애니메이션·보간 없음 (2026-10-13 사용자: 폴더 안에서 끌면 무겁게, 거리를 두고 늦게 따라옴).
+    /// 마우스 이벤트 좌표는 판이 바쁘면(다시 그리기·끝 스크롤) 밀려서 늦은 자리일 수 있어 커서 자리를 직접 읽음. 시험(스크립트 끌기)에서는 끔 — 진짜 커서는 안 움직이므로.
+    /// </summary>
+    internal static bool FollowRealCursor { get; set; } = true;
+    private Point? _dragPending;
+    private EventHandler? _followTick;
+
+    private void StartFollow()
+    {
+        if (!FollowRealCursor) return;
+        StopFollow();
+        _followTick = (_, _) =>
+        {
+            if (_drag is null) { StopFollow(); return; }
+            FlushDragPending();
+            FollowCursor();
+        };
+        CompositionTarget.Rendering += _followTick;
+    }
+
+    private void StopFollow()
+    {
+        if (_followTick is not null) CompositionTarget.Rendering -= _followTick;
+        _followTick = null;
+        _dragPending = null;
+    }
+
+    /// <summary>밀린 놓을 곳 찾기를 지금 (놓기 직전·프레임마다).</summary>
+    private void FlushDragPending()
+    {
+        if (_dragPending is not { } p || _drag is null) return;
+        _dragPending = null;
+        UpdateDrag(p);
+    }
+
+    private void FollowCursor()
+    {
+        if (_drag is null || CursorPx() is not { } c) return;
+        PlaceGhost(c);
+    }
+
+    /// <summary>시험에서만: 진짜 커서 대신 쓸 커서 자리(화면 픽셀) — 프레임마다 따라오는지 진짜 마우스 없이 봄.</summary>
+    internal static Func<Point>? CursorForTest { get; set; }
+
+    private static Point? CursorPx() =>
+        CursorForTest is { } f ? f() : Native.DesktopApi.GetCursorPos(out var c) ? new Point(c.X, c.Y) : null;
 
     private System.Windows.Threading.DispatcherTimer? _edgeScroll;
     /// <summary>시험(스크립트 끌기)에서는 끔 — 진짜 커서 자리를 보므로 사용자 커서가 판 끝에 있으면 시험 중 판이 스크롤됨.</summary>
@@ -198,8 +256,16 @@ internal sealed partial class AllAppsPanel
     private void MoveGhost(Point panelPoint)
     {
         if (_drag is null) return;
-        // 판 좌표 → 화면 픽셀, 잡은 자리(1.08배)와 그림자 여백만큼 빼서 픽셀로 바로 옮김 — DIP 변환·창 위치 반올림 차이로 떨어지지 않게
-        var px = PointToScreen(panelPoint);
+        // 판 좌표 → 화면 픽셀, 잡은 자리(1.08배)와 그림자 여백만큼 빼서 픽셀로 바로 옮김 — DIP 변환·창 위치 반올림 차이로 떨어지지 않게.
+        // 실제 마우스로 끌 때는 이벤트 좌표 대신 지금 커서 자리 (이벤트가 밀렸어도 늦은 자리에 놓지 않게)
+        if (FollowRealCursor && CursorPx() is { } c) PlaceGhost(c);
+        else PlaceGhost(PointToScreen(panelPoint));
+    }
+
+    /// <summary>커서 화면 픽셀 → 그림 창 왼쪽 위 (잡은 자리·그림자 여백 12 만큼 뺌).</summary>
+    private void PlaceGhost(Point px)
+    {
+        if (_drag is null) return;
         var dpi = VisualTreeHelper.GetDpi(this);
         var h = new WindowInteropHelper(_drag.Ghost).Handle;
         int x = (int)Math.Round(px.X - (_drag.Grab.X + 12) * dpi.DpiScaleX), y = (int)Math.Round(px.Y - (_drag.Grab.Y + 12) * dpi.DpiScaleY);
@@ -390,6 +456,7 @@ internal sealed partial class AllAppsPanel
     private void HandOffToWindows(Func<DataObject> ole)
     {
         Log.Info("앱 모음 판: 판 밖으로 → 윈도우 끌기로 넘김");
+        StopFollow();
         var d = _drag!;
         _drag = null;
         d.Ghost.Close();
@@ -425,6 +492,7 @@ internal sealed partial class AllAppsPanel
     /// <summary>판이 닫힐 때 끄는 중이면: 아이콘 창을 바로 닫고 반영 없이 끝.</summary>
     private void CancelDragOnClose()
     {
+        StopFollow();
         var d = _drag;
         _drag = null;
         Dragging = false;
@@ -436,6 +504,8 @@ internal sealed partial class AllAppsPanel
     /// <summary>놓기(drop) 또는 취소: 아이콘이 새 자리(또는 원래 자리)로 미끄러져 들어간 뒤 반영.</summary>
     private void EndDrag(bool drop)
     {
+        if (drop) FlushDragPending(); // 마지막 자리의 놓을 곳으로
+        StopFollow();
         var d = _drag;
         if (d is null) return;
         if (PresentationSource.FromVisual(this) is null || PresentationSource.FromVisual(d.Source) is null) { CancelDragOnClose(); return; } // 판·칸이 화면에서 떨어짐
