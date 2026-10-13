@@ -1106,7 +1106,68 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
     {
         if (!Prepare(icon, iconScreenRect, out var e)) return;
         if (e.Pid != 0) T.AllowSetForegroundWindow(e.Pid); // 누를 때 이미 허용 (앱이 누름에서 창을 띄우는 경우)
+        _clickGen++; // 새로 누름 → 앞 클릭의 대체 동작 취소 (두 번 누름 중이면 겹치지 않게)
+        _fgPidAtDown = ForegroundPid(); // 이미 그 앱이 앞이었으면(닫으려고 누름) 대체 동작을 하지 않게
         Send(e, doubleClick ? T.WM_LBUTTONDBLCLK : T.WM_LBUTTONDOWN, MousePoint(iconScreenRect));
+    }
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDoubleClickTime();
+
+    private uint _fgPidAtDown;
+    private int _clickGen;
+
+    private static uint ForegroundPid()
+    {
+        IntPtr fg = User32.GetForegroundWindow();
+        if (fg == IntPtr.Zero) return 0;
+        User32.GetWindowThreadProcessId(fg, out uint pid);
+        return pid;
+    }
+
+    /// <summary>그 앱(pid)의 제목 있는 최상위 창들 — 진단·직접 띄우기용.</summary>
+    private static List<IntPtr> AppWindows(uint pid)
+    {
+        var list = new List<IntPtr>();
+        User32.EnumWindows((h, _) =>
+        {
+            User32.GetWindowThreadProcessId(h, out uint p);
+            if (p == pid && User32.GetWindowTextLength(h) > 0 && User32.GetWindow(h, User32.GW_OWNER) == IntPtr.Zero) list.Add(h);
+            return true;
+        }, IntPtr.Zero);
+        return list;
+    }
+
+    private static string WindowStates(uint pid) => string.Join(", ", AppWindows(pid).Take(4).Select(h =>
+        $"0x{h.ToInt64():X}({(User32.IsWindowVisible(h) ? "보임" : "숨김")}{(User32.IsIconic(h) ? "·최소화" : "")}{(Dwm.GetCloaked(h) != 0 ? "·가림" : "")})"));
+
+    /// <summary>
+    /// 한 번 클릭 대체 동작 (카카오톡처럼 트레이 한 번 클릭으로는 창을 안 여는 앱):
+    /// 400ms 안에 그 앱 창이 앞으로 안 오면 탐색기 더블클릭 순서(DBLCLK → UP)를 이어서 보내고,
+    /// 다시 400ms 뒤에도 안 오면 보이거나 최소화된 그 앱 창을 직접 복원·앞으로. 이미 앞으로 왔으면 아무것도 안 함(두 번 열지 않게).
+    /// 그 앱이 클릭 전부터 앞이었으면(닫으려고 누름) 하지 않음.
+    /// </summary>
+    private async void FollowUpSingleClick(Target e, string name, T.POINT pt, uint fgPidBefore)
+    {
+        int gen = ++_clickGen;
+        try
+        {
+            if (e.Pid == 0 || fgPidBefore == e.Pid) return;
+            await Task.Delay(Math.Max(400, (int)GetDoubleClickTime() + 50)).ConfigureAwait(false); // 두 번 누르는 중인지 알 수 있을 만큼
+            if (gen != _clickGen) return; // 그사이 또 누름
+            if (ForegroundPid() == e.Pid) { Log.Info($"트레이 클릭: {name} 창이 앞으로 옴 (400ms 안)"); return; }
+            Log.Info($"트레이 클릭: {name} 400ms 안에 앞으로 안 옴 → 두 번 누름 보냄 (창 {WindowStates(e.Pid)})");
+            T.AllowSetForegroundWindow(e.Pid);
+            Send(e, T.WM_LBUTTONDBLCLK, pt);
+            Send(e, T.WM_LBUTTONUP, pt);
+            await Task.Delay(400).ConfigureAwait(false);
+            if (gen != _clickGen) return;
+            if (ForegroundPid() == e.Pid) { Log.Info($"트레이 클릭: {name} 두 번 누름으로 열림"); return; }
+            var target = AppWindows(e.Pid).FirstOrDefault(h => User32.IsWindowVisible(h) || User32.IsIconic(h));
+            bool ok = target != IntPtr.Zero && AppLauncher.ActivateWindow(target);
+            Log.Info($"트레이 클릭: {name} 두 번 누름 뒤에도 안 열림 → 창 직접 앞으로 {(target == IntPtr.Zero ? "(보이는 창 없음)" : ok ? "성공" : "실패")} (창 {WindowStates(e.Pid)})");
+        }
+        catch (Exception ex) { Log.Warn($"트레이 클릭 대체 동작 실패: {ex.GetType().Name}"); }
     }
 
     public void LeftUp(TrayIconInfo icon, bool doubleClick, Rect iconScreenRect)
@@ -1118,6 +1179,8 @@ public sealed class TrayIconService : ITrayIconService, IDisposable
         // 탐색기: 버전 3 이상은 떼기 뒤 NIN_SELECT. 더블클릭의 두 번째 떼기에는 보내지 않음 (선택이 두 번 겹쳐 열었다 닫히지 않게)
         if (e.Version >= 3 && !doubleClick) Send(e, T.NIN_SELECT, pt);
         Log.Info($"트레이 클릭 전달: {icon.ProcessName} (버전 {e.Version}, {(doubleClick ? "두 번 누름" : "한 번")}, 누름은 누를 때·떼기{(e.Version >= 3 && !doubleClick ? "+선택" : "")}은 뗄 때)");
+        if (doubleClick) _clickGen++; // 사용자가 직접 두 번 누름 → 대체 동작 취소
+        else FollowUpSingleClick(e, icon.ProcessName ?? "?", pt, _fgPidAtDown);
     }
 
     public void Hover(TrayIconInfo icon, Rect iconScreenRect)
