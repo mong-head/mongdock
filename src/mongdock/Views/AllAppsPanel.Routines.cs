@@ -181,11 +181,14 @@ internal sealed partial class AllAppsPanel
     /// <summary>설명 카드: 아이콘 하나에서 창 3개가 펼쳐지는 그림 + 문구 (+ 0개일 때 [지금 화면으로 만들기] [직접 만들기]).</summary>
     private UIElement RoutineExplainCard(bool showButtons)
     {
+        // 그림 칸은 고정 폭(그림 전체가 들어감), 그림과 글자 사이 28 — 판 배율(LayoutTransform)로 같이 커짐 (2026-10-13 사용자: 그림이 글자·버튼에 닿음)
         var grid = new System.Windows.Controls.Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(BurstWidth) });
         grid.ColumnDefinitions.Add(new ColumnDefinition());
-        grid.Children.Add(BurstPicture());
-        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 0, 0) };
+        var picture = BurstPicture();
+        ((FrameworkElement)picture).VerticalAlignment = VerticalAlignment.Center;
+        grid.Children.Add(picture);
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(28, 0, 0, 0) };
         text.Children.Add(new TextBlock
         {
             Text = Loc.T("루틴 — 자주 쓰는 앱들을 한 번에 열어요. 예: '업무 시작'을 누르면 아웃룩·크롬·한글이 정해 둔 모니터와 자리에 한꺼번에 열려요."),
@@ -198,11 +201,11 @@ internal sealed partial class AllAppsPanel
             TextWrapping = TextWrapping.Wrap,
             FontSize = 11.5,
             Foreground = P.SubText,
-            Margin = new Thickness(0, 4, 0, 0),
+            Margin = new Thickness(0, 6, 0, 0),
         });
         if (showButtons)
         {
-            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
             Button B(string label, bool primary, Action run)
             {
                 var b = new Button
@@ -231,13 +234,16 @@ internal sealed partial class AllAppsPanel
         }
         System.Windows.Controls.Grid.SetColumn(text, 1);
         grid.Children.Add(text);
-        return new Border { Background = P.Tile, CornerRadius = new CornerRadius(12), Padding = new Thickness(14, 12, 14, 12), Margin = new Thickness(4, 0, 4, 6), Child = grid };
+        return new Border { Background = P.Tile, CornerRadius = new CornerRadius(12), Padding = new Thickness(20, 20, 20, 20), Margin = new Thickness(4, 0, 4, 6), Child = grid };
     }
 
     /// <summary>아이콘 하나(몽독 하늘색 판) 오른쪽 위로 창 3개가 부채꼴로 펼쳐지는 작은 그림.</summary>
+    /// <summary>그림 칸 폭: 창 3개(36 + 2×22 + 46 = 126)가 다 들어가게.</summary>
+    private const double BurstWidth = 128;
+
     private UIElement BurstPicture()
     {
-        var canvas = new Canvas { Width = 112, Height = 76 };
+        var canvas = new Canvas { Width = BurstWidth, Height = 76 };
         var colors = new[] { Color.FromRgb(0x9F, 0xD3, 0xFF), Color.FromRgb(0xC2, 0xB4, 0xFF), Color.FromRgb(0xA8, 0xE6, 0xD6) };
         for (int i = 0; i < 3; i++)
         {
