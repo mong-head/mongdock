@@ -78,6 +78,31 @@ internal static class Program
         int routinesAt = Array.FindIndex(args, a => a == "--routines");
         if (routinesAt >= 0 && routinesAt + 1 < args.Length) { RenderRoutines(args[routinesAt + 1]); return _failed == 0 ? 0 : 1; }
 
+        // --seedcheck FILE: 새로 설치한 사용자처럼(빈 데이터 폴더) 윈도우 실행 기록 씨앗만으로 첫날 추천이 몇 개 뜨는지
+        int seedcheck = Array.FindIndex(args, a => a == "--seedcheck");
+        if (seedcheck >= 0 && seedcheck + 1 < args.Length)
+        {
+            string fresh = Path.Combine(Path.GetTempPath(), "mongdock-seed-" + Guid.NewGuid().ToString("N")[..8]);
+            Environment.SetEnvironmentVariable("MONGDOCK_DATA_DIR", fresh); // AppInfo 를 건드리기 전에
+            var asm = typeof(Mongdock.App).Assembly;
+            var flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+            var usage = asm.GetType("Mongdock.Services.AppUsage")!;
+            int seeded = (int)usage.GetMethod("SeedFromUserAssist", flags)!.Invoke(null, new object?[] { null })!;
+            var catalog = asm.GetType("Mongdock.Services.AllAppsCatalog")!;
+            var apps = ((System.Collections.IEnumerable)catalog.GetMethod("Apps")!.Invoke(null, new object[] { false })!).Cast<object>().ToList();
+            var identity = catalog.GetMethods(flags).First(m => m.Name == "Identity" && m.GetParameters()[0].ParameterType.Name == "AppEntry");
+            var ids = apps.Select(a => (string)identity.Invoke(null, new[] { a })!).ToHashSet();
+            var stages = usage.GetMethod("SuggestionStages", flags)!.Invoke(null, new object[] { 16 })!;
+            var result = (List<string>)stages.GetType().GetField("Item4")!.GetValue(stages)!;
+            int fromWin = (int)stages.GetType().GetField("Item3")!.GetValue(stages)!;
+            File.WriteAllLines(args[seedcheck + 1], new[]
+            {
+                $"빈 데이터 폴더(새 설치)에서 윈도우 실행 기록 씨앗: {seeded}개",
+                $"추천 후보: {result.Count}개 (윈도우 기록으로 {fromWin}개), 앱 모음에 있는 앱 {result.Count(ids.Contains)}개 → 독 고정이 없으면 첫날 추천 {Math.Min(4, result.Count(ids.Contains))}칸",
+            });
+            try { Directory.Delete(fresh, true); } catch { }
+            return 0;
+        }
         // --favdiag FILE: 이 PC 실제 기록으로 즐겨찾기 추천이 단계마다 몇 개 남는지 (앱 이름은 FILE 에만 — 로그에 안 남김). 읽기만.
         int favdiag = Array.FindIndex(args, a => a == "--favdiag");
         if (favdiag >= 0 && favdiag + 1 < args.Length)
