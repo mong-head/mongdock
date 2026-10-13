@@ -101,7 +101,9 @@ internal sealed partial class AllAppsPanel
 
     private void BeginDrag(Border source, DragItem item, Func<DataObject>? oleData, Point grab)
     {
-        var size = new Size(source.ActualWidth, source.ActualHeight);
+        double k = UiScale; // 판 안이 커져 있으면(LayoutTransform) 끄는 그림·잡은 자리도 그만큼
+        var size = new Size(source.ActualWidth * k, source.ActualHeight * k);
+        grab = new Point(grab.X * k, grab.Y * k);
         _drag = new DragState
         {
             Item = item,
@@ -126,8 +128,8 @@ internal sealed partial class AllAppsPanel
         var dv = new DrawingVisual();
         using (var dc = dv.RenderOpen())
         {
-            dc.DrawRoundedRectangle(P.CardBackground, null, new Rect(size), 10, 10);
-            dc.DrawRectangle(new VisualBrush(source) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top }, null, new Rect(size));
+            dc.DrawRoundedRectangle(P.CardBackground, null, new Rect(size), 10 * UiScale, 10 * UiScale);
+            dc.DrawRectangle(new VisualBrush(source) { Stretch = Stretch.Fill }, null, new Rect(size)); // 판 배율만큼 (size 가 이미 배율 반영)
         }
         rtb.Render(dv);
         rtb.Freeze();

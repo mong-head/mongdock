@@ -66,6 +66,11 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     /// <summary>판 폭: 작업 영역 80% (세로 모니터 92%), 640~1800 DIP.</summary>
     private static bool _sizeLogged; // 판 크기는 몽독 실행마다 한 번만 로그
 
+    /// <summary>판 안 크기 배율 (1 = 예전 크기). 한 줄 10.5칸 기준으로, 1배 ~ 아이콘 96px(약 2.18배).</summary>
+    internal double UiScale { get; private set; } = 1;
+
+    internal static double UiScaleFor(double width) => Math.Clamp((width - 32) / 10.5 / AppCell, 1, 96.0 / AppIcon);
+
     /// <summary>시험 그림(report-test 크기 비교)에서만: 판 폭·높이를 정함.</summary>
     internal static (double W, double H)? SizeForTest { get; set; }
 
@@ -86,11 +91,20 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         // 폭 80% (세로 모니터 92%), 640~1800 DIP / 높이 88% (최소 480) — 2026-10-13 사용자: 더 크게 (72%·82% 도 "커진 건지 모르겠다", 아이콘·글자는 그대로)
         var work = monitor.WorkArea;
         double width = PanelWidth(work);
-        Cols = Math.Max(4, (int)((width - 32) / AppCell));
+        // 판 안 전체 크기 (2026-10-13 사용자: 아이콘도 키움): 한 줄이 10~11칸이 되게 칸·아이콘·글자·폴더·검색 칸을 같은 비율로 (LayoutTransform)
+        // — 지금 크기(1배)보다 작아지지 않고, 아이콘은 96px 까지. 안쪽 배치는 1배 단위로 계산(폭 / 배율)
+        UiScale = UiScaleFor(width);
+        double logical = width / UiScale;
+        Cols = Math.Max(4, (int)((logical - 32) / AppCell));
         GroupCols = Math.Clamp((int)(Cols * AppCell / GroupCell), 4, 8);
-        _bodyMaxHeight = PanelHeight(work) - 130; // 검색 칸·아래 링크·여백 빼고
-        if (!_sizeLogged) { _sizeLogged = true; Log.Info($"앱 모음 판 크기: 폭 {width:0} DIP (한 줄 {Cols}칸), 높이 최대 {PanelHeight(work):0} DIP — 작업 영역 {work.Width:0}x{work.Height:0} DIP"); }
-        SetBody(BuildShell());
+        _bodyMaxHeight = PanelHeight(work) / UiScale - 130; // 검색 칸·아래 링크·여백 빼고 (1배 단위)
+        // 아이콘 그림 해상도: 커진 아이콘이 흐리지 않게 (64~96px, 바뀌면 판 아이콘 캐시를 비움)
+        int iconPx = (int)Math.Clamp(Math.Ceiling(AppIcon * UiScale * monitor.Scale / 8) * 8, 64, 96);
+        if (iconPx != SmallIconPx) { SmallIconPx = iconPx; SmallIcons.Clear(); }
+        if (!_sizeLogged) { _sizeLogged = true; Log.Info($"앱 모음 판 크기: 폭 {width:0} DIP (한 줄 {Cols}칸, 크기 {UiScale:0.00}배 — 아이콘 {AppIcon * UiScale:0} DIP), 높이 최대 {PanelHeight(work):0} DIP — 작업 영역 {work.Width:0}x{work.Height:0} DIP"); }
+        var shell = BuildShell();
+        if (UiScale > 1.001 && shell is FrameworkElement fe) fe.LayoutTransform = new ScaleTransform(UiScale, UiScale);
+        SetBody(shell);
         _apps = AllAppsCatalog.Cached ?? Array.Empty<AppEntry>();
         Rebuild();
         // 미리 만든 목록으로 다 그린 상태로 열림. 목록이 오래됐으면 뒤에서 새로 만들어 다음 열기에 반영
@@ -501,7 +515,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
 
     /// <summary>판 전용 작은 아이콘 (64px, 독 아이콘 캐시와 따로 — 수백 개를 열어도 독 아이콘을 밀어내지 않음). UI 스레드.</summary>
     private static readonly Dictionary<string, ImageSource> SmallIcons = new(StringComparer.OrdinalIgnoreCase);
-    private const int SmallIconPx = 64;
+    private static int SmallIconPx = 64;
 
     private static ImageSource? SmallIcon(AppServices services, AppEntry app, IconStyle style)
     {
@@ -701,6 +715,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         bool open = _expanded == id;
         var tile = new Border
         {
+            Uid = "tile:" + id, // 폴더 열기·닫기 움직임의 시작·끝 사각형 (AllAppsPanel.Motion.cs)
             Width = GroupTile,
             Height = GroupTile,
             CornerRadius = new CornerRadius(14),

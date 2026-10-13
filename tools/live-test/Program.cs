@@ -202,6 +202,45 @@ internal static class Program
             Pump(400);
         }
 
+        // A3) 폴더 열기·닫기 (아이폰 폴더처럼): 판 본문을 16ms 마다 찍어 프레임 그림 + 열기 250ms·닫기 200ms 안에 끝나는지
+        {
+            var w = open();
+            w.Show();
+            Pump(1200);
+            var folders = (System.Collections.IList)panelType.GetField("_folders", Any)!.GetValue(w)!;
+            string? id = folders.Count > 0 ? (string)folders[0]!.GetType().GetProperty("Id")!.GetValue(folders[0])! : null;
+            if (id is null) Check("폴더: 시험할 폴더가 없음", false);
+            else
+            {
+                var body = new Rect(w.Left + 10, w.Top + 60, Math.Min(900, w.ActualWidth - 20), w.ActualHeight - 70);
+                List<(long, byte[])> Record(Action act, int ms)
+                {
+                    var frames = new List<(long, byte[])>();
+                    var sw = Stopwatch.StartNew();
+                    act();
+                    while (sw.ElapsedMilliseconds < ms) { Pump(16); frames.Add((sw.ElapsedMilliseconds, Grab(body))); }
+                    return frames;
+                }
+                long Settle(List<(long Ms, byte[] Px)> f) => f.Where(x => Diff(f[^1].Px, x.Px) > 0.005).Select(x => x.Ms).DefaultIfEmpty(0).Max();
+                var openFrames = Record(() =>
+                {
+                    panelType.GetField("_expanded", Any)!.SetValue(w, id);
+                    panelType.GetMethod("Rebuild", Any)!.Invoke(w, null);
+                }, 600);
+                long openEnd = Settle(openFrames);
+                Check($"폴더 열기: 300ms 안에 자리 잡음 ({openEnd}ms)", openEnd > 60 && openEnd <= 330);
+                SaveStrip(Path.Combine(outDir, "frames-folder-open.png"), openFrames.Where((_, i) => i % 2 == 0).Take(12).ToList(), (int)body.Width, (int)body.Height);
+                Pump(400);
+                var closeFrames = Record(() => panelType.GetMethod("CloseFolderAnimated", Any)!.Invoke(w, null), 600);
+                long closeEnd = Settle(closeFrames);
+                Check($"폴더 닫기: 400ms 안에 자리 잡음 (줄어듦 200ms + 남는 칸 미끄러짐, {closeEnd}ms)", closeEnd > 60 && closeEnd <= 420);
+                SaveStrip(Path.Combine(outDir, "frames-folder-close.png"), closeFrames.Where((_, i) => i % 2 == 0).Take(12).ToList(), (int)body.Width, (int)body.Height);
+                Check("폴더 닫기 뒤 펼친 폴더 없음", panelType.GetField("_expanded", Any)!.GetValue(w) is null);
+            }
+            close(w);
+            Pump(400);
+        }
+
         // B) 튀기기 애니메이션 (실제 창)
         {
             var layout = Mongdock.ViewModels.DockLayout.From(settings.Current.Dock, true);
@@ -226,9 +265,14 @@ internal static class Program
             while (sw.ElapsedMilliseconds < 1900) { Pump(16); samples.Add((sw.ElapsedMilliseconds, bounce.Y)); }
             double expect = layout.NotifyBounceHeight;
             double maxUp = samples.Max(x => -x.Y);
+            // 튄 횟수 = 낮은 곳(30% 아래)에서 높은 곳(60% 위)으로 올라간 횟수 (위에서 잠깐 머무는 구간의 작은 흔들림은 세지 않음)
             int peaks = 0;
-            for (int i = 1; i + 1 < samples.Count; i++)
-                if (-samples[i].Y > expect * 0.6 && -samples[i].Y >= -samples[i - 1].Y && -samples[i].Y > -samples[i + 1].Y) peaks++;
+            bool low = true;
+            foreach (var (_, y) in samples)
+            {
+                if (low && -y > expect * 0.6) { peaks++; low = false; }
+                else if (!low && -y < expect * 0.3) low = true;
+            }
             long settled = samples.FirstOrDefault(x => x.Ms > 500 && Math.Abs(x.Y) < 0.5 && samples.Where(y => y.Ms >= x.Ms).All(y => Math.Abs(y.Y) < 0.5)).Ms;
             Console.WriteLine($"    애니메이션 켬 {animOn}, 아이콘 {layout.IconSize}, 기대 높이 {expect:0.0}, 최고 {maxUp:0.0}, 봉우리 {peaks}, 제자리 {settled}ms");
             Check($"튀기기: 애니메이션 설정 켜짐 (꺼져 있으면 튀지 않는 게 맞음)", animOn);
