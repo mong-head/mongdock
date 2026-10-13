@@ -19,7 +19,7 @@ internal sealed partial class AllAppsPanel
     /// 판 글자 배율 안 (2026-10-13 사용자 고르기 중): "A" = 아이콘과 같이(예전), "B" = 설정 창 크기, "C" = 아이콘 배율의 절반만.
     /// 앱 이름·폴더 이름(Uid "name")은 어느 안이든 아이콘과 같이 커짐.
     /// </summary>
-    internal static string TextMode { get; set; } = "A"; // 2026-10-13 사용자 선택: A (글자도 아이콘과 같이)
+    internal static string TextMode { get; set; } = "C"; // 2026-10-13 사용자 선택: C (글자는 아이콘 배율의 절반, 앱·폴더 이름은 아이콘과 같이)
 
     private double TextScale => TextMode switch { "A" => UiScale, "C" => 1 + (UiScale - 1) / 2, _ => 1 };
 
