@@ -63,6 +63,13 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     /// <summary>앱 모음 판은 "특별대우": 독 버튼 옆이 아니라 화면 가운데.</summary>
     protected override bool Centered => true;
 
+    /// <summary>판 폭: 작업 영역 72% (세로 모니터 90%), 640~1500 DIP.</summary>
+    internal static double PanelWidth(Rect work) =>
+        Math.Clamp(work.Width * (work.Height > work.Width ? 0.90 : 0.72), Math.Min(640, work.Width - 40), 1500);
+
+    /// <summary>판 높이 기준: 작업 영역 82% (최소 480).</summary>
+    internal static double PanelHeight(Rect work) => Math.Max(480, work.Height * 0.82);
+
     /// <summary>크기가 커서 레이어드 창 대신 일반 창 (열 때 투명 구간 없이).</summary>
     protected override bool Layered => false;
 
@@ -71,13 +78,12 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     {
         _style = services.Settings.Current.Dock.IconStyle;
         // 크기 = 독이 있는 모니터 작업 영역 비율 (열 때마다 계산 — 배율·모니터가 바뀌어도 맞게):
-        // 폭 60% (세로 모니터 85%), 640~1200 DIP / 높이 75% (최소 480)
+        // 폭 72% (세로 모니터 90%), 640~1500 DIP / 높이 82% (최소 480) — 2026-10-13 사용자: 더 크게 (아이콘·글자는 그대로, 한 줄에 더 많이)
         var work = monitor.WorkArea;
-        bool portrait = work.Height > work.Width;
-        double width = Math.Clamp(work.Width * (portrait ? 0.85 : 0.6), Math.Min(640, work.Width - 40), 1200);
+        double width = PanelWidth(work);
         Cols = Math.Max(4, (int)((width - 32) / AppCell));
         GroupCols = Math.Clamp((int)(Cols * AppCell / GroupCell), 4, 8);
-        _bodyMaxHeight = Math.Max(480, work.Height * 0.75) - 130; // 검색 칸·아래 링크·여백 빼고
+        _bodyMaxHeight = PanelHeight(work) - 130; // 검색 칸·아래 링크·여백 빼고
         SetBody(BuildShell());
         _apps = AllAppsCatalog.Cached ?? Array.Empty<AppEntry>();
         Rebuild();

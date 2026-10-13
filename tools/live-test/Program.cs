@@ -140,7 +140,7 @@ internal static class Program
     /// <summary>판을 열고 900ms 동안 16ms 마다 판 자리를 찍어, 보이는 정도가 오르다 내려가지 않는지(번쩍임·두 번 뜸) 확인. 그다음 닫고 그림 창이 남지 않는지.</summary>
     private static void OpenAndWatch(string name, Func<Window> open, Action<Window> close, Func<bool> ghostVisible, string outDir, Rect work)
     {
-        double width = Math.Clamp(work.Width * 0.6, Math.Min(640, work.Width - 40), 1200);
+        double width = Math.Clamp(work.Width * (work.Height > work.Width ? 0.90 : 0.72), Math.Min(640, work.Width - 40), 1500);
         var sample = new Rect(work.Left + work.Width / 2 - 120, work.Top + work.Height * 0.35, 240, 120); // 판 가운데 위쪽 (검색 칸 아래)
         var dpi = VisualTreeHelper.GetDpi(new System.Windows.Controls.Border());
         var before = Grab(sample);

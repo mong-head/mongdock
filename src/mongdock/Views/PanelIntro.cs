@@ -109,8 +109,8 @@ internal static class PanelIntro
             if (g.IsVisible) return;
             // 판 크기만 한 투명 표면을 한 번 실제로 그려 둠 (16px 로 띄우면 첫 열기 때 큰 표면을 만드느라 0.6초 멈춤 — QA 측정)
             var work = Monitors.GetPrimary().WorkArea;
-            g.Width = Math.Min(1200, work.Width * 0.6) + 56;
-            g.Height = Math.Max(480, work.Height * 0.75) + 56;
+            g.Width = AllAppsPanel.PanelWidth(work) + 56;
+            g.Height = AllAppsPanel.PanelHeight(work) + 56;
             // 아이콘에서 방식은 그림 창이 독 아이콘까지 덮어 더 큼 (판 + 아래 독까지) — 그 크기로 미리 그려 둬야 첫 열기에 큰 표면을 새로 만들지 않음 (QA: 첫 프레임 389ms)
             if (Mode(services.Settings.Current) == Icon) { g.Width = Math.Max(g.Width, Math.Min(work.Width, 1400)); g.Height = work.Height + 56; }
             _canvas!.Width = g.Width;
