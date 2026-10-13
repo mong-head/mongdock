@@ -136,9 +136,16 @@ internal static class Program
             var panelOnly = (List<string>)stages.GetType().GetField("Item1")!.GetValue(stages)!;
             int oldShown = panelOnly.Where(byId.ContainsKey).Where(id => !docked.Contains(id) && !s.AllApps.Favorites.Contains(Key(byId[id]), StringComparer.OrdinalIgnoreCase)).Count();
             var mapped = result.Where(byId.ContainsKey).ToList();
-            var notDocked = mapped.Where(id => !docked.Contains(id)).ToList();
+            var notDocked = mapped.ToList(); // 독 고정 앱도 추천에 넣음 (2026-10-13)
             var notFav = notDocked.Where(id => !s.AllApps.Favorites.Contains(Key(byId[id]), StringComparer.OrdinalIgnoreCase)).ToList();
             var final = notFav.Where(id => !(s.AllApps.DismissedSuggestions.TryGetValue(Key(byId[id]), out var when) && DateTime.Now - when < TimeSpan.FromDays(30))).ToList();
+            // 앱이 실제로 쓰는 계산 그대로 (AllAppsPanel.Suggestions 와 같은 Keep·SeedKeep)
+            var isSystem = asm.GetType("Mongdock.Services.UnusedApps")!.GetMethod("IsSystemApp", flags)!;
+            Func<string, bool> keep = id => byId.TryGetValue(id, out var a)
+                && !s.AllApps.Favorites.Contains(Key(a), StringComparer.OrdinalIgnoreCase)
+                && !(s.AllApps.DismissedSuggestions.TryGetValue(Key(a), out var w) && DateTime.Now - w < TimeSpan.FromDays(30));
+            Func<string, bool> seedKeep = id => byId.TryGetValue(id, out var a) && !(bool)isSystem.Invoke(null, new[] { a })!;
+            var real = (List<string>)usage.GetMethod("Suggestions", flags)!.Invoke(null, new object?[] { 4, keep, seedKeep })!;
             var lines = new List<string>
             {
                 $"기록 켜짐: {s.AllApps.ShowSuggestions}",
@@ -146,10 +153,11 @@ internal static class Program
                 $"2) 새 창 기록까지 더한 후보: {Item(2)}개",
                 $"3) 윈도우 기록(UserAssist)으로 채움: {Item(3)}개 → 후보 합계 {result.Count}개 (최대 16개까지 봄)",
                 $"4) 앱 모음 목록에 있는 앱: {mapped.Count}개",
-                $"5) 독 고정 앱 뺌: {notDocked.Count}개",
+                $"5) 독 고정 앱은 빼지 않음: {notDocked.Count}개",
                 $"6) 즐겨찾기 이미 든 앱 뺌: {notFav.Count}개",
                 $"7) 30일 안에 뺀(×) 앱 뺌: {final.Count}개 → 판에 보이는 추천 {Math.Min(4, final.Count)}개",
                 "추천 (PM 보고용): " + string.Join(", ", final.Take(4).Select(id => Name(byId[id]))),
+                "앱과 같은 계산(빼기 먼저 → 1순위 → 2순위, 기본 앱은 2순위에서 뺌): " + string.Join(", ", real.Select(id => Name(byId[id]))) + $" ({real.Count}칸)",
             };
             File.WriteAllLines(args[favdiag + 1], lines);
             return 0;

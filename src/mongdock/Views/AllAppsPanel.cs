@@ -354,17 +354,17 @@ internal sealed partial class AllAppsPanel : DockStackPanel
 
     /// <summary>
     /// 즐겨찾기 추천: 최근 14일 2일 이상·3회 이상 실행(이 PC 안에서만 셈), 횟수 많은 순.
-    /// 이미 즐겨찾기·독에 고정된 앱, 숨긴 앱, 30일 안에 뺀 앱은 빼고.
+    /// 이미 즐겨찾기인 앱, 숨긴 앱, 30일 안에 뺀 앱은 빼고 (독 고정 앱은 넣음).
     /// </summary>
     private static List<AppEntry> Suggestions(Settings settings, List<AppEntry> visible, int max)
     {
         var S = settings.AllApps;
         var byIdentity = new Dictionary<string, AppEntry>();
         foreach (var a in visible) byIdentity.TryAdd(AllAppsCatalog.Identity(a), a);
-        var docked = settings.Pins.Select(AllAppsCatalog.Identity).OfType<string>().ToHashSet();
-        // 빼는 규칙: 앱 모음에 없음(숨김 포함 — visible 은 숨긴 앱 제외)·독 고정·이미 즐겨찾기·× 뒤 30일 — 빼고 나서 1순위→2순위로 칸을 채움
+        // 빼는 규칙: 앱 모음에 없음(숨김 포함 — visible 은 숨긴 앱 제외)·이미 즐겨찾기·× 뒤 30일 — 빼고 나서 1순위→2순위로 칸을 채움.
+        // 독 고정 앱은 빼지 않음 (2026-10-13 사용자: 독과 판 즐겨찾기는 쓰임이 달라 겹쳐도 됨 — 자주 쓰는 앱이 다 독에 있으면 추천이 0개였음)
         bool Keep(string id) =>
-            byIdentity.TryGetValue(id, out var app) && !docked.Contains(id)
+            byIdentity.TryGetValue(id, out var app)
             && !S.Favorites.Contains(app.Key, StringComparer.OrdinalIgnoreCase)
             && !(S.DismissedSuggestions.TryGetValue(app.Key, out var when) && DateTime.Now - when < TimeSpan.FromDays(30));
         // 2순위(윈도우 기록)는 윈도우 기본 앱·도구를 뺌 — 단축키·윈도우가 연 것도 남아서 "자주 쓴 앱"이 아님. 1순위(몽독이 본 기록)는 그대로.
