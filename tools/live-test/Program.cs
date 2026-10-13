@@ -422,6 +422,71 @@ internal static class Program
         Pump(300);
         var afterAuto = Keys(((System.Collections.IList)panelType.GetField("_folders", Any)!.GetValue(w)!).Cast<object>().First(f => Id(f) == id));
         Check("폴더 순서: 자동 분류를 다시 돌려도 순서 그대로", afterAuto.SequenceEqual(expect));
+
+        // 폴더 줄 (같은 미리 비켜 주기 엔진): 첫 폴더를 셋째 폴더 자리로 끌면 둘째·셋째가 한 칸 앞으로 비켜나고, 강조는 없음, 놓으면 순서 바뀜
+        panelType.GetField("_expanded", Any)!.SetValue(w, null);
+        panelType.GetMethod("Rebuild", Any)!.Invoke(w, null);
+        Pump(500);
+        var dropTag = panelType.GetNestedType("DropTag", BindingFlags.NonPublic)!;
+        string Kind(FrameworkElement e) => e.Tag is { } t && t.GetType() == dropTag ? (string)dropTag.GetProperty("Kind")!.GetValue(t)! : "";
+        string TagKey(FrameworkElement e) => (string)dropTag.GetProperty("Key")!.GetValue(e.Tag)!;
+        var tiles = Descendants((DependencyObject)w.Content).OfType<System.Windows.Controls.Border>().Where(b => Kind(b) == "group" && TagKey(b) != "other").ToList();
+        var order0 = ((System.Collections.IList)panelType.GetField("_folders", Any)!.GetValue(w)!).Cast<object>().Select(Id).ToList();
+        if (tiles.Count >= 4)
+        {
+            if (panelType.GetField("_bodyScroll", Any)!.GetValue(w) is System.Windows.Controls.ScrollViewer sv2)
+            {
+                sv2.ScrollToVerticalOffset(sv2.VerticalOffset + tiles[0].TranslatePoint(new Point(0, 0), sv2).Y - 120);
+                Pump(400);
+            }
+            string k0 = TagKey(tiles[0]);
+            double slot = tiles[1].TranslatePoint(new Point(0, 0), tiles[0]).X; // 폴더 칸 한 자리 폭
+            var at = tiles[2].TranslatePoint(new Point(tiles[2].ActualWidth / 2, tiles[2].ActualHeight * 0.4), w);
+            panelType.GetMethod("BeginDrag", Any)!.Invoke(w, new object?[] { tiles[0], Activator.CreateInstance(dragItem, true, k0, false), null, new Point(tiles[0].ActualWidth / 2, 30) });
+            panelType.GetMethod("UpdateDrag", Any)!.Invoke(w, new object[] { at });
+            Pump(300);
+            double t1 = X(tiles[1]), t2 = X(tiles[2]), t3 = X(tiles[3]);
+            var drag = panelType.GetField("_drag", Any)!.GetValue(w)!;
+            bool highlighted = drag.GetType().GetField("Highlight")!.GetValue(drag) is not null;
+            Check($"폴더 줄: 끄는 동안 둘째·셋째 폴더가 한 자리 앞으로, 넷째 그대로, 강조 없음 (x {t1:0}, {t2:0}, {t3:0} / 자리 {slot:0}, 강조 {highlighted})",
+                Math.Abs(t1 + slot) < 2 && Math.Abs(t2 + slot) < 2 && Math.Abs(t3) < 2 && !highlighted);
+            Check($"폴더 줄: 원래 자리는 비움 (끄는 칸 불투명도 {tiles[0].Opacity:0.00})", tiles[0].Opacity < 0.01);
+            panelType.GetMethod("EndDrag", Any)!.Invoke(w, new object[] { true });
+            Pump(700);
+            var order1 = ((System.Collections.IList)panelType.GetField("_folders", Any)!.GetValue(w)!).Cast<object>().Select(Id).ToList();
+            var want = order0.Skip(1).Take(2).Append(order0[0]).Concat(order0.Skip(3)).ToList();
+            Check($"폴더 줄: 놓으면 첫 폴더가 셋째 자리로 (앞 4개 {string.Join(",", order1.Take(4).Select(x => order0.IndexOf(x)))} — 기대 1,2,0,3)", order1.Take(4).SequenceEqual(want.Take(4)));
+        }
+        else Check("폴더 줄: 폴더가 4개 이상 필요", false);
+
+        // 즐겨찾기 (같은 엔진): 첫 앱을 셋째 자리로
+        var catalogApps = ((System.Collections.IEnumerable)catalog.GetProperty("Cached")!.GetValue(null)!).Cast<object>().Take(4).Select(a => (string)a.GetType().GetProperty("Key")!.GetValue(a)!).ToList();
+        settings.Current.AllApps.Favorites.Clear();
+        settings.Current.AllApps.Favorites.AddRange(catalogApps);
+        panelType.GetMethod("Rebuild", Any)!.Invoke(w, null);
+        Pump(500);
+        var favCells = ((System.Collections.IEnumerable)panelType.GetField("_favCells", Any)!.GetValue(w)!).Cast<System.Windows.Controls.Border>().ToList();
+        if (favCells.Count >= 4)
+        {
+            if (panelType.GetField("_bodyScroll", Any)!.GetValue(w) is System.Windows.Controls.ScrollViewer sv3)
+            {
+                sv3.ScrollToVerticalOffset(sv3.VerticalOffset + favCells[0].TranslatePoint(new Point(0, 0), sv3).Y - 120);
+                Pump(400);
+            }
+            string f0 = TagKey(favCells[0]);
+            var at = favCells[2].TranslatePoint(new Point(favCells[2].ActualWidth / 2, favCells[2].ActualHeight * 0.4), w);
+            panelType.GetMethod("BeginDrag", Any)!.Invoke(w, new object?[] { favCells[0], Activator.CreateInstance(dragItem, false, f0, false), null, new Point(favCells[0].ActualWidth / 2, 20) });
+            panelType.GetMethod("UpdateDrag", Any)!.Invoke(w, new object[] { at });
+            Pump(300);
+            Check($"즐겨찾기: 끄는 동안 둘째·셋째가 한 칸 앞으로, 넷째 그대로 (x {X(favCells[1]):0}, {X(favCells[2]):0}, {X(favCells[3]):0})",
+                Math.Abs(X(favCells[1]) + appCell) < 2 && Math.Abs(X(favCells[2]) + appCell) < 2 && Math.Abs(X(favCells[3])) < 2);
+            panelType.GetMethod("EndDrag", Any)!.Invoke(w, new object[] { true });
+            Pump(700);
+            var favNow = settings.Current.AllApps.Favorites.Take(4).ToList();
+            var favWant = catalogApps.Skip(1).Take(2).Append(catalogApps[0]).Append(catalogApps[3]).ToList();
+            Check("즐겨찾기: 놓으면 첫 앱이 셋째 자리로", favNow.SequenceEqual(favWant));
+        }
+        else Check("즐겨찾기: 칸 4개 필요", false);
         close(w);
         Pump(400);
     }

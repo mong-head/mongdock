@@ -53,7 +53,6 @@ internal sealed partial class AllAppsPanel
         public FrameworkElement? HighlightPart; // 그 칸에서 실제로 커지는 부분 (폴더 = 폴더 그림, 앱 = 아이콘)
         public Brush? HighlightOldBorder;
         public Vector IconOffset;            // 칸 왼쪽 위 → 끄는 그림(아이콘) 왼쪽 위 (판 좌표, 배율 반영)
-        public int FavIndex = -1;
         public DropTag? Target;
     }
 
@@ -64,7 +63,6 @@ internal sealed partial class AllAppsPanel
     private string? _groupGridId;
     private readonly List<Border> _groupCells = new();
     private readonly List<AppEntry> _groupApps = new();
-    private int _groupGap = -1;
     private Point _press;
     private Border? _pressedCell;
 
@@ -171,13 +169,14 @@ internal sealed partial class AllAppsPanel
             IconOffset = new Vector(off.X * k, off.Y * k),
         };
         _pressRelease?.Invoke(); // 눌린 아이콘은 원래대로 (끄는 그림이 따로 나옴)
-        source.Opacity = 0.25; // 원래 자리는 흐린 빈 칸
+        source.Opacity = 0; // 원래 자리는 빈자리 (흐린 자리 표시 없이 — 런치패드처럼)
         source.ToolTip = null;
         Dragging = true; // 끄는 동안은 비활성화·바깥 판정으로 판을 닫지 않음
         // 보이기 전에 창 핸들을 만들고 커서 아래(잡은 자리 그대로)로 먼저 옮긴 뒤 보임 — 첫 프레임이 다른 자리에 그려졌다 날아오지 않게
         new WindowInteropHelper(_drag.Ghost).EnsureHandle();
         MoveGhost(Mouse.GetPosition(this));
         _drag.Ghost.Show();
+        BuildLanes(source); // 순서 바꾸기 줄들의 원래 자리 (AllAppsPanel.Lanes.cs)
         StartEdgeScroll();
         StartFollow();
     }
@@ -389,16 +388,27 @@ internal sealed partial class AllAppsPanel
 
         var target = outside ? null : TargetAt(p, d.Item);
         SetHighlight(target is { Kind: "group" or "app" or "newfolder" } ? FindCell(target) : null);
-        if (target is { Kind: "fav" or "favapp" }) ShiftFavorites(p);
-        else ShiftFavorites(null);
-        ShiftGroup(target is { Kind: "groupgrid" } && !d.Item.IsGroup ? p : null);
+        // 순서 바꾸기 줄: 커서 자리에 빈자리를 미리 열고 나머지는 비켜 줌 (다른 줄은 원래대로)
+        ShiftLanes(LaneOf(target), p);
         d.Target = target;
         ((FrameworkElement)d.Ghost.Content).Opacity = target is null ? 0.45 : 1; // 놓을 수 없는 곳이면 흐리게
     }
 
     /// <summary>커서 아래의 놓을 곳 (앱: ★ 줄 / 묶음 칸 / 다른 앱(새 묶음), 묶음: 다른 묶음 칸).</summary>
+    private static string? LaneOf(DropTag? target) => target?.Kind switch
+    {
+        "fav" or "favapp" => "fav",
+        "groupgrid" => "inside",
+        "folderrow" => "folders",
+        "routinerow" => "routines",
+        _ => null,
+    };
+
     private DropTag? TargetAt(Point p, DragItem item)
     {
+        // 루틴·폴더는 자기 줄 안에서 순서만 — 다른 칸을 강조하지 않고 비켜 주기만 (폴더 안에 폴더는 넣지 않음)
+        if (item.IsRoutine) return InLane("routines", p) ? new DropTag("routinerow", "") : null;
+        if (item.IsGroup) return InLane("folders", p) ? new DropTag("folderrow", "") : null;
         DropTag? found = null;
         VisualTreeHelper.HitTest(this, null, r =>
         {
@@ -497,75 +507,6 @@ internal sealed partial class AllAppsPanel
         }
     }
 
-    /// <summary>★ 줄: 놓일 자리를 만들려고 옆 칸들이 부드럽게 비켜남 (끄는 칸이 줄 안이면 그 자리는 먼저 메움). null = 원래대로.</summary>
-    private void ShiftFavorites(Point? p)
-    {
-        var d = _drag;
-        if (d is null || _favRow is null) return;
-        int src = _favCells.IndexOf(d.Source);
-        int index = -1;
-        if (p is { } pt)
-        {
-            var local = TranslatePoint(pt, _favRow);
-            index = Math.Clamp((int)Math.Round(local.X / AppCell), 0, Math.Max(0, _favCells.Count - (src >= 0 ? 1 : 0)));
-        }
-        d.FavIndex = index;
-        for (int i = 0; i < _favCells.Count; i++)
-        {
-            var cell = _favCells[i];
-            if (cell == d.Source) continue;
-            int eff = src >= 0 && i > src ? i - 1 : i; // 끄는 칸을 뺀 순서
-            double x = (eff - i) * AppCell + (index >= 0 && eff >= index ? AppCell : 0);
-            if (cell.RenderTransform is not TranslateTransform tt) cell.RenderTransform = tt = new TranslateTransform();
-            tt.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(x, TimeSpan.FromMilliseconds(ShiftMs)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
-        }
-    }
-
-    /// <summary>
-    /// 펼친 폴더: 커서 자리에 빈칸을 만들고 다른 칸들이 120ms 로 비켜남 (즐겨찾기 순서 바꾸기와 같은 동작, 여러 줄 — 줄 끝은 다음 줄 처음으로).
-    /// 끄는 앱이 이 폴더 앱이면 그 칸을 뺀 순서로 (순서 바꾸기, 2026-10-14 사용자). p = null 이면 원래대로.
-    /// </summary>
-    private void ShiftGroup(Point? p)
-    {
-        if (_groupGrid is null) return;
-        int perRow = Math.Max(1, (int)(_groupGrid.Width / AppCell));
-        double rowH = _groupCells.Count > 0 ? _groupCells[0].ActualHeight + 4 : AppCell;
-        int src = _drag is { } dd ? _groupCells.IndexOf(dd.Source) : -1;
-        int count = _groupCells.Count - (src >= 0 ? 1 : 0);
-        int gap = -1;
-        if (p is { } pt)
-        {
-            var local = TranslatePoint(pt, _groupGrid);
-            int row = Math.Max(0, (int)Math.Floor(local.Y / rowH));
-            int col = Math.Clamp((int)Math.Floor(local.X / AppCell), 0, perRow - 1); // 커서가 있는 칸 자리에 들어감 (런치패드처럼)
-            gap = Math.Clamp(row * perRow + col, 0, count);
-        }
-        if (gap == _groupGap) return;
-        _groupGap = gap;
-        for (int i = 0; i < _groupCells.Count; i++)
-        {
-            if (i == src) continue; // 끄는 칸은 흐린 빈 칸으로 제자리
-            int eff = src >= 0 && i > src ? i - 1 : i; // 끄는 칸을 뺀 순서
-            int to = gap >= 0 ? (eff >= gap ? eff + 1 : eff) : i;
-            double dx = (to % perRow - i % perRow) * AppCell, dy = (to / perRow - i / perRow) * rowH;
-            var cell = _groupCells[i];
-            if (cell.RenderTransform is not TranslateTransform tt) cell.RenderTransform = tt = new TranslateTransform();
-            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-            tt.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(dx, TimeSpan.FromMilliseconds(ShiftMs)) { EasingFunction = ease });
-            tt.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(dy, TimeSpan.FromMilliseconds(ShiftMs)) { EasingFunction = ease });
-        }
-    }
-
-    /// <summary>펼친 묶음 빈칸 자리 (판 좌표).</summary>
-    private Point GroupGapOrigin()
-    {
-        if (_groupGrid is null) return new Point();
-        int perRow = Math.Max(1, (int)(_groupGrid.Width / AppCell));
-        double rowH = _groupCells.Count > 0 ? _groupCells[0].ActualHeight + 4 : AppCell;
-        int g = Math.Max(0, _groupGap);
-        return _groupGrid.TranslatePoint(new Point(g % perRow * AppCell, g / perRow * rowH), this);
-    }
-
     /// <summary>판 밖으로: 판 안 끌기를 접고 윈도우 끌기로 (독에 놓으면 고정, 바탕 화면엔 바로 가기 복사). 복사/링크만.</summary>
     private void HandOffToWindows(Func<DataObject> ole)
     {
@@ -582,8 +523,8 @@ internal sealed partial class AllAppsPanel
         {
             d.Source.Opacity = 1;
             Dragging = false;
-            ResetFavShift();
-            ShiftGroup(null);
+            ShiftLanes(null, null);
+            _lanes.Clear();
         }
     }
 
@@ -612,12 +553,6 @@ internal sealed partial class AllAppsPanel
         d.HighlightOldBorder = null;
     }
 
-    private void ResetFavShift()
-    {
-        foreach (var c in _favCells)
-            if (c.RenderTransform is TranslateTransform tt) { tt.BeginAnimation(TranslateTransform.XProperty, null); tt.X = 0; }
-    }
-
     /// <summary>판이 닫힐 때 끄는 중이면: 아이콘 창을 바로 닫고 반영 없이 끝.</summary>
     private void CancelDragOnClose()
     {
@@ -642,17 +577,34 @@ internal sealed partial class AllAppsPanel
         var target = drop ? d.Target : null;
         Rect to;
         Action? apply = null;
-        if (target is { Kind: "fav" or "favapp" } && !d.Item.IsGroup && _favRow is not null)
+        string? laneKind = LaneOf(target);
+        int laneGap = laneKind is null ? -1 : LaneGap(laneKind);
+        Point? gapAt = laneKind is null ? null : LaneGapOrigin(laneKind);
+        if (target is { Kind: "fav" or "favapp" } && !d.Item.IsGroup && gapAt is { } favAt)
         {
-            int index = Math.Max(0, d.FavIndex);
-            var origin = _favRow.TranslatePoint(new Point(index * AppCell, 0), this);
-            to = new Rect(origin, d.GhostSize);
+            int index = Math.Max(0, laneGap);
+            to = new Rect(favAt, d.GhostSize);
             apply = () => PinAt(d.Item.Key, index);
         }
-        else if (target is { Kind: "groupgrid" } && !d.Item.IsGroup)
+        else if (target is { Kind: "folderrow" } && gapAt is { } folderAt)
         {
-            to = new Rect(GroupGapOrigin(), d.GhostSize);
-            int index = Math.Max(0, _groupGap);
+            // 폴더 줄 순서: 나머지 폴더 순서에서 gap 자리 앞으로 (끝이면 "기타" 앞)
+            var others = LaneOthers("folders");
+            int index = Math.Max(0, laneGap);
+            to = new Rect(folderAt, d.GhostSize);
+            apply = () => MoveGroupBefore(d.Item.Key, index < others.Count ? others[index] : Mongdock.Services.AllAppsCatalog.Other);
+        }
+        else if (target is { Kind: "routinerow" } && gapAt is { } routineAt)
+        {
+            var others = LaneOthers("routines");
+            int index = Math.Max(0, laneGap);
+            to = new Rect(routineAt, d.GhostSize);
+            apply = () => MoveRoutineBefore(d.Item.Key, index < others.Count ? others[index] : "");
+        }
+        else if (target is { Kind: "groupgrid" } && !d.Item.IsGroup && gapAt is { } insideAt)
+        {
+            to = new Rect(insideAt, d.GhostSize);
+            int index = Math.Max(0, laneGap);
             bool inside = _groupApps.Any(a => a.Key == d.Item.Key) && target.Key == _groupGridId;
             apply = () =>
             {
@@ -668,8 +620,6 @@ internal sealed partial class AllAppsPanel
             to = new Rect(cell.TranslatePoint(new Point(0, 0), this), new Size(cell.ActualWidth, cell.ActualHeight));
             apply = target.Kind switch
             {
-                "routine" => () => MoveRoutineBefore(d.Item.Key, target.Key),
-                "group" when d.Item.IsGroup => () => MoveGroupBefore(d.Item.Key, target.Key),
                 "group" => () => { if (_apps.FirstOrDefault(a => a.Key == d.Item.Key) is { } app) MoveTo(app, target.Key); },
                 "app" => () => MakeGroupOf(target.Key, d.Item.Key),
                 "newfolder" => () =>
@@ -687,22 +637,21 @@ internal sealed partial class AllAppsPanel
             to = new Rect(d.Source.TranslatePoint(new Point(0, 0), this), new Size(d.Source.ActualWidth, d.Source.ActualHeight)); // 원래 자리로
         }
         SetHighlightOff(d);
-        Log.Info($"앱 모음 판: 끌기 끝 — {(apply is null ? (drop ? "놓을 곳 없음, 원래 자리로" : "취소, 원래 자리로") : $"{target!.Kind} 에 놓음{(target.Kind is "fav" or "favapp" ? $" (자리 {d.FavIndex})" : "")}")}");
+        Log.Info($"앱 모음 판: 끌기 끝 — {(apply is null ? (drop ? "놓을 곳 없음, 원래 자리로" : "취소, 원래 자리로") : $"{target!.Kind} 에 놓음{(laneGap >= 0 ? $" (자리 {laneGap})" : "")}")}");
         var dpi = VisualTreeHelper.GetDpi(this);
         var destPx = PointToScreen(to.TopLeft + d.IconOffset); // 아이콘만 끄므로 칸 안의 아이콘 자리로
         SlideGhost(d.Ghost, new Point(destPx.X - 12 * dpi.DpiScaleX, destPx.Y - 12 * dpi.DpiScaleY), () =>
         {
             d.Source.Opacity = 1;
             Dragging = false;
-            if (apply is null) ShiftGroup(null); // 취소·놓을 곳 없음: 비켜난 폴더 칸을 원래대로
-            _groupGap = -1;
+            if (apply is null) ShiftLanes(null, null); // 취소·놓을 곳 없음: 비켜난 칸을 원래대로
             if (apply is not null)
             {
                 _justDropped = d.Item.Key; // 놓은 칸은 끄는 그림이 간 그 자리에 바로 (미끄러지기·나타나기 없음 — 나머지 칸만 움직임)
                 apply(); // 저장 → 다시 그림 (비켜난 칸도 새 자리로)
                 _justDropped = null;
             }
-            else ResetFavShift();
+            _lanes.Clear();
             // 끄는 그림은 다시 그린 판이 화면에 나온 다음 프레임에 닫음 — 먼저 닫으면 (모든 앱을 펼쳐 둔 판은 다시 그리기가 길어) 그 칸이 잠깐 비어 보였음
             int frames = 0;
             EventHandler? tick = null;
