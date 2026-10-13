@@ -13,8 +13,7 @@ namespace Mongdock.Views;
 /// - 판 열기: 그림 창으로 판이 커진 뒤, 둘째 구역부터 위에서 차례로(20ms 간격) 흐릿→보임 + 8px 올라옴 (첫 구역은 지금처럼 바로 보임)
 /// - 다시 그릴 때(검색·칩·폴더·편집·추가/빼기·숨기기·끌어 놓기): 남는 칸은 새 자리로 미끄러지고(150ms), 새 칸은 위에서부터 차례로 흐릿→보임,
 ///   빠지는 칸은 옛 자리에서 흐려지며 작아짐(180ms — 옛 칸 그림을 판 위 겹층에 잠깐 그림)
-/// - 폴더 열기 (아이폰 폴더처럼): 폴더 칸 사각형에서 펼친 폴더 사각형으로 위치·크기를 보간(250ms, 확대·글자 늘어남 없음),
-///   뒤 판은 살짝 어두워지고, 안의 아이콘은 60% 지점부터 흐릿→보임. 닫기: 아이콘이 먼저 흐려지고 사각형이 그 칸으로 줄어듦(200ms), 어둡기도 풀림
+/// - 폴더 열기: 펼친 폴더가 위에서 아래로 드러나며 흐릿→보임(220ms) / 닫기: 거꾸로 접힌 뒤(200ms) 다시 그림 — 자리·배치는 그대로
 /// - 편집 모드에 들어가면 −·× 표시가 0.6→1배로
 /// - 마우스 올림: 아이콘 1.06배(100ms)
 /// </summary>
@@ -121,8 +120,6 @@ internal sealed partial class AllAppsPanel
                 foreach (var badge in Descendants(root).OfType<FrameworkElement>().Where(e => e.Uid == "editbadge"))
                     Grow(badge, 0.6, FadeMs);
             if (folderOpened && _expandedView is { } box && _expanded is { } id) FolderOpen(box, id);
-            else if (_expanded is null) FolderDimOff(animate: false);
-            else UpdateFolderHole();
         }
     }
 
@@ -188,176 +185,58 @@ internal sealed partial class AllAppsPanel
         protected override Geometry GetLayoutClip(Size layoutSlotSize) => new RectangleGeometry(new Rect(AdornedElement.RenderSize));
     }
 
-    // ── 폴더 열기·닫기 (아이폰 폴더처럼) ──
+    // ── 폴더 열기·닫기 ──
+    // 2026-10-13 사용자: 아이폰식(칸에서 커지는 카드·뒤 판 어둡게·스크롤)은 되돌림 — 열리는 방식·자리·배치는 예전 그대로(폴더 줄 아래에 펼침),
+    // 움직임만 매끄럽게: 펼친 폴더가 위에서 아래로 드러나며(잘라 보이는 영역만 커짐 — 확대·글자 늘어남 없음) 흐릿→보임, 아래 줄은 같이 미끄러져 내려감.
+    // 닫기는 거꾸로(아래에서 위로 접히며 흐려짐) 뒤 다시 그림 — 아래 줄은 미끄러져 올라옴. ease-out, 열기 220ms·닫기 200ms, 튐·두 번 커짐 없음.
 
-    private const int FolderOpenMs = 250, FolderCloseMs = 200, FolderContentFadeMs = 100;
-    private FolderLayer? _folderLayer;
+    private const int FolderOpenMs = 220, FolderCloseMs = 200;
 
-    private Rect? RectIn(FrameworkElement el) =>
-        el.ActualWidth > 0 && el.IsDescendantOf(View) ? new Rect(el.TranslatePoint(new Point(0, 0), View), new Size(el.ActualWidth, el.ActualHeight)) : null;
-
-    private FrameworkElement? TileOf(string id) =>
-        _body.Content is DependencyObject root ? Descendants(root).OfType<FrameworkElement>().FirstOrDefault(e => e.Uid == "tile:" + id) : null;
-
-    private FolderLayer? EnsureFolderLayer()
-    {
-        if (_folderLayer is not null) return _folderLayer;
-        if (_bodyScroll is not { } scroll || System.Windows.Documents.AdornerLayer.GetAdornerLayer(scroll) is not { } layer) return null;
-        _folderLayer = new FolderLayer(scroll, P.IsLight ? Color.FromArgb(0x1A, 0, 0, 0) : Color.FromArgb(0x40, 0, 0, 0));
-        layer.Add(_folderLayer);
-        scroll.ScrollChanged += (_, _) => UpdateFolderHole();
-        return _folderLayer;
-    }
-
-    /// <summary>열기: 폴더 칸 사각형 → 펼친 폴더 사각형 (Canvas 위치·크기 보간 — 확대가 아니라 글자·아이콘이 늘어나지 않음).</summary>
     private void FolderOpen(FrameworkElement box, string id)
     {
-        if (!Motion || TileOf(id) is not { } tile || RectIn(tile) is not { } from || RectIn(box) is not { } to || EnsureFolderLayer() is not { } layer) return;
-        if (box.RenderTransform is TranslateTransform) box.RenderTransform = null; // 새 칸으로 나타나기가 걸려 있으면 풀기
+        if (!Motion || box.ActualHeight <= 0) return;
+        if (box.RenderTransform is TranslateTransform) box.RenderTransform = null; // 새 칸 나타나기가 걸려 있으면 풀기
         box.BeginAnimation(OpacityProperty, null);
-        box.Opacity = 0; // 진짜 펼친 폴더는 다 커진 뒤에 (그동안은 겹층의 카드가 대신)
-        // 펼친 폴더가 판 아래로 잘리면 같은 250ms 동안 부드럽게 올려 다 보이게 (카드는 올라간 뒤 자리로)
-        if (_bodyScroll is { } sv && to.Bottom > sv.ViewportHeight - 8)
-        {
-            double delta = Math.Min(to.Bottom - sv.ViewportHeight + 8, Math.Max(0, to.Top - 8)); // 폴더 위쪽이 판 위로 나가지 않을 만큼만
-            delta = Math.Min(delta, sv.ScrollableHeight - sv.VerticalOffset);
-            if (delta > 1)
-            {
-                to = new Rect(to.X, to.Y - delta, to.Width, to.Height);
-                ScrollBy(sv, delta, FolderOpenMs);
-            }
-        }
-        var content = (box as Border)?.Child as FrameworkElement;
-        layer.Morph(from, to, FolderOpenMs, P.Tile, 14, 12, content, contentFrom: 0, contentTo: 1, contentBeginMs: (int)(FolderOpenMs * 0.6), contentMs: FolderContentFadeMs, () =>
-        {
-            box.Opacity = 1;
-            UpdateFolderHole();
-        });
-        layer.Dim(true, FolderOpenMs, to);
+        Reveal(box, open: true, FolderOpenMs, null);
     }
 
-    /// <summary>닫기: 안의 아이콘이 먼저 흐려지고(80ms) 사각형이 폴더 칸으로 줄어듦(200ms), 어둡기도 풀림 → 다시 그림.</summary>
     private void CloseFolderAnimated()
     {
         string? id = _expanded;
-        if (!Motion || id is null || _expandedView is not { } box || TileOf(id) is not { } tile || RectIn(box) is not { } from || RectIn(tile) is not { } to || EnsureFolderLayer() is not { } layer)
+        if (!Motion || id is null || _expandedView is not { } box || box.ActualHeight <= 0)
         {
             _expanded = null;
             Rebuild();
             return;
         }
-        var content = (box as Border)?.Child as FrameworkElement;
-        box.Opacity = 0;
-        layer.Morph(from, to, FolderCloseMs, P.Tile, 12, 14, content, contentFrom: 1, contentTo: 0, contentBeginMs: 0, contentMs: 80, () =>
-        {
-            layer.Clear();
-            if (_expanded == id) { _expanded = null; Rebuild(); }
-        });
-        layer.Dim(false, FolderCloseMs, null);
+        Reveal(box, open: false, FolderCloseMs, () => { if (_expanded == id) { _expanded = null; Rebuild(); } });
     }
 
-    /// <summary>본문 스크롤을 ms 동안 ease-out 으로 delta 만큼 (ScrollViewer 는 애니메이션 속성이 없어 렌더 프레임마다).</summary>
-    private static void ScrollBy(ScrollViewer sv, double delta, int ms)
+    /// <summary>펼친 폴더를 위에서부터 드러내기/접기: 보이는 영역(Clip) 높이와 불투명도만 움직임 (레이아웃·크기는 그대로).</summary>
+    private static void Reveal(FrameworkElement box, bool open, int ms, Action? done)
     {
-        double from = sv.VerticalOffset;
-        var clock = System.Diagnostics.Stopwatch.StartNew();
-        EventHandler? tick = null;
-        tick = (_, _) =>
+        double w = box.ActualWidth, h = box.ActualHeight;
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var shown = new Rect(0, 0, w, h);
+        var hidden = new Rect(0, 0, w, Math.Min(h, 24)); // 이름 줄 높이쯤에서 시작/끝 (0 이면 빈칸이 갑자기 생긴 것처럼 보임)
+        var clip = new RectangleGeometry(open ? hidden : shown, 12, 12);
+        box.Clip = clip;
+        var grow = new RectAnimation(open ? hidden : shown, open ? shown : hidden, TimeSpan.FromMilliseconds(ms)) { EasingFunction = ease };
+        grow.Completed += (_, _) =>
         {
-            double t = Math.Min(1, clock.ElapsedMilliseconds / (double)ms);
-            sv.ScrollToVerticalOffset(from + delta * (1 - Math.Pow(1 - t, 3)));
-            if (t >= 1) CompositionTarget.Rendering -= tick;
+            if (open) box.Clip = null;
+            done?.Invoke();
         };
-        CompositionTarget.Rendering += tick;
+        clip.BeginAnimation(RectangleGeometry.RectProperty, grow);
+        box.BeginAnimation(OpacityProperty, new DoubleAnimation(open ? 0 : 1, open ? 1 : 0, TimeSpan.FromMilliseconds(ms)) { EasingFunction = ease, FillBehavior = open ? FillBehavior.Stop : FillBehavior.HoldEnd });
     }
 
-    private void UpdateFolderHole()
-    {
-        if (_folderLayer is null) return;
-        if (_expanded is null || _expandedView is not { } box || RectIn(box) is not { } r) { _folderLayer.Dim(false, 0, null); return; }
-        _folderLayer.Hole(r);
-    }
-
-    private void FolderDimOff(bool animate) => _folderLayer?.Dim(false, animate ? FolderCloseMs : 0, null);
-
-    /// <summary>폴더 움직임 겹층: 뒤 판 어둡게(펼친 폴더 자리만 뚫림) + 칸↔폴더 사이를 오가는 카드. 마우스는 통과, 본문 스크롤 안으로 잘림.</summary>
-    private sealed class FolderLayer : System.Windows.Documents.Adorner
-    {
-        private readonly Canvas _canvas = new() { IsHitTestVisible = false };
-        private readonly System.Windows.Shapes.Path _dim;
-        private readonly Color _dimColor;
-        private Border? _card;
-        private Rect _hole;
-
-        public FolderLayer(UIElement adorned, Color dim) : base(adorned)
-        {
-            IsHitTestVisible = false;
-            _dimColor = dim;
-            _dim = new System.Windows.Shapes.Path { Fill = new SolidColorBrush(dim), Opacity = 0, IsHitTestVisible = false };
-            _canvas.Children.Add(_dim);
-            AddVisualChild(_canvas);
-        }
-
-        protected override int VisualChildrenCount => 1;
-        protected override Visual GetVisualChild(int index) => _canvas;
-        protected override Size MeasureOverride(Size constraint) { _canvas.Measure(AdornedElement.RenderSize); return AdornedElement.RenderSize; }
-        protected override Size ArrangeOverride(Size finalSize) { _canvas.Arrange(new Rect(finalSize)); UpdateDim(); return finalSize; }
-        protected override Geometry GetLayoutClip(Size layoutSlotSize) => new RectangleGeometry(new Rect(AdornedElement.RenderSize));
-
-        private void UpdateDim()
-        {
-            var all = new RectangleGeometry(new Rect(AdornedElement.RenderSize));
-            _dim.Data = _hole.IsEmpty ? all : new CombinedGeometry(GeometryCombineMode.Exclude, all, new RectangleGeometry(_hole, 12, 12));
-        }
-
-        public void Hole(Rect r) { _hole = r; UpdateDim(); }
-
-        public void Dim(bool on, int ms, Rect? hole)
-        {
-            if (hole is { } h) _hole = h;
-            else if (!on && ms == 0) _hole = Rect.Empty;
-            UpdateDim();
-            var a = new DoubleAnimation(on ? 1 : 0, TimeSpan.FromMilliseconds(Math.Max(1, ms))) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
-            _dim.BeginAnimation(OpacityProperty, a);
-        }
-
-        public void Clear()
-        {
-            if (_card is not null) { _canvas.Children.Remove(_card); _card = null; }
-        }
-
-        /// <summary>카드 사각형을 from → to 로 (위치·크기 보간), 안의 모습(content 그림)은 contentBeginMs 부터 contentFrom→contentTo.</summary>
-        public void Morph(Rect from, Rect to, int ms, Brush background, double radiusFrom, double radiusTo, FrameworkElement? content,
-            double contentFrom, double contentTo, int contentBeginMs, int contentMs, Action done)
-        {
-            Clear();
-            var inner = new System.Windows.Shapes.Rectangle
-            {
-                // 내용은 늘이지 않고 왼쪽 위 기준으로 잘라 보임 (늘어남 없음)
-                Fill = content is not null ? new VisualBrush(content) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top, ViewboxUnits = BrushMappingMode.Absolute, Viewbox = new Rect(0, 0, Math.Max(1, content.ActualWidth), Math.Max(1, content.ActualHeight)), ViewportUnits = BrushMappingMode.Absolute, Viewport = new Rect(8, 8, Math.Max(1, content.ActualWidth), Math.Max(1, content.ActualHeight)), TileMode = TileMode.None } : null,
-                Opacity = contentFrom,
-            };
-            _card = new Border { Background = background, CornerRadius = new CornerRadius(radiusFrom), Child = inner, ClipToBounds = true, IsHitTestVisible = false };
-            _canvas.Children.Add(_card);
-            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-            var d = TimeSpan.FromMilliseconds(ms);
-            Canvas.SetLeft(_card, from.X);
-            Canvas.SetTop(_card, from.Y);
-            _card.Width = from.Width;
-            _card.Height = from.Height;
-            _card.BeginAnimation(Canvas.LeftProperty, new DoubleAnimation(from.X, to.X, d) { EasingFunction = ease });
-            _card.BeginAnimation(Canvas.TopProperty, new DoubleAnimation(from.Y, to.Y, d) { EasingFunction = ease });
-            _card.BeginAnimation(WidthProperty, new DoubleAnimation(from.Width, to.Width, d) { EasingFunction = ease });
-            var h = new DoubleAnimation(from.Height, to.Height, d) { EasingFunction = ease };
-            var card = _card;
-            h.Completed += (_, _) => { if (_card == card) { Clear(); } done(); };
-            _card.BeginAnimation(HeightProperty, h);
-            inner.BeginAnimation(OpacityProperty, new DoubleAnimation(contentFrom, contentTo, TimeSpan.FromMilliseconds(contentMs)) { BeginTime = TimeSpan.FromMilliseconds(contentBeginMs), EasingFunction = ease });
-        }
-    }
-
+    /// <summary>
+    /// 따라갈 칸들 — 보이고 배치된 것만 (2026-10-13 사용자: 놓을 때 아이콘이 판 왼쪽 위에서 날아옴 — 접혀 있거나 아직 배치 안 된 칸은
+    /// 위치가 (0,0)으로 재져서 다시 그린 뒤 거기서부터 미끄러졌음).
+    /// </summary>
     private static IEnumerable<FrameworkElement> Keyed(DependencyObject root) =>
-        Descendants(root).OfType<FrameworkElement>().Where(e => MotionKey(e) is not null);
+        Descendants(root).OfType<FrameworkElement>().Where(e => MotionKey(e) is not null && e.IsVisible && e.ActualWidth > 0 && e.ActualHeight > 0);
 
     /// <summary>움직임으로 따라갈 칸의 이름: 끌기용 표시(앱·폴더 칸) 또는 Uid(목록 줄).</summary>
     private static string? MotionKey(FrameworkElement e) =>

@@ -222,6 +222,13 @@ internal static class Program
                     return frames;
                 }
                 long Settle(List<(long Ms, byte[] Px)> f) => f.Where(x => Diff(f[^1].Px, x.Px) > 0.005).Select(x => x.Ms).DefaultIfEmpty(0).Max();
+                // 폴더 줄이 본문 위쪽에 오게 스크롤 (펼친 폴더가 판 아래로 잘리지 않게 — 판은 스스로 스크롤하지 않음)
+                if (panelType.GetField("_bodyScroll", Any)!.GetValue(w) is System.Windows.Controls.ScrollViewer bodyScroll)
+                {
+                    var tileEl = Descendants((DependencyObject)w.Content).OfType<FrameworkElement>().FirstOrDefault(e => e.Uid == "tile:" + id);
+                    if (tileEl is not null) bodyScroll.ScrollToVerticalOffset(bodyScroll.VerticalOffset + tileEl.TranslatePoint(new Point(0, 0), bodyScroll).Y - 20);
+                    Pump(300);
+                }
                 var openFrames = Record(() =>
                 {
                     panelType.GetField("_expanded", Any)!.SetValue(w, id);
@@ -287,41 +294,107 @@ internal static class Program
                 Pump(500);
             }
             if (cells.Count == 0) Check("끌기 시작: 끌 칸을 찾지 못함", false);
-            // 진짜 마우스로 (사용자 말: "잡는 순간 판 왼쪽 위에서 나타났다가 커서로") — 누르고 150ms 뒤 12px 끌면서 판 왼쪽 위~칸 자리를 찍음
-            if (cells.Count > 0 && GetCursorPos(out var saved))
+            // (진짜 마우스 시험은 뺌 — 누른 자리가 판 밖이면 사용자 창을 누를 수 있어서, 2026-10-13)
+
+            close(w);
+            Pump(400);
+        }
+
+        // A5) 끌어 놓기 (2026-10-13 사용자: 놓을 때 아이콘이 판 왼쪽 위에서 그 자리로 날아감) — 놓은 직후 프레임마다 미끄러지는 칸의 출발점이
+        //     판 왼쪽 위(본문 0,0 근처)가 아닌지, 결과가 맞게 저장됐는지. 모든 앱→즐겨찾기 / 즐겨찾기 순서 / 앱→폴더 칸 / 폴더 안→즐겨찾기 / 밖→펼친 폴더
+        {
+            var w = open();
+            panelType.GetField("_allOpen", Any)!.SetValue(w, true);
+            w.Show();
+            Pump(1200);
+            panelType.GetMethod("Rebuild", Any)!.Invoke(w, null);
+            Pump(500);
+            var dropTag = panelType.GetNestedType("DropTag", BindingFlags.NonPublic)!;
+            var dragItem = panelType.GetNestedType("DragItem", BindingFlags.NonPublic)!;
+            string Kind(FrameworkElement e) => e.Tag is { } t && t.GetType() == dropTag ? (string)dropTag.GetProperty("Kind")!.GetValue(t)! : "";
+            string KeyOf(FrameworkElement e) => (string)dropTag.GetProperty("Key")!.GetValue(e.Tag)!;
+            List<FrameworkElement> Tagged(string kind) => Descendants((DependencyObject)w.Content).OfType<FrameworkElement>().Where(e => Kind(e) == kind && e.IsVisible && e.ActualWidth > 0).ToList();
+            var view = (UIElement)panelType.GetProperty("View", Any)!.GetValue(w)!;
+            void Drop(string name, FrameworkElement from, FrameworkElement to, Func<bool> ok)
             {
-                // 폴더 칸만 (앱 칸을 떼면 그 앱이 실행될 수 있어서 — 사용자 앱은 건드리지 않음)
-                var cell = cells.FirstOrDefault(c => (string)dropTag.GetProperty("Kind")!.GetValue(c.Tag)! == "group") ?? cells[0];
-                if ((string)dropTag.GetProperty("Kind")!.GetValue(cell.Tag)! != "group") { Check("끌기 시작(진짜 마우스): 폴더 칸이 없어 건너뜀", true); goto skipReal; }
-                var center = cell.PointToScreen(new Point(cell.ActualWidth / 2, cell.ActualHeight / 2));
-                var dpi = VisualTreeHelper.GetDpi(w);
-                var topLeft = w.PointToScreen(new Point(0, 0));
-                var region = new Rect(w.Left, w.Top, Math.Min(w.ActualWidth, (center.X - topLeft.X) / dpi.DpiScaleX + 120), Math.Min(w.ActualHeight, (center.Y - topLeft.Y) / dpi.DpiScaleY + 80));
-                SetCursorPos((int)center.X, (int)center.Y);
-                Pump(150);
-                mouse_event(0x0002, 0, 0, 0, IntPtr.Zero); // 왼쪽 누름
-                Pump(220);
-                var frames = new List<(long, byte[])>();
+                bool group = Kind(from) == "group";
+                var grab = new Point(from.ActualWidth / 2, from.ActualHeight / 2);
+                var target = to.TranslatePoint(new Point(to.ActualWidth / 2, to.ActualHeight / 2), w);
+                panelType.GetMethod("BeginDrag", Any)!.Invoke(w, new object?[] { from, Activator.CreateInstance(dragItem, group, KeyOf(from), false), null, grab });
+                panelType.GetMethod("UpdateDrag", Any)!.Invoke(w, new object[] { target });
+                Pump(200);
+                panelType.GetMethod("UpdateDrag", Any)!.Invoke(w, new object[] { target });
+                panelType.GetMethod("EndDrag", Any)!.Invoke(w, new object[] { true });
+                // 끄는 그림이 자리로 가고(150ms) 저장·다시 그림 → 그 뒤 프레임마다 미끄러지는 칸 출발점 확인
+                double worstStart = double.MaxValue, maxOffset = 0;
+                string? bad = null;
                 var sw = Stopwatch.StartNew();
-                for (int i = 1; i <= 6; i++) { SetCursorPos((int)center.X + i * 4, (int)center.Y); Pump(16); frames.Add((sw.ElapsedMilliseconds, Grab(region))); }
-                for (int i = 0; i < 6; i++) { Pump(16); frames.Add((sw.ElapsedMilliseconds, Grab(region))); }
-                var drag = panelType.GetField("_drag", Any)!.GetValue(w);
-                double off = -1;
-                if (drag is not null)
+                while (sw.ElapsedMilliseconds < 600)
                 {
-                    var ghost = (Window)drag.GetType().GetField("Ghost")!.GetValue(drag)!;
-                    var grabPx = (Point)drag.GetType().GetField("Grab")!.GetValue(drag)!;
-                    GetWindowRect(new WindowInteropHelper(ghost).Handle, out var r);
-                    GetCursorPos(out var now);
-                    off = Math.Max(Math.Abs(r.Left + (12 + grabPx.X) * dpi.DpiScaleX - now.X), Math.Abs(r.Top + (12 + grabPx.Y) * dpi.DpiScaleY - now.Y)) / dpi.DpiScaleX;
+                    Pump(16);
+                    foreach (var el in Descendants((DependencyObject)w.Content).OfType<FrameworkElement>().Where(e => Kind(e) != "" && e.IsVisible && e.RenderTransform is TranslateTransform))
+                    {
+                        var tt = (TranslateTransform)el.RenderTransform;
+                        if (Math.Abs(tt.X) + Math.Abs(tt.Y) < 2) continue;
+                        var now = el.TranslatePoint(new Point(0, 0), view); // 지금 그려진 자리 (이동 포함)
+                        var final = new Point(now.X - tt.X, now.Y - tt.Y);
+                        maxOffset = Math.Max(maxOffset, Math.Abs(tt.X) + Math.Abs(tt.Y));
+                        double fromOrigin = Math.Abs(now.X) + Math.Abs(now.Y);
+                        if (fromOrigin < 40 && Math.Abs(final.X) + Math.Abs(final.Y) > 80) { bad = $"{Kind(el)} 칸이 ({now.X:0},{now.Y:0})에서 출발"; }
+                        worstStart = Math.Min(worstStart, fromOrigin);
+                    }
                 }
-                mouse_event(0x0004, 0, 0, 0, IntPtr.Zero); // 뗌
-                Pump(400);
-                SetCursorPos(saved.X, saved.Y); // 커서 원래 자리로
-                SaveStrip(Path.Combine(outDir, "frames-drag-start.png"), frames, (int)region.Width, (int)region.Height);
-                Check($"끌기 시작(진짜 마우스): 끌기가 시작됨, 그림이 커서에서 4px 안 ({(drag is null ? "끌기 안 됨" : $"{off:0.0}px")})", drag is not null && off <= 4);
+                Check($"놓기 {name}: 판 왼쪽 위에서 날아오는 칸 없음 ({bad ?? $"가장 큰 미끄러짐 {maxOffset:0}px"})", bad is null);
+                Check($"놓기 {name}: 결과 저장됨", ok());
+                Pump(300);
             }
-            skipReal:
+            var settings0 = settings.Current.AllApps;
+            // 1) 모든 앱 → 즐겨찾기 (빈 즐겨찾기 칸)
+            var appCells = Tagged("app");
+            var favSlot = Tagged("fav").FirstOrDefault();
+            if (appCells.Count >= 3 && favSlot is not null)
+            {
+                string k1 = KeyOf(appCells[0]);
+                Drop("모든 앱→즐겨찾기", appCells[0], favSlot, () => settings0.Favorites.Contains(k1));
+                // 두 번째도 넣어 순서 바꾸기 시험 준비
+                var fav2 = Tagged("fav").FirstOrDefault() ?? Tagged("favapp").LastOrDefault();
+                string k2 = KeyOf(Tagged("app")[1]);
+                if (fav2 is not null) Drop("모든 앱→즐겨찾기 (둘째)", Tagged("app")[1], fav2, () => settings0.Favorites.Contains(k2));
+                // 2) 즐겨찾기 순서 바꾸기: 첫째를 둘째 자리 뒤로
+                var favs = Tagged("favapp");
+                if (favs.Count >= 2)
+                {
+                    string first = KeyOf(favs[0]);
+                    Drop("즐겨찾기 순서", favs[0], favs[^1], () => settings0.Favorites.IndexOf(first) > 0);
+                }
+            }
+            else Check("놓기: 모든 앱 칸이나 즐겨찾기 자리를 찾지 못함", false);
+            // 3) 앱 → 폴더 칸
+            var groups = Tagged("group");
+            var someApp = Tagged("app").Skip(5).FirstOrDefault();
+            if (groups.Count > 0 && someApp is not null)
+            {
+                string gid = KeyOf(groups[0]), key = KeyOf(someApp);
+                Drop("앱→폴더 칸", someApp, groups[0], () => true);
+            }
+            // 4) 폴더 펼치고: 폴더 안 → 즐겨찾기, 밖 → 펼친 폴더
+            if (groups.Count > 0)
+            {
+                panelType.GetField("_expanded", Any)!.SetValue(w, KeyOf(groups[0]));
+                panelType.GetMethod("Rebuild", Any)!.Invoke(w, null);
+                Pump(500);
+                var inner = Descendants((DependencyObject)w.Content).OfType<FrameworkElement>()
+                    .FirstOrDefault(e => Kind(e) == "app" && e.IsVisible && ((System.Collections.IList)panelType.GetField("_groupCells", Any)!.GetValue(w)!).Contains(e));
+                var favTarget = Tagged("favapp").LastOrDefault() ?? Tagged("fav").FirstOrDefault();
+                if (inner is not null && favTarget is not null)
+                {
+                    string ik = KeyOf(inner);
+                    Drop("폴더 안→즐겨찾기", inner, favTarget, () => settings0.Favorites.Contains(ik));
+                }
+                var grid = Descendants((DependencyObject)w.Content).OfType<FrameworkElement>().FirstOrDefault(e => Kind(e) == "groupgrid" && e.IsVisible);
+                var outside = Tagged("app").LastOrDefault(e => !((System.Collections.IList)panelType.GetField("_groupCells", Any)!.GetValue(w)!).Contains(e));
+                if (grid is not null && outside is not null) Drop("밖→펼친 폴더", outside, grid, () => true);
+            }
             close(w);
             Pump(400);
         }
