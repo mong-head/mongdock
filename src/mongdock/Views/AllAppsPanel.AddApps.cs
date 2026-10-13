@@ -137,6 +137,7 @@ internal sealed partial class AllAppsPanel
                 var check = DockMenus.Check(P, null, inside || st.Chosen.Contains(a.Key));
                 check.IsEnabled = !inside;
                 check.Focusable = false; // 키보드는 줄 단위로 (줄에 몽독 포커스 테두리)
+                check.FocusVisualStyle = null;
                 check.VerticalAlignment = VerticalAlignment.Center;
                 check.Margin = new Thickness(4, 0, 10, 0);
                 check.Checked += (_, _) => { st.Chosen.Add(a.Key); UpdateAdd(); };
@@ -149,7 +150,7 @@ internal sealed partial class AllAppsPanel
                 line.Children.Add(img);
                 line.Children.Add(new TextBlock { Text = a.Name, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
                 if (inside) line.Children.Add(new TextBlock { Text = Loc.T("이미 들어 있어요"), FontSize = 11.5, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) });
-                var row = new Border { CornerRadius = new CornerRadius(6), Child = line, Opacity = inside ? 0.5 : 1, Background = Brushes.Transparent, Cursor = inside ? Cursors.Arrow : Cursors.Hand, Focusable = !inside };
+                var row = new Border { CornerRadius = new CornerRadius(6), Child = line, Opacity = inside ? 0.5 : 1, Background = Brushes.Transparent, Cursor = inside ? Cursors.Arrow : Cursors.Hand, Focusable = !inside, FocusVisualStyle = null };
                 if (!inside)
                 {
                     rows.Add(row);

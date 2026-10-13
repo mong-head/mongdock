@@ -536,6 +536,13 @@ internal static class Program
                 var layer = f2 is null ? null : System.Windows.Documents.AdornerLayer.GetAdornerLayer(f2);
                 bool ring = layer?.GetAdorners(f2!)?.Any(a => a.GetType().Name == "RingAdorner") == true;
                 Check("키보드: 줄에 몽독 포커스 테두리 (점선 아님)", ring);
+                if (f2 is not null)
+                {
+                    Pump(200);
+                    var (dark, lilac) = EdgePixels(f2);
+                    Check($"키보드: 실제 화면 픽셀 — 줄 가장자리에 검은 점선 없음 (어두운 점 {dark}개), 연보라 테두리 있음 ({lilac}개)", dark == 0 && lilac > 20);
+                    Check($"키보드: WPF 점선 장식 없음", !HasDotted(f2));
+                }
                 var full = new Rect(w.Left, w.Top, w.ActualWidth, Math.Min(w.ActualHeight, 360));
                 SaveStrip(Path.Combine(outDir, "addapps-keyboard-focus.png"), new List<(long, byte[])> { (0, Grab(full)) }, (int)full.Width, (int)full.Height);
                 Key(System.Windows.Input.Key.Space);
@@ -545,6 +552,51 @@ internal static class Program
             }
             close(w);
             Pump(400);
+        }
+
+        // A8) 판·설정·신고·루틴 편집: 스크립트 Tab 30번 — 포커스 간 요소마다 WPF 점선 장식이 붙는지
+        {
+            var asm = typeof(Mongdock.App).Assembly;
+            var wins = new List<(string Name, Func<Window> Make)>
+            {
+                ("앱 모음 판", () => open()),
+                ("설정", () => (Window)asm.GetType("Mongdock.Views.SettingsWindow")!.GetConstructors(Any)[0].Invoke(new object[] { services })),
+                ("신고", () => new Mongdock.Views.ReportWindow(settings.Current)),
+                ("루틴 편집", () =>
+                {
+                    var r = new RoutineDef { Id = "live", Name = "시험" };
+                    return (Window)asm.GetType("Mongdock.Views.RoutineEditorWindow")!.GetConstructors(Any)[0].Invoke(new object?[] { services, null, r, false });
+                }),
+            };
+            foreach (var (name, make) in wins)
+            {
+                Window? w = null;
+                try
+                {
+                    w = make();
+                    w.Show();
+                    w.Activate();
+                    Pump(800);
+                    int dotted = 0, visited = 0;
+                    List<UIElement> targets;
+                    // Tab 이 닿는 곳 = 포커스 받을 수 있는 보이는 칸 전부 — 키 입력(스크립트)으로 "키보드 상태"를 만든 뒤 하나씩 포커스
+                    targets = Descendants(w).OfType<UIElement>().Where(e => e.Focusable && e.IsVisible && e.IsEnabled && System.Windows.Input.KeyboardNavigation.GetIsTabStop(e)).Take(40).ToList();
+                    foreach (var fe in targets)
+                    {
+                        var src = PresentationSource.FromVisual(w);
+                        if (src is null) break;
+                        System.Windows.Input.InputManager.Current.ProcessInput(new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice, src, 0, System.Windows.Input.Key.LeftShift) { RoutedEvent = System.Windows.Input.Keyboard.PreviewKeyDownEvent });
+                        System.Windows.Input.Keyboard.Focus(fe);
+                        Pump(40);
+                        if (!fe.IsKeyboardFocused) continue;
+                        visited++;
+                        if (HasDotted(fe)) dotted++;
+                    }
+                    Check($"Tab 한 바퀴({name}): WPF 점선 없음 (Tab 칸 {targets.Count}개 중 포커스 간 곳 {visited}개, 점선 {dotted}번, 창 활성 {w.IsActive})", dotted == 0);
+                }
+                catch (Exception ex) { Check($"Tab 한 바퀴({name}): 창을 못 띄움 {ex.GetType().Name} {ex.InnerException?.Message ?? ex.Message}", false); }
+                finally { try { w?.Close(); } catch { } Pump(300); }
+            }
         }
 
         // B) 튀기기 애니메이션 (실제 창)
@@ -682,6 +734,34 @@ internal static class Program
             yield return c;
             foreach (var d in Descendants(c)) yield return d;
         }
+    }
+
+    /// <summary>WPF 기본 점선(FocusVisualAdorner)이 그 요소에 붙어 있는지.</summary>
+    private static bool HasDotted(UIElement el) =>
+        System.Windows.Documents.AdornerLayer.GetAdornerLayer(el)?.GetAdorners(el)?.Any(a => a.GetType().Name == "FocusVisualAdorner") == true;
+
+    /// <summary>요소 가장자리(바깥 4px 포함 8px 띠)의 실제 화면 픽셀: 어두운 점(점선) 수, 연보라 점(몽독 테두리) 수.</summary>
+    private static (int Dark, int Lilac) EdgePixels(FrameworkElement el)
+    {
+        double scale = Monitors.GetPrimary().Scale;
+        var tl = el.PointToScreen(new Point(0, 0));
+        var br = el.PointToScreen(new Point(el.ActualWidth, el.ActualHeight));
+        const int pad = 4;
+        var rectPx = new Rect(tl.X - pad, tl.Y - pad, br.X - tl.X + pad * 2, br.Y - tl.Y + pad * 2);
+        var px = Grab(new Rect(rectPx.X / scale, rectPx.Y / scale, rectPx.Width / scale, rectPx.Height / scale));
+        int w = (int)(rectPx.Width / scale * scale), h = px.Length / 4 / Math.Max(1, w);
+        int dark = 0, lilac = 0;
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                int edge = Math.Min(Math.Min(x, w - 1 - x), Math.Min(y, h - 1 - y));
+                if (edge >= pad * 2) continue;
+                int k = (y * w + x) * 4;
+                byte b = px[k], g = px[k + 1], r = px[k + 2];
+                if (r < 100 && g < 100 && b < 100) dark++;
+                if (Math.Abs(r - 0xA8) < 30 && Math.Abs(g - 0x96) < 30 && Math.Abs(b - 0xF2) < 30) lilac++;
+            }
+        return (dark, lilac);
     }
 
     private static void Check(string what, bool ok)

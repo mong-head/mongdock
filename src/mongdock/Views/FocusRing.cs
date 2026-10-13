@@ -44,6 +44,8 @@ internal static class FocusRing
     {
         if (!ReferenceEquals(sender, e.NewFocus) || e.NewFocus is not UIElement el) return;
         if (el is FrameworkElement fe && fe.FocusVisualStyle is not null) fe.FocusVisualStyle = null;
+        // WPF 가 이미 점선을 붙였으면(포커스 이벤트보다 먼저 그리는 경우 — 2026-10-13 사용자 스크린샷) 바로 뗌
+        el.Dispatcher.BeginInvoke(() => RemoveDotted(el), System.Windows.Threading.DispatcherPriority.Render);
         if (!_keyboard || el is System.Windows.Controls.Primitives.TextBoxBase or PasswordBox || el is Window) { Hide(); return; }
         Show(TargetOf(el));
     }
@@ -51,6 +53,14 @@ internal static class FocusRing
     private static void OnLostFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
         if (ReferenceEquals(sender, e.OldFocus) && e.NewFocus is null) Hide();
+    }
+
+    /// <summary>WPF 기본 점선(KeyboardNavigation 의 FocusVisualAdorner)이 붙어 있으면 뗌.</summary>
+    internal static void RemoveDotted(UIElement el)
+    {
+        if (AdornerLayer.GetAdornerLayer(el) is not { } layer) return;
+        foreach (var a in layer.GetAdorners(el) ?? Array.Empty<Adorner>())
+            if (a.GetType().Name == "FocusVisualAdorner") layer.Remove(a);
     }
 
     /// <summary>표시할 요소: 몇 단계 위까지 FocusRing.Target 이 켜진 조상이 있으면 그것, 아니면 자기.</summary>
@@ -69,7 +79,7 @@ internal static class FocusRing
     {
         Hide();
         if (AdornerLayer.GetAdornerLayer(target) is not { } layer) return;
-        double radius = target is Border b ? b.CornerRadius.TopLeft : target is Control ? 6 : 6;
+        double radius = target is Border b ? b.CornerRadius.TopLeft : 6;
         _ring = new RingAdorner(target, radius);
         layer.Add(_ring);
     }
@@ -96,7 +106,8 @@ internal static class FocusRing
         {
             var size = AdornedElement.RenderSize;
             if (size.Width <= 0 || size.Height <= 0) return;
-            dc.DrawRoundedRectangle(null, _pen, new Rect(-1, -1, size.Width + 2, size.Height + 2), _radius + 1, _radius + 1);
+            // 줄 모양과 정확히 겹치게: 같은 반경, 선은 안쪽으로 (선 두께 2 의 가운데가 1px 안)
+            dc.DrawRoundedRectangle(null, _pen, new Rect(1, 1, Math.Max(0, size.Width - 2), Math.Max(0, size.Height - 2)), Math.Max(0, _radius - 1), Math.Max(0, _radius - 1));
         }
     }
 }
