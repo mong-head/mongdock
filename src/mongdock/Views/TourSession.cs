@@ -58,6 +58,7 @@ internal sealed class TourSession : ICoachRun
         _card.Card.PrevClicked += Prev;
         _card.Card.SkipClicked += () => { Log.Info("둘러보기: 건너뛰기"); Close(markSeen: true, CoachEndReason.Completed); };
         _card.Card.TryClicked += Try;
+        _card.Card.InlineClicked += RunInline;
         _card.Card.LinkClicked += () =>
         {
             // 설정 → 변경 내역. 마지막 카드면 안내를 본 것으로 끝냄 (설정 창이 카드에 가리지 않게)
@@ -151,18 +152,50 @@ internal sealed class TourSession : ICoachRun
         BringToFront();
     }
 
-    private static TourStep StepFor(CoachPage page, List<ImageSource> frames, bool canTry) => new(page.Title, page.Body, frames)
+    /// <summary>카드 안 버튼을 실행한 단계 (버튼 "넣었어요 ✓", 설명도 바뀐 채로).</summary>
+    private readonly HashSet<CoachPage> _inlineDone = new();
+
+    /// <summary>[다운로드·휴지통 넣기] 같은 카드 안 버튼: 실행 → 카드 글 바꿈 → 독이 새 칸을 그린 뒤 강조 구멍을 새 자리로 (다음 단계로는 안 넘어감).</summary>
+    private void RunInline()
     {
-        Action = page.Action,
-        NextText = page.NextText,
-        Footnote = page.Footnote,
-        CanTry = canTry,
-        Groups = page.Groups,
-        More = page.More,
-        Link = page.ChangelogLink ? page.LinkText : null,
-        FramesPending = page.Pictures is { } k && TourScenes.Count(k) > 0,
-        ShowLogo = page.ShowLogo,
-    };
+        if (_closed || _index >= _pages.Count || _pages[_index].Inline is not { } inline || _inlineDone.Contains(_pages[_index])) return;
+        bool ok;
+        try { ok = inline.Run(); }
+        catch (Exception ex) { Log.Error("둘러보기 카드 버튼 실패", ex); ok = false; }
+        if (!ok) return;
+        _inlineDone.Add(_pages[_index]);
+        ShowCurrent(animate: true);
+        int at = _index;
+        var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) }; // 독이 새 칸을 그린 뒤 구멍을 새 자리로
+        t.Tick += (_, _) => { t.Stop(); if (!_closed && _index == at) ShowCurrent(animate: true); };
+        t.Start();
+    }
+
+    private TourStep StepFor(CoachPage page, List<ImageSource> frames, bool canTry)
+    {
+        bool done = _inlineDone.Contains(page);
+        string? inline = page.Inline is not { } a ? null : done ? a.DoneLabel : SafeVisible(a) ? a.Label : null;
+        return new TourStep(page.Title, done && page.Inline is { } b ? b.DoneBody : page.Body, frames)
+        {
+            Action = page.Action,
+            NextText = page.NextText,
+            Footnote = page.Footnote,
+            CanTry = canTry,
+            Groups = page.Groups,
+            More = page.More,
+            Link = page.ChangelogLink ? page.LinkText : null,
+            FramesPending = page.Pictures is { } k && TourScenes.Count(k) > 0,
+            ShowLogo = page.ShowLogo,
+            InlineText = inline,
+            InlineDone = done,
+        };
+    }
+
+    private static bool SafeVisible(InlineAction a)
+    {
+        try { return a.Visible(); }
+        catch (Exception ex) { Log.Warn($"둘러보기 카드 버튼 확인 실패: {ex.GetType().Name}"); return false; }
+    }
 
     /// <summary>나머지 장을 뒤에서 그려 카드에 채움 (그 사이 단계가 바뀌었으면 버림 — 캐시에는 남음).</summary>
     private void RenderRest(string key, int count, int index, UiPalette palette)

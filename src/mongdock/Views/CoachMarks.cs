@@ -35,7 +35,15 @@ internal sealed class CoachPage
     public string? Pictures { get; init; }
     /// <summary>그림 없는 목록 카드에서도 위에 몽독 아이콘 (둘러보기 정리 카드 "그 밖에 알아 두면 좋은 것").</summary>
     public bool ShowLogo { get; init; }
+    /// <summary>설명 아래 버튼 (누르면 실행만, 다음 단계로 안 넘어감 — 예 업데이트 "독 폴더·휴지통" 카드 [다운로드·휴지통 넣기]).</summary>
+    public InlineAction? Inline { get; init; }
 }
+
+/// <summary>
+/// 카드 설명 아래 버튼. Visible = 지금 보일지(이미 해 둔 상태면 안 보임), Run = 실행(성공이면 true).
+/// 실행한 뒤에는 버튼이 DoneLabel(비활성)로, 설명이 DoneBody 로 바뀜.
+/// </summary>
+internal sealed record InlineAction(string Label, string DoneLabel, string DoneBody, Func<bool> Visible, Func<bool> Run);
 
 /// <summary>둘러보기가 끝난 이유 (설정 창이 다시 나타날 때 포커스를 가져갈지 정하는 데 씀).</summary>
 internal enum CoachEndReason
@@ -328,6 +336,30 @@ internal static class CoachMarks
         return _resolve?.Invoke(a) is not null;
     }
 
+    /// <summary>
+    /// 업데이트 사용자용 "독 폴더·휴지통" 카드 (첫 설치는 이미 있음): [다운로드·휴지통 넣기] — 독에 없는 것만, 새 설치와 같은 자리.
+    /// 둘 다 이미 있으면 버튼 없음. 넣어도 다음 단계로 넘어가지 않음 (강조 구멍이 새 칸으로 옮겨 감).
+    /// </summary>
+    private static CoachPage WithStacksButton(CoachPage page) => new()
+    {
+        Title = page.Title,
+        Body = page.Body,
+        Anchor = page.Anchor,
+        Hint = page.Hint,
+        Pictures = page.Pictures,
+        Inline = new InlineAction(Loc.T("다운로드·휴지통 넣기"), Loc.T("넣었어요 ✓"), Loc.T("독 끝에 넣었어요 — 눌러서 펼쳐 보세요"),
+            () => _services is { } sv && DefaultPins.DockStacksMissing(sv.Settings.Current.Pins),
+            () =>
+            {
+                if (_services is not { } sv) return false;
+                var (dl, bin) = DefaultPins.AddDockStacks(sv.Settings.Current.Pins);
+                if (!dl && !bin) return false;
+                sv.Settings.Save(); // 독이 새 칸을 그림
+                Log.Info($"둘러보기: 독에 넣음 (다운로드 {(dl ? "넣음" : "그대로")}, 휴지통 {(bin ? "넣음" : "그대로")})");
+                return true;
+            }),
+    };
+
     private static CoachPage ToPage(CoachStep step, Settings s) => new()
     {
         Title = step.Title,
@@ -476,7 +508,7 @@ internal static class CoachMarks
         var latestSteps = WhatsNew.Releases.Where(x => WhatsNew.Parse(x.Version) == latest.Version).ToList();
         // 그림 장면이 있는 새 기능은 가리킬 자리가 지금 없어도 넣음 (카드만 가운데 — 장면이 설명함)
         var coach = latestSteps.Where(x => x.IsAvailable(s) && (WhatsNew.TourPictures.Contains(x.Key) || AnchorVisible(x.Anchor))).Take(MaxWhatsNewSteps).ToList();
-        pages.AddRange(coach.Select(x => ToPage(x, s)));
+        pages.AddRange(coach.Select(x => x.Key == "stacks" ? WithStacksButton(ToPage(x, s)) : ToPage(x, s)));
 
         // 말풍선으로 본 기능(Key)은 목록에서 빼고, 이전 버전에 같은 Key 가 있어도 한 번만
         var seenKeys = new HashSet<string>(coach.Select(x => x.Key), StringComparer.OrdinalIgnoreCase);

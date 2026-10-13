@@ -40,15 +40,44 @@ public static class DefaultPins
     /// <summary>새 설치: 핀 끝에 다운로드 독 폴더 (#24-B, 못 찾으면 그냥 둠), 맨 끝에 휴지통 (#24-C).</summary>
     private static List<PinItem> AddDownloads(List<PinItem> pins)
     {
-        if (!pins.Any(p => p.Kind == PinKind.Special && p.Target == RecycleBinTarget)) pins.Add(RecycleBinPin());
-        try
-        {
-            if (DockFolderService.DownloadsFolder() is { } dl && !pins.Any(p => p.Kind == PinKind.Folder))
-                pins.Insert(pins.Count - 1, new PinItem { Kind = PinKind.Folder, Target = dl, Name = Loc.T("다운로드"), Id = Guid.NewGuid().ToString("N"), Folder = new FolderOptions { LastOpened = DateTime.UtcNow } });
-        }
-        catch (Exception ex) { Log.Error("다운로드 독 폴더 추가 실패", ex); }
+        // 새 설치는 폴더가 하나도 없을 때만 다운로드 (작업 표시줄에서 폴더를 가져왔으면 그대로)
+        AddDockStacks(pins, downloads: !pins.Any(p => p.Kind == PinKind.Folder));
         return pins;
     }
+
+    /// <summary>
+    /// 독에 없는 것만: 휴지통은 맨 끝, 다운로드 독 폴더는 휴지통 바로 앞 (새 설치와 같은 자리).
+    /// 다운로드 폴더를 못 찾으면 휴지통만. 넣은 것을 돌려줌. (업데이트 둘러보기 [다운로드·휴지통 넣기]도 이것을 씀)
+    /// </summary>
+    public static (bool Downloads, bool RecycleBin) AddDockStacks(List<PinItem> pins, bool downloads = true)
+    {
+        bool trash = false, dlAdded = false;
+        if (!HasRecycleBin(pins)) { pins.Add(RecycleBinPin()); trash = true; }
+        try
+        {
+            if (downloads && DockFolderService.DownloadsFolder() is { } dl && !HasFolder(pins, dl))
+            {
+                int bin = pins.FindIndex(p => p.Kind == PinKind.Special && p.Target == RecycleBinTarget);
+                pins.Insert(bin >= 0 ? bin : pins.Count, new PinItem { Kind = PinKind.Folder, Target = dl, Name = Loc.T("다운로드"), Id = Guid.NewGuid().ToString("N"), Folder = new FolderOptions { LastOpened = DateTime.UtcNow } });
+                dlAdded = true;
+            }
+        }
+        catch (Exception ex) { Log.Error("다운로드 독 폴더 추가 실패", ex); }
+        return (dlAdded, trash);
+    }
+
+    /// <summary>독에 다운로드 폴더(찾을 수 있을 때)나 휴지통이 빠져 있는지.</summary>
+    public static bool DockStacksMissing(IReadOnlyList<PinItem> pins)
+    {
+        if (!HasRecycleBin(pins)) return true;
+        try { return DockFolderService.DownloadsFolder() is { } dl && !HasFolder(pins, dl); }
+        catch { return false; }
+    }
+
+    private static bool HasRecycleBin(IEnumerable<PinItem> pins) => pins.Any(p => p.Kind == PinKind.Special && p.Target == RecycleBinTarget);
+
+    private static bool HasFolder(IEnumerable<PinItem> pins, string path) =>
+        pins.Any(p => p.Kind == PinKind.Folder && string.Equals(Path.TrimEndingDirectorySeparator(p.Target), Path.TrimEndingDirectorySeparator(path), StringComparison.OrdinalIgnoreCase));
 
     /// <summary>찾을 앱: 시작 메뉴 바로 가기 이름(대소문자 무시, 여러 개면 처음 찾은 것). browser = 브라우저 묶음(하나만).</summary>
     private static readonly (string[] Shortcuts, bool Browser)[] Popular =

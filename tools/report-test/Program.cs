@@ -1275,6 +1275,7 @@ internal static class Program
                 Set("Footnote", P<string>("Footnote"));
                 Set("NextText", P<string>("NextText"));
                 Set("ShowLogo", P<bool>("ShowLogo"));
+                if (P<object>("Inline") is { } inl) Set("InlineText", (string)inl.GetType().GetProperty("Label")!.GetValue(inl)!);
                 Set("CanTry", P<object>("Anchor")?.ToString() != "Center");
                 Set("FramesPending", key is not null && (int)scenes.GetMethod("Count", any)!.Invoke(null, new object?[] { key })! > 0);
                 steps.Add(step);
@@ -1298,9 +1299,54 @@ internal static class Program
             Console.WriteLine($"  카드 글 잘림 점검 ({_lang}, {theme}, {(flow == "tour" ? "첫 설치" : "업데이트")} {steps.Count}장, 높이 {fixedHeight:0})");
             host.Child = null;
         }
+        // 업데이트 "독 폴더·휴지통" 카드 버튼: 첫 설치 흐름엔 없고 업데이트 흐름엔 있음
+        {
+            object? Inline(object pg) => pg.GetType().GetProperty("Inline")!.GetValue(pg);
+            var tourPages = ((System.Collections.IEnumerable)coach.GetMethod("BuildTourPages", any)!.Invoke(null, null)!).Cast<object>().ToList();
+            var updPages = ((System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, new object[] { new Version(0, 4, 2), new Version(0, 5, 0) })!).Cast<object>().ToList();
+            if (tourPages.Any(x => Inline(x) is not null)) problems.Add("첫 설치 둘러보기에 [다운로드·휴지통 넣기] 버튼이 있음");
+            if (!updPages.Any(x => Inline(x) is not null && (string?)x.GetType().GetProperty("Pictures")!.GetValue(x) == "stacks")) problems.Add("업데이트 '독 폴더·휴지통' 카드에 [다운로드·휴지통 넣기] 버튼이 없음");
+        }
+        if (theme == "light") problems.AddRange(StackPinRules());
         Console.WriteLine($"  카드 글 잘림 점검 ({_lang}, {theme}): {(problems.Count == 0 ? "통과" : $"문제 {problems.Count}개")}");
         foreach (var x in problems) Console.WriteLine($"    - {x}");
         return problems.Count;
+    }
+
+    /// <summary>[다운로드·휴지통 넣기] 규칙 (시험 핀 목록으로만): 없는 것만, 다운로드는 휴지통 바로 앞, 휴지통은 맨 끝, 둘 다 있으면 그대로.</summary>
+    private static List<string> StackPinRules()
+    {
+        var problems = new List<string>();
+        string? dl = (string?)typeof(DefaultPins).Assembly.GetType("Mongdock.Services.DockFolderService")!.GetMethod("DownloadsFolder", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.Invoke(null, null);
+        PinItem App(string n) => new() { Kind = PinKind.Exe, Target = $@"C:	est\{n}.exe", Name = n };
+        string Show(List<PinItem> l) => string.Join(" | ", l.Select(p => p.Kind == PinKind.Special && p.Target == DefaultPins.RecycleBinTarget ? "휴지통" : p.Kind == PinKind.Folder ? "폴더:" + Path.GetFileName(p.Target) : p.Name));
+        bool IsBin(PinItem p) => p.Kind == PinKind.Special && p.Target == DefaultPins.RecycleBinTarget;
+        bool IsDl(PinItem p) => dl is not null && p.Kind == PinKind.Folder && string.Equals(p.Target, dl, StringComparison.OrdinalIgnoreCase);
+
+        // ① 둘 다 없음 → 다운로드, 휴지통 순으로 끝에
+        var a = new List<PinItem> { App("a"), App("b") };
+        var ra = DefaultPins.AddDockStacks(a);
+        bool okA = IsBin(a[^1]) && (dl is null ? a.Count == 3 : IsDl(a[^2]) && a.Count == 4) && ra.RecycleBin && ra.Downloads == (dl is not null);
+        if (!okA) problems.Add($"넣기 규칙 ① 둘 다 없음: {Show(a)}");
+        // ② 휴지통만 있음(가운데에 있어도) → 다운로드를 휴지통 바로 앞에, 휴지통은 그대로
+        var b = new List<PinItem> { App("a"), DefaultPins.RecycleBinPin(), App("b") };
+        var rb = DefaultPins.AddDockStacks(b);
+        int bin = b.FindIndex(IsBin);
+        bool okB = !rb.RecycleBin && b.Count(IsBin) == 1 && (dl is null ? b.Count == 3 : bin > 0 && IsDl(b[bin - 1]));
+        if (!okB) problems.Add($"넣기 규칙 ② 휴지통만 있음: {Show(b)}");
+        // ③ 다른 폴더만 있음 → 다운로드도 넣음 (새 설치와 달리 업데이트 버튼은 "다운로드가 없으면")
+        var c = new List<PinItem> { App("a"), new() { Kind = PinKind.Folder, Target = @"C:	est\docs", Name = "docs" } };
+        DefaultPins.AddDockStacks(c);
+        if (dl is not null && !c.Any(IsDl)) problems.Add($"넣기 규칙 ③ 다른 폴더만 있음: {Show(c)}");
+        // ④ 둘 다 있음 → 그대로, 버튼 안 보임
+        var d = new List<PinItem> { App("a") };
+        DefaultPins.AddDockStacks(d);
+        var before = Show(d);
+        var rd = DefaultPins.AddDockStacks(d);
+        if (rd.Downloads || rd.RecycleBin || Show(d) != before || DefaultPins.DockStacksMissing(d)) problems.Add($"넣기 규칙 ④ 둘 다 있음인데 바뀜: {Show(d)}");
+        if (!DefaultPins.DockStacksMissing(new List<PinItem> { App("a") })) problems.Add("넣기 규칙: 둘 다 없는데 버튼이 안 보임");
+        Console.WriteLine($"  다운로드·휴지통 넣기 규칙 (다운로드 폴더 {(dl is null ? "없음" : "있음")}): {(problems.Count == 0 ? "통과" : $"문제 {problems.Count}개")} — ① {Show(a)} / ② {Show(b)}");
+        return problems;
     }
 
     private static int RenderTour(string? dir, bool checkOnly)
@@ -1383,6 +1429,7 @@ internal static class Program
                     if (P<bool>("ChangelogLink")) stepType.GetProperty("Link")!.SetValue(step, P<string>("LinkText"));
                     if (P<object>("Action") is { } act) stepType.GetProperty("Action")!.SetValue(step, act);
                     stepType.GetProperty("ShowLogo")!.SetValue(step, P<bool>("ShowLogo"));
+                    if (P<object>("Inline") is { } inl) stepType.GetProperty("InlineText")!.SetValue(step, (string)inl.GetType().GetProperty("Label")!.GetValue(inl)!);
                     var card = (FrameworkElement)Activator.CreateInstance(cardType, any, null, new object[] { palette }, null)!;
                     cardType.GetMethod("Show", any)!.Invoke(card, new object[] { step, pi, pages.Count });
                     var host = new System.Windows.Controls.Border { Padding = new Thickness(24), Background = new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x24, 0x24, 0x2C) : Color.FromRgb(0xE4, 0xE6, 0xEE)), Child = card };

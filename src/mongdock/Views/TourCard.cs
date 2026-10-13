@@ -29,6 +29,9 @@ internal sealed record TourStep(string Title, string Body, IReadOnlyList<ImageSo
     public string? Link { get; init; }
     /// <summary>그림 없는 목록 카드에서도 위에 몽독 아이콘.</summary>
     public bool ShowLogo { get; init; }
+    /// <summary>설명 아래 버튼 글자 (null = 없음). InlineDone 이면 비활성.</summary>
+    public string? InlineText { get; init; }
+    public bool InlineDone { get; init; }
     /// <summary>그림을 뒤에서 그리는 중 (그림 영역 크기를 미리 잡아 둠).</summary>
     public bool FramesPending { get; init; }
 }
@@ -64,6 +67,7 @@ internal sealed class TourCard : Border
     private readonly TextBlock _link;
     private readonly Grid _picture;
     private readonly StackPanel _content = new();
+    private readonly Button _inline;
     private readonly Image _logo = new() { Width = 72, Height = 72, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
     private Action? _runAction;
     private readonly DispatcherTimer _slide = new() { Interval = TimeSpan.FromMilliseconds(SlideMs) };
@@ -80,6 +84,7 @@ internal sealed class TourCard : Border
     public event Action? SkipClicked;
     public event Action? TryClicked;
     public event Action? LinkClicked;
+    public event Action? InlineClicked;
 
     public TourCard(UiPalette p)
     {
@@ -140,6 +145,14 @@ internal sealed class TourCard : Border
         _footnote = new TextBlock { FontSize = UiText.Sub - 0.5, Foreground = p.SubText, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) };
         _link = new TextBlock { FontSize = UiText.Sub, Foreground = p.AccentInk, Cursor = Cursors.Hand, Margin = new Thickness(0, 8, 0, 0) };
         _link.MouseLeftButtonUp += (_, e) => { e.Handled = true; LinkClicked?.Invoke(); };
+        // 설명 아래 버튼 (주 버튼 아님 — 회보라 바탕): 누르면 실행만
+        _inline = Button("", primary: false);
+        _inline.Background = p.PanelTint;
+        _inline.Foreground = p.Text;
+        _inline.HorizontalAlignment = HorizontalAlignment.Left;
+        _inline.Margin = new Thickness(0, 10, 0, 0);
+        _inline.Visibility = Visibility.Collapsed;
+        _inline.Click += (_, _) => InlineClicked?.Invoke();
         // 아래 줄: 왼쪽 [건너뛰기](회색 글자 버튼) · 가운데 단계 점 · 오른쪽 [이전] [다음 →] (2026-10-14 사용자: 건너뛰기가 그림 위에 떠 있어 이상함)
         _skip = new TextBlock { Text = Loc.T("건너뛰기"), FontSize = UiText.Sub, Foreground = p.SubText, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center };
         _skip.MouseLeftButtonUp += (_, e) => { e.Handled = true; SkipClicked?.Invoke(); };
@@ -162,6 +175,7 @@ internal sealed class TourCard : Border
         content.Children.Add(_body);
         content.Children.Add(_list);
         content.Children.Add(_link);
+        content.Children.Add(_inline);
         content.Children.Add(_try);
         var text = new DockPanel { Margin = new Thickness(24, 18, 24, 20), LastChildFill = true };
         DockPanel.SetDock(bottom, Dock.Bottom);
@@ -232,6 +246,9 @@ internal sealed class TourCard : Border
             }
         if (step.More > 0) _list.Children.Add(new TextBlock { Text = Loc.F($"외 {step.More}개"), Foreground = _p.SubText, Margin = new Thickness(0, 4, 0, 0) });
         _list.Visibility = _list.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        _inline.Visibility = step.InlineText is null ? Visibility.Collapsed : Visibility.Visible;
+        if (_inline.Content is TextBlock it) it.Text = step.InlineText ?? "";
+        _inline.IsEnabled = !step.InlineDone;
         _link.Text = step.Link ?? "";
         _link.Visibility = step.Link is null ? Visibility.Collapsed : Visibility.Visible;
         _footnote.Text = step.Footnote ?? "";
