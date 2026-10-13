@@ -442,11 +442,13 @@ public partial class DockWindow : Window
 
         GetFrame(l.Edge, false, out double edgeLine, out double start, out double end);
         CheckFit(end - start); // 화면보다 길면 아이콘 자동 축소 (DockWindow.Fit.cs)
-        // 확대해도 끝 아이콘이 화면 안에 있게 확대 여유까지 넣어 가두기 (쉬는 길이만 보면 위·아래 끝이 잘렸음)
-        double room = l.HoverScale > 1.001 ? l.GrowthRoom : 0;
-        double center = PanelCenter(l.Edge, ClampOffset(_services.Settings.Current.Dock.Offset), _baseLength + room * 2, start, end);
+        // 확대해도 끝 아이콘이 화면 안에 있게 파도 확대 최대 길이까지 넣어 가두기 (판은 창 가운데라 양쪽으로 반씩 늘어남)
+        DockFit.HoverScale = l.HoverScale;
+        DockFit.Wave = l.Wave;
+        double growth = DockFit.WaveGrowth(l.IconSize, l.Spacing, _items.Count(i => !i.IsSeparator));
+        double center = PanelCenter(l.Edge, ClampOffset(_services.Settings.Current.Dock.Offset), _baseLength + growth, start, end);
         // 창 길이: 확대로 늘어나는 최대 길이(가운데 확대 ≈ 2.9 × (배율−1) × 아이콘)보다 넉넉히 — 판이 창보다 길면 판 경계로 잘려 보였음
-        double len = _baseLength + Math.Max(l.GrowthRoom, Math.Ceiling(l.IconSize * Math.Max(0, l.HoverScale - 1) * 2 + 12)) * 2;
+        double len = _baseLength + Math.Max(l.GrowthRoom * 2, growth + 24);
         double t = l.WindowThickness;
 
         _shownRect = l.Edge switch

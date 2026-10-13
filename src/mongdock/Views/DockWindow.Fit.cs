@@ -45,7 +45,8 @@ public partial class DockWindow
         // 간격은 설정값 기준으로 계산 (지금 줄어 있는 간격 기준이면 다시 넓어지지 않음)
         double settingSpacing = double.IsNaN(s.IconSpacing) ? 5 : Math.Clamp(s.IconSpacing, 0, 64);
         // 확대 여유: 끝 아이콘을 확대해도 화면 안에 다 보이게 (가벼운 모드·확대 끔이면 0)
-        DockFit.GrowthFactor = _layout.HoverScale > 1.001 ? DockLayout.GrowthFactor(_layout.HoverScale, _layout.Wave) : 0;
+        DockFit.HoverScale = _layout.HoverScale;
+        DockFit.Wave = _layout.Wave;
         var (want, spacing) = DockFit.Fit(s.IconSize, settingSpacing, icons, seps, available);
         double setting = Math.Floor(Math.Clamp(double.IsNaN(s.IconSize) ? 52 : s.IconSize, DockFit.MinIcon, 256));
         double newFit = want < setting ? want : 0;

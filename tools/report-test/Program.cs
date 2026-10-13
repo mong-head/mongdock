@@ -671,29 +671,93 @@ internal static class Program
     {
         var asm = typeof(Mongdock.App).Assembly;
         var fit = asm.GetType("Mongdock.Views.DockFit")!;
-        var layout = asm.GetType("Mongdock.ViewModels.DockLayout")!;
         var any = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
         string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "mongdock", "settings.json");
         using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
         var d = doc.RootElement.GetProperty("dock");
         double icon = d.GetProperty("iconSize").GetDouble(), spacing = d.GetProperty("iconSpacing").GetDouble(), scale = d.GetProperty("hoverScale").GetDouble();
         bool wave = d.GetProperty("waveMagnification").GetBoolean();
+        double offset = d.TryGetProperty("offset", out var off) ? off.GetDouble() : 0.5;
         string edge = d.GetProperty("edge").GetString() ?? "Bottom";
         var top = doc.RootElement.GetProperty("topBar");
         double barH = top.GetProperty("enabled").GetBoolean() ? top.GetProperty("height").GetDouble() : 0;
         var wa = SystemParameters.WorkArea;
-        double avail = edge is "Left" or "Right" ? wa.Bottom - Math.Max(wa.Top, barH) : wa.Width;
-        double g = (double)layout.GetMethod("GrowthFactor", any)!.Invoke(null, new object[] { scale, wave })!;
-        fit.GetField("GrowthFactor", any)!.SetValue(null, scale > 1.001 ? g : 0.0);
-        Console.WriteLine($"독 {edge}, 아이콘 {icon}, 간격 {spacing}, 확대 {scale}{(wave ? " 파도" : "")}, 쓸 수 있는 길이 {avail:0} DIP, 확대 여유 계수 {g:0.00}");
+        double start = edge is "Left" or "Right" ? Math.Max(wa.Top, barH) : wa.Left, end = edge is "Left" or "Right" ? wa.Bottom : wa.Right;
+        double avail = end - start;
+        fit.GetField("HoverScale", any)!.SetValue(null, scale);
+        fit.GetField("Wave", any)!.SetValue(null, wave);
+        Console.WriteLine($"독 {edge}, 아이콘 {icon}, 간격 {spacing}, 확대 {scale}{(wave ? " 파도" : "")}, 쓸 수 있는 길이 {avail:0} DIP ({start:0}~{end:0})");
+        double Len(double ic, int n) => (double)fit.GetMethod("PanelLength", any)!.Invoke(null, new object[] { ic, spacing, n, 2, 0.0 })!;
+        double Rest(double ic, int n) => (double)fit.GetMethod("RestLength", any)!.Invoke(null, new object[] { ic, spacing, n, 2, 0.0 })!;
         int pins = doc.RootElement.GetProperty("pins").GetArrayLength();
-        for (int n = Math.Max(4, pins - 2); n <= pins + 14; n += 2)
+        foreach (int n in new[] { pins, pins + 4, pins + 8, pins + 12, pins + 16, pins + 19, pins + 24 })
         {
             var r = ((double Icon, double Spacing))fit.GetMethod("Fit", any)!.Invoke(null, new object[] { icon, spacing, n, 2, avail, 0.0 })!;
             int cap = (int)fit.GetMethod("Capacity", any)!.Invoke(null, new object[] { r.Icon, r.Spacing, n, 2, avail, 0.0 })!;
-            double len = (double)fit.GetMethod("PanelLength", any)!.Invoke(null, new object[] { r.Icon, r.Spacing, Math.Min(n, cap), 2, 0.0 })!;
-            Console.WriteLine($"  아이콘 {n,2}개 → 크기 {r.Icon:0} 간격 {r.Spacing:0}, {(cap == int.MaxValue ? "넘침 없음" : $"⋯ 칸 (보일 칸 {cap}, 감춤 {n - cap + 1})")}, 확대 포함 길이 {len:0} / {avail - 16:0} {(len <= avail - 16 ? "들어감" : "넘침!")}");
+            int shown = Math.Min(n, cap);
+            double len = Len(r.Icon, shown);
+            Console.WriteLine($"  아이콘 {n,2}개 → 크기 {r.Icon:0}, {(cap == int.MaxValue ? "넘침 없음" : $"⋯ 칸 (보일 칸 {cap}, 감춤 {n - cap + 1})")}, 쉬는 길이 {Rest(r.Icon, shown):0} + 확대 {len - Rest(r.Icon, shown):0} = {len:0} / {avail - 16:0} {(len <= avail - 16 ? "들어감" : "넘침!")}");
         }
+        // 사용자 실제 독 개수(--dockfit N, 기본 고정 앱 + 19)로 커서 위 끝·가운데·아래 끝 3장 (판은 창 가운데라 양쪽으로 반씩 늘어남)
+        int argN = Array.IndexOf(Environment.GetCommandLineArgs(), "--dockfit");
+        var cl = Environment.GetCommandLineArgs();
+        int total = argN >= 0 && argN + 1 < cl.Length && int.TryParse(cl[argN + 1], out int tn) ? tn : pins + 19;
+        var rr = ((double Icon, double Spacing))fit.GetMethod("Fit", any)!.Invoke(null, new object[] { icon, spacing, total, 2, avail, 0.0 })!;
+        int capacity = (int)fit.GetMethod("Capacity", any)!.Invoke(null, new object[] { rr.Icon, rr.Spacing, total, 2, avail, 0.0 })!;
+        int visible = Math.Min(total, capacity);
+        double ic2 = rr.Icon, slot = ic2 + spacing, rad = ic2 * 2.5, pad = Math.Round(Math.Max(5, ic2 * 0.12));
+        double rest = Rest(ic2, visible), growth = Len(ic2, visible) - rest;
+        double screenH = SystemParameters.PrimaryScreenHeight;
+        double clampLen = rest + growth;
+        double center = Math.Clamp(offset * screenH, start + 8 + clampLen / 2, end - 8 - clampLen / 2);
+        string outDir = Path.Combine(Path.GetTempPath(), "mongdock-dockfit");
+        if (Array.IndexOf(cl, "--out") is int oi && oi >= 0 && oi + 1 < cl.Length) outDir = cl[oi + 1];
+        Directory.CreateDirectory(outDir);
+        foreach (var (name, frac) in new[] { ("top", 0.0), ("middle", 0.5), ("bottom", 1.0) })
+        {
+            double cur = frac * visible * slot;
+            var scales = Enumerable.Range(0, visible).Select(i =>
+            {
+                double dd = Math.Abs(cur - (i * slot + slot / 2));
+                return wave ? 1 + (scale - 1) * Math.Max(0, Math.Cos(Math.PI * Math.Min(dd, rad) / (2 * rad))) : (dd <= slot / 2 ? scale : 1);
+            }).ToList();
+            double grownLen = rest + scales.Sum(sc => (sc - 1) * ic2);
+            double panelTop = center - grownLen / 2;
+            const double W = 160;
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen())
+            {
+                dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(0xEE, 0xEE, 0xF2)), null, new Rect(0, 0, W, screenH));
+                dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(0x30, 0x30, 0x38)), null, new Rect(0, 0, W, start)); // 상단바
+                var lineP = new Pen(Brushes.Red, 1) { DashStyle = DashStyles.Dash };
+                dc.DrawLine(lineP, new Point(0, start), new Point(W, start));
+                dc.DrawLine(lineP, new Point(0, end - 0.5), new Point(W, end - 0.5));
+                double panelW = ic2 + pad * 2 + 2, right = W - 10;
+                dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(0xD9, 0xD8, 0xD6, 0xE0)), new Pen(Brushes.Gray, 0.5), new Rect(right - panelW, panelTop, panelW, grownLen), 14, 14);
+                double y = panelTop + pad + 1;
+                for (int i = 0; i < visible; i++)
+                {
+                    double h = ic2 * scales[i];
+                    double yy = y + spacing / 2;
+                    var fill = new SolidColorBrush(i == visible - 1 && capacity != int.MaxValue ? Color.FromRgb(0xB6, 0xAE, 0xCC) : Color.FromRgb((byte)(0x5B + i * 7 % 120), 0x8F, 0xEE));
+                    dc.DrawRoundedRectangle(fill, null, new Rect(right - pad - 1 - h, yy, h, h), h * 0.22, h * 0.22);
+                    y += h + spacing;
+                }
+                var ft = new FormattedText($"{name}: {visible}칸{(capacity != int.MaxValue ? " (⋯ 포함)" : "")} {ic2:0}px", System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 11, Brushes.White, 1.0);
+                dc.DrawText(ft, new Point(4, 6));
+                bool inside = panelTop >= start - 0.5 && panelTop + grownLen <= end + 0.5;
+                var res = new FormattedText(inside ? "화면 안" : "잘림!", System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 13, inside ? Brushes.SeaGreen : Brushes.Red, 1.0);
+                dc.DrawText(res, new Point(4, screenH - 22));
+                Console.WriteLine($"  커서 {name}: 독 {panelTop:0}~{panelTop + grownLen:0} (쓸 수 있는 {start:0}~{end:0}) {(inside ? "화면 안" : "잘림!")}");
+            }
+            var bmp = new RenderTargetBitmap((int)W, (int)screenH, 96, 96, PixelFormats.Pbgra32);
+            bmp.Render(dv);
+            var enc = new PngBitmapEncoder();
+            enc.Frames.Add(BitmapFrame.Create(bmp));
+            string file = Path.Combine(outDir, $"dockfit-{name}.png");
+            using (var fs = File.Create(file)) enc.Save(fs);
+        }
+        Console.WriteLine($"  그림: {outDir}");
     }
 
     /// <summary>
