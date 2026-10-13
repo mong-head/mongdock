@@ -68,6 +68,14 @@ internal static class Program
             string P(object g, string n) => g.GetType().GetProperty(n)!.GetValue(g)?.ToString() ?? "";
             Console.WriteLine($"게임 {games.Count}개: " + string.Join(", ", games.GroupBy(g => P(g, "Launcher")).Select(x => $"{x.Key} {x.Count()}")));
             foreach (var g in games.Take(15)) Console.WriteLine($"  [{P(g, "Launcher")}] {P(g, "Name")} → {P(g, "Launch")} (exe {(P(g, "Exe").Length > 0 ? (File.Exists(P(g, "Exe")) ? "있음" : "없음") : "모름")})");
+            // 앱 모음 "게임" 폴더 분류 (런처 게임 링크·라이브러리 exe)
+            var cat = typeof(Mongdock.App).Assembly.GetType("Mongdock.Services.AllAppsCatalog")!;
+            var apps = ((System.Collections.IEnumerable)cat.GetMethod("Apps")!.Invoke(null, new object[] { false })!).Cast<object>().ToList();
+            var isGame = cat.GetMethod("IsGame", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+            var classify = cat.GetMethod("Classify")!;
+            var gameApps = apps.Where(a => (bool)isGame.Invoke(null, new[] { a })!).ToList();
+            Console.WriteLine($"앱 모음에서 게임으로 분류: {gameApps.Count}개 (전체 '게임' 분류 {apps.Count(a => (string)classify.Invoke(null, new[] { a })! == "games")}개)");
+            foreach (var a in gameApps.Take(15)) Console.WriteLine($"  {P(a, "Name")} ← {P(a, "Key")}");
             return 0;
         }
 

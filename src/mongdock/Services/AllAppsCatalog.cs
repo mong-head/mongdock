@@ -210,6 +210,8 @@ internal static class AllAppsCatalog
     {
         LoadRules();
         var rules = _rules!;
+        // 0) 게임: 런처 게임 링크(steam://rungameid/… 등)·게임 라이브러리 안의 exe (루틴 게임 목록 GameCatalog 와 같은 기준)
+        if (IsGame(app)) return "games";
         // 1) 실행 파일 이름
         if (app.Exe is { } exe)
             foreach (var (id, r) in rules)
@@ -235,6 +237,20 @@ internal static class AllAppsCatalog
                     return id;
         }
         return Other;
+    }
+
+    /// <summary>게임인지: 런처 게임 링크(스팀은 rungameid 만 — 상점·지원 링크는 아님), 스팀·에픽 라이브러리 안의 exe, 게임 목록의 exe.</summary>
+    internal static bool IsGame(AppEntry app)
+    {
+        int colon = app.Key.IndexOf(':');
+        if (colon > 1 && !app.Key.Contains('\\') &&GameCatalog.IsLauncherScheme(app.Key[..colon]))
+            return !app.Key.StartsWith("steam:", StringComparison.OrdinalIgnoreCase) || app.Key.Contains("rungameid", StringComparison.OrdinalIgnoreCase);
+        if (app.TargetPath is { Length: > 0 } t)
+        {
+            if (t.Contains(@"\steamapps\common\", StringComparison.OrdinalIgnoreCase) || t.Contains(@"\Epic Games\", StringComparison.OrdinalIgnoreCase)) return true;
+            if (GameCatalog.Cached is { } games && games.Any(g => g.Exe is { } e && string.Equals(e, t, StringComparison.OrdinalIgnoreCase))) return true;
+        }
+        return false;
     }
 
     private static HashSet<string> Words(string s) =>
