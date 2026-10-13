@@ -24,6 +24,8 @@ internal sealed partial class AllAppsPanel
     private static bool Motion => Anim.Enabled;
 
     private bool _shownEditing;
+    /// <summary>방금 놓은 앱·폴더 키 — 다시 그릴 때 그 칸은 움직이지 않고 바로 제자리에.</summary>
+    private string? _justDropped;
     /// <summary>판 본문 스크롤 (보이는 칸만 움직이게 — 위치는 이 보기 기준).</summary>
     private ScrollViewer? _bodyScroll;
     private UIElement View => (UIElement?)_bodyScroll ?? _body;
@@ -92,6 +94,7 @@ internal sealed partial class AllAppsPanel
                 {
                     var key = MotionKey(el)!;
                     if (!seen.Add(key)) continue;
+                    if (_justDropped is { } dropped && el.Tag is DropTag dt && dt.Key.Equals(dropped, StringComparison.OrdinalIgnoreCase)) continue; // 놓은 칸: 그 자리에 바로
                     var now = el.TranslatePoint(new Point(0, 0), View);
                     if (now.Y > viewport || now.Y + el.ActualHeight < 0) continue; // 화면 밖은 움직이지 않음
                     if (before.TryGetValue(key, out var old))

@@ -120,6 +120,30 @@ internal sealed partial class AllAppsPanel
         new WindowInteropHelper(_drag.Ghost).EnsureHandle();
         MoveGhost(Mouse.GetPosition(this));
         _drag.Ghost.Show();
+        StartEdgeScroll();
+    }
+
+    private System.Windows.Threading.DispatcherTimer? _edgeScroll;
+
+    /// <summary>끄는 동안 판 본문 위·아래 끝(32px)에 닿으면 저절로 스크롤 — 끝에 가까울수록 빠르게, 마우스가 멈춰 있어도 (2026-10-13 사용자).</summary>
+    private void StartEdgeScroll()
+    {
+        if (_bodyScroll is not { } sv) return;
+        _edgeScroll?.Stop();
+        _edgeScroll = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(16) };
+        _edgeScroll.Tick += (_, _) =>
+        {
+            if (_drag is null) { _edgeScroll?.Stop(); return; }
+            var p = Mouse.GetPosition(sv);
+            const double edge = 32;
+            if (p.X < 0 || p.X > sv.ActualWidth) return;
+            double speed = p.Y < edge ? -(edge - Math.Max(-edge, p.Y)) / edge * 14 : p.Y > sv.ActualHeight - edge ? (p.Y - (sv.ActualHeight - edge)) / edge * 14 : 0;
+            if (Math.Abs(speed) < 0.5) return;
+            double before = sv.VerticalOffset;
+            sv.ScrollToVerticalOffset(Math.Clamp(before + Math.Clamp(speed, -20, 20), 0, sv.ScrollableHeight));
+            if (Math.Abs(sv.VerticalOffset - before) > 0.1 || sv.VerticalOffset != before) UpdateDrag(Mouse.GetPosition(this)); // 밑의 놓을 곳 다시 찾기
+        };
+        _edgeScroll.Start();
     }
 
     /// <summary>끄는 아이콘: 칸을 그대로 찍은 그림, 1.08배, 반투명, 그림자. 클릭이 통과하고 포커스를 가져가지 않는 창.</summary>
@@ -180,9 +204,9 @@ internal sealed partial class AllAppsPanel
         if (h != IntPtr.Zero) SetWindowPos(h, IntPtr.Zero, x, y, 0, 0, 0x0001 /* NOSIZE */ | 0x0004 /* NOZORDER */ | 0x0010 /* NOACTIVATE */);
     }
 
-    private Point GhostTopLeftPx()
+    private static Point GhostTopLeftPx(Window ghost)
     {
-        var h = new WindowInteropHelper(_drag?.Ghost ?? new Window()).Handle;
+        var h = new WindowInteropHelper(ghost).Handle;
         return h != IntPtr.Zero && GetWindowRect(h, out var r) ? new Point(r.Left, r.Top) : new Point();
     }
 
@@ -282,8 +306,11 @@ internal sealed partial class AllAppsPanel
         d.Highlight = cell;
         if (cell is not null)
         {
-            Animate(cell, 1.05);
-            cell.BorderBrush = P.SoftAccentLine;
+            // 폴더 칸 위: 1.08배 + 진한 테두리 ("놓으면 들어감" — 2026-10-13 사용자), 앱 칸 위: 1.05배 + 연한 테두리
+            bool folder = cell.Tag is DropTag { Kind: "group" };
+            Animate(cell, folder ? 1.08 : 1.05);
+            if (cell.BorderThickness.Left < 1) cell.BorderThickness = new Thickness(1.5);
+            cell.BorderBrush = folder ? P.Accent : P.SoftAccentLine;
         }
 
         static void Animate(Border b, double to)
@@ -455,19 +482,34 @@ internal sealed partial class AllAppsPanel
         var destPx = PointToScreen(to.TopLeft);
         SlideGhost(d.Ghost, new Point(destPx.X - 12 * dpi.DpiScaleX, destPx.Y - 12 * dpi.DpiScaleY), () =>
         {
-            d.Ghost.Close();
             d.Source.Opacity = 1;
             Dragging = false;
             _groupGap = -1;
-            if (apply is not null) apply(); // 저장 → 다시 그림 (비켜난 칸도 새 자리로)
+            if (apply is not null)
+            {
+                _justDropped = d.Item.Key; // 놓은 칸은 끄는 그림이 간 그 자리에 바로 (미끄러지기·나타나기 없음 — 나머지 칸만 움직임)
+                apply(); // 저장 → 다시 그림 (비켜난 칸도 새 자리로)
+                _justDropped = null;
+            }
             else ResetFavShift();
+            // 끄는 그림은 다시 그린 판이 화면에 나온 다음 프레임에 닫음 — 먼저 닫으면 (모든 앱을 펼쳐 둔 판은 다시 그리기가 길어) 그 칸이 잠깐 비어 보였음
+            int frames = 0;
+            EventHandler? tick = null;
+            tick = (_, _) =>
+            {
+                if (++frames < 3) return;
+                CompositionTarget.Rendering -= tick;
+                d.Ghost.Close();
+            };
+            CompositionTarget.Rendering += tick;
         });
     }
 
     /// <summary>끄는 아이콘을 목표 위치(화면 픽셀)로 150ms 미끄러뜨림 (되튐 없음).</summary>
     private void SlideGhost(Window ghost, Point to, Action done)
     {
-        var from = GhostTopLeftPx();
+        // 놓을 때는 _drag 가 이미 비워진 뒤라 그 그림 창을 직접 봄 — 예전엔 빈 창을 봐서 (0,0) 화면 왼쪽 위에서 날아왔음 (2026-10-13 사용자 제보, 프레임으로 확인)
+        var from = GhostTopLeftPx(ghost);
         double fromX = from.X, fromY = from.Y;
         var h = new WindowInteropHelper(ghost).Handle;
         var clock = System.Diagnostics.Stopwatch.StartNew();

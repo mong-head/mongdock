@@ -369,6 +369,43 @@ internal static class Program
                 }
             }
             else Check("놓기: 모든 앱 칸이나 즐겨찾기 자리를 찾지 못함", false);
+            // 2-2) 즐겨찾기 순서 바꾸기 5번 — 놓은 뒤 판 전체를 프레임으로 찍어 판 왼쪽 위로 무언가 지나가는지 (사용자: "즐겨찾기 순서 바꿀 때 왼쪽 위에서 날아옴")
+            {
+                var extra = Tagged("app").Skip(2).FirstOrDefault();
+                var slot = Tagged("favapp").LastOrDefault();
+                if (extra is not null && slot is not null) Drop("모든 앱→즐겨찾기 (셋째)", extra, slot, () => true);
+                for (int round = 1; round <= 5; round++)
+                {
+                    var favs = Tagged("favapp");
+                    if (favs.Count < 3) { Check("즐겨찾기 순서 5번: 즐겨찾기가 3개 안 됨", false); break; }
+                    var from = round % 2 == 1 ? favs[0] : favs[^1];
+                    var to = round % 2 == 1 ? favs[^1] : favs[0];
+                    var grab = new Point(from.ActualWidth / 2, from.ActualHeight / 2);
+                    var target = to.TranslatePoint(new Point(to.ActualWidth * (round % 2 == 1 ? 0.8 : 0.2), to.ActualHeight / 2), w);
+                    panelType.GetMethod("BeginDrag", Any)!.Invoke(w, new object?[] { from, Activator.CreateInstance(dragItem, false, KeyOf(from), false), null, grab });
+                    panelType.GetMethod("UpdateDrag", Any)!.Invoke(w, new object[] { target });
+                    Pump(200);
+                    panelType.GetMethod("UpdateDrag", Any)!.Invoke(w, new object[] { target });
+                    var whole = new Rect(w.Left, w.Top, w.ActualWidth, Math.Min(w.ActualHeight, 420));
+                    var corner = new Rect(w.Left + 4, w.Top + 4, 200, 120);
+                    var before = Grab(corner);
+                    var frames = new List<(long, byte[])>();
+                    var cornerFrames = new List<byte[]>();
+                    var sw = Stopwatch.StartNew();
+                    panelType.GetMethod("EndDrag", Any)!.Invoke(w, new object[] { true });
+                    while (sw.ElapsedMilliseconds < 500)
+                    {
+                        Pump(16);
+                        cornerFrames.Add(Grab(corner));
+                        if (frames.Count < 16) frames.Add((sw.ElapsedMilliseconds, Grab(whole)));
+                    }
+                    var after = cornerFrames[^1];
+                    int passing = cornerFrames.Count(f => Diff(before, f) > 0.02 && Diff(after, f) > 0.02);
+                    SaveStrip(Path.Combine(outDir, $"frames-fav-order-{round}.png"), frames, (int)whole.Width, (int)whole.Height);
+                    Check($"즐겨찾기 순서 {round}번째: 판 왼쪽 위로 지나가는 것 없음 (지나간 프레임 {passing}개)", passing == 0);
+                    Pump(300);
+                }
+            }
             // 3) 앱 → 폴더 칸
             var groups = Tagged("group");
             var someApp = Tagged("app").Skip(5).FirstOrDefault();
@@ -394,6 +431,75 @@ internal static class Program
                 var grid = Descendants((DependencyObject)w.Content).OfType<FrameworkElement>().FirstOrDefault(e => Kind(e) == "groupgrid" && e.IsVisible);
                 var outside = Tagged("app").LastOrDefault(e => !((System.Collections.IList)panelType.GetField("_groupCells", Any)!.GetValue(w)!).Contains(e));
                 if (grid is not null && outside is not null) Drop("밖→펼친 폴더", outside, grid, () => true);
+            }
+            close(w);
+            Pump(400);
+        }
+
+        // A6) 폴더에 앱 넣는 길: 펼친 폴더 [+] → 앱 고르기 → 넣기 / [+ 새 폴더] → 이름 + 고르기 → 만들기 / 끌 때 폴더 칸 1.08배
+        {
+            var w = open();
+            w.Show();
+            Pump(1200);
+            var folders = (System.Collections.IList)panelType.GetField("_folders", Any)!.GetValue(w)!;
+            if (folders.Count == 0) Check("앱 넣기: 시험할 폴더가 없음", false);
+            else
+            {
+                string id = (string)folders[0]!.GetType().GetProperty("Id")!.GetValue(folders[0])!;
+                panelType.GetField("_expanded", Any)!.SetValue(w, id);
+                panelType.GetMethod("Rebuild", Any)!.Invoke(w, null);
+                Pump(400);
+                bool plus = Descendants((DependencyObject)w.Content).OfType<FrameworkElement>().Any(e => e.Uid == "m:addapps:" + id && e.IsVisible);
+                Check("앱 넣기: 펼친 폴더 마지막에 [+] 칸", plus);
+                // 고르기 카드
+                panelType.GetMethod("OpenAddApps", Any)!.Invoke(w, new object?[] { id });
+                Pump(500);
+                var full = new Rect(w.Left, w.Top, w.ActualWidth, w.ActualHeight);
+                SaveStrip(Path.Combine(outDir, "addapps-picker.png"), new List<(long, byte[])> { (0, Grab(full)) }, (int)full.Width, (int)full.Height);
+                var st = panelType.GetField("_adding", Any)!.GetValue(w)!;
+                var chosen = (HashSet<string>)st.GetType().GetField("Chosen")!.GetValue(st)!;
+                var apps = ((System.Collections.IEnumerable)panelType.GetField("_apps", Any)!.GetValue(w)!).Cast<object>().ToList();
+                var inFolder = ((System.Collections.IEnumerable)folders[0]!.GetType().GetProperty("Apps")!.GetValue(folders[0])!).Cast<object>().Select(a => (string)a.GetType().GetProperty("Key")!.GetValue(a)!).ToHashSet();
+                var pick = apps.Select(a => (string)a.GetType().GetProperty("Key")!.GetValue(a)!).Where(k => !inFolder.Contains(k)).Take(2).ToList();
+                foreach (var k in pick) chosen.Add(k);
+                panelType.GetMethod("ApplyAddApps", Any)!.Invoke(w, new object[] { st, inFolder });
+                Pump(500);
+                var after = (System.Collections.IList)panelType.GetField("_folders", Any)!.GetValue(w)!;
+                var f0 = after.Cast<object>().First(f => (string)f.GetType().GetProperty("Id")!.GetValue(f)! == id);
+                var keysNow = ((System.Collections.IEnumerable)f0.GetType().GetProperty("Apps")!.GetValue(f0)!).Cast<object>().Select(a => (string)a.GetType().GetProperty("Key")!.GetValue(a)!).ToHashSet();
+                Check($"앱 넣기: 고른 앱 {pick.Count}개가 폴더에 들어감", pick.All(keysNow.Contains));
+                // 새 폴더
+                panelType.GetMethod("OpenAddApps", Any)!.Invoke(w, new object?[] { null });
+                Pump(500);
+                SaveStrip(Path.Combine(outDir, "addapps-newfolder.png"), new List<(long, byte[])> { (0, Grab(full)) }, (int)full.Width, (int)full.Height);
+                var st2 = panelType.GetField("_adding", Any)!.GetValue(w)!;
+                st2.GetType().GetField("Name")!.SetValue(st2, "시험 폴더");
+                var chosen2 = (HashSet<string>)st2.GetType().GetField("Chosen")!.GetValue(st2)!;
+                var pick2 = apps.Select(a => (string)a.GetType().GetProperty("Key")!.GetValue(a)!).Skip(10).Take(3).ToList();
+                foreach (var k in pick2) chosen2.Add(k);
+                panelType.GetMethod("ApplyAddApps", Any)!.Invoke(w, new object[] { st2, new HashSet<string>(StringComparer.OrdinalIgnoreCase) });
+                Pump(500);
+                var made = ((System.Collections.IList)panelType.GetField("_folders", Any)!.GetValue(w)!).Cast<object>()
+                    .FirstOrDefault(f => (string)f.GetType().GetProperty("Name")!.GetValue(f)! == "시험 폴더");
+                int madeCount = made is null ? -1 : ((System.Collections.ICollection)made.GetType().GetProperty("Apps")!.GetValue(made)!).Count;
+                Check($"새 폴더: 이름 그대로 만들어지고 고른 앱 {pick2.Count}개가 들어감 ({madeCount}개)", madeCount == pick2.Count);
+                // 끌 때 폴더 칸 위: 1.08배
+                var dropTag = panelType.GetNestedType("DropTag", BindingFlags.NonPublic)!;
+                var dragItem = panelType.GetNestedType("DragItem", BindingFlags.NonPublic)!;
+                string Kind(FrameworkElement e) => e.Tag is { } t && t.GetType() == dropTag ? (string)dropTag.GetProperty("Kind")!.GetValue(t)! : "";
+                var appCell = Descendants((DependencyObject)w.Content).OfType<System.Windows.Controls.Border>().FirstOrDefault(e => Kind(e) is "app" or "favapp" && e.IsVisible);
+                var groupCell = Descendants((DependencyObject)w.Content).OfType<System.Windows.Controls.Border>().LastOrDefault(e => Kind(e) == "group" && e.IsVisible);
+                if (appCell is not null && groupCell is not null)
+                {
+                    panelType.GetMethod("BeginDrag", Any)!.Invoke(w, new object?[] { appCell, Activator.CreateInstance(dragItem, false, (string)dropTag.GetProperty("Key")!.GetValue(appCell.Tag)!, false), null, new Point(10, 10) });
+                    var over = groupCell.TranslatePoint(new Point(groupCell.ActualWidth / 2, groupCell.ActualHeight / 2), w);
+                    panelType.GetMethod("UpdateDrag", Any)!.Invoke(w, new object[] { over });
+                    Pump(250);
+                    double sc = groupCell.RenderTransform is ScaleTransform stt ? stt.ScaleX : 1;
+                    Check($"끌기: 폴더 칸 위에서 1.08배 + 진한 테두리 ({sc:0.00}배)", Math.Abs(sc - 1.08) < 0.01);
+                    panelType.GetMethod("EndDrag", Any)!.Invoke(w, new object[] { false });
+                    Pump(500);
+                }
             }
             close(w);
             Pump(400);
