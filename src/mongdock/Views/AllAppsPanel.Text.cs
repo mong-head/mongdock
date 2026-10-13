@@ -15,12 +15,20 @@ internal sealed partial class AllAppsPanel
         DependencyProperty.RegisterAttached("BaseFontSize", typeof(double), typeof(AllAppsPanel), new PropertyMetadata(double.NaN));
 
     /// <summary>root 아래(논리 트리) 글자 크기를 배율만큼 줄여 화면에서 공통 크기로 보이게. 같은 요소를 두 번 줄이지 않음.</summary>
+    /// <summary>
+    /// 판 글자 배율 안 (2026-10-13 사용자 고르기 중): "A" = 아이콘과 같이(예전), "B" = 설정 창 크기, "C" = 아이콘 배율의 절반만.
+    /// 앱 이름·폴더 이름(Uid "name")은 어느 안이든 아이콘과 같이 커짐.
+    /// </summary>
+    internal static string TextMode { get; set; } = "B";
+
+    private double TextScale => TextMode switch { "A" => UiScale, "C" => 1 + (UiScale - 1) / 2, _ => 1 };
+
     internal void UnscaleText(DependencyObject? root)
     {
-        if (root is null || UiScale <= 1.001) return;
+        if (root is null || UiScale <= 1.001 || TextMode == "A") return;
         foreach (var d in Logical(root))
         {
-            if (d is not FrameworkElement fe) continue;
+            if (d is not FrameworkElement fe || fe.Uid == "name") continue;
             var prop = fe is Control ? Control.FontSizeProperty : fe is TextBlock ? TextBlock.FontSizeProperty : null;
             if (prop is null) continue;
             if (fe.ReadLocalValue(prop) == DependencyProperty.UnsetValue) continue; // 물려받는 크기는 위에서 이미 줄임
@@ -32,7 +40,7 @@ internal sealed partial class AllAppsPanel
             }
             var family = fe is TextBlock tb ? tb.FontFamily : ((Control)fe).FontFamily;
             if (baseSize >= 16 || family?.Source.Contains("Icons", StringComparison.OrdinalIgnoreCase) == true || family?.Source.Contains("MDL2", StringComparison.OrdinalIgnoreCase) == true) continue;
-            fe.SetValue(prop, baseSize / UiScale);
+            fe.SetValue(prop, baseSize * TextScale / UiScale);
         }
     }
 
@@ -46,7 +54,7 @@ internal sealed partial class AllAppsPanel
     /// <summary>판 기본 글자(물려받는 크기): 공통 본문 크기를 배율로 나눔.</summary>
     private void ApplyBaseText(FrameworkElement shell)
     {
-        if (UiScale > 1.001) TextElement.SetFontSize(shell, UiText.Body / UiScale);
+        if (UiScale > 1.001 && TextMode != "A") TextElement.SetFontSize(shell, UiText.Body * TextScale / UiScale);
         UnscaleText(shell);
     }
 }

@@ -78,6 +78,8 @@ internal static class Program
         int routinesAt = Array.FindIndex(args, a => a == "--routines");
         if (routinesAt >= 0 && routinesAt + 1 < args.Length) { RenderRoutines(args[routinesAt + 1]); return _failed == 0 ? 0 : 1; }
 
+        int types = Array.FindIndex(args, a => a == "--types");
+        if (types >= 0 && types + 1 < args.Length) { _typesOnly = true; RenderAllAppsPanel(args[types + 1]); return 0; }
         int allApps = Array.FindIndex(args, a => a == "--allapps");
         if (allApps >= 0 && allApps + 1 < args.Length) RenderAllAppsPanel(args[allApps + 1]);
         if (Array.IndexOf(args, "--dockfit") >= 0) { DockFitReport(); return 0; }
@@ -706,6 +708,9 @@ internal static class Program
     /// --suggest: 루틴 추천(spec-routines §15) 판정표 — 가짜 실행 기록으로 RoutineSuggest.Find 를 돌려 기대와 맞는지.
     /// (설치 3일·주 1회·전체 화면·방해 금지·일시 정지·3번 거절은 묻는 단계에서 거름 — 표 아래 따로)
     /// </summary>
+    /// <summary>--types: 판 글자 배율 안 A/B/C 그림만 (빠르게).</summary>
+    private static bool _typesOnly;
+
     private static int SuggestTable()
     {
         var asm = typeof(Mongdock.App).Assembly;
@@ -1058,14 +1063,18 @@ internal static class Program
             settings.Current.AllApps.UsageSeededAt = DateTime.Now.AddDays(-60);
             settings.Current.AllApps.CleanupPromptMonth = null;
             asm.GetType("Mongdock.Services.AppFolders")!.GetMethod("RefreshAuto")!.Invoke(null, new object[] { settings.Current, appsForFolders(), true });
-            foreach (var mode in new[] { "home", "group", "search", "edit", "cleanup", "unused", "size-old", "size-now", "size-new" })
+            var modes = _typesOnly ? new[] { "type-A", "type-B", "type-C" } : new[] { "home", "group", "search", "edit", "cleanup", "unused", "size-old", "size-now", "size-new" };
+            if (_typesOnly && theme == "dark") continue;
+            foreach (var mode in modes)
             {
+                // 글자 배율 안 비교 (2026-10-13 사용자 고르기): A 아이콘과 같이 / B 설정 창 크기 / C 절반만 — 앱·폴더 이름은 모두 아이콘과 같이
+                if (mode.StartsWith("type-")) panelType.GetProperty("TextMode", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, mode[5..]);
                 // 크기 비교 (2026-10-13 사용자 "커진 건지 모르겠다"): 1536x838 DIP 화면에서 예전 60%·75% / 72%·82% / 새 80%·88%
                 panelType.GetProperty("SizeForTest", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, mode switch
                 {
                     "size-old" => (922.0, 628.0),
                     "size-now" => (1106.0, 687.0),
-                    "size-new" => (1536 * 0.80, 838 * 0.88),
+                    "size-new" or "type-A" or "type-B" or "type-C" => (1536 * 0.80, 838 * 0.88),
                     _ => ((double, double)?)null,
                 });
                 // 처음 화면엔 정리 띠가 보이게 (이 셸 기록엔 두 달 넘은 앱이 없어 기준을 줄임)

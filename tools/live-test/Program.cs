@@ -450,6 +450,8 @@ internal static class Program
                 panelType.GetField("_expanded", Any)!.SetValue(w, id);
                 panelType.GetMethod("Rebuild", Any)!.Invoke(w, null);
                 Pump(400);
+                var uids = Descendants((DependencyObject)w.Content).OfType<FrameworkElement>().Select(e => e.Uid).Where(u => u.Length > 0).Distinct().Take(12);
+                Console.WriteLine($"    폴더 {folders.Count}개, 펼친 {panelType.GetField("_expanded", Any)!.GetValue(w)}, 보이는 표시: {string.Join(" ", uids)}");
                 bool plus = Descendants((DependencyObject)w.Content).OfType<FrameworkElement>().Any(e => e.Uid == "m:addapps:" + id && e.IsVisible);
                 Check("앱 넣기: 펼친 폴더 마지막에 [+] 칸", plus);
                 // 고르기 카드

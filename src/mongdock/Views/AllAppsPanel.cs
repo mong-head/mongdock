@@ -397,7 +397,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         LoadIcon(image, app);
         var stack = new StackPanel();
         stack.Children.Add(image);
-        stack.Children.Add(new TextBlock { Text = app.Name, TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 11.5, Opacity = 0.75, Margin = new Thickness(0, 4, 0, 0) });
+        stack.Children.Add(new TextBlock { Uid = "name", Text = app.Name, TextAlignment = TextAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 11.5, Opacity = 0.75, Margin = new Thickness(0, 4, 0, 0) });
         stack.Children.Add(new TextBlock { Text = Loc.T("추천"), TextAlignment = TextAlignment.Center, FontSize = 9.5, Foreground = P.SubText });
         Border Mini(string glyph, string tip, Action run)
         {
@@ -480,6 +480,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         stack.Children.Add(iconHost);
         stack.Children.Add(new TextBlock
         {
+            Uid = "name", // 앱 이름은 아이콘과 같이 커짐 (판 글자 배율 예외)
             Text = app.Name,
             TextWrapping = TextWrapping.Wrap,
             TextTrimming = TextTrimming.CharacterEllipsis,
@@ -745,7 +746,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         stack.Children.Add(tileHost);
         if (_editing)
         {
-            var name = MongField.Apply(new TextBox { Text = AllAppsCatalog.GroupName(S, id), FontSize = 12, FontWeight = FontWeights.SemiBold, MaxLength = 24, TextAlignment = TextAlignment.Center, Margin = new Thickness(2, 5, 2, 0), Padding = new Thickness(2, 1, 2, 1) }, P);
+            var name = MongField.Apply(new TextBox { Uid = "name", Text = AllAppsCatalog.GroupName(S, id), FontSize = 12, FontWeight = FontWeights.SemiBold, MaxLength = 24, TextAlignment = TextAlignment.Center, Margin = new Thickness(2, 5, 2, 0), Padding = new Thickness(2, 1, 2, 1) }, P);
             void CommitName() { if (name.Text.Trim() != AllAppsCatalog.GroupName(S, id)) RenameGroup(id, name.Text); }
             name.KeyDown += (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; CommitName(); } };
             name.PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) name.Text = AllAppsCatalog.GroupName(S, id); }; // Esc = 취소 (판이 닫히며 저장되지 않게)
@@ -755,6 +756,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         else
             stack.Children.Add(new TextBlock
             {
+                Uid = "name",
                 Text = AllAppsCatalog.GroupName(S, id),
                 TextAlignment = TextAlignment.Center,
                 TextTrimming = TextTrimming.CharacterEllipsis,
