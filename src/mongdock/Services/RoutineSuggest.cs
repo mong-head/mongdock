@@ -324,13 +324,22 @@ internal static class RoutineSuggest
         _ => null,
     };
 
+    /// <summary>배너 본문 "평일 아침마다 Outlook·Chrome·한글을 같이 여시네요." — 한국어는 마지막 이름이 한글이면 을/를을 골라 씀.</summary>
+    internal static string AskBody(string when, string names)
+    {
+        string text = Loc.F($"{when}마다 {names}을(를) 같이 여시네요.");
+        if (Loc.IsKorean && names.Length > 0 && names[^1] is >= '가' and <= '힣' and var last)
+            text = text.Replace(names + "을(를)", names + ((last - 0xAC00) % 28 != 0 ? "을" : "를"));
+        return text;
+    }
+
     private static void Ask(AppServices services, Bundle bundle, List<(string Name, RoutineItem Item, string? Exe)> entries)
     {
         var s = services.Settings.Current;
         string names = string.Join("·", entries.Take(4).Select(e => e.Name)) + (entries.Count > 4 ? Loc.F($" 외 {entries.Count - 4}개") : "");
         string when = WhenText(bundle);
         var item = new NotificationItem(0, "", AppInfo.Name, Loc.T("루틴으로 만들어 둘까요?"),
-            new[] { Loc.F($"{when}마다 {names}을(를) 같이 여시네요.") }, DateTime.Now, null, null, false, null);
+            new[] { AskBody(when, names) }, DateTime.Now, null, null, false, null);
         System.Windows.Media.ImageSource? icon = null;
         try { icon = MacIconRenderer.AllApps(); } catch { /* 아이콘 없이 */ }
         _asking = true;

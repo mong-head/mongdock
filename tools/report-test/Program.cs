@@ -1458,13 +1458,15 @@ internal static class Program
                     ("ask", "게임 루틴을 열까요?", "헤드셋 (Galaxy Buds)를 연결하면", new[] { Btn("열기", true), Btn("오늘은 안 함"), Btn("다시 묻지 않기", small: true) }),
                     ("askend", "게임 루틴을 끝낼까요?", "헤드셋 (Galaxy Buds) 연결이 끊겼어요.", new[] { Btn("끝내기", true), Btn("계속") }),
                     ("similar", "업무 시작 루틴인가요?", "맞으면 함께 바꿀 것을 적용하고 끝내기도 쓸 수 있어요.", new[] { Btn("맞아요", true), Btn("아니요") }),
+                    ("suggest", "루틴으로 만들어 둘까요?", (string)T("Mongdock.Services.RoutineSuggest").GetMethod("AskBody", Any)!.Invoke(null, new object[] { "평일 아침", "Outlook·Chrome·한글" })!, new[] { Btn("만들기", true), Btn("괜찮아요") }), // 루틴 추천 (§15)
                 })
                 {
                     var banner = (Window)bannerType.GetConstructors(Any)[0].Invoke(new object[] { services, palette });
                     var list = (System.Collections.IList)Activator.CreateInstance(listType)!;
                     foreach (var b in buttons) list.Add(b);
                     var item = new NotificationItem(0, "", "mongdock", Mongdock.Loc.T(title), new[] { Mongdock.Loc.T(body) }, DateTime.Now, null, null, false, null);
-                    bannerType.GetMethod("Add", Any)!.Invoke(banner, new object?[] { item, gameIcon, null, list, TimeSpan.FromSeconds(10), null });
+                    var bannerIcon = name == "suggest" ? (ImageSource)T("Mongdock.Services.MacIconRenderer").GetMethod("AllApps", Any)!.Invoke(null, null)! : gameIcon;
+                    bannerType.GetMethod("Add", Any)!.Invoke(banner, new object?[] { item, bannerIcon, null, list, TimeSpan.FromSeconds(10), null });
                     var root = (FrameworkElement)banner.Content;
                     foreach (var fe in Descendants(root).OfType<UIElement>()) { fe.BeginAnimation(UIElement.OpacityProperty, null); fe.Opacity = fe.Opacity < 0.99 && fe is not System.Windows.Controls.TextBlock ? 1 : fe.Opacity; if (fe.RenderTransform is TranslateTransform tt) { tt.BeginAnimation(TranslateTransform.XProperty, null); tt.BeginAnimation(TranslateTransform.YProperty, null); tt.X = 0; tt.Y = 0; } }
                     Save(root, "banner-" + name);
