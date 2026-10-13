@@ -34,6 +34,19 @@ internal static class Program
         int idleAt = Array.IndexOf(args, "--idle");
         int idle = idleAt >= 0 && idleAt + 1 < args.Length ? int.Parse(args[idleAt + 1]) : 0;
         string data = Path.Combine(Path.GetTempPath(), "mongdock-live-" + Guid.NewGuid().ToString("N")[..8]);
+        if (Array.IndexOf(args, "--realdata") >= 0)
+        {
+            // 사용자 설정·기록을 시험 폴더로 복사만 (읽기 전용 — 원본은 건드리지 않음, 로그는 뺌): 실제 폴더 구성으로 시험
+            string real = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "mongdock");
+            foreach (var f in Directory.EnumerateFiles(real, "*", SearchOption.AllDirectories))
+            {
+                string rel = Path.GetRelativePath(real, f);
+                if (rel.StartsWith("logs", StringComparison.OrdinalIgnoreCase)) continue;
+                string to = Path.Combine(data, rel);
+                Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                try { File.Copy(f, to, true); } catch (IOException) { /* 쓰는 중인 파일은 건너뜀 */ }
+            }
+        }
         Environment.SetEnvironmentVariable("MONGDOCK_DATA_DIR", data); // AppInfo 를 건드리기 전에
         Console.WriteLine($"시험 데이터 폴더: {data}");
 
@@ -72,6 +85,13 @@ internal static class Program
         {
             panelType.GetProperty("EdgeScrollEnabled", Any)!.SetValue(null, false);
             DragPicture(panelType, Open, Close, outDir);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            return _fail == 0 ? 0 : 1;
+        }
+        if (Array.IndexOf(args, "--dragfolders") >= 0)
+        {
+            panelType.GetProperty("EdgeScrollEnabled", Any)!.SetValue(null, false);
+            DragFollowFolders(panelType, Open, Close);
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
             return _fail == 0 ? 0 : 1;
         }
@@ -317,6 +337,108 @@ internal static class Program
         }
         panelType.GetMethod("EndDrag", Any)!.Invoke(w, new object[] { false });
         Pump(500);
+        close(w);
+        Pump(400);
+    }
+
+    /// <summary>
+    /// 폴더마다 끌기 따라오기 (2026-10-13 사용자: "업무" 폴더 안 아이콘만 거리를 두고 따라오는 것 같음):
+    /// 폴더를 하나씩 펼치고 첫 앱 칸을 끌어 ① 잡는 순간 첫 프레임 오프셋 ② 스크립트 좌표로 옮길 때 ③ 프레임마다 커서 자리로 따라올 때 거리를 잼.
+    /// 칸·아이콘 크기, 칸과 조상의 변환, 스크롤 자리도 같이 적음.
+    /// </summary>
+    private static void DragFollowFolders(Type panelType, Func<Window> open, Action<Window> close)
+    {
+        var w = open();
+        w.Show();
+        Pump(1200);
+        var folders = ((System.Collections.IList)panelType.GetField("_folders", Any)!.GetValue(w)!).Cast<object>().ToList();
+        var dragItem = panelType.GetNestedType("DragItem", BindingFlags.NonPublic)!;
+        var dropTag = panelType.GetNestedType("DropTag", BindingFlags.NonPublic)!;
+        var dpi = VisualTreeHelper.GetDpi(w);
+        Results.Add($"폴더 {folders.Count}개, 판 배율 {panelType.GetProperty("UiScale", Any)!.GetValue(w):0.00}, 화면 배율 {dpi.DpiScaleX:0.00}");
+        Results.Add("폴더 | 첫 프레임 오프셋 | 스크립트 좌표 최대 | 프레임마다 커서 최대 | 아이콘 | 변환·스크롤");
+        foreach (var f in folders)
+        {
+            string id = (string)f.GetType().GetProperty("Id")!.GetValue(f)!, name = (string)f.GetType().GetProperty("Name")!.GetValue(f)!;
+            panelType.GetField("_expanded", Any)!.SetValue(w, id);
+            panelType.GetMethod("Rebuild", Any)!.Invoke(w, null);
+            Pump(600);
+            var cells = ((System.Collections.IEnumerable)panelType.GetField("_groupCells", Any)!.GetValue(w)!).Cast<System.Windows.Controls.Border>().ToList();
+            if (cells.Count == 0) { Results.Add($"{name} | 칸 없음"); continue; }
+            var sv = panelType.GetField("_bodyScroll", Any)!.GetValue(w) as System.Windows.Controls.ScrollViewer;
+            if (sv is not null) { sv.ScrollToVerticalOffset(sv.VerticalOffset + cells[0].TranslatePoint(new Point(0, 0), sv).Y - 120); Pump(400); }
+            var cell = cells[0];
+            // 칸에서 판까지 변환 (RenderTransform·LayoutTransform·Clip 이 남아 있는지)
+            var chain = new List<string>();
+            for (DependencyObject? o = cell; o is not null && o != w; o = VisualTreeHelper.GetParent(o))
+                if (o is FrameworkElement fe)
+                {
+                    if (fe.RenderTransform is { } rt && !rt.Value.IsIdentity) chain.Add($"{fe.GetType().Name}.Render({rt.Value.M11:0.00},{rt.Value.OffsetX:0},{rt.Value.OffsetY:0})");
+                    if (fe.LayoutTransform is { } lt && !lt.Value.IsIdentity) chain.Add($"{fe.GetType().Name}.Layout({lt.Value.M11:0.00})");
+                    if (fe.Opacity < 0.99) chain.Add($"{fe.GetType().Name}.Opacity({fe.Opacity:0.00})");
+                }
+            var img = Descendants(cell).OfType<System.Windows.Controls.Image>().FirstOrDefault();
+            string iconInfo = img is null ? "없음" : $"{img.ActualWidth:0}DIP, 원본 {(img.Source as BitmapSource)?.PixelWidth}px";
+            string key = (string)dropTag.GetProperty("Key")!.GetValue(cell.Tag)!;
+            var grab = new Point(cell.ActualWidth * 0.5, cell.ActualHeight * 0.3);
+            var start = cell.TranslatePoint(grab, w);
+            var startPx = w.PointToScreen(start);
+            // 실제 끌기와 같은 경로: 커서 자리(시험용)를 프레임마다 따라감
+            var fake = startPx;
+            panelType.GetProperty("CursorForTest", Any)!.SetValue(null, new Func<Point>(() => fake));
+            panelType.GetProperty("FollowRealCursor", Any)!.SetValue(null, true);
+            panelType.GetMethod("BeginDrag", Any)!.Invoke(w, new object?[] { cell, Activator.CreateInstance(dragItem, false, key, false), null, grab });
+            var drag = panelType.GetField("_drag", Any)!.GetValue(w)!;
+            var gh = new WindowInteropHelper((Window)drag.GetType().GetField("Ghost")!.GetValue(drag)!).Handle;
+            var grabPx = (Point)drag.GetType().GetField("Grab")!.GetValue(drag)!;
+            double Dist(Point cursorPx)
+            {
+                GetWindowRect(gh, out var r);
+                double cx = r.Left + (12 + grabPx.X) * dpi.DpiScaleX, cy = r.Top + (12 + grabPx.Y) * dpi.DpiScaleY;
+                return Math.Max(Math.Abs(cx - cursorPx.X), Math.Abs(cy - cursorPx.Y)) / dpi.DpiScaleX;
+            }
+            // 첫 프레임: 잡은 지점과 그림이 원래 칸 아이콘 자리에 그대로인지 (그림 왼쪽 위 - 아이콘 왼쪽 위)
+            Pump(1);
+            double first = Dist(startPx);
+            string firstRel = "";
+            if (img is not null)
+            {
+                GetWindowRect(gh, out var r0);
+                var iconPx = w.PointToScreen(img.TranslatePoint(new Point(0, 0), w));
+                firstRel = $" (그림-아이콘 {(r0.Left + 12 * dpi.DpiScaleX - iconPx.X) / dpi.DpiScaleX:0.0},{(r0.Top + 12 * dpi.DpiScaleY - iconPx.Y) / dpi.DpiScaleY:0.0})";
+            }
+            int frames = 0;
+            EventHandler count = (_, _) => frames++;
+            CompositionTarget.Rendering += count;
+            double worstFollow = 0;
+            for (int i = 1; i <= 30; i++)
+            {
+                double t = i <= 15 ? i : 30 - i;
+                fake = w.PointToScreen(new Point(start.X + t * 9, start.Y - t * 2));
+                int seen = frames;
+                var waited = Stopwatch.StartNew();
+                while (frames < seen + 2 && waited.ElapsedMilliseconds < 200) Pump(1);
+                worstFollow = Math.Max(worstFollow, Dist(fake));
+            }
+            CompositionTarget.Rendering -= count;
+            panelType.GetProperty("CursorForTest", Any)!.SetValue(null, null);
+            panelType.GetProperty("FollowRealCursor", Any)!.SetValue(null, false);
+            panelType.GetMethod("StopFollow", Any)!.Invoke(w, null);
+            // 스크립트 좌표로 옮길 때 (마우스 이벤트 좌표 경로)
+            double worst = 0;
+            for (int i = 1; i <= 30; i++)
+            {
+                double t = i <= 15 ? i : 30 - i;
+                var p = new Point(start.X + t * 8, start.Y + t * 3);
+                panelType.GetMethod("UpdateDrag", Any)!.Invoke(w, new object[] { p });
+                Pump(16);
+                worst = Math.Max(worst, Dist(w.PointToScreen(p)));
+            }
+            panelType.GetMethod("EndDrag", Any)!.Invoke(w, new object[] { false });
+            Pump(400);
+            Results.Add($"{name} | {first:0.0}px{firstRel} | {worst:0.0}px | {worstFollow:0.0}px | {iconInfo} | {(chain.Count == 0 ? "없음" : string.Join(" ", chain))}, 스크롤 {sv?.VerticalOffset:0}");
+            Check($"끌기 따라오기 폴더 \"{name}\": 첫 프레임·이동 중 커서와 거리 ≤ 2px", first <= 2 && worst <= 2 && worstFollow <= 2);
+        }
         close(w);
         Pump(400);
     }

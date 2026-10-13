@@ -323,7 +323,8 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             root.Children.Add(line);
             if (chunk.FirstOrDefault(t => t.Folder?.Id == _expanded).Folder is { } open)
             {
-                var view = ExpandedGroup(open.Id, open.Apps);
+                int col = chunk.FindIndex(t => t.Folder?.Id == open.Id);
+                var view = ExpandedGroup(open.Id, open.Apps, (col + 0.5) * Cols * AppCell / GroupCols);
                 _expandedView = view as FrameworkElement;
                 _expandedFromCell = "group:" + open.Id;
                 root.Children.Add(view);
@@ -816,25 +817,6 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             });
         stack.Children.Add(new TextBlock { Text = Loc.F($"{apps.Count}개"), TextAlignment = TextAlignment.Center, FontSize = 11, Foreground = P.SubText });
         double w = Cols * AppCell / GroupCols - 4;
-        UIElement content = stack;
-        if (open)
-        {
-            // 아래 펼친 영역으로 이어지는 작은 꼭지 ▾ — 칸 높이를 바꾸지 않게 칸 아래로 걸침
-            var host = new Grid();
-            host.Children.Add(stack);
-            host.Children.Add(new System.Windows.Shapes.Path
-            {
-                Data = Geometry.Parse("M0,0 L12,0 L6,7 Z"),
-                Fill = P.SoftAccentLine,
-                Width = 12,
-                Height = 7,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Bottom,
-                Margin = new Thickness(0, 0, 0, -12),
-                IsHitTestVisible = false,
-            });
-            content = host;
-        }
         var cell = new Border
         {
             Width = w,
@@ -842,7 +824,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             Padding = new Thickness(4, 6, 4, 6),
             CornerRadius = new CornerRadius(10),
             Background = Brushes.Transparent,
-            Child = content,
+            Child = stack,
             Cursor = Cursors.Hand,
             ContextMenu = LazyMenu(m => FillGroupMenu(m, id)),
         };
@@ -865,14 +847,15 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     }
 
     /// <summary>펼친 묶음: 이름(연필로 바꾸기) + 앱 칸.</summary>
-    private UIElement ExpandedGroup(string id, List<AppEntry> apps)
+    private UIElement ExpandedGroup(string id, List<AppEntry> apps, double tailX)
     {
+        // 펼친 판 = 열린 폴더 칸과 같은 연보라 아주 연한 바탕의 둥근 판(16) + 윗변에 붙은 말풍선 꼬리 ▲ (열린 폴더 칸 가운데 바로 아래).
+        // 칸 → 꼬리 → 판이 한 덩어리로 이어져 "이 폴더에서 펼쳐진 판"으로 읽힘 (2026-10-13 사용자: 흰 바탕 위 ▾ 만 떠 있어 어색함)
         var box = new Border
         {
-            Background = P.Tile,
-            CornerRadius = new CornerRadius(12),
+            Background = P.SoftAccent,
+            CornerRadius = new CornerRadius(16),
             Padding = new Thickness(8, 8, 8, 6),
-            Margin = new Thickness(2, 0, 2, 8),
         };
         var stack = new StackPanel();
         if (_renaming == id)
@@ -962,7 +945,27 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             }));
         box.Child = stack;
         box.Tag = new DropTag("groupgrid", id); // 펼친 폴더 안 = 이 폴더로 (놓일 자리에 빈칸, 맨 끝)
-        return box;
+        // 꼬리와 판을 한 요소로 — 펼침·접힘(위에서 드러나기)에서 같이 움직임. 꼬리는 판 안으로 1px 겹쳐 경계선 없이 이어짐
+        const double tailW = 18, tailH = 9;
+        var plate = new System.Windows.Controls.Grid { Margin = new Thickness(2, 0, 2, 8) };
+        plate.RowDefinitions.Add(new RowDefinition { Height = new GridLength(tailH - 1) });
+        plate.RowDefinitions.Add(new RowDefinition());
+        var tail = new System.Windows.Shapes.Path
+        {
+            Data = Geometry.Parse($"M0,{tailH} L{tailW / 2},0 L{tailW},{tailH} Z"),
+            Fill = P.SoftAccent,
+            Width = tailW,
+            Height = tailH,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(Math.Max(16, tailX - 2 - tailW / 2), 0, 0, -1),
+            IsHitTestVisible = false,
+        };
+        System.Windows.Controls.Grid.SetRow(box, 1);
+        System.Windows.Controls.Grid.SetRowSpan(tail, 2);
+        plate.Children.Add(box);
+        plate.Children.Add(tail);
+        return plate;
     }
 
     private TextBlock SectionTitle(string text) => new()
