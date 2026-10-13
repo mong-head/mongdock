@@ -32,15 +32,8 @@ internal static class FocusRing
     {
         if (_done) return;
         _done = true;
-        // 기본 점선 없애기 — 형식마다 기본값을 null 로 (명시 스타일을 쓰는 칸도 이 기본값을 따름)
-        foreach (var t in new[] { typeof(ButtonBase), typeof(Button), typeof(ToggleButton), typeof(CheckBox), typeof(RadioButton), typeof(RepeatButton),
-                     typeof(ComboBox), typeof(ComboBoxItem), typeof(ListBoxItem), typeof(ListBox), typeof(Slider), typeof(Thumb), typeof(ScrollViewer),
-                     typeof(TabItem), typeof(MenuItem), typeof(Expander), typeof(Hyperlink), typeof(TreeViewItem), typeof(ContentControl), typeof(Border), typeof(StackPanel), typeof(Grid) })
-        {
-            try { FrameworkElement.FocusVisualStyleProperty.OverrideMetadata(t, new FrameworkPropertyMetadata(null)); }
-            catch (ArgumentException) { /* 이미 정해진 형식 */ }
-            catch (InvalidOperationException) { }
-        }
+        // 기본 점선 없애기: 포커스를 받는 순간(WPF 가 점선을 그리기 전) 그 요소의 FocusVisualStyle 을 null 로 — 테마 스타일보다 앞섬.
+        // 형식 기본값을 바꾸는 방식(OverrideMetadata)은 테마 스타일에 지고, WPF 정적 생성자와 부딪혀 독이 안 뜬 적이 있어 쓰지 않음 (2026-10-13)
         EventManager.RegisterClassHandler(typeof(UIElement), Keyboard.GotKeyboardFocusEvent, new KeyboardFocusChangedEventHandler(OnGotFocus), true);
         EventManager.RegisterClassHandler(typeof(UIElement), Keyboard.LostKeyboardFocusEvent, new KeyboardFocusChangedEventHandler(OnLostFocus), true);
         EventManager.RegisterClassHandler(typeof(Window), UIElement.PreviewMouseDownEvent, new MouseButtonEventHandler((_, _) => { _keyboard = false; Hide(); }), true);
@@ -50,6 +43,7 @@ internal static class FocusRing
     private static void OnGotFocus(object sender, KeyboardFocusChangedEventArgs e)
     {
         if (!ReferenceEquals(sender, e.NewFocus) || e.NewFocus is not UIElement el) return;
+        if (el is FrameworkElement fe && fe.FocusVisualStyle is not null) fe.FocusVisualStyle = null;
         if (!_keyboard || el is System.Windows.Controls.Primitives.TextBoxBase or PasswordBox || el is Window) { Hide(); return; }
         Show(TargetOf(el));
     }

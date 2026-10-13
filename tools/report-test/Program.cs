@@ -20,6 +20,30 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // --focuscheck: 몽독 시작 순서대로 FocusRing.Init 을 먼저 부른 뒤 메뉴·버튼을 만들어도 터지지 않는지 (2026-10-13 설치 직후 MenuItem 정적 생성자 충돌)
+        if (Array.IndexOf(args, "--focuscheck") >= 0)
+        {
+            try
+            {
+                typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.FocusRing")!.GetMethod("Init", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.Invoke(null, null);
+                _ = new System.Windows.Controls.ContextMenu();
+                _ = new System.Windows.Controls.MenuItem();
+                _ = new System.Windows.Controls.ComboBox();
+                _ = new System.Windows.Controls.Primitives.ScrollBar();
+                var b = new System.Windows.Controls.Button();
+                var cb = new System.Windows.Controls.CheckBox();
+                var host = new System.Windows.Window { Left = -20000, Top = -20000, Width = 100, Height = 100, ShowActivated = false, Content = new System.Windows.Controls.StackPanel { Children = { b, cb } } };
+                host.Show(); // 붙을 때(Loaded) 점선이 지워지는지
+                host.UpdateLayout();
+                System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                host.Activate();
+                System.Windows.Input.Keyboard.Focus(b);
+                System.Windows.Input.Keyboard.Focus(cb);
+                Console.WriteLine($"포커스 점검: 통과 (붙음 {b.IsLoaded}, 버튼 점선 {(b.FocusVisualStyle is null ? "없음" : "있음")}, 체크 점선 {(cb.FocusVisualStyle is null ? "없음" : "있음")})");
+                return 0;
+            }
+            catch (Exception ex) { Console.WriteLine("포커스 점검: 실패 " + ex); return 1; }
+        }
         // --en 또는 --lang <코드>: 그 언어 화면으로 렌더링 (App 생성자가 언어를 다시 정하므로 렌더링 때 다시 적용)
         int langAt = Array.FindIndex(args, a => a == "--lang");
         _lang = args.Contains("--en") ? "en" : langAt >= 0 && langAt + 1 < args.Length ? args[langAt + 1] : "ko";
