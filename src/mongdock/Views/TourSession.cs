@@ -80,6 +80,8 @@ internal sealed class TourSession : ICoachRun
         _keepOnTop.Tick += (_, _) => BringToFront();
         _keepOnTop.Start();
         _index = 0;
+        // 카드 높이는 둘러보기 내내 같게 (가장 긴 단계 기준) — 넘길 때 카드 크기·자리가 안 바뀜
+        _card.Card.FixHeight(_pages.Select(p => StepFor(p, new List<ImageSource>(), canTry: p.Anchor != CoachAnchor.Center)).ToList());
         Log.Info($"둘러보기 시작: {_pages.Count}장");
         ShowCurrent(animate: false);
     }
@@ -134,17 +136,7 @@ internal sealed class TourSession : ICoachRun
             if (TourScenes.Frame(_services, key, 0, palette) is { } first) frames.Add(first);
             if (sw.ElapsedMilliseconds > 300) Log.Info($"둘러보기 첫 장 그리기 {sw.ElapsedMilliseconds}ms ({key})");
         }
-        var step = new TourStep(page.Title, page.Body, frames)
-        {
-            Action = page.Action,
-            NextText = page.NextText,
-            Footnote = page.Footnote,
-            CanTry = anchor is not null,
-            Groups = page.Groups,
-            More = page.More,
-            Link = page.ChangelogLink ? page.LinkText : null,
-            FramesPending = key is not null && count > 0,
-        };
+        var step = StepFor(page, frames, canTry: anchor is not null);
         _card.Card.Show(step, _index, _pages.Count);
         if (key is not null && count > 1) RenderRest(key, count, _index, palette);
         PrerenderNext(palette);
@@ -152,6 +144,18 @@ internal sealed class TourSession : ICoachRun
         if (!_card.IsVisible) { _card.Show(); _card.Activate(); }
         BringToFront();
     }
+
+    private static TourStep StepFor(CoachPage page, List<ImageSource> frames, bool canTry) => new(page.Title, page.Body, frames)
+    {
+        Action = page.Action,
+        NextText = page.NextText,
+        Footnote = page.Footnote,
+        CanTry = canTry,
+        Groups = page.Groups,
+        More = page.More,
+        Link = page.ChangelogLink ? page.LinkText : null,
+        FramesPending = page.Pictures is { } k && TourScenes.Count(k) > 0,
+    };
 
     /// <summary>나머지 장을 뒤에서 그려 카드에 채움 (그 사이 단계가 바뀌었으면 버림 — 캐시에는 남음).</summary>
     private void RenderRest(string key, int count, int index, UiPalette palette)

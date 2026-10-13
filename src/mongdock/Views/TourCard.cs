@@ -41,13 +41,14 @@ internal sealed class TourCard : Border
 {
     public const double CardWidth = 560;
     private const double PictureHeight = CardWidth * 10 / 16;
-    // 장 넘김 2.5초, 마지막 장은 3초 머문 뒤 처음으로, 교차 흐림 250ms (2026-10-14 사용자: 느림)
-    private const int SlideMs = 2500, LastSlideMs = 3000, FadeMs = 250;
+    // 장 넘김 1.8초, 마지막 장은 2.5초 머문 뒤 처음으로, 교차 흐림 200ms (2026-10-14 사용자: 2.5초도 느림)
+    private const int SlideMs = 1800, LastSlideMs = 2500, FadeMs = 200;
 
     private readonly UiPalette _p;
     private readonly Image _front = new() { Stretch = Stretch.Uniform };
     private readonly Image _back = new() { Stretch = Stretch.Uniform, Opacity = 0 };
     private readonly StackPanel _frameDots = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 4) };
+    private const int ShortItem = 26; // 2열 목록에 넣을 항목 글자 수 상한
     private readonly TextBlock _title;
     private readonly TextBlock _body;
     private readonly StackPanel _stepDots = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -104,8 +105,9 @@ internal sealed class TourCard : Border
         _right = Arrow("›", +1, HorizontalAlignment.Right);
         picture.Children.Add(_left);
         picture.Children.Add(_right);
-        picture.MouseEnter += (_, _) => { _slide.Stop(); ShowArrows(true); }; // 마우스를 올리면 멈춤
-        picture.MouseLeave += (_, _) => { ShowArrows(false); StartSlides(); };
+        // 마우스를 올려도 자동 넘김은 계속 (올려 둔 채 보면 멈춰 있어 느리게 느껴짐 — 2026-10-14) — 직접 넘길 때만 멈춤
+        picture.MouseEnter += (_, _) => ShowArrows(true);
+        picture.MouseLeave += (_, _) => ShowArrows(false);
         picture.MouseLeftButtonDown += (_, e) => { if (_frames.Count > 1) { _dragFrom = e.GetPosition(picture); picture.CaptureMouse(); } };
         picture.MouseLeftButtonUp += (_, e) =>
         {
@@ -149,16 +151,22 @@ internal sealed class TourCard : Border
         footer.Children.Add(_stepDots);
         Grid.SetColumn(buttons, 2);
         footer.Children.Add(buttons);
-        var text = new StackPanel { Margin = new Thickness(24, 18, 24, 20) };
-        text.Children.Add(_title);
-        text.Children.Add(_body);
-        text.Children.Add(_list);
-        text.Children.Add(_link);
-        text.Children.Add(_try);
-        text.Children.Add(footer);
-        text.Children.Add(_footnote);
+        var bottom = new StackPanel();
+        bottom.Children.Add(footer);
+        bottom.Children.Add(_footnote);
+        var content = new StackPanel();
+        content.Children.Add(_title);
+        content.Children.Add(_body);
+        content.Children.Add(_list);
+        content.Children.Add(_link);
+        content.Children.Add(_try);
+        var text = new DockPanel { Margin = new Thickness(24, 18, 24, 20), LastChildFill = true };
+        DockPanel.SetDock(bottom, Dock.Bottom);
+        text.Children.Add(bottom);
+        text.Children.Add(content);
 
-        var stack = new StackPanel();
+        var stack = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(picture, Dock.Top);
         stack.Children.Add(picture);
         stack.Children.Add(text);
         Child = stack;
@@ -196,15 +204,28 @@ internal sealed class TourCard : Border
             {
                 if (groups.Count > 1 || !string.IsNullOrEmpty(header))
                     _list.Children.Add(new TextBlock { Text = header, FontWeight = FontWeights.SemiBold, Foreground = _p.Text, Margin = new Thickness(0, 6, 0, 2) });
-                foreach (var it in items)
+                // 짧은 항목(기능 이름)뿐이면 2열로 — 카드가 아래로 길어지지 않게 (2026-10-14 PM)
+                bool twoColumns = items.Count > 3 && items.All(x => x.Length <= ShortItem);
+                var grid = new Grid();
+                if (twoColumns)
                 {
-                    var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
+                    grid.ColumnDefinitions.Add(new ColumnDefinition());
+                    grid.ColumnDefinitions.Add(new ColumnDefinition());
+                }
+                for (int n = 0; n < items.Count; n++)
+                {
+                    var row = new DockPanel { Margin = new Thickness(0, 2, 8, 2) };
                     var dot = new TextBlock { Text = "•", Foreground = _p.SubText, Margin = new Thickness(2, 0, 8, 0) };
                     DockPanel.SetDock(dot, Dock.Left);
                     row.Children.Add(dot);
-                    row.Children.Add(new TextBlock { Text = it, Foreground = _p.Text, TextWrapping = TextWrapping.Wrap });
-                    _list.Children.Add(row);
+                    row.Children.Add(new TextBlock { Text = items[n], Foreground = _p.Text, TextWrapping = twoColumns ? TextWrapping.NoWrap : TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis });
+                    int r = twoColumns ? n / 2 : n;
+                    while (grid.RowDefinitions.Count <= r) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                    Grid.SetRow(row, r);
+                    Grid.SetColumn(row, twoColumns ? n % 2 : 0);
+                    grid.Children.Add(row);
                 }
+                _list.Children.Add(grid);
             }
         if (step.More > 0) _list.Children.Add(new TextBlock { Text = Loc.F($"외 {step.More}개"), Foreground = _p.SubText, Margin = new Thickness(0, 4, 0, 0) });
         _list.Visibility = _list.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -304,6 +325,24 @@ internal sealed class TourCard : Border
         return true;
     }
 
+    /// <summary>
+    /// 카드 높이를 모든 단계 중 가장 긴 것에 맞춰 고정 (단계를 넘겨도 카드 크기가 안 바뀜 — 2026-10-14 PM).
+    /// 각 단계를 잠깐 채워 재 보고, 다 재면 높이를 정함 (그다음 Show 가 진짜 단계를 채움).
+    /// </summary>
+    public void FixHeight(IReadOnlyList<TourStep> steps)
+    {
+        Height = double.NaN;
+        double max = 0;
+        for (int i = 0; i < steps.Count; i++)
+        {
+            Show(steps[i], i, steps.Count);
+            Measure(new Size(CardWidth, double.PositiveInfinity));
+            max = Math.Max(max, DesiredSize.Height);
+        }
+        _slide.Stop();
+        if (max > 0) Height = Math.Ceiling(max);
+    }
+
     internal bool ManualForTest => _manual;
     internal int FrameForTest => _frame;
     internal bool SlidingForTest => _slide.IsEnabled;
@@ -317,7 +356,7 @@ internal sealed class TourCard : Border
     private void StartSlides()
     {
         _slide.Stop();
-        if (_manual || _picture.IsMouseOver) return;
+        if (_manual) return;
         _slide.Interval = TimeSpan.FromMilliseconds(_frame == _frames.Count - 1 ? LastSlideMs : SlideMs);
         if (_frames.Count > 1 && Anim.Enabled) _slide.Start(); // 윈도우 애니메이션이 꺼져 있으면 첫 장만
     }
@@ -329,22 +368,29 @@ internal sealed class TourCard : Border
         var next = _frames[_frame];
         if (animate && _front.Source is not null)
         {
-            // 교차 흐림: 뒤 그림에 새 장을 놓고 올리면서 앞 그림을 내림, 끝나면 앞뒤 바꿈
+            // 교차 흐림: 새 장을 뒤에 불투명하게 깔고 앞 장만 내림, 끝나면 앞뒤 바꿈.
+            // (둘 다 반투명으로 겹치면 가운데쯤 그림 영역 바탕이 비쳐 잠깐 밝아짐 — 2026-10-14 "지직")
+            _back.BeginAnimation(OpacityProperty, null);
             _back.Source = next;
-            var d = TimeSpan.FromMilliseconds(FadeMs);
-            var up = new DoubleAnimation(0, 1, d);
-            up.Completed += (_, _) =>
+            _back.Opacity = 1;
+            var down = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(FadeMs));
+            down.Completed += (_, _) =>
             {
+                if (!ReferenceEquals(_back.Source, next)) return; // 그 사이 또 넘김
                 _front.Source = next;
                 _front.BeginAnimation(OpacityProperty, null);
                 _front.Opacity = 1;
-                _back.BeginAnimation(OpacityProperty, null);
                 _back.Opacity = 0;
             };
-            _back.BeginAnimation(OpacityProperty, up);
-            _front.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0, d));
+            _front.BeginAnimation(OpacityProperty, down);
         }
-        else _front.Source = next;
+        else
+        {
+            _front.BeginAnimation(OpacityProperty, null);
+            _front.Opacity = 1;
+            _front.Source = next;
+            _back.Opacity = 0;
+        }
         _frameDots.Children.Clear();
         for (int k = 0; k < _frames.Count; k++)
         {
@@ -402,6 +448,7 @@ internal sealed class TourSpotlight : Canvas
         _full.Rect = new Rect(0, 0, Math.Max(ActualWidth, Width is > 0 ? Width : 0), Math.Max(ActualHeight, Height is > 0 ? Height : 0));
         if (target is not { } r)
         {
+            _hole.BeginAnimation(RectangleGeometry.RectProperty, null);
             _hole.Rect = Rect.Empty;
             _ring.Visibility = Visibility.Collapsed;
             return;
@@ -418,14 +465,46 @@ internal sealed class TourSpotlight : Canvas
         }
         double rad = radius + 6;
         _hole.RadiusX = _hole.RadiusY = rad;
-        bool move = animate && Anim.Enabled && !_hole.Rect.IsEmpty;
+        var from = _hole.Rect;
+        bool move = animate && Anim.Enabled && !from.IsEmpty;
+        // 멀리 옮길 때(겹치지 않음)는 미끄러지지 않고 그 자리에서 닫혔다 새 자리에서 열림 —
+        // 미끄러지면 큰 구멍이 화면 가운데를 쓸고 지나가 잠깐 밝아짐 (2026-10-14 "지직": 상단바 → 독 50 밝기 튐)
+        bool jump = move && !Rect.Inflate(from, 40, 40).IntersectsWith(hole);
         var ease = new CubicEase { EasingMode = EasingMode.EaseInOut };
-        if (move) _hole.BeginAnimation(RectangleGeometry.RectProperty, new RectAnimation(hole, TimeSpan.FromMilliseconds(MoveMs)) { EasingFunction = ease });
-        else { _hole.BeginAnimation(RectangleGeometry.RectProperty, null); _hole.Rect = hole; }
-        // 링: 구멍 테두리 바로 바깥
         var ring = Rect.Inflate(hole, 2, 2);
         _ring.RadiusX = _ring.RadiusY = rad + 2;
         _ring.Visibility = Visibility.Visible;
+        if (jump)
+        {
+            var half = TimeSpan.FromMilliseconds(MoveMs / 2);
+            var all = TimeSpan.FromMilliseconds(MoveMs);
+            Rect Dot(Rect r) => new(r.X + r.Width / 2, r.Y + r.Height / 2, 0, 0);
+            var a = new RectAnimationUsingKeyFrames();
+            a.KeyFrames.Add(new EasingRectKeyFrame(Dot(from), KeyTime.FromTimeSpan(half), new CubicEase { EasingMode = EasingMode.EaseIn }));
+            a.KeyFrames.Add(new DiscreteRectKeyFrame(Dot(hole), KeyTime.FromTimeSpan(half)));
+            a.KeyFrames.Add(new EasingRectKeyFrame(hole, KeyTime.FromTimeSpan(all), new CubicEase { EasingMode = EasingMode.EaseOut }));
+            _hole.BeginAnimation(RectangleGeometry.RectProperty, a);
+            // 링: 흐려졌다가 새 자리에서 다시
+            var fade = new DoubleAnimationUsingKeyFrames();
+            fade.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(MoveMs / 3))));
+            fade.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(half)));
+            fade.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(all)));
+            _ring.BeginAnimation(OpacityProperty, fade);
+            foreach (var dp in new[] { LeftProperty, TopProperty, WidthProperty, HeightProperty })
+            {
+                double v = dp == LeftProperty ? ring.Left : dp == TopProperty ? ring.Top : dp == WidthProperty ? ring.Width : ring.Height;
+                var k = new DoubleAnimationUsingKeyFrames();
+                k.KeyFrames.Add(new DiscreteDoubleKeyFrame(v, KeyTime.FromTimeSpan(half)));
+                _ring.BeginAnimation(dp, k);
+            }
+            Pulse();
+            return;
+        }
+        _ring.BeginAnimation(OpacityProperty, null);
+        _ring.Opacity = 1;
+        if (move) _hole.BeginAnimation(RectangleGeometry.RectProperty, new RectAnimation(hole, TimeSpan.FromMilliseconds(MoveMs)) { EasingFunction = ease });
+        else { _hole.BeginAnimation(RectangleGeometry.RectProperty, null); _hole.Rect = hole; }
+        // 링: 구멍 테두리 바로 바깥
         if (move)
         {
             var d = TimeSpan.FromMilliseconds(MoveMs);

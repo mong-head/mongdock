@@ -91,9 +91,7 @@ public static class WhatsNew
     /// </summary>
     public static readonly IReadOnlyList<CoachStep> Tour =
     [
-        new("", IntroKey, Loc.T("작업 표시줄은 숨겨 뒀어요"),
-            Loc.T("윈도우 작업 표시줄 대신 위쪽 상단바와 독을 써요. 윈도우 알림도 오른쪽 위 몽독 배너로 떠요. 되돌리려면 설정 → 일반 → '윈도우 작업 표시줄 숨기기'를 끄면 돼요."),
-            CoachAnchor.Center, s => s.HideWindowsTaskbar),
+        // 작업 표시줄 안내 카드는 뺌 (2026-10-14 PM): 작업 표시줄이 독을 가릴 때만 뜨는 TaskbarOverlapHint 로 충분
         new("", "dock", Loc.T("독 — 자주 쓰는 앱을 한 줄에"),
             Loc.T("실행 중인 앱은 오른쪽 클릭 → 독에 고정으로 남겨 둬요. 아이콘을 끌어 순서를 바꾸고, 독 밖으로 끌면 빠져요."),
             CoachAnchor.Dock, s => s.Dock.Enabled),

@@ -25,7 +25,8 @@ internal static class TourScenes
     /// <summary>단계 키 → 장 수.</summary>
     public static int Count(string? key) => key switch
     {
-        "dock" or "topbar" or "allapps" or "routines" or "stacks" => 3,
+        "allapps" => 5,
+        "dock" or "topbar" or "routines" or "stacks" => 3,
         "settings" or "bounce" => 2,
         _ => 0,
     };
@@ -157,7 +158,7 @@ internal static class TourScenes
         public BitmapSource? Build(string key, int i, List<string>? problems)
         {
             _problems = problems;
-            var (g, top) = NewScene(key is "allapps" && i > 0 || key == "settings" && i == 1 ? PanelBg() : null);
+            var (g, top) = NewScene(key is "allapps" && i > 1 || key == "settings" && i == 1 ? PanelBg() : null);
             switch (key)
             {
                 case "dock": Dock(g, top, i); break;
@@ -640,13 +641,48 @@ internal static class TourScenes
 
         private void AllApps(Grid g, Canvas top, int f)
         {
-            string mode = f switch { 0 => "favorites", 1 => "folder", _ => "unused" };
+            if (f == 0)
+            {
+                // ① 독의 앱 모음 아이콘 누르기
+                var d = BigDock(g, running: new[] { "files", "browser" });
+                int at = Index(d, "allapps");
+                Magnify(d.Views, at);
+                Layout(g);
+                var icon = Need(d.Views[at], "독 앱 모음 아이콘")!;
+                var tag = new Border { Background = _layout.LabelBackground, BorderBrush = _layout.LabelBorder, BorderThickness = new Thickness(0.5), CornerRadius = new CornerRadius(7), Padding = new Thickness(12, 5, 12, 6), Child = new TextBlock { Text = d.Items[at].Name, Foreground = _layout.LabelForeground, FontSize = 15 } };
+                tag.Measure(new Size(W, H));
+                var head = icon.TranslatePoint(new Point(icon.ActualWidth / 2, 0), g);
+                double grow = ((DockItemView)icon).Scale;
+                Place(top, tag, head.X - tag.DesiredSize.Width / 2, head.Y - icon.ActualHeight * (grow - 1) - tag.DesiredSize.Height - 14);
+                Cursor(top, Center(icon, g, 0.55, 0.5), pressed: true);
+                return;
+            }
+            string mode = f switch { 1 or 2 => "favorites", 3 => "folder", _ => "unused" };
             var (panel, content) = MakePanel(mode);
             try
             {
-                if (f == 0)
+                if (f == 1)
                 {
-                    // ① 즐겨찾기 + 추천: 즐겨찾기 줄 (제목 포함), 커서는 첫 추천 칸의 [+]
+                    // ② 판 전체 (루틴 줄·즐겨찾기·폴더·모든 앱 한눈에, 축소) — 바탕화면 위에 뜬 판
+                    var whole = new Rect(0, 0, content.ActualWidth, content.ActualHeight);
+                    Need(panel.SceneFavRow, "즐겨찾기 줄");
+                    if (!panel.SceneRoutineCells().Any(c => c.ActualWidth > 0)) _problems?.Add("판 전체: 루틴 칸을 못 찾음");
+                    if (!panel.SceneFolderTiles().Any(c => c.ActualWidth > 0)) _problems?.Add("판 전체: 폴더 칸을 못 찾음");
+                    Crop(g, content, whole);
+                    if (g.Children[^1] is Image img)
+                    {
+                        // 둥근 판 + 그림자 (그림자는 감싼 틀에 — 잘린 그림에 주면 그림자도 잘림)
+                        g.Children.Remove(img);
+                        img.Clip = new RectangleGeometry(new Rect(0, 0, img.Width, img.Height), 12, 12);
+                        var frame = new Border { Child = img, Margin = img.Margin, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
+                            Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 18, ShadowDepth = 4, Direction = 270, Opacity = 0.25 } };
+                        img.Margin = new Thickness(0);
+                        g.Children.Add(frame);
+                    }
+                }
+                else if (f == 2)
+                {
+                    // ③ 즐겨찾기 + 추천: 즐겨찾기 줄 (제목 포함), 커서는 첫 추천 칸의 [+]
                     var row = Need(panel.SceneFavRow, "즐겨찾기 줄")!;
                     var cells = Descendants(row).OfType<Border>().Where(b => b.Tag is not null && b.ActualWidth > 0).ToList();
                     var region = Union(cells.Select(c => Bounds(c, content)));
@@ -656,9 +692,9 @@ internal static class TourScenes
                     var b = Bounds(first, content);
                     Cursor(top, map(new Point(b.Right - b.Width * 0.18, b.Top + b.Height * 0.12)), pressed: true);
                 }
-                else if (f == 1)
+                else if (f == 3)
                 {
-                    // ② 폴더 펼치기 + 순서 바꾸기: 열린 폴더 칸 + 펼친 판, 둘째 앱을 끌고 감
+                    // ④ 폴더 펼치기 + 순서 바꾸기: 열린 폴더 칸 + 펼친 판, 둘째 앱을 끌고 감
                     var plate = Need(panel.SceneExpanded, "펼친 폴더")!;
                     var tile = Need(panel.SceneOpenFolderTile(), "열린 폴더 칸")!;
                     var appCells = panel.SceneFolderCells.Where(c => c.ActualWidth > 0).ToList();
@@ -677,7 +713,7 @@ internal static class TourScenes
                 }
                 else
                 {
-                    // ③ 잠자는 앱 정리: 목록 + 떠 있는 선택 막대, 커서는 [숨기기]
+                    // ⑤ 잠자는 앱 정리: 목록 + 떠 있는 선택 막대, 커서는 [숨기기]
                     var rows = panel.SceneUnusedRows().Where(r => r.ActualWidth > 0).ToList();
                     var bar = Need(panel.SceneSelectionBar, "잠자는 앱 선택 막대")!;
                     if (rows.Count == 0) _problems?.Add("잠자는 앱 줄을 못 찾음");
