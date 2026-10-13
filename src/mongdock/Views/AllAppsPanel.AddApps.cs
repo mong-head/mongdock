@@ -97,10 +97,11 @@ internal sealed partial class AllAppsPanel
         searchHost.Children.Add(hint);
         root.Children.Add(searchHost);
 
-        var list = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
-        var listScroll = new ScrollViewer { Content = list, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = Math.Max(200, _bodyMaxHeight - 190), Focusable = false };
+        // 목록은 판의 남은 높이를 다 채우고(제목·검색은 위, [취소][넣기]는 아래에 고정), 판이 넓으면(1000 DIP 이상) 2열 (2026-10-13 사용자: 목록이 너무 좁음)
+        int cols = _panelWidth >= 1000 ? 2 : 1;
+        var list = new System.Windows.Controls.Primitives.UniformGrid { Columns = cols, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 8, 0, 0) };
+        var listScroll = new ScrollViewer { Content = list, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false };
         MongScroll.Apply(listScroll, P);
-        root.Children.Add(listScroll);
 
         var add = new Button
         {
@@ -137,13 +138,13 @@ internal sealed partial class AllAppsPanel
                 check.Margin = new Thickness(4, 0, 10, 0);
                 check.Checked += (_, _) => { st.Chosen.Add(a.Key); UpdateAdd(); };
                 check.Unchecked += (_, _) => { st.Chosen.Remove(a.Key); UpdateAdd(); };
-                var img = new Image { Width = 22, Height = 22, Margin = new Thickness(0, 2, 10, 2) };
+                var img = new Image { Width = 30, Height = 30, Margin = new Thickness(0, 4, 12, 4) };
                 RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
                 LoadIcon(img, a);
                 var line = new StackPanel { Orientation = Orientation.Horizontal };
                 line.Children.Add(check);
                 line.Children.Add(img);
-                line.Children.Add(new TextBlock { Text = a.Name, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
+                line.Children.Add(new TextBlock { Text = a.Name, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
                 if (inside) line.Children.Add(new TextBlock { Text = Loc.T("이미 들어 있어요"), FontSize = 11.5, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) });
                 var row = new Border { CornerRadius = new CornerRadius(6), Child = line, Opacity = inside ? 0.5 : 1, Background = Brushes.Transparent, Cursor = inside ? Cursors.Arrow : Cursors.Hand };
                 if (!inside)
@@ -165,7 +166,17 @@ internal sealed partial class AllAppsPanel
         add.Click += (_, _) => ApplyAddApps(st, already);
         buttons.Children.Add(cancel);
         buttons.Children.Add(add);
-        root.Children.Add(buttons);
+        // 위(제목·이름·검색) / 가운데(목록 — 남은 높이 전부) / 아래(버튼)
+        var page = new System.Windows.Controls.Grid { Height = Math.Max(240, _bodyMaxHeight - 8), Margin = root.Margin };
+        root.Margin = new Thickness(0);
+        page.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        page.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        page.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        page.Children.Add(root);
+        System.Windows.Controls.Grid.SetRow(listScroll, 1);
+        page.Children.Add(listScroll);
+        System.Windows.Controls.Grid.SetRow(buttons, 2);
+        page.Children.Add(buttons);
 
         // 열리면 바로 입력: 새 폴더는 이름 칸(전체 선택), 넣기는 검색 칸
         Dispatcher.BeginInvoke(() =>
@@ -173,7 +184,7 @@ internal sealed partial class AllAppsPanel
             if (nameBox is not null) { nameBox.Focus(); nameBox.SelectAll(); }
             else search.Focus();
         }, System.Windows.Threading.DispatcherPriority.Input);
-        return root;
+        return page;
     }
 
     private void ApplyAddApps(AddAppsState st, HashSet<string> already)

@@ -68,6 +68,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
 
     /// <summary>판 안 크기 배율 (1 = 예전 크기). 한 줄 10.5칸 기준으로, 1배 ~ 아이콘 96px(약 2.18배).</summary>
     internal double UiScale { get; private set; } = 1;
+    private double _panelWidth;
 
     internal static double UiScaleFor(double width) => Math.Clamp((width - 32) / 10.5 / AppCell, 1, 96.0 / AppIcon);
 
@@ -94,6 +95,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         // 판 안 전체 크기 (2026-10-13 사용자: 아이콘도 키움): 한 줄이 10~11칸이 되게 칸·아이콘·글자·폴더·검색 칸을 같은 비율로 (LayoutTransform)
         // — 지금 크기(1배)보다 작아지지 않고, 아이콘은 96px 까지. 안쪽 배치는 1배 단위로 계산(폭 / 배율)
         UiScale = UiScaleFor(width);
+        _panelWidth = width;
         double logical = width / UiScale;
         Cols = Math.Max(4, (int)((logical - 32) / AppCell));
         GroupCols = Math.Clamp((int)(Cols * AppCell / GroupCell), 4, 8);
