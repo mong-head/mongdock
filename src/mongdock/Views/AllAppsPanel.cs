@@ -776,8 +776,9 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             Width = GroupTile,
             Height = GroupTile,
             CornerRadius = new CornerRadius(14),
-            Background = P.Tile,
-            BorderBrush = open ? P.SoftAccentLine : Brushes.Transparent,
+            // 펼쳐 둔 폴더는 테두리가 아니라 바탕으로 (2026-10-13 사용자: 놓을 곳 강조 테두리와 헷갈림) — 연보라 아주 연한 채움
+            Background = open ? P.SoftAccent : P.Tile,
+            BorderBrush = Brushes.Transparent,
             BorderThickness = new Thickness(1.5),
             HorizontalAlignment = HorizontalAlignment.Center,
             Child = mini,
@@ -815,6 +816,25 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             });
         stack.Children.Add(new TextBlock { Text = Loc.F($"{apps.Count}개"), TextAlignment = TextAlignment.Center, FontSize = 11, Foreground = P.SubText });
         double w = Cols * AppCell / GroupCols - 4;
+        UIElement content = stack;
+        if (open)
+        {
+            // 아래 펼친 영역으로 이어지는 작은 꼭지 ▾ — 칸 높이를 바꾸지 않게 칸 아래로 걸침
+            var host = new Grid();
+            host.Children.Add(stack);
+            host.Children.Add(new System.Windows.Shapes.Path
+            {
+                Data = Geometry.Parse("M0,0 L12,0 L6,7 Z"),
+                Fill = P.SoftAccentLine,
+                Width = 12,
+                Height = 7,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                Margin = new Thickness(0, 0, 0, -12),
+                IsHitTestVisible = false,
+            });
+            content = host;
+        }
         var cell = new Border
         {
             Width = w,
@@ -822,7 +842,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             Padding = new Thickness(4, 6, 4, 6),
             CornerRadius = new CornerRadius(10),
             Background = Brushes.Transparent,
-            Child = stack,
+            Child = content,
             Cursor = Cursors.Hand,
             ContextMenu = LazyMenu(m => FillGroupMenu(m, id)),
         };
