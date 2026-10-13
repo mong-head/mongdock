@@ -159,6 +159,7 @@ public partial class DockWindow
         {
             if (Math.Abs(p.X - _itemStart.X) < DragThreshold && Math.Abs(p.Y - _itemStart.Y) < DragThreshold) return;
             if (Environment.TickCount64 - _itemPressTicks < DragMinHoldMs) return; // 짧게 누른 건 흔들려도 클릭
+            if (IsOverflowItem(_pressView.Item)) return; // "⋯" 칸은 자리가 고정 — 끌기를 시작하지 않음 (떼면 그대로 클릭 = 판 열기)
             BeginItemDrag();
         }
         UpdateItemDrag(p, e);
@@ -230,8 +231,9 @@ public partial class DockWindow
             int pins = others.Count(InPinSection);
             bool pinnable = InPinSection(view) || (view.Item.Pin == null && view.Item.Windows.Count > 0 && CanPin(view.Item.Windows[0]));
             bool running = view.Item.Pin == null;
+            int overflowAt = others.FindIndex(v => IsOverflowItem(v.Item)); // "⋯" 칸 뒤로는 놓을 자리를 만들지 않음 (비켜나지 않음)
             target = NearestSlot(others, view.BaseLength, AlongInBase(e),
-                k => (pinnable && k <= pins) || (running && k > pins));
+                k => ((pinnable && k <= pins) || (running && k > pins)) && (overflowAt < 0 || k <= overflowAt));
             if (target < 0) target = from;
         }
 
