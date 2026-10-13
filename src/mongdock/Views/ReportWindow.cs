@@ -256,7 +256,7 @@ public sealed class ReportWindow : Window
         var root = new Grid();
         // 입력 칸·미리 보기·창 스크롤 모두 맥 같은 얇은 스크롤바 (Themes/Controls.xaml ThinScrollBar)
         if (TryFindResource("ThinScrollBar") is Style thin) root.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), thin);
-        root.Children.Add(new ScrollViewer { Content = _form, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false, Margin = new Thickness(0, MongTitleBar.Height, 0, 0) });
+        root.Children.Add(MongScroll.Apply(new ScrollViewer { Content = _form, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false, Margin = new Thickness(0, MongTitleBar.Height, 0, 0) }, _p));
         root.Children.Add(_done);
         root.Children.Add(MongTitleBar.Overlay(this, _p, null));
         Content = root;

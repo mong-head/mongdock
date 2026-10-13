@@ -75,6 +75,7 @@ internal sealed class WindowPickerWindow : Window
             MaxHeight = screen.Height * 0.7 - 24,
             Focusable = false,
         };
+        MongScroll.Apply(_scroll);
         _scroll.ScrollChanged += (_, _) => UpdateThumbnails();
 
         // 블러가 안 되는 환경 대비 반투명 카드색을 깔아 둠 (블러가 되면 그 위에 틴트)

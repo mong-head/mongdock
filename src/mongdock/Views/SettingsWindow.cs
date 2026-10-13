@@ -260,6 +260,7 @@ internal sealed partial class SettingsWindow : Window
             Focusable = false,
             Content = body,
         };
+        MongScroll.Apply(_scroll, _p); // 몽독 얇은 겹침 스크롤바
         Grid.SetColumn(_scroll, 1);
         _scroll.Margin = new Thickness(0, MongTitleBar.Height, 0, 0); // 위 띠는 끌어 옮기는 자리 (그 안에 누를 것이 오지 않게)
         root.Children.Add(_scroll);

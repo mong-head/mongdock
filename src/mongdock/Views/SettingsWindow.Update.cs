@@ -126,6 +126,7 @@ internal sealed partial class SettingsWindow
                     Margin = new Thickness(0, 0, 10, 0),
                 },
             };
+            MongScroll.Apply(scroll, _p);
             if (TryFindResource("ThinScrollBar") is Style thin) scroll.Resources.Add(typeof(ScrollBar), thin);
             stack.Children.Add(new Border
             {

@@ -101,6 +101,7 @@ internal sealed partial class StatusPanelWindow : Window
             Focusable = false,
             Content = _cardInner,
         };
+        MongScroll.Apply(_cardScroll, _p);
         if (TryFindResource("OverlayScrollViewer") is Style overlay) _cardScroll.Style = overlay;
         if (TryFindResource("ThinScrollBar") is Style thin) _cardScroll.Resources.Add(typeof(ScrollBar), thin);
         _card.Child = _cardScroll;

@@ -57,6 +57,7 @@ internal abstract class RoutineCardWindow : Window
                 MaxHeight = Usable().Height - 80, // 카드 여백·그림자 자리
             },
         };
+        MongScroll.Apply(_scroll, P);
         var root = new Grid { Margin = new Thickness(24, 16, 24, 32) };
         root.Children.Add(new Border
         {
@@ -243,13 +244,12 @@ internal abstract class RoutineCardWindow : Window
         Child = new TextBlock { Text = text, FontSize = 11, Foreground = P.SubText },
     };
 
-    protected ScrollViewer Scroll(UIElement content) => new()
+    protected ScrollViewer Scroll(UIElement content) => MongScroll.Apply(new ScrollViewer
     {
         Content = content,
         MaxHeight = MaxListHeight,
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        Style = (Style)Application.Current.FindResource("OverlayScrollViewer"),
         Focusable = false,
-    };
+    }, P);
 }

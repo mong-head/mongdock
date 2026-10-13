@@ -467,6 +467,7 @@ internal sealed class CoachMarkWindow : Window
             Focusable = false,
             Padding = new Thickness(0, 0, 2, 0),
         };
+        MongScroll.Apply(scroll);
         if (TryFindResource("ThinScrollBar") is Style thin) scroll.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), thin);
         return new Border
         {

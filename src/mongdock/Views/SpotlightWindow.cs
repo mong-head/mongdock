@@ -214,6 +214,7 @@ internal sealed class SpotlightWindow : Window
             MaxHeight = 480,
             Visibility = Visibility.Collapsed,
         };
+        MongScroll.Apply(_scroll);
         if (TryFindResource("ThinScrollBar") is Style thin) _scroll.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), thin);
 
         var content = new StackPanel();
