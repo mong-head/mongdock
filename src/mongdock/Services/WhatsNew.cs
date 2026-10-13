@@ -95,27 +95,27 @@ public static class WhatsNew
             Loc.T("윈도우 작업 표시줄 대신 위쪽 상단바와 독을 써요. 윈도우 알림도 오른쪽 위 몽독 배너로 떠요. 되돌리려면 설정 → 일반 → '윈도우 작업 표시줄 숨기기'를 끄면 돼요."),
             CoachAnchor.Center, s => s.HideWindowsTaskbar),
         new("", "dock", Loc.T("독 — 자주 쓰는 앱을 한 줄에"),
-            Loc.T("아이콘을 누르면 앱이 열리고, 마우스를 올리면 커져요. 자주 쓰는 앱은 오른쪽 클릭 → 독에 고정. 끌어서 순서를 바꿔요."),
+            Loc.T("실행 중인 앱은 오른쪽 클릭 → 독에 고정으로 남겨 둬요. 아이콘을 끌어 순서를 바꾸고, 독 밖으로 끌면 빠져요."),
             CoachAnchor.Dock, s => s.Dock.Enabled),
-        new("", "topbar", Loc.T("상단바 — 시계·소리·알림을 한눈에"),
-            Loc.T("와이파이·소리를 누르면 제어 센터, 시계를 누르면 달력과 일정이 열려요. 왼쪽에는 지금 앱의 메뉴가 나와요."),
+        new("", "topbar", Loc.T("상단바 — 지금 앱의 메뉴와 제어 센터"),
+            Loc.T("지금 쓰는 앱의 메뉴(파일·편집…)가 상단바에 떠요. 와이파이·소리는 제어 센터, 시계는 달력과 알림이에요."),
             CoachAnchor.TopBar, TopBarOn),
         new("", "allapps", Loc.T("앱 모음 판 — 모든 앱을 한곳에"),
-            Loc.T("독의 앱 모음을 누르면 열려요. 자주 쓰는 앱은 즐겨찾기에, 비슷한 앱은 폴더에 모여 있어요. 끌어서 순서를 바꾸고, 안 쓰는 앱은 정리해요."),
+            Loc.T("자주 여는 앱은 추천에서 +로 즐겨찾기에 넣어요. 폴더를 펼쳐 순서를 바꾸고, 잠자는 앱은 골라서 정리해요."),
             CoachAnchor.AllApps, s => s.Dock.Enabled),
         new("", "routines", Loc.T("루틴 — 일하는 앱을 한 번에"),
             Loc.T("자주 같이 여는 앱들을 루틴으로 만들어 두면, 누를 때 새 데스크톱에 정해 둔 자리로 한꺼번에 열려요. 헤드셋을 연결하면 열지 물어보게 할 수도 있어요."),
             CoachAnchor.AllApps, s => s.Dock.Enabled),
         new("", "stacks", Loc.T("독의 폴더와 휴지통"),
-            Loc.T("폴더를 독에 두면 눌렀을 때 안의 파일이 펼쳐져요. 파일을 휴지통으로 끌면 지워지고, 휴지통을 누르면 비울 수 있어요."),
+            Loc.T("독 빈 곳을 오른쪽 클릭 → 독에 폴더 추가…로 폴더를 두면, 누를 때 파일이 펼쳐져요. 파일은 휴지통으로 끌어 지워요."),
             CoachAnchor.DockStacks, s => s.Dock.Enabled),
-        new("", "settings", Loc.T("설정 — 내 손에 맞게"),
-            Loc.T("독 위치·자동 숨기기·크기와 라이트·다크 테마를 바꿔요. 독이나 상단바를 오른쪽 클릭하면 설정이 열려요."),
+        new("", "settings", Loc.T("설정 — 어디서 여나요"),
+            Loc.T("상단바 로고 메뉴 → mongdock → 설정…에서 열어요. 독 위치·자동 숨기기·테마를 바꿔요."),
             CoachAnchor.Center),
     ];
 
     /// <summary>둘러보기 그림이 있는 단계 키.</summary>
-    public static readonly IReadOnlySet<string> TourPictures = new HashSet<string> { "dock", "topbar", "allapps", "routines", "stacks", "settings" };
+    public static readonly IReadOnlySet<string> TourPictures = new HashSet<string> { "dock", "topbar", "allapps", "routines", "stacks", "settings", "bounce" };
 
     /// <summary>
     /// 둘러보기에서 뺀 기능 — 처음 그 요소를 쓰고(패널·메뉴를 닫은 뒤) 한 번만 짧은 카드 (Views/FirstUseHints).

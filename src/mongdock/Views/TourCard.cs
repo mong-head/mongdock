@@ -21,35 +21,14 @@ internal sealed record TourStep(string Title, string Body, IReadOnlyList<ImageSo
     public string? Footnote { get; init; }
     /// <summary>[직접 해 보기] (가리키는 자리가 화면에 있을 때).</summary>
     public bool CanTry { get; init; }
-}
-
-/// <summary>둘러보기 그림 (앱 리소스 Assets/Tour/tour-{key}-{n}-{light|dark}.png, report-test --tour 로 만듦).</summary>
-internal static class TourPictures
-{
-    public static IReadOnlyList<ImageSource> Load(string? key, bool light)
-    {
-        var list = new List<ImageSource>();
-        if (key is null) return list;
-        for (int n = 1; n <= 4; n++)
-        {
-            // 어셈블리 이름까지 (시험 도구처럼 다른 exe 에서 불러도 몽독 리소스를 읽게)
-            var uri = new Uri($"pack://application:,,,/{typeof(TourPictures).Assembly.GetName().Name};component/Assets/Tour/tour-{key}-{n}-{(light ? "light" : "dark")}.png", UriKind.Absolute);
-            try
-            {
-                if (Application.GetResourceStream(uri) is null) break;
-                var bmp = new System.Windows.Media.Imaging.BitmapImage();
-                bmp.BeginInit();
-                bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
-                bmp.UriSource = uri;
-                bmp.EndInit();
-                bmp.Freeze();
-                list.Add(bmp);
-            }
-            catch (System.IO.IOException) { break; } // 그 장이 없음
-            catch (Exception ex) { Mongdock.Services.Log.Warn($"둘러보기 그림 읽기 실패: {ex.GetType().Name}"); break; }
-        }
-        return list;
-    }
+    /// <summary>목록 카드 ("그 밖에 바뀐 것"): 머리글 + 항목들. 있으면 그림 영역 없이 목록.</summary>
+    public List<(string Header, List<string> Items)>? Groups { get; init; }
+    /// <summary>목록에 다 못 넣은 항목 수 ("외 N개").</summary>
+    public int More { get; init; }
+    /// <summary>"변경 내역 보기 ›" 링크.</summary>
+    public string? Link { get; init; }
+    /// <summary>그림을 뒤에서 그리는 중 (그림 영역 크기를 미리 잡아 둠).</summary>
+    public bool FramesPending { get; init; }
 }
 
 /// <summary>
@@ -76,6 +55,9 @@ internal sealed class TourCard : Border
     private readonly Button _action;
     private readonly TextBlock _try;
     private readonly TextBlock _footnote;
+    private readonly TextBlock _skip;
+    private readonly StackPanel _list = new() { Margin = new Thickness(0, 10, 0, 0) };
+    private readonly TextBlock _link;
     private readonly Grid _picture;
     private readonly Image _logo = new() { Width = 72, Height = 72, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
     private Action? _runAction;
@@ -87,6 +69,7 @@ internal sealed class TourCard : Border
     public event Action? NextClicked;
     public event Action? SkipClicked;
     public event Action? TryClicked;
+    public event Action? LinkClicked;
 
     public TourCard(UiPalette p)
     {
@@ -110,18 +93,6 @@ internal sealed class TourCard : Border
         _logo.Source = AppIcon.WindowIcon; // 그림 없는 단계 (작업 표시줄 안내 등)
         picture.Children.Add(_logo);
         picture.Children.Add(_frameDots);
-        var skip = new TextBlock
-        {
-            Text = Loc.T("건너뛰기"),
-            FontSize = UiText.Sub,
-            Foreground = p.PanelTintText,
-            Cursor = Cursors.Hand,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(0, 12, 16, 0),
-        };
-        skip.MouseLeftButtonUp += (_, e) => { e.Handled = true; SkipClicked?.Invoke(); };
-        picture.Children.Add(skip);
         picture.MouseEnter += (_, _) => _slide.Stop(); // 마우스를 올리면 멈춤
         picture.MouseLeave += (_, _) => StartSlides();
 
@@ -138,17 +109,31 @@ internal sealed class TourCard : Border
         buttons.Children.Add(_prev);
         buttons.Children.Add(_action);
         buttons.Children.Add(_next);
-        _try = new TextBlock { Text = Loc.T("직접 해 보기"), FontSize = UiText.Sub, Foreground = p.AccentInk, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 14, 0) };
+        _try = new TextBlock { Text = Loc.T("직접 해 보기") + " ›", FontSize = UiText.Sub, Foreground = p.AccentInk, Cursor = Cursors.Hand, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 8, 0, 0) };
         _try.MouseLeftButtonUp += (_, e) => { e.Handled = true; TryClicked?.Invoke(); };
-        buttons.Children.Insert(0, _try);
         _footnote = new TextBlock { FontSize = UiText.Sub - 0.5, Foreground = p.SubText, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) };
-        var footer = new DockPanel { Margin = new Thickness(0, 18, 0, 0) };
-        DockPanel.SetDock(buttons, Dock.Right);
-        footer.Children.Add(buttons);
+        _link = new TextBlock { FontSize = UiText.Sub, Foreground = p.AccentInk, Cursor = Cursors.Hand, Margin = new Thickness(0, 8, 0, 0) };
+        _link.MouseLeftButtonUp += (_, e) => { e.Handled = true; LinkClicked?.Invoke(); };
+        // 아래 줄: 왼쪽 [건너뛰기](회색 글자 버튼) · 가운데 단계 점 · 오른쪽 [이전] [다음 →] (2026-10-14 사용자: 건너뛰기가 그림 위에 떠 있어 이상함)
+        _skip = new TextBlock { Text = Loc.T("건너뛰기"), FontSize = UiText.Sub, Foreground = p.SubText, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center };
+        _skip.MouseLeftButtonUp += (_, e) => { e.Handled = true; SkipClicked?.Invoke(); };
+        var footer = new Grid { Margin = new Thickness(0, 18, 0, 0) };
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        footer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        _skip.HorizontalAlignment = HorizontalAlignment.Left;
+        footer.Children.Add(_skip);
+        _stepDots.HorizontalAlignment = HorizontalAlignment.Center;
+        Grid.SetColumn(_stepDots, 1);
         footer.Children.Add(_stepDots);
+        Grid.SetColumn(buttons, 2);
+        footer.Children.Add(buttons);
         var text = new StackPanel { Margin = new Thickness(24, 18, 24, 20) };
         text.Children.Add(_title);
         text.Children.Add(_body);
+        text.Children.Add(_list);
+        text.Children.Add(_link);
+        text.Children.Add(_try);
         text.Children.Add(footer);
         text.Children.Add(_footnote);
 
@@ -181,10 +166,35 @@ internal sealed class TourCard : Border
         _action.Visibility = step.Action is null ? Visibility.Collapsed : Visibility.Visible;
         if (step.Action is { } act) ((TextBlock)_action.Content).Text = act.Label;
         _try.Visibility = step.CanTry ? Visibility.Visible : Visibility.Collapsed;
+        _skip.Visibility = index < count - 1 ? Visibility.Visible : Visibility.Hidden; // 마지막 단계는 [시작하기]만
+        _body.Visibility = string.IsNullOrEmpty(step.Body) ? Visibility.Collapsed : Visibility.Visible;
+        // 목록 카드 ("그 밖에 바뀐 것")
+        _list.Children.Clear();
+        if (step.Groups is { } groups)
+            foreach (var (header, items) in groups)
+            {
+                if (groups.Count > 1 || !string.IsNullOrEmpty(header))
+                    _list.Children.Add(new TextBlock { Text = header, FontWeight = FontWeights.SemiBold, Foreground = _p.Text, Margin = new Thickness(0, 6, 0, 2) });
+                foreach (var it in items)
+                {
+                    var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
+                    var dot = new TextBlock { Text = "•", Foreground = _p.SubText, Margin = new Thickness(2, 0, 8, 0) };
+                    DockPanel.SetDock(dot, Dock.Left);
+                    row.Children.Add(dot);
+                    row.Children.Add(new TextBlock { Text = it, Foreground = _p.Text, TextWrapping = TextWrapping.Wrap });
+                    _list.Children.Add(row);
+                }
+            }
+        if (step.More > 0) _list.Children.Add(new TextBlock { Text = Loc.F($"외 {step.More}개"), Foreground = _p.SubText, Margin = new Thickness(0, 4, 0, 0) });
+        _list.Visibility = _list.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        _link.Text = step.Link ?? "";
+        _link.Visibility = step.Link is null ? Visibility.Collapsed : Visibility.Visible;
         _footnote.Text = step.Footnote ?? "";
         _footnote.Visibility = string.IsNullOrEmpty(step.Footnote) ? Visibility.Collapsed : Visibility.Visible;
-        // 그림이 없는 단계: 그림 영역을 낮추고 큰 몽독 아이콘
-        bool pictures = step.Frames.Count > 0;
+        // 그림이 없는 단계: 그림 영역을 낮추고 큰 몽독 아이콘, 목록 카드는 그림 영역 없음.
+        // 그림이 아직 그려지는 중이면(FramesPending) 그림 영역 크기는 그대로
+        bool pictures = step.Frames.Count > 0 || step.FramesPending;
+        _picture.Visibility = step.Groups is not null && !pictures ? Visibility.Collapsed : Visibility.Visible;
         _picture.Height = pictures ? PictureHeight : 150;
         _logo.Visibility = pictures ? Visibility.Collapsed : Visibility.Visible;
         _stepDots.Children.Clear();
@@ -196,6 +206,20 @@ internal sealed class TourCard : Border
         _back.Source = null;
         _back.Opacity = 0;
         ShowFrame(0, animate: false);
+        StartSlides();
+    }
+
+    /// <summary>
+    /// 뒤에서 그린 장들이 준비되면 채움 (첫 장은 이미 보이는 중 — 자리·순서 그대로 이어서 넘어감).
+    /// </summary>
+    public void SetFrames(IReadOnlyList<ImageSource> frames)
+    {
+        bool first = _frames.Count == 0;
+        _frames = frames;
+        _frameDots.Visibility = _frames.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+        _logo.Visibility = Visibility.Collapsed;
+        if (first) ShowFrame(0, animate: false);
+        else ShowFrame(_frame, animate: false);
         StartSlides();
     }
 

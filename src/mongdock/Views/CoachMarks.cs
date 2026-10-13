@@ -65,7 +65,7 @@ internal static class CoachMarks
 {
     private const int MaxWhatsNewSteps = 6;
     /// <summary>"그 밖에 바뀐 것" 카드: 최신 버전 줄 수 / 그 이전 버전마다 줄 수.</summary>
-    private const int MaxLatestLines = 5;
+    private const int MaxLatestLines = 6;
     private const int MaxOlderLines = 3;
     private const int MaxTourSteps = 8;
     /// <summary>설정 창에서 재생하는 버전별·주요 기능 둘러보기 최대 장수.</summary>
@@ -405,6 +405,15 @@ internal static class CoachMarks
             .Take(MaxReplaySteps).Select(x => ReplayPage(x, s)).ToList();
     }
 
+    /// <summary>설정 → 변경 내역 "v0.5.0 새 기능 다시 보기": 업데이트 때 보는 것과 같은 카드(새 기능 장면 + 그 밖에 바뀐 것).</summary>
+    public static List<CoachPage> BuildCurrentWhatsNew()
+    {
+        if (_services is null) return new List<CoachPage>();
+        var current = WhatsNew.Current;
+        var older = Changelog.Releases.Select(r => r.Version).Where(v => v < current).OrderByDescending(v => v).FirstOrDefault();
+        return BuildWhatsNew(older ?? new Version(0, 0, 0), current);
+    }
+
     /// <summary>"주요 기능 둘러보기 ▶": 모든 버전의 major + coach 단계, 최신 순, 같은 Key 는 최신 것만, 최대 8장.</summary>
     public static List<CoachPage> BuildMajorTour()
     {
@@ -456,11 +465,15 @@ internal static class CoachMarks
         var pages = new List<CoachPage>();
         var releases = Changelog.Between(after, upTo); // 최신 먼저
         if (releases.Count == 0) return pages;
-        if (releases.Count >= 2) return BuildCatchUp(releases, s);
         var latest = releases[0];
+        // 바로 앞 부 버전(0.4.x → 0.5.0)에서 올라왔으면 패치 몇 개를 건너뛰었어도 이번 버전 새 기능 장면 + 목록 (2026-10-14).
+        // 그보다 오래된 버전에서 올라오면 주요 기능만 (오랜만에 업데이트)
+        bool previousMinor = after.Major == latest.Version.Major && after.Minor == latest.Version.Minor - 1;
+        if (releases.Count >= 2 && !previousMinor) return BuildCatchUp(releases, s);
 
         var latestSteps = WhatsNew.Releases.Where(x => WhatsNew.Parse(x.Version) == latest.Version).ToList();
-        var coach = latestSteps.Where(x => x.IsAvailable(s) && AnchorVisible(x.Anchor)).Take(MaxWhatsNewSteps).ToList();
+        // 그림 장면이 있는 새 기능은 가리킬 자리가 지금 없어도 넣음 (카드만 가운데 — 장면이 설명함)
+        var coach = latestSteps.Where(x => x.IsAvailable(s) && (WhatsNew.TourPictures.Contains(x.Key) || AnchorVisible(x.Anchor))).Take(MaxWhatsNewSteps).ToList();
         pages.AddRange(coach.Select(x => ToPage(x, s)));
 
         // 말풍선으로 본 기능(Key)은 목록에서 빼고, 이전 버전에 같은 Key 가 있어도 한 번만
@@ -614,7 +627,8 @@ internal static class CoachMarks
         _session = null;
         if (pages.Count == 0 || _services is null || _resolve is null) return null;
         // 첫 설치 둘러보기·다시 보기 = 새 방식 카드(그림 + 강조), 새 기능·힌트 = 말풍선 (spec-coach-tour.md)
-        ICoachRun session = isTour ? new TourSession(_services, _resolve, pages) : new CoachSession(_services, _resolve, _popupOpen, pages);
+        // 장면 그림이 있는 안내(업데이트 "새 기능" 포함)도 새 카드 — 처음 쓰기 힌트처럼 그림 없는 한 장은 말풍선
+        ICoachRun session = isTour || pages.Any(p => p.Pictures is not null) ? new TourSession(_services, _resolve, pages) : new CoachSession(_services, _resolve, _popupOpen, pages);
         session.Ended += reason =>
         {
             if (_session == session) _session = null;

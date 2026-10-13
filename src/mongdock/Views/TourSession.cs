@@ -58,6 +58,13 @@ internal sealed class TourSession : ICoachRun
         _card.Card.PrevClicked += Prev;
         _card.Card.SkipClicked += () => { Log.Info("둘러보기: 건너뛰기"); Close(markSeen: true, CoachEndReason.Completed); };
         _card.Card.TryClicked += Try;
+        _card.Card.LinkClicked += () =>
+        {
+            // 설정 → 변경 내역. 마지막 카드면 안내를 본 것으로 끝냄 (설정 창이 카드에 가리지 않게)
+            try { SettingsWindow.OpenChangelogPage(_services); }
+            catch (Exception ex) { Log.Error("변경 내역 열기 실패", ex); }
+            if (_index >= _pages.Count - 1) Close(markSeen: true, CoachEndReason.Completed);
+        };
         _card.KeyPressed += key =>
         {
             if (key == Key.Right) Next();
@@ -117,17 +124,58 @@ internal sealed class TourSession : ICoachRun
         _monitor = monitor;
         _hole = anchor?.Rect;
         _dim.MoveTo(anchor?.Rect, Radius(page.Anchor, anchor?.Rect), animate);
-        var step = new TourStep(page.Title, page.Body, TourPictures.Load(page.Pictures, palette.IsLight))
+        // 그림: 그 자리에서 그림 (첫 장은 지금, 나머지는 뒤에서 — 언어·테마별 메모리 캐시)
+        string? key = page.Pictures;
+        int count = TourScenes.Count(key);
+        var frames = new List<ImageSource>();
+        if (key is not null && count > 0)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            if (TourScenes.Frame(_services, key, 0, palette) is { } first) frames.Add(first);
+            if (sw.ElapsedMilliseconds > 300) Log.Info($"둘러보기 첫 장 그리기 {sw.ElapsedMilliseconds}ms ({key})");
+        }
+        var step = new TourStep(page.Title, page.Body, frames)
         {
             Action = page.Action,
             NextText = page.NextText,
             Footnote = page.Footnote,
             CanTry = anchor is not null,
+            Groups = page.Groups,
+            More = page.More,
+            Link = page.ChangelogLink ? page.LinkText : null,
+            FramesPending = key is not null && count > 0,
         };
         _card.Card.Show(step, _index, _pages.Count);
+        if (key is not null && count > 1) RenderRest(key, count, _index, palette);
+        PrerenderNext(palette);
         _card.Place(monitor, anchor?.Rect);
         if (!_card.IsVisible) { _card.Show(); _card.Activate(); }
         BringToFront();
+    }
+
+    /// <summary>나머지 장을 뒤에서 그려 카드에 채움 (그 사이 단계가 바뀌었으면 버림 — 캐시에는 남음).</summary>
+    private void RenderRest(string key, int count, int index, UiPalette palette)
+    {
+        System.Windows.Application.Current?.Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        {
+            if (_closed) return;
+            var all = new List<ImageSource>();
+            for (int i = 0; i < count; i++)
+                if (TourScenes.Frame(_services, key, i, palette) is { } img) all.Add(img);
+            if (!_closed && _index == index && _card is not null) _card.Card.SetFrames(all);
+        });
+    }
+
+    /// <summary>다음 단계 그림을 쉬는 동안 미리 (넘기면 바로 보이게).</summary>
+    private void PrerenderNext(UiPalette palette)
+    {
+        int next = _index + 1;
+        if (next >= _pages.Count || _pages[next].Pictures is not { } key) return;
+        System.Windows.Application.Current?.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, () =>
+        {
+            if (_closed) return;
+            for (int i = 0; i < TourScenes.Count(key); i++) TourScenes.Frame(_services, key, i, palette);
+        });
     }
 
     private double Radius(CoachAnchor a, Rect? r) => a switch

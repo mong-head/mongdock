@@ -343,6 +343,9 @@ internal sealed partial class StatusPanelWindow : Window
 
     private void OnChanged(object? sender, EventArgs e) => RefreshAll();
 
+    /// <summary>둘러보기 장면에서: 화면에 띄우지 않고 내용(달력 날짜 등)을 채움.</summary>
+    internal void RefreshForScene() => RefreshAll();
+
     private void RefreshAll()
     {
         _updating = true;

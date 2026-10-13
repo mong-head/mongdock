@@ -1319,5 +1319,21 @@
  "이전": "Anterior",
  "직접 해 보기": "Pruébalo tú",
  "시작하기": "Empezar",
- "둘러보기로 돌아가기 · {0}/{1}": "Volver al recorrido · {0}/{1}"
+ "둘러보기로 돌아가기 · {0}/{1}": "Volver al recorrido · {0}/{1}",
+ "실행 중인 앱은 오른쪽 클릭 → 독에 고정으로 남겨 둬요. 아이콘을 끌어 순서를 바꾸고, 독 밖으로 끌면 빠져요.": "Haz clic derecho en una app abierta → Mantener en el Dock para dejarla ahí. Arrastra los iconos para reordenarlos; sácalos del Dock para quitarlos.",
+ "상단바 — 지금 앱의 메뉴와 제어 센터": "Barra de menús — menús de la app y Centro de control",
+ "지금 쓰는 앱의 메뉴(파일·편집…)가 상단바에 떠요. 와이파이·소리는 제어 센터, 시계는 달력과 알림이에요.": "Los menús de la app que usas (Archivo, Edición…) aparecen en la barra de menús. El Wi‑Fi y el sonido están en el Centro de control; el reloj abre el calendario y las notificaciones.",
+ "자주 여는 앱은 추천에서 +로 즐겨찾기에 넣어요. 폴더를 펼쳐 순서를 바꾸고, 잠자는 앱은 골라서 정리해요.": "Añade a Favoritos las apps que más abres con + en Sugerido. Abre las carpetas para reordenarlas y elige qué apps dormidas limpiar.",
+ "독 빈 곳을 오른쪽 클릭 → 독에 폴더 추가…로 폴더를 두면, 누를 때 파일이 펼쳐져요. 파일은 휴지통으로 끌어 지워요.": "Haz clic derecho en un hueco del Dock → Añadir carpeta al Dock… y sus archivos se despliegan al pulsarla. Arrastra archivos a la Papelera de reciclaje para borrarlos.",
+ "설정 — 어디서 여나요": "Configuración — dónde encontrarla",
+ "상단바 로고 메뉴 → mongdock → 설정…에서 열어요. 독 위치·자동 숨기기·테마를 바꿔요.": "Ábrela desde el menú del logo → mongdock → Configuración…. Cambia la posición del Dock, la ocultación automática y el tema.",
+ "메모": "Notas",
+ "업무 시작": "Empezar a trabajar",
+ "새 알림": "Nueva notificación",
+ "몽독 둘러보기 다시 보기 ▶": "Volver a ver el recorrido de mongdock ▶",
+ "v{0} 새 기능 다시 보기 ▶": "Ver de nuevo las novedades de v{0} ▶",
+ "사진": "Fotos",
+ "메신저": "Mensajería",
+ "동영상": "Vídeos",
+ "스토어": "Tienda"
 }

@@ -117,7 +117,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         // (열려 있는 판은 출렁이지 않게 — 목록이 아예 없었을 때만 채움)
         bool hadApps = _apps.Count > 0;
         // 목록이 있으면 여는 동안은 새로 만들지 않음 (나타나기와 CPU 를 다투지 않게) — 오래됐으면 닫을 때 Warm 이 새로 만듦
-        if (!hadApps && !_prewarming)
+        if (!hadApps && !_prewarming && !SceneMode)
             Task.Run(() => AllAppsCatalog.Apps()).ContinueWith(t =>
             {
                 if (t.Status != TaskStatus.RanToCompletion) return;
@@ -129,7 +129,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
                 });
             }, TaskScheduler.Default);
         Loaded += (_, _) => Dispatcher.BeginInvoke(() => { _search.Focus(); Keyboard.Focus(_search); }, DispatcherPriority.Input);
-        if (!_prewarming) // 미리 만들어 보기(화면에 안 띄움)는 검색 창을 닫거나 "열린 판"이 되지 않음
+        if (!_prewarming && !SceneMode) // 미리 만들어 보기(화면에 안 띄움)는 검색 창을 닫거나 "열린 판"이 되지 않음
         {
             SpotlightWindow.CloseIfOpen();
             Current = this;
@@ -628,6 +628,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     /// </summary>
     private void LoadIcon(Image image, AppEntry app)
     {
+        if (ExampleIcons?.Invoke(app) is { } example) { image.Source = example; return; } // 둘러보기 장면: 예시 아이콘
         if (SmallIcons.TryGetValue(_style + "|" + app.Key, out var ready) || LoadIconsNow)
         {
             image.Source = ready ?? SmallIcon(Services, app, _style);

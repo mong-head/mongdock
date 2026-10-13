@@ -41,6 +41,21 @@ public sealed class SettingsService : ISettingsService, IDisposable
     {
     }
 
+    /// <summary>
+    /// 메모리 전용 (둘러보기 장면처럼 예시 설정으로 그릴 때): 파일을 읽거나 쓰지 않고, 감시하지 않음. Save 는 아무것도 안 함.
+    /// </summary>
+    internal SettingsService(Settings inMemory)
+    {
+        _dir = "";
+        SettingsPath = "";
+        IconsDirectory = Path.Combine(AppInfo.DataDirectory, "icons"); // 아이콘 파일은 읽기만
+        Current = inMemory;
+        _memoryOnly = true;
+        _debounce = new Timer(_ => { }, null, Timeout.Infinite, Timeout.Infinite);
+    }
+
+    private readonly bool _memoryOnly;
+
     /// <summary>테스트용: 다른 폴더의 settings.json 사용.</summary>
     internal SettingsService(string directory)
     {
@@ -474,6 +489,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
     /// <summary>원자적으로 저장하고 SettingsChanged 를 UI 스레드에서 발생 (자기 저장으로 인한 파일 변경은 다시 로드하지 않음).</summary>
     public void Save()
     {
+        if (_memoryOnly) return; // 둘러보기 장면 같은 메모리 전용 설정은 저장하지 않음
         bool saved = false;
         ImportTaskbarPinsIfRequested();
         lock (_gate)

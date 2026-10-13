@@ -62,12 +62,13 @@ internal sealed partial class SettingsWindow
         };
         DockPanel.SetDock(title, Dock.Left);
         head.Children.Add(title);
-        if (releases.Any(r => r.Majors.Any(e => e.Coach is not null)))
-        {
-            var tour = TourLink(Loc.T("주요 기능 둘러보기 ▶"), CoachMarks.BuildMajorTour);
-            DockPanel.SetDock(tour, Dock.Right);
-            head.Children.Add(tour);
-        }
+        // 다시 보기 두 가지 (2026-10-14): 이번 버전 새 기능(업데이트 때와 같은 카드) · 몽독 기본 둘러보기(6단계)
+        var replay = new StackPanel { Orientation = Orientation.Horizontal };
+        replay.Children.Add(TourLink(Loc.F($"v{WhatsNew.CurrentText} 새 기능 다시 보기 ▶"), CoachMarks.BuildCurrentWhatsNew));
+        var basics = TourLink(Loc.T("몽독 둘러보기 다시 보기 ▶"), CoachMarks.BuildTourPages);
+        replay.Children.Add(basics);
+        DockPanel.SetDock(replay, Dock.Right);
+        head.Children.Add(replay);
         stack.Children.Add(head);
 
         var latest = releases[0];
