@@ -180,6 +180,28 @@ internal static class Program
             Pump(400);
         }
 
+        // A2) 판 움직임: 검색을 좁히면 빠지는 칸이 흐려지며 사라지고(180ms) 남는 칸이 미끄러짐 — 판 본문을 16ms 마다 찍어 변화가 0.1~0.3초 동안 이어지는지
+        {
+            var w = open();
+            w.Show();
+            Pump(900);
+            var search = (System.Windows.Controls.TextBox)panelType.GetField("_search", Any)!.GetValue(w)!;
+            search.Text = "c";
+            Pump(600);
+            var body = new Rect(w.Left + 20, w.Top + 70, Math.Min(600, w.ActualWidth - 40), 200);
+            var frames = new List<(long Ms, byte[] Px)>();
+            var sw = Stopwatch.StartNew();
+            search.Text = "chr";
+            while (sw.ElapsedMilliseconds < 420) { Pump(16); frames.Add((sw.ElapsedMilliseconds, Grab(body))); }
+            var last = frames[^1].Px;
+            // 마지막 모습과 다른 프레임이 몇 ms 까지 이어지는지 (바로 바뀌면 ~30ms, 흐려지며 사라지면 ~150ms 이상)
+            long changingUntil = frames.Where(f => Diff(last, f.Px) > 0.01).Select(f => f.Ms).DefaultIfEmpty(0).Max();
+            Check($"판 움직임: 검색을 좁히면 빠지는 칸이 천천히 사라짐 (변화가 {changingUntil}ms 까지)", changingUntil >= 100 && changingUntil <= 380);
+            SaveStrip(Path.Combine(outDir, "frames-search-exit.png"), frames.Where((_, i) => i % 2 == 0).Take(12).ToList(), (int)body.Width, (int)body.Height);
+            close(w);
+            Pump(400);
+        }
+
         // B) 튀기기 애니메이션 (실제 창)
         {
             var layout = Mongdock.ViewModels.DockLayout.From(settings.Current.Dock, true);

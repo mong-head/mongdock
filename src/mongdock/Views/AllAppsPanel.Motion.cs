@@ -11,13 +11,15 @@ namespace Mongdock.Views;
 /// 맥 느낌: ease-out 만, 튕김·번쩍임·넘침 없음, 하나는 120~250ms, 화면 전체 350ms 안. 위치·투명도(RenderTransform/Opacity)만 움직이고
 /// 레이아웃은 그대로. 윈도우 "애니메이션 효과"가 꺼져 있으면(Anim.Enabled) 모두 끔. 화면 밖 칸은 움직이지 않음.
 /// - 판 열기: 그림 창으로 판이 커진 뒤, 둘째 구역부터 위에서 차례로(20ms 간격) 흐릿→보임 + 8px 올라옴 (첫 구역은 지금처럼 바로 보임)
-/// - 다시 그릴 때(검색·칩·폴더·편집·추가/빼기·숨기기·끌어 놓기): 남는 칸은 새 자리로 미끄러지고(150ms), 새 칸은 위에서부터 차례로 흐릿→보임
+/// - 다시 그릴 때(검색·칩·폴더·편집·추가/빼기·숨기기·끌어 놓기): 남는 칸은 새 자리로 미끄러지고(150ms), 새 칸은 위에서부터 차례로 흐릿→보임,
+///   빠지는 칸은 옛 자리에서 흐려지며 작아짐(180ms — 옛 칸 그림을 판 위 겹층에 잠깐 그림)
 /// - 폴더 열기: 그 칸 쪽에서 커지며(200ms) / 닫기: 줄어들며 흐려진 뒤 다시 그림
 /// - 편집 모드에 들어가면 −·× 표시가 0.6→1배로
 /// - 마우스 올림: 아이콘 1.06배(100ms)
 /// </summary>
 internal sealed partial class AllAppsPanel
 {
+    private const int ExitMs = 180, MaxGhosts = 60;
     private const int SlideMs = 150, FadeMs = 150, SectionMs = 200, StepMs = 20, RowStepMs = 15, FolderMs = 200;
     private static bool Motion => Anim.Enabled;
 
@@ -63,20 +65,20 @@ internal sealed partial class AllAppsPanel
     // ── 다시 그리기: 미끄러지기 + 새 칸 나타나기 ──
 
     /// <summary>다시 그리기 전 칸 자리 (키 → _body 기준 위치).</summary>
-    private Dictionary<string, Point>? SnapshotPositions()
+    private Dictionary<string, (Point At, FrameworkElement El)>? SnapshotPositions()
     {
         if (!Motion || !IsLoaded || _body.Content is not FrameworkElement root || root.ActualWidth <= 0) return null;
-        var map = new Dictionary<string, Point>(StringComparer.OrdinalIgnoreCase);
+        var map = new Dictionary<string, (Point, FrameworkElement)>(StringComparer.OrdinalIgnoreCase);
         foreach (var el in Keyed(root))
         {
             var key = MotionKey(el)!;
-            if (!map.ContainsKey(key)) map[key] = el.TranslatePoint(new Point(0, 0), View);
+            if (!map.ContainsKey(key)) map[key] = (el.TranslatePoint(new Point(0, 0), View), el);
         }
         return map;
     }
 
     /// <summary>다시 그린 뒤(배치가 끝난 다음): 남은 칸 미끄러지기, 새 칸 차례로 나타나기, 폴더·편집 표시.</summary>
-    private void AnimateAfterRebuild(Dictionary<string, Point>? before, bool wasEditing, string? wasExpanded)
+    private void AnimateAfterRebuild(Dictionary<string, (Point At, FrameworkElement El)>? before, bool wasEditing, string? wasExpanded)
     {
         bool editEntered = _editing && !wasEditing;
         bool folderOpened = _expanded is not null && _expanded != wasExpanded;
@@ -95,13 +97,18 @@ internal sealed partial class AllAppsPanel
                     if (!seen.Add(key)) continue;
                     var now = el.TranslatePoint(new Point(0, 0), View);
                     if (now.Y > viewport || now.Y + el.ActualHeight < 0) continue; // 화면 밖은 움직이지 않음
-                    if (before.TryGetValue(key, out var was))
+                    if (before.TryGetValue(key, out var old))
                     {
+                        var was = old.At;
                         double dx = was.X - now.X, dy = was.Y - now.Y;
                         if (Math.Abs(dx) + Math.Abs(dy) > 1 && Math.Abs(dy) < viewport) Slide(el, dx, dy);
                     }
                     else fresh.Add((el, now));
                 }
+                // 빠진 칸: 옛 자리에서 흐려지며 작아짐 (보이던 것만)
+                var gone = before.Where(kv => !seen.Contains(kv.Key) && kv.Value.At.Y < viewport && kv.Value.At.Y + kv.Value.El.ActualHeight > 0)
+                    .Take(MaxGhosts).Select(kv => kv.Value).ToList();
+                if (gone.Count > 0) Ghosts(gone);
                 // 새로 들어온 칸: 위에서부터 차례로 (최대 10단계 = 150ms)
                 int step = 0;
                 double lastY = double.NaN;
@@ -128,6 +135,68 @@ internal sealed partial class AllAppsPanel
                 Grow(box, 0.94, FolderMs);
             }
         });
+    }
+
+    /// <summary>빠진 칸들의 옛 모습(VisualBrush — 판에서 떨어진 칸도 마지막 모습을 그림)을 본문 위 겹층에 놓고 흐려지며 0.9배로 줄인 뒤 치움.</summary>
+    private void Ghosts(List<(Point At, FrameworkElement El)> gone)
+    {
+        if (_bodyScroll is not { } scroll || System.Windows.Documents.AdornerLayer.GetAdornerLayer(scroll) is not { } layer) return;
+        var ghost = new GhostLayer(scroll);
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        foreach (var (at, el) in gone)
+        {
+            if (el.ActualWidth <= 0 || el.ActualHeight <= 0) continue;
+            var r = new System.Windows.Shapes.Rectangle
+            {
+                Width = el.ActualWidth,
+                Height = el.ActualHeight,
+                Fill = new VisualBrush(el) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top },
+                RenderTransformOrigin = new Point(0.5, 0.5),
+                RenderTransform = new ScaleTransform(1, 1),
+                IsHitTestVisible = false,
+            };
+            ghost.Add(r, at);
+            var shrink = new DoubleAnimation(1, 0.9, TimeSpan.FromMilliseconds(ExitMs)) { EasingFunction = ease };
+            r.RenderTransform.BeginAnimation(ScaleTransform.ScaleXProperty, shrink);
+            r.RenderTransform.BeginAnimation(ScaleTransform.ScaleYProperty, shrink);
+            r.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(ExitMs)) { EasingFunction = ease });
+        }
+        layer.Add(ghost);
+        var done = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ExitMs + 30) };
+        done.Tick += (_, _) => { done.Stop(); layer.Remove(ghost); };
+        done.Start();
+    }
+
+    /// <summary>빠지는 칸 그림을 잠깐 얹는 겹층 (본문 스크롤 영역 안으로 잘림, 마우스는 통과).</summary>
+    private sealed class GhostLayer : System.Windows.Documents.Adorner
+    {
+        private readonly VisualCollection _children;
+        private readonly List<(UIElement El, Point At)> _items = new();
+
+        public GhostLayer(UIElement adorned) : base(adorned)
+        {
+            _children = new VisualCollection(this);
+            IsHitTestVisible = false;
+            ClipToBounds = true;
+        }
+
+        public void Add(UIElement el, Point at) { _children.Add(el); _items.Add((el, at)); }
+        protected override int VisualChildrenCount => _children.Count;
+        protected override Visual GetVisualChild(int index) => _children[index];
+
+        protected override Size ArrangeOverride(Size finalSize)
+        {
+            foreach (var (el, at) in _items) el.Arrange(new Rect(at, el.DesiredSize));
+            return finalSize;
+        }
+
+        protected override Size MeasureOverride(Size constraint)
+        {
+            foreach (var (el, _) in _items) el.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            return AdornedElement.RenderSize;
+        }
+
+        protected override Geometry GetLayoutClip(Size layoutSlotSize) => new RectangleGeometry(new Rect(AdornedElement.RenderSize));
     }
 
     /// <summary>폴더 닫기: 펼친 칸이 줄어들며 흐려진 뒤(150ms) 다시 그림.</summary>
