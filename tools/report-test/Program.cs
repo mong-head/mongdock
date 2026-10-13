@@ -705,6 +705,23 @@ internal static class Program
         Case("주말 저녁 3일만 (15일 전 하루는 빠짐)", Days(new[] { -12, 5, 6, -2 }, TimeSpan.FromHours(20), "exe:steam", "exe:discord", "exe:chrome"), false);
         Case("매일 4앱 중 하루 1개 빠짐", Days(new[] { 0, 1, 7, 8, 9 }, nine, "exe:outlook", "exe:chrome", "exe:hwp", "exe:teams")
             .Concat(Days(new[] { 2 }, nine, "exe:outlook", "exe:chrome", "exe:hwp")), true);
+        // 브라우저 페이지 힌트 (§15-1): 제목 정리
+        var clean = t.GetMethod("CleanTitle", any)!;
+        foreach (var (raw, want) in new[]
+        {
+            ("Gmail - 받은편지함 (3) - user@company.com - Gmail - Google Chrome", "Gmail - 받은편지함 (3) - user@company.com - Gmail"[..40] + "…"),
+            ("(12) 받은편지함 - Gmail - Google Chrome", "받은편지함 - Gmail"),
+            ("Notion – 팀 위키 - Microsoft​ Edge", "Notion – 팀 위키"),
+            ("새 탭 - Google Chrome", null),
+            ("YouTube — Mozilla Firefox", "YouTube"),
+            (new string('가', 60) + " - Whale", new string('가', 40) + "…"),
+        })
+        {
+            string? got = (string?)clean.Invoke(null, new object?[] { raw });
+            bool ok = got == want;
+            if (!ok) fail++;
+            Console.WriteLine($"  {(ok ? "통과" : "실패")}  제목 정리 {raw[..Math.Min(30, raw.Length)],-30} → {got ?? "(없음)"}");
+        }
         Console.WriteLine(fail == 0 ? "루틴 추천 판정: 모두 통과" : $"루틴 추천 판정: {fail}개 실패");
         Console.WriteLine("  (묻는 단계에서 거름: 설치 7일 안, 지난 추천 7일 안, 전체 화면·방해 금지, 일시 정지, 루틴 추천 끔·자주 쓰는 앱 기록 끔, 3번 연속 거절이면 끔)");
         return fail == 0 ? 0 : 1;
@@ -1321,6 +1338,17 @@ internal static class Program
                 if (expand >= 0) editor.GetType().GetMethod("ExpandForTest", Any)!.Invoke(editor, new object[] { expand, true });
                 Save((FrameworkElement)editor.Content, expand < 0 ? "editor" : "editor-detail");
                 editor.Close();
+            }
+
+            // 2-a) 루틴 추천 [만들기] 편집 창 + 브라우저 페이지 힌트 (§15-1)
+            {
+                var sug = new RoutineDef { Name = "평일 아침 루틴", Items = new() { App(edge, "Outlook", RoutinePlacementMode.Keep), App(chrome, "Chrome", RoutinePlacementMode.Keep), App(code, "VS Code", RoutinePlacementMode.Keep) } };
+                sug.More = new RoutineMore();
+                sug.More.Start.Add(new RoutineStart { Kind = RoutineStartKind.Time, Time = "09:00", Days = new() { 1, 2, 3, 4, 5 } });
+                var se = New("Mongdock.Views.RoutineEditorWindow", services, null, sug, true);
+                se.GetType().GetMethod("ShowPageHint", Any)!.Invoke(se, new object[] { "Chrome", new List<string> { "Gmail", "Notion", "Jira 보드" } });
+                Save((FrameworkElement)se.Content, "editor-suggest");
+                se.Close();
             }
 
             // 2-b) 링크 항목 세부: 웹 주소 3개(탭) + 앱 링크 항목

@@ -59,10 +59,53 @@ internal static class RoutineSuggest
         return exe.Length == 0 || exe == "mongdock" ? null : "exe:" + exe;
     }
 
+    // ── 브라우저 페이지 힌트 (§15-1): 브라우저 창 제목(페이지 제목)을 메모리에서만 셈 — 파일에 저장하지 않음, 방문 기록·주소창은 읽지 않음 ──
+
+    private static readonly HashSet<string> BrowserExes = new(StringComparer.OrdinalIgnoreCase) { "chrome", "msedge", "whale", "brave", "firefox", "opera", "vivaldi" };
+    /// <summary>브라우저 exe → (깨끗한 제목 → 본 횟수). 같은 창의 같은 제목은 한 번만.</summary>
+    private static readonly Dictionary<string, Dictionary<string, int>> _titles = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly HashSet<(IntPtr, string)> _titleSeen = new();
+
+    private static void CountBrowserTitles(AppServices services)
+    {
+        if (!Recording) return;
+        foreach (var w in services.Windows.Windows)
+        {
+            string exe = Path.GetFileNameWithoutExtension(w.ProcessPath);
+            if (!BrowserExes.Contains(exe) || CleanTitle(w.Title) is not { } title) continue;
+            if (!_titleSeen.Add((w.Hwnd, title))) continue;
+            if (_titleSeen.Count > 5000) _titleSeen.Clear();
+            if (!_titles.TryGetValue(exe, out var counts)) _titles[exe] = counts = new(StringComparer.Ordinal);
+            counts[title] = counts.GetValueOrDefault(title) + 1;
+            if (counts.Count > 300) foreach (var k in counts.OrderBy(c => c.Value).Take(100).Select(c => c.Key).ToList()) counts.Remove(k);
+        }
+    }
+
+    /// <summary>창 제목 → 페이지 이름: 브라우저 꼬리("- Google Chrome" 등)와 알림 수("(3)")를 지우고 40자.</summary>
+    internal static string? CleanTitle(string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return null;
+        string t = System.Text.RegularExpressions.Regex.Replace(title.Trim(), @"^\(\d+\+?\)\s*", "");
+        foreach (var tail in new[] { "Google Chrome", "Microsoft Edge", "Microsoft​ Edge", "Whale", "Naver Whale", "Brave", "Mozilla Firefox", "Firefox", "Opera", "Vivaldi" })
+        {
+            int at = Math.Max(t.LastIndexOf(" - " + tail, StringComparison.OrdinalIgnoreCase), t.LastIndexOf(" — " + tail, StringComparison.OrdinalIgnoreCase));
+            if (at > 0) { t = t[..at]; break; }
+        }
+        // 엣지 프로필 꼬리 "- 개인" "- 회사" 같은 마지막 한 토막은 그대로 둠 (페이지 이름일 수도 있어서)
+        t = t.Trim();
+        if (t.Length == 0 || t is "새 탭" or "New Tab" or "새 탭 - 개인") return null;
+        return t.Length > 40 ? t[..40] + "…" : t;
+    }
+
+    /// <summary>그 브라우저에서 자주 보인 페이지 이름 최대 3개 (없으면 빈 목록 — 몽독을 다시 켜면 그 뒤 본 것만).</summary>
+    internal static List<string> TopTitles(string browserExe) =>
+        _titles.TryGetValue(browserExe, out var counts) ? counts.Where(c => c.Value >= 2).OrderByDescending(c => c.Value).Take(3).Select(c => c.Key).ToList() : new();
+
     private static void OnWindows()
     {
         var services = _services;
         if (services is null) return;
+        CountBrowserTitles(services);
         var now = Current(services).ToHashSet();
         var added = now.Where(id => !_present.Contains(id)).ToList();
         _present = now;
@@ -281,8 +324,12 @@ internal static class RoutineSuggest
             Items = entries.Select(e => RoutineUi.ItemFromApp(services, e)).ToList(),
         };
         (r.More ??= new RoutineMore()).Start.Add(new RoutineStart { Kind = RoutineStartKind.Time, Time = t.ToString(@"hh\:mm"), Days = StartDays(bundle) }); // 묻기만 (AutoOpen 끔)
-        Log.Info("루틴 추천 → 만들기 (편집 창)");
-        RoutineEditorWindow.OpenPrefilled(services, r);
+        // 브라우저 페이지 힌트 (§15-1): 묶음에 브라우저가 있으면 자주 보인 페이지 이름 최대 3개
+        string? browserExe = bundle.Apps.Select(id => id.StartsWith("exe:") ? id[4..] : "").FirstOrDefault(BrowserExes.Contains);
+        var pages = browserExe is null ? new List<string>() : TopTitles(browserExe);
+        string? browserName = browserExe is null ? null : entries.FirstOrDefault(e => string.Equals(e.Exe, browserExe, StringComparison.OrdinalIgnoreCase))?.Name ?? browserExe;
+        Log.Info($"루틴 추천 → 만들기 (편집 창, 페이지 힌트 {pages.Count}개)");
+        RoutineEditorWindow.OpenPrefilled(services, r, pages.Count > 0 ? (browserName!, pages) : null);
     }
 
     private static void Decline(AppServices services, Bundle bundle)

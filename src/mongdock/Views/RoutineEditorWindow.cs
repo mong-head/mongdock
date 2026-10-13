@@ -54,11 +54,55 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
     }
 
     /// <summary>미리 채운 새 루틴 (루틴 추천 [만들기]) — 저장해야 루틴이 됨.</summary>
-    public static void OpenPrefilled(AppServices services, RoutineDef prefilled)
+    public static void OpenPrefilled(AppServices services, RoutineDef prefilled, (string Browser, List<string> Pages)? pageHint = null)
     {
         _open?.Close();
         if (!RoutineUi.CanAdd(services)) return;
-        Show(new RoutineEditorWindow(services, null, prefilled, focusName: true));
+        var w = new RoutineEditorWindow(services, null, prefilled, focusName: true);
+        if (pageHint is { } h) w.ShowPageHint(h.Browser, h.Pages);
+        Show(w);
+    }
+
+    /// <summary>
+    /// 브라우저 페이지 힌트 (§15-1): "크롬에서 주로 'Gmail', 'Notion' 창을 열어 두셨어요. 주소를 넣어 두면 같이 열려요" + 페이지마다 [+ 주소 넣기].
+    /// 누르면 링크 항목을 더하고(이미 있으면 그 항목에 탭으로) 이름을 미리 채운 뒤 주소 칸에 커서 — 주소는 사용자가 붙여 넣음.
+    /// </summary>
+    internal void ShowPageHint(string browser, List<string> pages)
+    {
+        var bar = new Border { Background = P.SoftAccent, CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 8, 12, 8), Margin = new Thickness(0, 0, 0, 12) };
+        var stack = new StackPanel();
+        stack.Children.Add(new TextBlock
+        {
+            Text = Loc.F($"{browser}에서 주로 {string.Join(", ", pages.Select(p => "'" + p + "'"))} 창을 열어 두셨어요. 주소를 넣어 두면 같이 열려요."),
+            Foreground = P.SoftAccentText, TextWrapping = TextWrapping.Wrap, FontSize = 12.5,
+        });
+        var chips = new WrapPanel { Margin = new Thickness(0, 6, 0, 0) };
+        foreach (var page in pages)
+        {
+            var chip = CardButton("+ " + Loc.F($"'{page}' 주소 넣기"));
+            chip.Height = 26;
+            chip.MinWidth = 0;
+            chip.Padding = new Thickness(10, 0, 10, 0);
+            chip.Margin = new Thickness(0, 0, 6, 0);
+            chip.Click += (_, _) =>
+            {
+                chip.IsEnabled = false;
+                int at = _r.Items.FindIndex(i => i.Kind == RoutineItemKind.Url);
+                if (at >= 0)
+                {
+                    var link = _r.Items[at];
+                    link.Tabs ??= new List<string>();
+                    if (link.Target.Length > 0) link.Tabs.Add(""); // 이미 있는 링크 항목엔 탭으로
+                    _expanded = at;
+                    Rebuild();
+                }
+                else AddItem(new RoutineItem { Kind = RoutineItemKind.Url, Target = "", Name = page }, expand: true);
+            };
+            chips.Children.Add(chip);
+        }
+        stack.Children.Add(chips);
+        bar.Child = stack;
+        Body.Children.Insert(Math.Min(1, Body.Children.Count), bar); // 제목 바로 아래
     }
 
     private static void Show(RoutineEditorWindow w)
