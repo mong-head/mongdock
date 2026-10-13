@@ -171,6 +171,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         root.Children.Add(searchRow);
         // 높이는 작업 영역 75% 로 고정 — 묶음을 펼치거나 검색해도 판 크기가 출렁이지 않게
         var scroll = ThinScroll(_body, _bodyMaxHeight);
+        _bodyScroll = scroll;
         scroll.Height = _bodyMaxHeight;
         root.Children.Add(scroll);
         root.Children.Add(Link(Loc.T("Windows 시작 메뉴 열기"), () =>
@@ -185,10 +186,16 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     private void Rebuild()
     {
         if (IsClosing) return;
+        var before = SnapshotPositions(); // 판 움직임 (AllAppsPanel.Motion.cs): 남는 칸은 새 자리로 미끄러지고 새 칸은 나타남
+        bool wasEditing = _shownEditing;
+        string? wasExpanded = _shownExpanded;
         _folders = AppFolders.Visible(Services.Settings.Current, _apps);
         _groupOf = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var f in _folders) foreach (var a in f.Apps) _groupOf.TryAdd(a.Key, f.Id);
         _body.Content = _cleanup is not null ? BuildCleanup() : _search.Text.Trim().Length > 0 ? BuildResults() : BuildHome();
+        _shownEditing = _editing;
+        _shownExpanded = _expanded;
+        AnimateAfterRebuild(before, wasEditing, wasExpanded);
     }
 
     // ───────────────────────── 검색 ─────────────────────────
@@ -232,6 +239,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
     private UIElement BuildHome()
     {
         var root = new StackPanel();
+        _expandedView = null;
         _favRow = null;
         _favCells.Clear();
         _groupGrid = null;
@@ -283,7 +291,12 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             foreach (var t in chunk) line.Children.Add(t.View);
             root.Children.Add(line);
             if (chunk.FirstOrDefault(t => t.Folder?.Id == _expanded).Folder is { } open)
-                root.Children.Add(ExpandedGroup(open.Id, open.Apps));
+            {
+                var view = ExpandedGroup(open.Id, open.Apps);
+                _expandedView = view as FrameworkElement;
+                _expandedFromCell = "group:" + open.Id;
+                root.Children.Add(view);
+            }
         }
 
         // 모든 앱 (가나다순, 접힘)
@@ -465,8 +478,8 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             Cursor = Cursors.Hand,
             ContextMenu = LazyMenu(m => FillAppMenu(m, app)),
         };
-        cell.MouseEnter += (_, _) => { if (!selected) cell.Background = P.Tile; };
-        cell.MouseLeave += (_, _) => { if (!selected) cell.Background = Brushes.Transparent; };
+        cell.MouseEnter += (_, _) => { if (!selected) cell.Background = P.Tile; HoverIcon(image, true); };
+        cell.MouseLeave += (_, _) => { if (!selected) cell.Background = Brushes.Transparent; HoverIcon(image, false); };
         cell.Tag = new DropTag(inFavorites ? "favapp" : "app", app.Key);
         Pressable(cell, () => Launch(app), new DragItem(false, app.Key), () =>
         {
@@ -742,7 +755,8 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         cell.Tag = new DropTag("group", id);
         Pressable(cell, () =>
         {
-            _expanded = open ? null : id;
+            if (open) { CloseFolderAnimated(); return; } // 줄어들며 닫힘 (AllAppsPanel.Motion.cs)
+            _expanded = id;
             Rebuild();
         }, id == AllAppsCatalog.Other ? null : new DragItem(true, id), null);
         // 앱을 놓으면 이 폴더로, 다른 폴더를 놓으면 그 폴더를 이 앞으로
@@ -980,10 +994,10 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             menu.Items.Add(DockMenus.Item(Loc.T("자주 쓰는 앱 기록 (추천·정리에 써요)"), () =>
             {
                 S.ShowSuggestions = !S.ShowSuggestions;
-                if (!S.ShowSuggestions) { AppUsage.Clear(); RoutineSuggest.Clear(); } // 끄면 기록도 지움 (루틴 추천용 실행 시각 포함)
+                if (!S.ShowSuggestions) { AppUsage.Clear(); RoutineSuggest.Clear(); UnusedApps.Forget(); } // 끄면 기록도 지움 (루틴 추천용 실행 시각 포함)
                 Save(false);
             }, isChecked: S.ShowSuggestions));
-            menu.Items.Add(DockMenus.Item(Loc.T("안 쓰는 앱 정리…"), OpenCleanup, enabled: S.ShowSuggestions));
+            menu.Items.Add(DockMenus.Item(Loc.T("잠자는 앱 정리…"), OpenCleanup, enabled: S.ShowSuggestions));
             menu.Items.Add(new Separator());
             menu.Items.Add(DockMenus.Item(Loc.T("폴더 원래대로…"), async () =>
             {
@@ -1110,7 +1124,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         row.Children.Add(edit);
         if (_editing && S.ShowSuggestions)
         {
-            var tidy = SmallLink(Loc.T("안 쓰는 앱 정리…"), OpenCleanup);
+            var tidy = SmallLink(Loc.T("잠자는 앱 정리…"), OpenCleanup);
             DockPanel.SetDock(tidy, Dock.Right);
             row.Children.Add(tidy);
         }
@@ -1140,6 +1154,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             Margin = new Thickness(0, -4, 0, 0),
             Cursor = Cursors.Hand,
             ToolTip = tip,
+            Uid = "editbadge", // 편집 모드에 들어갈 때 0.6→1배 (AllAppsPanel.Motion.cs)
             Child = new TextBlock { Text = glyph, FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 9, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
         };
         b.MouseLeftButtonDown += (_, e) => e.Handled = true;

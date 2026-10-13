@@ -48,11 +48,13 @@ internal sealed partial class AllAppsPanel
         if (chips)
         {
             EnsureUnused(visible);
-            string unusedLabel = _unused is { } u ? Loc.F($"안 쓰는 앱 {u.Count}") : Loc.T("안 쓰는 앱 …");
+            string unusedLabel = _unused is { } u ? Loc.F($"잠자는 앱 {u.Count}") : Loc.T("잠자는 앱"); // 아직 못 셌으면 숫자 없이 (점 세 개 안 씀)
             var row = new WrapPanel { Margin = new Thickness(4, 2, 0, 8) };
             row.Children.Add(Chip(Loc.T("전체"), _allFilter == AllFilter.All, () => SetFilter(AllFilter.All)));
             row.Children.Add(Chip(Loc.T("최근 사용"), _allFilter == AllFilter.Recent, () => SetFilter(AllFilter.Recent)));
-            row.Children.Add(Chip(unusedLabel, _allFilter == AllFilter.Unused, () => SetFilter(AllFilter.Unused)));
+            var sleeping = Chip(unusedLabel, _allFilter == AllFilter.Unused, () => SetFilter(AllFilter.Unused));
+            if (_fadeChipNumber && _unused is not null) { _fadeChipNumber = false; FadeIn(sleeping.Child); } // 숫자가 처음 붙음
+            row.Children.Add(sleeping);
             root.Children.Add(row);
         }
         switch (_allFilter)
@@ -92,35 +94,42 @@ internal sealed partial class AllAppsPanel
         Rebuild();
     }
 
-    /// <summary>안 쓰는 앱 계산 (판을 열고 처음 "모든 앱"을 펼칠 때, 10분 지나면 다시). 무거운 부분은 백그라운드.</summary>
+    /// <summary>
+    /// 잠자는 앱 목록: 미리 세어 둔 것(UnusedApps.Latest — 몽독 시작 3분 뒤·하루 한 번)을 바로 씀 (숨긴 앱·지금 실행 중인 앱만 빼고).
+    /// 미리 센 게 없거나 하루 넘었으면 백그라운드에서 다시 세고, 끝나면 숫자가 흐릿→보임으로 붙음.
+    /// </summary>
     private void EnsureUnused(List<AppEntry> visible)
     {
-        if (_unusedLoading || _unused is not null && DateTime.Now - _unusedAt < TimeSpan.FromMinutes(10)) return;
-        if (UnusedOverride is { } fake) { _unused = fake(visible); _unusedAt = DateTime.Now; return; }
-        var cutoff = DateTime.Now.AddDays(-UnusedApps.StaleDays);
-        var running = Services.Windows.Windows.Select(w => System.IO.Path.GetFileNameWithoutExtension(w.ProcessPath).ToLowerInvariant())
-            .Where(e => e.Length > 0).Select(e => "exe:" + e).ToHashSet();
-        var candidates = visible
-            .Select(a => (App: a, Last: AppUsage.LastUsed(AllAppsCatalog.Identities(a))))
-            .Where(x => (x.Last is not { } l || l < cutoff) && !AllAppsCatalog.Identities(x.App).Any(running.Contains))
-            .ToList();
-        DateTime? recordStart = S.UsageSeededAt ?? Services.Settings.Current.FirstRunAt;
+        if (UnusedOverride is { } fake) { if (_unused is null) { _unused = fake(visible); _unusedAt = DateTime.Now; } return; }
+        if (_unused is not null && DateTime.Now - _unusedAt < TimeSpan.FromMinutes(10)) return;
+        if (UnusedApps.Latest is { } latest)
+        {
+            var running = Services.Windows.Windows.Select(w => System.IO.Path.GetFileNameWithoutExtension(w.ProcessPath).ToLowerInvariant())
+                .Where(e => e.Length > 0).Select(e => "exe:" + e).ToHashSet();
+            var keys = visible.Select(a => a.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _unused = latest.Rows.Where(r => keys.Contains(r.App.Key) && !AllAppsCatalog.Identities(r.App).Any(running.Contains)).ToList();
+            _unusedAt = latest.At;
+            if (DateTime.Now - latest.At < TimeSpan.FromDays(1)) return;
+        }
+        if (_unusedLoading) return;
         _unusedLoading = true;
-        var sw = Stopwatch.StartNew();
-        Task.Run(() => UnusedApps.Find(candidates, recordStart)).ContinueWith(t => Dispatcher.BeginInvoke(() =>
+        UnusedApps.CountInBackground(Services, _ =>
         {
             _unusedLoading = false;
-            _unused = t.Status == TaskStatus.RanToCompletion ? t.Result : new List<UnusedApps.Row>();
-            _unusedAt = DateTime.Now;
-            Log.Info($"안 쓰는 앱: 후보 {candidates.Count}개 → {_unused.Count}개 ({sw.ElapsedMilliseconds}ms)");
-            if (IsVisible && _allOpen) Rebuild();
-        }), TaskScheduler.Default);
+            bool hadNumber = _unused is not null;
+            _unused = null; // 위 Latest 경로로 다시 거름
+            _unusedAt = default;
+            if (IsVisible && _allOpen) { _fadeChipNumber = !hadNumber; Rebuild(); }
+        });
     }
+
+    /// <summary>숫자가 처음 붙을 때 칩 숫자를 흐릿→보임으로.</summary>
+    private bool _fadeChipNumber;
 
     private UIElement UnusedView()
     {
         var box = new StackPanel { Margin = new Thickness(4, 0, 4, 0) };
-        if (_unused is null) { box.Children.Add(Note(Loc.T("찾는 중…"))); return box; }
+        if (_unused is null) return box; // 아직 못 셈 — 세고 나면 목록이 나타남 (점 세 개·"찾는 중" 안 씀)
         var head = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
         var sort = new StackPanel { Orientation = Orientation.Horizontal };
         foreach (var (s, label) in new[] { (UnusedSort.Oldest, Loc.T("오래된 순")), (UnusedSort.Largest, Loc.T("용량 큰 순")), (UnusedSort.Name, Loc.T("이름순")) })
@@ -134,7 +143,7 @@ internal sealed partial class AllAppsPanel
         head.Children.Add(sort);
         head.Children.Add(new TextBlock { Text = Loc.T("몽독이 본 기록 기준이에요 (60일 넘게 안 연 앱)"), FontSize = 11.5, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center });
         box.Children.Add(head);
-        if (_unused.Count == 0) { box.Children.Add(Note(Loc.T("한동안 안 쓴 앱이 없어요."))); return box; }
+        if (_unused.Count == 0) { box.Children.Add(Note(Loc.T("잠자는 앱이 없어요."))); return box; }
 
         var rows = _unusedSort switch
         {
@@ -185,7 +194,7 @@ internal sealed partial class AllAppsPanel
         var size = new TextBlock { Text = UnusedApps.SizeText(r.Bytes), FontSize = 12, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 0, 6, 0) };
         System.Windows.Controls.Grid.SetColumn(size, 4);
         grid.Children.Add(size);
-        var row = new Border { CornerRadius = new CornerRadius(6), Child = grid, ContextMenu = LazyMenu(m => FillAppMenu(m, app)), ToolTip = app.Name };
+        var row = new Border { CornerRadius = new CornerRadius(6), Child = grid, ContextMenu = LazyMenu(m => FillAppMenu(m, app)), ToolTip = app.Name, Uid = "m:u:" + app.Key };
         row.MouseEnter += (_, _) => row.Background = P.Hover;
         row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
         // 줄을 누르면 체크 (실행은 오른쪽 클릭 메뉴 — 정리 화면에서 실수로 켜지 않게)
@@ -201,7 +210,7 @@ internal sealed partial class AllAppsPanel
         _unusedChecked.Clear();
         _unused = _unused?.Where(r => !S.Hidden.Contains(r.App.Key, StringComparer.OrdinalIgnoreCase)).ToList();
         Services.Settings.Save();
-        Log.Info($"안 쓰는 앱: {n}개 숨김");
+        Log.Info($"잠자는 앱: {n}개 숨김");
         Rebuild();
     }
 
@@ -212,7 +221,7 @@ internal sealed partial class AllAppsPanel
         string uri = apps.Count == 1 && apps[0].Family is { Length: > 0 } fam ? "ms-settings:appsfeatures-app?" + fam : "ms-settings:appsfeatures";
         try { using (Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true })) { } }
         catch (Exception ex) { Log.Warn($"앱 설정 열기 실패: {ex.GetType().Name}"); }
-        Log.Info($"안 쓰는 앱: Windows 앱 설정 열기 ({apps.Count}개 고름)");
+        Log.Info($"잠자는 앱: Windows 앱 설정 열기 ({apps.Count}개 고름)");
     }
 
     private Border Chip(string text, bool on, Action click)

@@ -15,6 +15,57 @@ internal static class UnusedApps
 
     public sealed record Row(AppEntry App, DateTime? Last, long? Bytes);
 
+    // ── 미리 세기 (2026-10-13 사용자: "계산 중 …" 없이 판을 열면 숫자가 바로) ──
+
+    /// <summary>마지막으로 센 잠자는 앱 목록과 그 시각 (몽독 시작 3분 뒤, 그 뒤 하루 한 번, 판에서 다시 센 것도).</summary>
+    public static (List<Row> Rows, DateTime At)? Latest { get; private set; }
+    /// <summary>새로 세었음 (판이 열려 있으면 숫자를 흐려지며 바꿈).</summary>
+    public static event Action? Counted;
+    private static System.Windows.Threading.DispatcherTimer? _timer;
+    private static bool _counting;
+
+    public static void StartCounting(AppServices services)
+    {
+        _timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMinutes(3) };
+        _timer.Tick += (_, _) => { _timer.Interval = TimeSpan.FromHours(24); CountInBackground(services); };
+        _timer.Start();
+    }
+
+    /// <summary>UI 스레드에서 부름: 실행 중 앱·숨긴 앱·기록 시작일을 잡고 나머지는 백그라운드. 기록이 꺼져 있으면 세지 않음.</summary>
+    public static void CountInBackground(AppServices services, Action<List<Row>>? done = null)
+    {
+        var s = services.Settings.Current;
+        if (_counting || !s.AllApps.ShowSuggestions) return;
+        var running = services.Windows.Windows.Select(w => Path.GetFileNameWithoutExtension(w.ProcessPath).ToLowerInvariant())
+            .Where(e => e.Length > 0).Select(e => "exe:" + e).ToHashSet();
+        var hidden = s.AllApps.Hidden.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        DateTime? recordStart = s.AllApps.UsageSeededAt ?? s.FirstRunAt;
+        var dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
+        _counting = true;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        Task.Run(() =>
+        {
+            var cutoff = DateTime.Now.AddDays(-StaleDays);
+            var candidates = AllAppsCatalog.Apps()
+                .Where(a => !hidden.Contains(a.Key))
+                .Select(a => (App: a, Last: AppUsage.LastUsed(AllAppsCatalog.Identities(a))))
+                .Where(x => (x.Last is not { } l || l < cutoff) && !AllAppsCatalog.Identities(x.App).Any(running.Contains))
+                .ToList();
+            return Find(candidates, recordStart);
+        }).ContinueWith(t => dispatcher.BeginInvoke(() =>
+        {
+            _counting = false;
+            if (t.Status != TaskStatus.RanToCompletion) { Log.Warn($"잠자는 앱 세기 실패: {t.Exception?.InnerException?.GetType().Name}"); return; }
+            Latest = (t.Result, DateTime.Now);
+            Log.Info($"잠자는 앱 세기: {t.Result.Count}개 ({sw.ElapsedMilliseconds}ms)");
+            done?.Invoke(t.Result);
+            Counted?.Invoke();
+        }), TaskScheduler.Default);
+    }
+
+    /// <summary>기록을 끄면 센 것도 버림.</summary>
+    public static void Forget() => Latest = null;
+
     private sealed record Uninstall(string Name, string? Location, string? Icon, DateTime? Installed, long? Bytes);
 
     /// <summary>

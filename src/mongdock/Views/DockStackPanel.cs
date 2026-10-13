@@ -129,6 +129,7 @@ internal abstract class DockStackPanel : Window
                 _introHold = final;
                 // 배치가 끝난 지금 바로 그림을 떠서 움직이기 시작 (첫 프레임을 기다리지 않음 — 그새 진짜 판은 가려진 채 그려짐)
                 var snapClock = System.Diagnostics.Stopwatch.StartNew();
+                BeforeIntroPicture(); // 판 안 구역을 차례로 보이려면 그림을 뜨기 전에 숨겨 둠 (그림과 진짜 판이 같은 모습)
                 var picture = Snapshot();
                 Log.Info($"앱 모음 판: 그림 뜨기 {snapClock.ElapsedMilliseconds}ms");
                 if (picture is not null)
@@ -161,6 +162,12 @@ internal abstract class DockStackPanel : Window
             if (_introPlaying) PanelIntro.Stop(_introPlay); // 나타나는 중에 닫힘 — 그림 창도 (그 판의 차례만)
         };
     }
+
+    /// <summary>나타나기 그림을 뜨기 직전 (앱 모음 판: 둘째 구역부터 숨김).</summary>
+    protected virtual void BeforeIntroPicture() { }
+
+    /// <summary>나타나기가 끝나 진짜 판이 제자리에 놓인 직후 (앱 모음 판: 구역 차례로 나타나기).</summary>
+    protected virtual void AfterIntro() { }
 
     /// <summary>true 면 독 버튼 옆이 아니라 모니터 작업 영역 정가운데 (앱 모음 판).</summary>
     protected virtual bool Centered => false;
@@ -219,6 +226,7 @@ internal abstract class DockStackPanel : Window
         Cloak(hwnd, false);
         try { DwmFlush(); } catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException) { } // 진짜 판이 한 번 합성될 때까지
         PanelIntro.Swap(_introPlay);
+        AfterIntro();
         EnsureForeground(retry: false);
         Log.Info($"앱 모음 판: 창 생성→제자리 {_showClock.ElapsedMilliseconds}ms (첫 프레임 {FirstFrameMs}ms)");
     }

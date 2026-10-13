@@ -208,7 +208,7 @@ public static class SettingsTransfer
         // 다른 PC 의 모니터 이름이면 주 모니터로 (같은 PC 다시 설치면 그대로)
         if (!string.IsNullOrEmpty(imported.Dock.Monitor) && Monitors.Find(imported.Dock.Monitor) is null) imported.Dock.Monitor = "";
         settings.ApplyImported(imported);
-        if (!imported.AllApps.ShowSuggestions) { AppUsage.Clear(); RoutineSuggest.Clear(); } // 끈 설정을 가져오면 이 PC 실행 기록도 지움
+        if (!imported.AllApps.ShowSuggestions) { AppUsage.Clear(); RoutineSuggest.Clear(); UnusedApps.Forget(); } // 끈 설정을 가져오면 이 PC 실행 기록도 지움
 
         int added = 0;
         var reconnect = new List<string>();

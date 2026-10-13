@@ -112,7 +112,7 @@ internal sealed partial class AllAppsPanel
         go.FontWeight = FontWeights.SemiBold;
         DockPanel.SetDock(go, Dock.Right);
         row.Children.Add(go);
-        row.Children.Add(new TextBlock { Text = Loc.F($"한동안 안 쓴 앱이 {n}개 있어요"), VerticalAlignment = VerticalAlignment.Center });
+        row.Children.Add(new TextBlock { Text = Loc.F($"잠자는 앱이 {n}개 있어요"), VerticalAlignment = VerticalAlignment.Center });
         return new Border { Background = P.Tile, CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 7, 10, 7), Margin = new Thickness(4, 0, 4, 8), Child = row };
     }
 
@@ -137,7 +137,7 @@ internal sealed partial class AllAppsPanel
     {
         var rows = _cleanup!;
         var root = new StackPanel { Margin = new Thickness(4, 0, 4, 0) };
-        root.Children.Add(new TextBlock { Text = Loc.T("안 쓰는 앱 정리"), FontSize = 15, FontWeight = FontWeights.SemiBold, Margin = new Thickness(2, 0, 0, 2) });
+        root.Children.Add(new TextBlock { Text = Loc.T("잠자는 앱 정리"), FontSize = 15, FontWeight = FontWeights.SemiBold, Margin = new Thickness(2, 0, 0, 2) });
         root.Children.Add(new TextBlock
         {
             Text = Loc.T("즐겨찾기·폴더·독에 있는 앱 중 두 달 넘게 쓰지 않은 앱이에요. 고른 대로 정리해요 — 앱 자체는 지우지 않아요."),
@@ -193,7 +193,7 @@ internal sealed partial class AllAppsPanel
         buttons.Children.Add(apply);
         root.Children.Add(buttons);
         // 독·즐겨찾기·폴더 밖의 앱까지 보려면 → 모든 앱 [안 쓰는 앱]
-        var more = SmallLink(Loc.T("모든 앱에서 안 쓰는 앱 보기 ›"), () => { _cleanup = null; _allOpen = true; SetFilter(AllFilter.Unused); });
+        var more = SmallLink(Loc.T("모든 앱에서 잠자는 앱 보기 ›"), () => { _cleanup = null; _allOpen = true; SetFilter(AllFilter.Unused); });
         more.HorizontalAlignment = HorizontalAlignment.Right;
         more.Margin = new Thickness(0, 4, 2, 0);
         root.Children.Add(more);
