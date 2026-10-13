@@ -947,6 +947,7 @@ public partial class TopBarWindow : Window
     {
         if (_services.Settings.Current.TopBar.SearchMode == SearchMode.Spotlight) SpotlightWindow.Toggle(_services);
         else _services.Shell.OpenSearch();
+        CoachMarks.HintUsed(WhatsNew.SearchKey); // 처음 한 번: 검색을 닫은 뒤 짧은 카드 (둘러보기에서 뺌)
     });
     /// <summary>제어 센터: Win+A 대신 MyDockFinder 같은 타일 패널.</summary>
     private void OnQuickSettings(object sender, RoutedEventArgs e) => TogglePanel(StatusPanelKind.ControlCenter, QuickSettingsButton);
@@ -1084,6 +1085,7 @@ public partial class TopBarWindow : Window
     /// <summary>로고 클릭 → 맥 Apple 메뉴 같은 시스템 메뉴 + 맨 아래 mongdock 하위 메뉴(설정…·켜고 끄기·종료).</summary>
     private void OnLogoClick(object sender, RoutedEventArgs e)
     {
+        CoachMarks.HintUsed("logo"); // 처음 한 번: 메뉴를 닫은 뒤 짧은 카드 (둘러보기에서 뺌)
         _panel?.Close();
         UiTheme.Apply(_services.Settings.Current);
         var menu = new ContextMenu
@@ -1145,6 +1147,7 @@ public partial class TopBarWindow : Window
     public (Rect Rect, MonitorInfo Monitor)? GetAnchorRect(CoachAnchor anchor)
     {
         if (_closed || !IsVisible || _fullscreen) return null;
+        if (anchor == CoachAnchor.TopBar) return (new Rect(Left, Top, ActualWidth, ActualHeight), Monitor); // 둘러보기: 상단바 전체
         FrameworkElement? el = anchor switch
         {
             CoachAnchor.Logo => LogoButton,

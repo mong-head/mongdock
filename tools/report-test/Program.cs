@@ -1484,7 +1484,62 @@ internal static class Program
             // 3) 앱 모음 판 — 독의 앱 모음 아이콘 누르기 → 판(즐겨찾기·폴더) → 폴더 펼치기
             {
                 var frames = new List<BitmapSource>();
-                var home = Load($"allapps-{theme}-group.png", new Int32Rect(0, 260, 1180, 540));
+                // 판은 윈도우 기본 앱만으로 다시 그림 (이 PC 사용자 앱이 그림에 남지 않게): 즐겨찾기 4개 + 폴더 둘(하나 펼침)
+                BitmapSource PanelShot(bool expand)
+                {
+                    var catalog = asm.GetType("Mongdock.Services.AllAppsCatalog")!;
+                    var unused = asm.GetType("Mongdock.Services.UnusedApps")!;
+                    var all = ((System.Collections.IEnumerable)catalog.GetMethod("Apps")!.Invoke(null, new object[] { false })!).Cast<object>().ToList();
+                    string Key(object a) => (string)a.GetType().GetProperty("Key")!.GetValue(a)!;
+                    string Name(object a) => (string)a.GetType().GetProperty("Name")!.GetValue(a)!;
+                    bool Sys(object a) => (bool)unused.GetMethod("IsSystemApp", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.Invoke(null, new[] { a })!;
+                    var builtIn = all.Where(Sys).GroupBy(Name).Select(g2 => g2.First()).OrderBy(Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+                    var apps = asm.GetType("Mongdock.Services.AppEntry")!;
+                    var list = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(apps))!;
+                    foreach (var a in builtIn) list.Add(a);
+                    var pset = settings.Current;
+                    pset.AllApps.Favorites.Clear();
+                    pset.AllApps.Groups.Clear();
+                    pset.AllApps.Hidden.Clear();
+                    pset.AllApps.ShowSuggestions = false;
+                    pset.Routines.Clear();
+                    object? Pick(params string[] names) => names.Select(n => builtIn.FirstOrDefault(a => Name(a).Contains(n, StringComparison.OrdinalIgnoreCase))).FirstOrDefault(x => x is not null);
+                    foreach (var a in new[] { Pick("파일 탐색기", "File Explorer"), Pick("설정", "Settings"), Pick("계산기", "Calculator"), Pick("메모장", "Notepad") }.OfType<object>()) pset.AllApps.Favorites.Add(Key(a));
+                    var folders = asm.GetType("Mongdock.Services.AppFolders")!;
+                    var rest = builtIn.Where(a => !pset.AllApps.Favorites.Contains(Key(a))).ToList();
+                    string f1 = (string)folders.GetMethod("Create")!.Invoke(null, new object[] { pset, list, Mongdock.Loc.T("업무"), rest.Take(6).Select(Key).ToArray() })!;
+                    folders.GetMethod("Create")!.Invoke(null, new object[] { pset, list, Mongdock.Loc.T("사진·영상"), rest.Skip(6).Take(3).Select(Key).ToArray() });
+                    var panelType = asm.GetType("Mongdock.Views.AllAppsPanel")!;
+                    panelType.GetProperty("LoadIconsNow", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, true);
+                    var services = new AppServices(settings, new WindowTracker(), new AppLauncher(new WindowTracker()), new IconService(), new DesktopWindowService(), new VirtualDesktopService(),
+                        new ShellActions(), new ImeService(), new StatusService(), new MediaService(), new AppMenuService(settings), new StartupService(),
+                        new NotificationService(new WindowTracker(), new AppLauncher(new WindowTracker())), new TrayIconService(), new CalendarFeedService(settings));
+                    var w = (Window)panelType.GetConstructors(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)[0]
+                        .Invoke(new object[] { services, palette, new Rect(800, 1000, 52, 52), Mongdock.Models.DockEdge.Bottom, Monitors.GetPrimary() });
+                    panelType.GetField("_apps", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(w, list);
+                    if (expand) panelType.GetField("_expanded", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(w, f1);
+                    panelType.GetMethod("Rebuild", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(w, null);
+                    var content = (FrameworkElement)w.Content;
+                    content.Opacity = 1;
+                    foreach (var sv in Descendants(content).OfType<System.Windows.Controls.ScrollViewer>()) { sv.MaxHeight = double.PositiveInfinity; sv.Height = double.NaN; }
+                    content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                    content.Arrange(new Rect(content.DesiredSize));
+                    content.UpdateLayout();
+                    var size = new Size(content.DesiredSize.Width, Math.Min(content.DesiredSize.Height, 820));
+                    var dv = new DrawingVisual();
+                    using (var dc = dv.RenderOpen())
+                    {
+                        dc.DrawRectangle(PanelBg(), null, new Rect(size));
+                        dc.DrawRectangle(new VisualBrush(content) { ViewboxUnits = BrushMappingMode.Absolute, Viewbox = new Rect(size), Stretch = Stretch.None }, null, new Rect(size));
+                    }
+                    var rtb = new RenderTargetBitmap((int)size.Width, (int)size.Height, 96, 96, PixelFormats.Pbgra32);
+                    rtb.Render(dv);
+                    rtb.Freeze();
+                    w.Close();
+                    return rtb;
+                }
+                var homeShot = PanelShot(false);
+                var openShot = PanelShot(true);
                 {
                     var (g, top) = NewScene();
                     var (panel, views, _) = MakeDock(false);
@@ -1497,10 +1552,12 @@ internal static class Program
                     Cursor(top, Center(views[1], g, 0.55, 0.45), pressed: true);
                     frames.Add(Shot(g, top));
                 }
-                foreach (var (crop, at) in new[] { (new Int32Rect(0, 0, 640, 360), new Point(0.69, 0.66)), (new Int32Rect(420, 160, 640, 380), new Point(0.57, 0.82)) })
+                // 즐겨찾기·폴더 줄 (루틴 설명 카드 아래부터) / 펼친 폴더
+                int y0 = Math.Max(0, (int)(homeShot.PixelHeight * 0.0));
+                foreach (var (shot, crop, at) in new[] { (homeShot, new Int32Rect(0, Math.Min(270, homeShot.PixelHeight - 300), 640, 300), new Point(0.18, 0.80)), (openShot, new Int32Rect(0, Math.Min(400, openShot.PixelHeight - 380), 640, 380), new Point(0.31, 0.78)) })
                 {
                     var (g, top) = NewScene(PanelBg());
-                    var src = new CroppedBitmap(home, crop);
+                    var src = new CroppedBitmap(shot, crop);
                     double w = SW, h = SW * crop.Height / crop.Width;
                     var img = new System.Windows.Controls.Image { Source = src, Width = w, Height = h, Stretch = Stretch.Fill, VerticalAlignment = VerticalAlignment.Center };
                     RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);

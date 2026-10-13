@@ -33,6 +33,8 @@
     <Resource Include="Fonts\*.otf" />
     <!-- 앱 아이콘 (tools/make-icon/make-icon.ps1 로 생성): 창 Icon·트레이 아이콘 -->
     <Resource Include="Assets\mongdock.ico" />
+    <!-- 둘러보기 카드 그림 (report-test 의 tour 그림으로 만듦, 단계·장·테마별 800x500) -->
+    <Resource Include="Assets\Tour\*.png" />
     <None Include="Fonts\OFL.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

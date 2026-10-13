@@ -31,6 +31,8 @@ internal sealed class CoachPage
     public bool AdvanceOnUse { get; init; }
     /// <summary>카드 맨 아래 회색 작은 글씨 한 줄 (예: 마무리 카드의 사용 통계 안내).</summary>
     public string? Footnote { get; init; }
+    /// <summary>둘러보기 카드 그림 키 (Assets/Tour/tour-{key}-…). null 이면 그림 없음.</summary>
+    public string? Pictures { get; init; }
 }
 
 /// <summary>둘러보기가 끝난 이유 (설정 창이 다시 나타날 때 포커스를 가져갈지 정하는 데 씀).</summary>
@@ -73,7 +75,7 @@ internal static class CoachMarks
     private static Func<CoachAnchor, (Rect Rect, MonitorInfo Monitor)?>? _resolve;
     private static Func<bool>? _popupOpen;
     private static DispatcherTimer? _startupTimer;
-    private static CoachSession? _session;
+    private static ICoachRun? _session;
 
     /// <summary>코치마크(둘러보기·새 기능)가 떠 있는지 — 다른 안내 카드가 겹치지 않게 (CrashPrompt).</summary>
     internal static bool IsShowing => _session is not null;
@@ -159,7 +161,7 @@ internal static class CoachMarks
                 if (popup || Busy() || _session is not null || !AnchorVisible(step.Anchor)) return;
                 timer.Stop();
                 Log.Info($"처음 쓰기 힌트: {key}");
-                Start(new List<CoachPage> { new() { Title = step.Title, Body = step.Body, Anchor = step.Anchor, NextText = Loc.T("알겠어요") } });
+                Start(new List<CoachPage> { new() { Title = step.Title, Body = step.Body.Replace("{hotkey}", HotkeyPhrase(s)), Anchor = step.Anchor, NextText = Loc.T("알겠어요") } });
             };
             timer.Start();
         }
@@ -336,6 +338,7 @@ internal static class CoachMarks
         Action = step.Key == WhatsNew.IntroKey ? (Loc.T("작업 표시줄 보이기"), ShowWindowsTaskbarAgain) : null, // 카드 폭에 맞게 짧게 (QA: "다시 보이기" 가 잘림)
         AdvanceOnUse = step.Key == WhatsNew.SearchKey,
         Hint = HasPressPrompt(step.Title) || HasPressPrompt(step.Body) ? null : PressHint(step.Anchor),
+        Pictures = WhatsNew.TourPictures.Contains(step.Key) ? step.Key : null,
     };
 
     /// <summary>카드 글에 이미 "눌러 보세요"(영어 "Click …"/"Try it") 가 있으면 아래 힌트 줄을 또 붙이지 않음.</summary>
@@ -561,7 +564,8 @@ internal static class CoachMarks
         var all = WhatsNew.Tour;
         if (all.Count == 0) return new List<CoachPage>();
         var last = all[^1];
-        var pages = all.Take(all.Count - 1).Where(x => x.IsAvailable(s) && AnchorVisible(x.Anchor))
+        // 그림 단계는 가리킬 자리가 지금 없어도 넣음 (카드만 가운데 — 그림이 설명함)
+        var pages = all.Take(all.Count - 1).Where(x => x.IsAvailable(s) && (WhatsNew.TourPictures.Contains(x.Key) || AnchorVisible(x.Anchor)))
             .Take(MaxTourSteps - 1).Select(x => ToPage(x, s)).ToList();
         // 스토어판: 첫 카드(시스템 변경 안내) 다음에 윈도우 알림 접근 허락 카드 (#7 결정 16). 일반판·이미 정했으면 없음
         if (NotificationListener.Supported && NotificationListener.Status() == Windows.UI.Notifications.Management.UserNotificationListenerAccessStatus.Unspecified)
@@ -591,6 +595,7 @@ internal static class CoachMarks
             Title = final.Title,
             Body = final.Body,
             Anchor = final.Anchor,
+            Pictures = final.Pictures,
             Groups = extras.Count > 0 ? new() { (Loc.T("이 밖에도"), extras.ToList()) } : null,
             Action = startup,
         });
@@ -603,12 +608,13 @@ internal static class CoachMarks
     /// 세션 생성 → Ended 구독(onEnded 포함) → Begin 순서 — 시작하자마자 끝나도 onEnded 가 불림.
     /// isTour = 첫 설치 둘러보기 (다 보거나 건너뛰면 FirstRunTourPending 해제).
     /// </summary>
-    private static CoachSession? Start(List<CoachPage> pages, Action<CoachEndReason>? onEnded = null, bool isTour = false)
+    private static ICoachRun? Start(List<CoachPage> pages, Action<CoachEndReason>? onEnded = null, bool isTour = false)
     {
         _session?.Close(markSeen: false, CoachEndReason.Replaced);
         _session = null;
         if (pages.Count == 0 || _services is null || _resolve is null) return null;
-        var session = new CoachSession(_services, _resolve, _popupOpen, pages);
+        // 첫 설치 둘러보기·다시 보기 = 새 방식 카드(그림 + 강조), 새 기능·힌트 = 말풍선 (spec-coach-tour.md)
+        ICoachRun session = isTour ? new TourSession(_services, _resolve, pages) : new CoachSession(_services, _resolve, _popupOpen, pages);
         session.Ended += reason =>
         {
             if (_session == session) _session = null;
@@ -626,7 +632,7 @@ internal static class CoachMarks
 }
 
 /// <summary>카드 창 하나를 재사용하며 단계를 넘기고, 앵커마다 강조 링 창을 새로 띄운다.</summary>
-internal sealed class CoachSession
+internal sealed class CoachSession : ICoachRun
 {
     private readonly AppServices _services;
     private readonly Func<CoachAnchor, (Rect Rect, MonitorInfo Monitor)?> _resolve;

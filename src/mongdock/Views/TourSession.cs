@@ -1,0 +1,371 @@
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Threading;
+using Mongdock.Models;
+using Mongdock.Services;
+using Mongdock.ViewModels;
+
+namespace Mongdock.Views;
+
+/// <summary>코치마크 진행 하나 (말풍선 방식 CoachSession · 둘러보기 카드 방식 TourSession).</summary>
+internal interface ICoachRun
+{
+    event Action<CoachEndReason>? Ended;
+    void Begin();
+    void Close(bool markSeen, CoachEndReason reason);
+}
+
+/// <summary>
+/// 둘러보기 새 방식 진행 (spec-coach-tour.md, 2026-10-14 사용자 확정): 가운데 카드 하나(TourCard)가 내용만 바뀌고,
+/// 화면은 35% 어둡게 + 그 기능 자리만 뚫어 연보라 링(TourSpotlight), 단계가 바뀌면 구멍이 미끄러져 옮겨 감.
+/// 카드는 강조 자리를 가리지 않게 위·아래로. ←→ 로 넘김, Esc 로 닫음. [직접 해 보기] = 카드·어둡게를 접고 아래 작은 알약 [둘러보기로 돌아가기].
+/// 가리킬 자리가 지금 화면에 없으면(기능을 끔·독 폴더 없음) 구멍 없이 카드만 가운데. 일시 정지·전체 화면이면 저장 없이 닫음(다음에 다시).
+/// </summary>
+internal sealed class TourSession : ICoachRun
+{
+    private readonly AppServices _services;
+    private readonly Func<CoachAnchor, (Rect Rect, MonitorInfo Monitor)?> _resolve;
+    private readonly List<CoachPage> _pages;
+    private readonly DispatcherTimer _watch = new() { Interval = TimeSpan.FromMilliseconds(300) };
+    private readonly DispatcherTimer _keepOnTop = new() { Interval = TimeSpan.FromSeconds(2) };
+    private TourSpotlightWindow? _dim;
+    private TourCardWindow? _card;
+    private Window? _pill;
+    private int _index;
+    private bool _closed;
+    private bool _trying;
+    private Rect? _hole;
+    private MonitorInfo? _monitor;
+
+    public event Action<CoachEndReason>? Ended;
+
+    public TourSession(AppServices services, Func<CoachAnchor, (Rect Rect, MonitorInfo Monitor)?> resolve, List<CoachPage> pages)
+    {
+        _services = services;
+        _resolve = resolve;
+        _pages = pages;
+    }
+
+    public void Begin()
+    {
+        UiFonts.Apply(_services.Settings.Current);
+        var palette = UiTheme.Palette(_services.Settings.Current);
+        _card = new TourCardWindow(_services, palette);
+        _card.Card.NextClicked += Next;
+        _card.Card.PrevClicked += Prev;
+        _card.Card.SkipClicked += () => { Log.Info("둘러보기: 건너뛰기"); Close(markSeen: true, CoachEndReason.Completed); };
+        _card.Card.TryClicked += Try;
+        _card.KeyPressed += key =>
+        {
+            if (key == Key.Right) Next();
+            else if (key == Key.Left) Prev();
+            else if (key == Key.Escape) { Log.Info("둘러보기: Esc"); Close(markSeen: true, CoachEndReason.Completed); }
+        };
+        if (_pages.Any(p => p.Anchor is CoachAnchor.Dock or CoachAnchor.DockFolder or CoachAnchor.AllApps or CoachAnchor.DockStacks)) DockState.SetCoachPinned(true);
+        AppState.Changed += OnPausedChanged;
+        _services.DesktopWindows.FullscreenAppChanged += OnFullscreenChanged;
+        _services.DesktopWindows.DisplayChanged += OnDisplayChanged;
+        _watch.Tick += (_, _) => FollowAnchor();
+        _watch.Start();
+        _keepOnTop.Tick += (_, _) => BringToFront();
+        _keepOnTop.Start();
+        _index = 0;
+        Log.Info($"둘러보기 시작: {_pages.Count}장");
+        ShowCurrent(animate: false);
+    }
+
+    private void Next()
+    {
+        if (_closed) return;
+        if (_index >= _pages.Count - 1) { Close(markSeen: true, CoachEndReason.Completed); return; }
+        _index++;
+        ShowCurrent(animate: true);
+    }
+
+    private void Prev()
+    {
+        if (_closed || _index == 0) return;
+        _index--;
+        ShowCurrent(animate: true);
+    }
+
+    private (Rect Rect, MonitorInfo Monitor)? Resolve(CoachAnchor a)
+    {
+        if (a == CoachAnchor.Center) return null;
+        try { return _resolve(a); }
+        catch (Exception ex) { Log.Warn($"둘러보기 자리 찾기 실패: {ex.GetType().Name}"); return null; }
+    }
+
+    private void ShowCurrent(bool animate)
+    {
+        if (_closed || _card is null) return;
+        var page = _pages[_index];
+        var anchor = Resolve(page.Anchor);
+        var monitor = anchor?.Monitor ?? _services.DesktopWindows.ResolveMonitor("");
+        var palette = UiTheme.Palette(_services.Settings.Current);
+        // 어둡게 + 구멍: 모니터가 바뀌면 창을 새로
+        if (_dim is null || _monitor?.DeviceName != monitor.DeviceName)
+        {
+            _dim?.Close();
+            _dim = new TourSpotlightWindow(_services, monitor, palette);
+            _dim.Show();
+            animate = false;
+        }
+        _monitor = monitor;
+        _hole = anchor?.Rect;
+        _dim.MoveTo(anchor?.Rect, Radius(page.Anchor, anchor?.Rect), animate);
+        var step = new TourStep(page.Title, page.Body, TourPictures.Load(page.Pictures, palette.IsLight))
+        {
+            Action = page.Action,
+            NextText = page.NextText,
+            Footnote = page.Footnote,
+            CanTry = anchor is not null,
+        };
+        _card.Card.Show(step, _index, _pages.Count);
+        _card.Place(monitor, anchor?.Rect);
+        if (!_card.IsVisible) { _card.Show(); _card.Activate(); }
+        BringToFront();
+    }
+
+    private double Radius(CoachAnchor a, Rect? r) => a switch
+    {
+        CoachAnchor.Dock => Math.Max(8, _services.Settings.Current.Dock.CornerRadius + 4),
+        CoachAnchor.TopBar => 0,
+        CoachAnchor.AllApps or CoachAnchor.DockStacks => 12,
+        _ => r is { } rr ? Math.Min(rr.Height / 2 + 3, 10) : 10,
+    };
+
+    /// <summary>가리키는 자리가 움직이면(자동 숨김 독이 나타남·알약 폭이 바뀜) 구멍·카드를 다시 맞춤.</summary>
+    private void FollowAnchor()
+    {
+        if (_closed || _trying || _index >= _pages.Count) return;
+        var now = Resolve(_pages[_index].Anchor)?.Rect;
+        bool same = now is null ? _hole is null : _hole is { } h && Math.Abs(h.Left - now.Value.Left) < 1 && Math.Abs(h.Top - now.Value.Top) < 1 && Math.Abs(h.Width - now.Value.Width) < 1 && Math.Abs(h.Height - now.Value.Height) < 1;
+        if (!same) ShowCurrent(animate: true);
+    }
+
+    // ── 직접 해 보기 ──
+
+    private void Try()
+    {
+        if (_closed || _trying) return;
+        _trying = true;
+        Log.Info($"둘러보기: 직접 해 보기 ({_index + 1}/{_pages.Count})");
+        _dim?.Hide();
+        _card?.Hide();
+        var palette = UiTheme.Palette(_services.Settings.Current);
+        var text = new TextBlock { Text = Loc.F($"둘러보기로 돌아가기 · {_index + 1}/{_pages.Count}"), FontSize = UiText.Body, FontWeight = FontWeights.SemiBold, Foreground = palette.PanelTintText, VerticalAlignment = VerticalAlignment.Center };
+        var pill = new Border
+        {
+            CornerRadius = new CornerRadius(18),
+            Background = palette.PanelTint,
+            BorderBrush = palette.PanelTintLine,
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(18, 8, 18, 9),
+            Child = text,
+            Cursor = Cursors.Hand,
+            Margin = new Thickness(12),
+            Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 16, ShadowDepth = 3, Direction = 270, Opacity = 0.2 },
+        };
+        var w = new Window
+        {
+            WindowStyle = WindowStyle.None,
+            AllowsTransparency = true,
+            Background = Brushes.Transparent,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            Topmost = true,
+            ResizeMode = ResizeMode.NoResize,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            Content = pill,
+            Title = "mongdock Tour",
+        };
+        pill.MouseLeftButtonUp += (_, _) => Return();
+        w.SourceInitialized += (_, _) => _services.DesktopWindows.MakeOverlay(w);
+        w.Loaded += (_, _) =>
+        {
+            var work = (_monitor ?? _services.DesktopWindows.ResolveMonitor("")).WorkArea;
+            w.Left = work.Left + (work.Width - w.ActualWidth) / 2;
+            // 독(아래)을 가리지 않게 화면 위쪽 가운데 (상단바 아래)
+            w.Top = work.Top + 12;
+        };
+        _pill = w;
+        w.Show();
+    }
+
+    private void Return()
+    {
+        if (_closed || !_trying) return;
+        _trying = false;
+        _pill?.Close();
+        _pill = null;
+        _dim?.Show();
+        _card?.Show();
+        _card?.Activate();
+        ShowCurrent(animate: false);
+    }
+
+    private void BringToFront()
+    {
+        const uint flags = 0x0001 | 0x0002 | User32Flags.NoActivate;
+        foreach (Window? w in new Window?[] { _dim, _card, _pill })
+        {
+            if (w is null || !w.IsVisible) continue;
+            var h = new WindowInteropHelper(w).Handle;
+            if (h != IntPtr.Zero) Native.User32.SetWindowPos(h, new IntPtr(-1), 0, 0, 0, 0, flags);
+        }
+    }
+
+    private static class User32Flags { public const uint NoActivate = Native.User32.SWP_NOACTIVATE; }
+
+    private void OnPausedChanged(object? sender, EventArgs e)
+    {
+        if (AppState.Paused) Close(markSeen: false, CoachEndReason.Paused);
+    }
+
+    private void OnFullscreenChanged(object? sender, bool any)
+    {
+        if (any && _services.DesktopWindows.IsFullscreenOn("")) Close(markSeen: false, CoachEndReason.Fullscreen);
+    }
+
+    private void OnDisplayChanged(object? sender, EventArgs e)
+    {
+        // 배율·모니터가 바뀌면 창을 새로 (자리 잡은 뒤)
+        var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        t.Tick += (_, _) =>
+        {
+            t.Stop();
+            if (_closed || _trying) return;
+            _dim?.Close();
+            _dim = null;
+            ShowCurrent(animate: false);
+        };
+        t.Start();
+    }
+
+    public void Close(bool markSeen, CoachEndReason reason)
+    {
+        if (_closed) return;
+        _closed = true;
+        _watch.Stop();
+        _keepOnTop.Stop();
+        DockState.SetCoachPinned(false);
+        AppState.Changed -= OnPausedChanged;
+        _services.DesktopWindows.FullscreenAppChanged -= OnFullscreenChanged;
+        _services.DesktopWindows.DisplayChanged -= OnDisplayChanged;
+        _pill?.Close();
+        _dim?.Close();
+        _card?.Close();
+        _pill = null;
+        _dim = null;
+        _card = null;
+        Log.Info($"둘러보기 끝: {reason} ({_index + 1}/{_pages.Count})");
+        if (markSeen)
+        {
+            try { CoachMarks.MarkSeen(); }
+            catch (Exception ex) { Log.Error("LastSeenVersion 저장 실패", ex); }
+        }
+        Ended?.Invoke(reason);
+    }
+}
+
+/// <summary>모니터 전체를 덮는 어둡게 + 구멍 창 (클릭 통과 — 가린 자리도 그대로 눌림).</summary>
+internal sealed class TourSpotlightWindow : Window
+{
+    private readonly TourSpotlight _spot;
+    private readonly Rect _bounds;
+
+    public TourSpotlightWindow(AppServices services, MonitorInfo monitor, UiPalette palette)
+    {
+        WindowStyle = WindowStyle.None;
+        AllowsTransparency = true;
+        Background = Brushes.Transparent;
+        ShowInTaskbar = false;
+        ShowActivated = false;
+        Topmost = true;
+        ResizeMode = ResizeMode.NoResize;
+        Focusable = false;
+        IsHitTestVisible = false;
+        Title = "mongdock Tour Dim";
+        _bounds = monitor.Bounds;
+        Left = _bounds.Left;
+        Top = _bounds.Top;
+        Width = _bounds.Width;
+        Height = _bounds.Height;
+        _spot = new TourSpotlight(palette) { Width = _bounds.Width, Height = _bounds.Height };
+        Content = _spot;
+        SourceInitialized += (_, _) =>
+        {
+            services.DesktopWindows.MakeOverlay(this);
+            var h = new WindowInteropHelper(this).Handle;
+            const long WS_EX_TRANSPARENT = 0x20, WS_EX_TOOLWINDOW = 0x80, WS_EX_NOACTIVATE = 0x08000000;
+            Native.User32.SetWindowLong(h, Native.User32.GWL_EXSTYLE, Native.User32.GetWindowLong(h, Native.User32.GWL_EXSTYLE) | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
+        };
+        Loaded += (_, _) =>
+        {
+            if (services.DesktopWindows.EnsureOnMonitor(this, monitor)) { Left = _bounds.Left; Top = _bounds.Top; }
+        };
+    }
+
+    /// <summary>화면 좌표(DIP) 자리로 구멍 이동.</summary>
+    public void MoveTo(Rect? screen, double radius, bool animate)
+    {
+        Rect? local = screen is { } r ? new Rect(r.X - _bounds.Left, r.Y - _bounds.Top, r.Width, r.Height) : null;
+        if (!IsLoaded) { Loaded += (_, _) => _spot.MoveTo(local, radius, false); return; }
+        _spot.MoveTo(local, radius, animate);
+    }
+}
+
+/// <summary>가운데 카드 창 (키보드 ←→·Esc 를 받으려고 활성화되는 창).</summary>
+internal sealed class TourCardWindow : Window
+{
+    public TourCard Card { get; }
+    public event Action<Key>? KeyPressed;
+    private const double ShadowPad = 28;
+
+    public TourCardWindow(AppServices services, UiPalette palette)
+    {
+        WindowStyle = WindowStyle.None;
+        AllowsTransparency = true;
+        Background = Brushes.Transparent;
+        ShowInTaskbar = false;
+        Topmost = true;
+        ResizeMode = ResizeMode.NoResize;
+        SizeToContent = SizeToContent.WidthAndHeight;
+        Title = "mongdock Tour";
+        Card = new TourCard(palette);
+        Content = new Border { Padding = new Thickness(ShadowPad), Child = Card };
+        UiFonts.Apply(services.Settings.Current);
+        SourceInitialized += (_, _) => services.DesktopWindows.MakeOverlay(this);
+        PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key is Key.Left or Key.Right or Key.Escape) { e.Handled = true; KeyPressed?.Invoke(e.Key); }
+        };
+    }
+
+    /// <summary>모니터 가운데. 강조 자리가 아래 반이면 그 위로, 위 반이면 그 아래로 (가리지 않게).</summary>
+    public void Place(MonitorInfo monitor, Rect? hole)
+    {
+        var root = (FrameworkElement)Content;
+        root.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        double w = root.DesiredSize.Width, h = root.DesiredSize.Height;
+        var work = monitor.WorkArea;
+        double left = work.Left + (work.Width - w) / 2;
+        double top = work.Top + (work.Height - h) / 2;
+        if (hole is { } r)
+        {
+            const double gap = 12; // 카드 그림자 여백(28) 밖으로 12
+            bool below = r.Top + r.Height / 2 > work.Top + work.Height / 2;
+            double wanted = below ? r.Top - h - gap + ShadowPad : r.Bottom + gap - ShadowPad;
+            // 가운데 카드가 이미 자리를 안 가리면 가운데 그대로, 가리면 비켜 놓음
+            var card = new Rect(left + ShadowPad, top + ShadowPad, w - ShadowPad * 2, h - ShadowPad * 2);
+            if (card.IntersectsWith(r)) top = wanted;
+            top = Math.Clamp(top, work.Top - ShadowPad + 8, work.Bottom - h + ShadowPad - 8);
+        }
+        Left = Math.Round(left);
+        Top = Math.Round(top);
+    }
+}

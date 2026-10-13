@@ -537,10 +537,21 @@ public partial class DockWindow : Window
     /// </summary>
     public (Rect Rect, MonitorInfo Monitor)? GetAnchorRect(CoachAnchor anchor)
     {
-        if (anchor is not (CoachAnchor.Dock or CoachAnchor.DockFolder) || _closed || !DockActive || _fullscreen || !IsVisible || _windowsHidden || _hide > 0.01) return null;
+        if (anchor is not (CoachAnchor.Dock or CoachAnchor.DockFolder or CoachAnchor.AllApps or CoachAnchor.DockStacks) || _closed || !DockActive || _fullscreen || !IsVisible || _windowsHidden || _hide > 0.01) return null;
         if (PanelBorder.ActualWidth < 1 || PanelBorder.ActualHeight < 1) return null;
         try
         {
+            if (anchor is CoachAnchor.AllApps or CoachAnchor.DockStacks)
+            {
+                // 둘러보기: 앱 모음 아이콘 / 독 폴더·휴지통 (있는 것만 묶음). 없으면 null → 카드만 가운데
+                var views = ItemsHost.Children.OfType<DockItemView>().Where(v => anchor == CoachAnchor.AllApps
+                    ? v.Item.Pin is { Kind: PinKind.Special, Target: "launchpad" }
+                    : v.Item.Pin is { Kind: PinKind.Folder } or { Kind: PinKind.Special, Target: DefaultPins.RecycleBinTarget }).Where(v => v.ActualWidth >= 1).ToList();
+                if (views.Count == 0) return null;
+                Rect r = Rect.Empty;
+                foreach (var v in views) r.Union(new Rect(v.TranslatePoint(new Point(0, 0), Root), new Size(v.ActualWidth, v.ActualHeight)));
+                return (new Rect(Left + r.X, Top + r.Y, r.Width, r.Height), _monitor);
+            }
             if (anchor == CoachAnchor.DockFolder)
             {
                 // 가장 최근에 넣은 독 폴더 (오른쪽 끝)

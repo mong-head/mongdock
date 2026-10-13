@@ -88,6 +88,12 @@ internal static class Program
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
             return _fail == 0 ? 0 : 1;
         }
+        if (Array.IndexOf(args, "--tour") >= 0)
+        {
+            TourRun(services, work, outDir);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            return _fail == 0 ? 0 : 1;
+        }
         if (Array.IndexOf(args, "--folderorder") >= 0)
         {
             panelType.GetProperty("EdgeScrollEnabled", Any)!.SetValue(null, false);
@@ -358,6 +364,87 @@ internal static class Program
     /// 첫 앱을 셋째·넷째 사이로 끌면 둘째·셋째가 한 칸 앞으로 비켜나고, 놓으면 그 순서로 저장·폴더 칸 미리보기도 같은 순서, 손댄 폴더가 됨.
     /// 취소하면 순서 그대로·비켜난 칸 원래대로.
     /// </summary>
+    /// <summary>
+    /// 둘러보기 새 방식 실제 창 (시험 데이터, 가짜 자리 — 독·상단바는 이 시험이 정한 사각형): 단계마다
+    /// 카드 창이 강조 자리를 가리지 않는지, 그림 단계는 그림이 실렸는지, 넘기기·이전·닫기가 되는지. 진짜 입력 없음 (메서드 호출).
+    /// </summary>
+    private static void TourRun(AppServices services, Rect work, string outDir)
+    {
+        var asm = typeof(Mongdock.App).Assembly;
+        var coach = asm.GetType("Mongdock.Views.CoachMarks")!;
+        var monitor = Monitors.GetPrimary();
+        var dock = new Rect(work.Left + work.Width / 2 - 220, work.Bottom - 78, 440, 70);
+        var bar = new Rect(monitor.Bounds.Left, monitor.Bounds.Top, monitor.Bounds.Width, 32);
+        var allApps = new Rect(dock.Left + 70, dock.Top + 9, 52, 52);
+        Func<CoachAnchor, (Rect Rect, MonitorInfo Monitor)?> resolve = a => a switch
+        {
+            CoachAnchor.Dock => (dock, monitor),
+            CoachAnchor.TopBar => (bar, monitor),
+            CoachAnchor.AllApps => (allApps, monitor),
+            _ => null, // 독 폴더·휴지통 없음 → 카드만 가운데
+        };
+        coach.GetMethod("Init")!.Invoke(null, new object?[] { services, resolve, null });
+        services.Settings.Current.HideWindowsTaskbar = true;
+        var build = coach.GetMethod("BuildTourPages")!;
+        var pages = (System.Collections.IList)build.Invoke(null, null)!;
+        string Title(object pg) => (string)pg.GetType().GetProperty("Title")!.GetValue(pg)!;
+        string? Pics(object pg) => (string?)pg.GetType().GetProperty("Pictures")!.GetValue(pg);
+        Check($"둘러보기: 단계 {pages.Count}장 (안내 1 + 그림 6 기대), 그림 단계 {pages.Cast<object>().Count(x => Pics(x) is not null)}개", pages.Cast<object>().Count(x => Pics(x) is not null) == 6);
+        bool ended = false;
+        object? reason = null;
+        var listType = typeof(List<>).MakeGenericType(asm.GetType("Mongdock.Views.CoachPage")!);
+        var playFunc = typeof(Func<>).MakeGenericType(listType);
+        // Play(Func<List<CoachPage>>, Action<CoachEndReason>, bool) — 리플렉션으로 람다를 만들기 번거로워 BuildTourPages 를 그대로 넘김
+        var endType = asm.GetType("Mongdock.Views.CoachEndReason")!;
+        var onEnded = typeof(Action<>).MakeGenericType(endType);
+        var endHandler = Delegate.CreateDelegate(onEnded, new EndBox(r => { ended = true; reason = r; }), typeof(EndBox).GetMethod("Invoke")!.MakeGenericMethod(endType));
+        var buildDel = Delegate.CreateDelegate(playFunc, build);
+        bool started = (bool)coach.GetMethod("Play")!.Invoke(null, new object?[] { buildDel, endHandler, true })!;
+        Check("둘러보기: 시작됨", started);
+        if (!started) return;
+        Pump(800);
+        var session = coach.GetField("_session", Any)!.GetValue(null)!;
+        var st = session.GetType();
+        Check($"둘러보기: 새 방식 세션 ({st.Name})", st.Name == "TourSession");
+        int count = pages.Count;
+        for (int i = 0; i < count; i++)
+        {
+            var card = (Window)st.GetField("_card", Any)!.GetValue(session)!;
+            var hole = (Rect?)st.GetField("_hole", Any)!.GetValue(session);
+            var cardRect = new Rect(card.Left + 28, card.Top + 28, card.ActualWidth - 56, card.ActualHeight - 56);
+            var tourCard = card.GetType().GetProperty("Card")!.GetValue(card)!;
+            var frames = (System.Collections.ICollection)tourCard.GetType().GetField("_frames", Any)!.GetValue(tourCard)!;
+            string title = Title(pages[i]!);
+            bool pictureStep = Pics(pages[i]!) is not null;
+            Check($"둘러보기 {i + 1}/{count} \"{title}\": 카드가 강조 자리를 안 가림 (자리 {(hole is null ? "없음" : $"{hole.Value.Top:0}~{hole.Value.Bottom:0}")}, 카드 {cardRect.Top:0}~{cardRect.Bottom:0}), 그림 {frames.Count}장",
+                (hole is null || !cardRect.IntersectsWith(hole.Value)) && (!pictureStep || frames.Count >= 2) && cardRect.Top >= work.Top - 1 && cardRect.Bottom <= work.Bottom + 1);
+            if (i == 2)
+            {
+                // 이전 → 다시 다음
+                st.GetMethod("Prev", Any)!.Invoke(session, null);
+                Pump(350);
+                st.GetMethod("Next", Any)!.Invoke(session, null);
+                Pump(350);
+            }
+            if (i < count - 1) { st.GetMethod("Next", Any)!.Invoke(session, null); Pump(500); }
+        }
+        // 마지막에서 다음 = 끝
+        st.GetMethod("Next", Any)!.Invoke(session, null);
+        Pump(500);
+        Check($"둘러보기: 마지막 [시작하기]로 끝남 ({reason})", ended && reason?.ToString() == "Completed");
+        Check("둘러보기: 창이 남지 않음", Application.Current.Windows.OfType<Window>().All(w => !w.IsVisible || !(w.Title?.StartsWith("mongdock Tour") ?? false)));
+        var dockState = asm.GetType("Mongdock.Services.DockState") ?? asm.GetType("Mongdock.ViewModels.DockState") ?? asm.GetTypes().First(t => t.Name == "DockState");
+        var pinned = dockState.GetProperty("CoachPinned", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)?.GetValue(null);
+        Check($"둘러보기: 독 고정 풀림 ({pinned ?? "속성 없음"})", pinned is null or false);
+    }
+
+    private sealed class EndBox
+    {
+        private readonly Action<object?> _done;
+        public EndBox(Action<object?> done) => _done = done;
+        public void Invoke<T>(T reason) => _done(reason);
+    }
+
     private static void FolderOrder(Type panelType, Func<Window> open, Action<Window> close, SettingsService settings)
     {
         var w = open();

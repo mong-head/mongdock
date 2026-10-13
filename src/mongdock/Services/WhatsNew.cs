@@ -23,6 +23,12 @@ public enum CoachAnchor
     Search,
     /// <summary>상단바 시계.</summary>
     Clock,
+    /// <summary>상단바 전체 (둘러보기 새 방식).</summary>
+    TopBar,
+    /// <summary>독의 앱 모음 아이콘.</summary>
+    AllApps,
+    /// <summary>독의 폴더·휴지통 (있는 것만 묶어서).</summary>
+    DockStacks,
 }
 
 /// <summary>
@@ -79,27 +85,37 @@ public static class WhatsNew
     public const string SearchKey = "search";
 
     /// <summary>
-    /// 첫 설치 둘러보기 (#22: 5장 + 마무리) — ① 시스템 변경 안내 ② 독(다음으로 넘어갈 때 숨는 시연) ③ 검색 ④ 로고 메뉴 ⑤ 마무리.
-    /// 빠진 기능은 마무리 카드 목록 + 처음 그 아이콘을 썼을 때 한 번 <see cref="Hints"/>. 마지막 단계(settings)는 항상 마지막 카드.
+    /// 첫 설치 둘러보기 (2026-10-14 새 방식 — spec-coach-tour.md): ① 시스템 변경 안내(그림 없음) + 그림 6단계
+    /// (독·상단바·앱 모음 판·루틴·독 폴더와 휴지통·설정). 그림은 Assets/Tour/tour-{key}-{n}-{light|dark}.png (report-test --tour).
+    /// 마지막 단계(settings)는 늘 마지막 카드 (자동 실행 버튼). 검색·로고 메뉴는 처음 써 볼 때 <see cref="Hints"/>.
     /// </summary>
     public static readonly IReadOnlyList<CoachStep> Tour =
     [
         new("", IntroKey, Loc.T("작업 표시줄은 숨겨 뒀어요"),
             Loc.T("윈도우 작업 표시줄 대신 위쪽 상단바와 독을 써요. 윈도우 알림도 오른쪽 위 몽독 배너로 떠요. 되돌리려면 설정 → 일반 → '윈도우 작업 표시줄 숨기기'를 끄면 돼요."),
             CoachAnchor.Center, s => s.HideWindowsTaskbar),
-        new("", "dock", Loc.T("여기가 독이에요"),
-            Loc.T("자주 쓰는 앱은 오른쪽 클릭 → 독에 고정, 끌어서 순서를 바꿔요.{dockhide}"),
+        new("", "dock", Loc.T("독 — 자주 쓰는 앱을 한 줄에"),
+            Loc.T("아이콘을 누르면 앱이 열리고, 마우스를 올리면 커져요. 자주 쓰는 앱은 오른쪽 클릭 → 독에 고정. 끌어서 순서를 바꿔요."),
             CoachAnchor.Dock, s => s.Dock.Enabled),
-        new("", SearchKey, Loc.T("검색"),
-            Loc.T("{hotkey} 앱·파일·윈도우 설정·계산기까지 찾아요. 지금 눌러 보세요."),
-            CoachAnchor.Search, s => TopBarOn(s) && s.TopBar.ShowQuickButtons && s.TopBar.SearchMode == SearchMode.Spotlight),
-        new("", "logo", Loc.T("로고 메뉴"),
-            Loc.T("몽독 설정·이 PC 정보·잠자기·다시 시작은 여기서 해요."),
-            CoachAnchor.Logo, s => TopBarOn(s) && s.TopBar.ShowLogo),
-        new("", "settings", Loc.T("이 밖에도 있어요"),
-            Loc.T("설정은 로고 메뉴 → mongdock → 설정…에서 모두 클릭으로 바꿔요. 아래 기능은 처음 써 볼 때 짧게 알려 드릴게요."),
+        new("", "topbar", Loc.T("상단바 — 시계·소리·알림을 한눈에"),
+            Loc.T("와이파이·소리를 누르면 제어 센터, 시계를 누르면 달력과 일정이 열려요. 왼쪽에는 지금 앱의 메뉴가 나와요."),
+            CoachAnchor.TopBar, TopBarOn),
+        new("", "allapps", Loc.T("앱 모음 판 — 모든 앱을 한곳에"),
+            Loc.T("독의 앱 모음을 누르면 열려요. 자주 쓰는 앱은 즐겨찾기에, 비슷한 앱은 폴더에 모여 있어요. 끌어서 순서를 바꾸고, 안 쓰는 앱은 정리해요."),
+            CoachAnchor.AllApps, s => s.Dock.Enabled),
+        new("", "routines", Loc.T("루틴 — 일하는 앱을 한 번에"),
+            Loc.T("자주 같이 여는 앱들을 루틴으로 만들어 두면, 누를 때 새 데스크톱에 정해 둔 자리로 한꺼번에 열려요. 헤드셋을 연결하면 열지 물어보게 할 수도 있어요."),
+            CoachAnchor.AllApps, s => s.Dock.Enabled),
+        new("", "stacks", Loc.T("독의 폴더와 휴지통"),
+            Loc.T("폴더를 독에 두면 눌렀을 때 안의 파일이 펼쳐져요. 파일을 휴지통으로 끌면 지워지고, 휴지통을 누르면 비울 수 있어요."),
+            CoachAnchor.DockStacks, s => s.Dock.Enabled),
+        new("", "settings", Loc.T("설정 — 내 손에 맞게"),
+            Loc.T("독 위치·자동 숨기기·크기와 라이트·다크 테마를 바꿔요. 독이나 상단바를 오른쪽 클릭하면 설정이 열려요."),
             CoachAnchor.Center),
     ];
+
+    /// <summary>둘러보기 그림이 있는 단계 키.</summary>
+    public static readonly IReadOnlySet<string> TourPictures = new HashSet<string> { "dock", "topbar", "allapps", "routines", "stacks", "settings" };
 
     /// <summary>
     /// 둘러보기에서 뺀 기능 — 처음 그 요소를 쓰고(패널·메뉴를 닫은 뒤) 한 번만 짧은 카드 (Views/FirstUseHints).
@@ -107,6 +123,12 @@ public static class WhatsNew
     /// </summary>
     public static readonly IReadOnlyList<CoachStep> Hints =
     [
+        new("", SearchKey, Loc.T("검색"),
+            Loc.T("{hotkey} 앱·파일·윈도우 설정·계산기까지 찾아요."),
+            CoachAnchor.Search, s => TopBarOn(s) && s.TopBar.ShowQuickButtons && s.TopBar.SearchMode == SearchMode.Spotlight),
+        new("", "logo", Loc.T("로고 메뉴"),
+            Loc.T("몽독 설정·이 PC 정보·잠자기·다시 시작은 여기서 해요."),
+            CoachAnchor.Logo, s => TopBarOn(s) && s.TopBar.ShowLogo),
         new("", "appmenu", Loc.T("지금 앱의 메뉴"),
             Loc.T("앱 이름과 그 옆 메뉴(파일·편집·보기…)를 클릭으로 열어요. 단축키 없이도 돼요."),
             CoachAnchor.AppName, s => TopBarOn(s) && s.TopBar.ShowActiveAppName),

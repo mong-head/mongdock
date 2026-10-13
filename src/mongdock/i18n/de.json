@@ -1302,5 +1302,22 @@
  "제거 프로그램이 없어요": "Kein Deinstallationsprogramm",
  "제거 창이 열렸어요 — 그 창에서 계속해 주세요": "Das Deinstallationsprogramm ist geöffnet – mach dort weiter",
  "제거 창 보기": "Deinstallationsprogramm zeigen",
- "기다리지 않기": "Nicht warten"
+ "기다리지 않기": "Nicht warten",
+ "독 — 자주 쓰는 앱을 한 줄에": "Dock — deine Apps in einer Reihe",
+ "아이콘을 누르면 앱이 열리고, 마우스를 올리면 커져요. 자주 쓰는 앱은 오른쪽 클릭 → 독에 고정. 끌어서 순서를 바꿔요.": "Klicke auf ein Symbol, um die App zu öffnen; beim Darüberfahren wird es größer. Rechtsklick auf eine App → Im Dock behalten. Ziehen ändert die Reihenfolge.",
+ "상단바 — 시계·소리·알림을 한눈에": "Menüleiste — Uhr, Ton und Mitteilungen auf einen Blick",
+ "와이파이·소리를 누르면 제어 센터, 시계를 누르면 달력과 일정이 열려요. 왼쪽에는 지금 앱의 메뉴가 나와요.": "Klicke auf WLAN oder Ton für das Kontrollzentrum, auf die Uhr für Kalender und Termine. Links siehst du die Menüs der aktuellen App.",
+ "앱 모음 판 — 모든 앱을 한곳에": "Alle Apps — alles an einem Ort",
+ "독의 앱 모음을 누르면 열려요. 자주 쓰는 앱은 즐겨찾기에, 비슷한 앱은 폴더에 모여 있어요. 끌어서 순서를 바꾸고, 안 쓰는 앱은 정리해요.": "Öffne es mit „Alle Apps“ im Dock. Häufige Apps liegen in den Favoriten, ähnliche in Ordnern. Ziehe sie in eine neue Reihenfolge und räume ungenutzte Apps auf.",
+ "루틴 — 일하는 앱을 한 번에": "Routinen — deine Arbeits-Apps auf einmal",
+ "자주 같이 여는 앱들을 루틴으로 만들어 두면, 누를 때 새 데스크톱에 정해 둔 자리로 한꺼번에 열려요. 헤드셋을 연결하면 열지 물어보게 할 수도 있어요.": "Mach aus Apps, die du oft zusammen öffnest, eine Routine – ein Klick öffnet alle auf einem neuen Desktop an ihrem Platz. Auf Wunsch fragt sie auch, wenn du ein Headset anschließt.",
+ "독의 폴더와 휴지통": "Ordner und Papierkorb im Dock",
+ "폴더를 독에 두면 눌렀을 때 안의 파일이 펼쳐져요. 파일을 휴지통으로 끌면 지워지고, 휴지통을 누르면 비울 수 있어요.": "Leg einen Ordner ins Dock, und ein Klick fächert seine Dateien auf. Zieh Dateien in den Papierkorb, um sie zu löschen; ein Klick auf den Papierkorb leert ihn.",
+ "설정 — 내 손에 맞게": "Einstellungen — ganz nach deinem Geschmack",
+ "독 위치·자동 숨기기·크기와 라이트·다크 테마를 바꿔요. 독이나 상단바를 오른쪽 클릭하면 설정이 열려요.": "Ändere Dock-Position, automatisches Ausblenden, Größe sowie helles oder dunkles Design. Rechtsklick auf Dock oder Menüleiste öffnet die Einstellungen.",
+ "{hotkey} 앱·파일·윈도우 설정·계산기까지 찾아요.": "{hotkey} findest du Apps, Dateien und Windows-Einstellungen und kannst sogar rechnen.",
+ "이전": "Zurück",
+ "직접 해 보기": "Selbst ausprobieren",
+ "시작하기": "Los geht’s",
+ "둘러보기로 돌아가기 · {0}/{1}": "Zurück zur Tour · {0}/{1}"
 }
