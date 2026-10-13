@@ -243,7 +243,7 @@ public partial class DockWindow
     }
 
     /// <summary>핀 영역(왼쪽, 끌어서 순서 바꾸는 곳)의 항목인지 — 앱·독 폴더·구분선 핀. 실행 중 앱은 아님.</summary>
-    private static bool InPinSection(DockItemView v) => v.Item.Pin != null;
+    private bool InPinSection(DockItemView v) => v.Item.Pin != null && !IsOverflowItem(v.Item); // "⋯" 칸은 독 맨 끝 (핀 영역 아님)
 
     /// <summary>드래그 항목을 뺀 나머지 뷰 (화면 순서).</summary>
     private List<DockItemView> Others(DockItemView? dragged)

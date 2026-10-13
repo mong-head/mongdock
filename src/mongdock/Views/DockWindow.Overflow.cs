@@ -95,9 +95,8 @@ public partial class DockWindow
         int sep = list.FindIndex(vm => vm.IsAutoSeparator);
         if (sep >= 0 && sep == list.Count - 1) list.RemoveAt(sep);
 
-        // 휴지통 앞 (없으면 마지막 핀 뒤)
-        int at = list.FindIndex(vm => IsTrash(vm.Pin));
-        if (at < 0) at = list.FindLastIndex(vm => vm.Pin != null && !IsOverflowItem(vm)) + 1;
+        // 독의 맨 마지막 칸 (실행 중 앱·휴지통보다도 뒤 — 사용자)
+        int at = list.Count;
         string id = $"overflow:{_hiddenItems.Count}";
         var cell = old.GetValueOrDefault(id) is { } existing && ReferenceEquals(existing.Pin, _overflowPin)
             ? existing
