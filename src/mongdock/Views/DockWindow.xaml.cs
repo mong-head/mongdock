@@ -1230,6 +1230,7 @@ public partial class DockWindow : Window
         _picker = picker;
         _pickerItem = item;
         picker.Show();
+        Log.Info($"창 고르기 판: '{item.Name}' 창 {windows.Count}개 (최소화 {windows.Count(w => w.IsMinimized)}, 다른 데스크톱 {windows.Count(w => !w.OnCurrentDesktop)}), 위치 {picker.Left:0},{picker.Top:0} 크기 {picker.ActualWidth:0}x{picker.ActualHeight:0}");
     }
 
     // ───────────────────────── 독 폴더 판 (#24-B) ─────────────────────────
