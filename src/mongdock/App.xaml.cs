@@ -46,6 +46,7 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        Views.FocusRing.Init(); // WPF 기본 점선 포커스 대신 키보드일 때만 몽독 연보라 테두리
         // 회사 인증 프록시(NTLM/Kerberos): 업데이트·캘린더·메뉴 규칙 요청이 로그인한 윈도우 계정으로 인증하게
         try { System.Net.Http.HttpClient.DefaultProxy.Credentials = System.Net.CredentialCache.DefaultCredentials; }
         catch (Exception ex) { Log.Warn($"프록시 자격 증명 설정 실패: {ex.Message}"); }

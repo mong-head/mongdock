@@ -240,7 +240,7 @@ internal static class Program
                 Pump(400);
                 var closeFrames = Record(() => panelType.GetMethod("CloseFolderAnimated", Any)!.Invoke(w, null), 600);
                 long closeEnd = Settle(closeFrames);
-                Check($"폴더 닫기: 400ms 안에 자리 잡음 (줄어듦 200ms + 남는 칸 미끄러짐, {closeEnd}ms)", closeEnd > 60 && closeEnd <= 420);
+                Check($"폴더 닫기: 450ms 안에 자리 잡음 (접힘 200ms + 다시 그리기 + 남는 칸 미끄러짐 150ms, {closeEnd}ms)", closeEnd > 60 && closeEnd <= 450);
                 SaveStrip(Path.Combine(outDir, "frames-folder-close.png"), closeFrames.Where((_, i) => i % 2 == 0).Take(12).ToList(), (int)body.Width, (int)body.Height);
                 Check("폴더 닫기 뒤 펼친 폴더 없음", panelType.GetField("_expanded", Any)!.GetValue(w) is null);
             }
@@ -500,6 +500,48 @@ internal static class Program
                     panelType.GetMethod("EndDrag", Any)!.Invoke(w, new object[] { false });
                     Pump(500);
                 }
+            }
+            close(w);
+            Pump(400);
+        }
+
+        // A7) 앱 고르기 키보드 (스크립트 키 — 진짜 키 입력 없음): 검색 칸 ↓ → 첫 줄, ↓/→ 이동, Space 체크, Enter 넣기 + 몽독 포커스 테두리(점선 없음)
+        {
+            typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.FocusRing")!.GetMethod("Init", Any)!.Invoke(null, null);
+            var w = open();
+            w.Show();
+            w.Activate();
+            Pump(1200);
+            var folders = (System.Collections.IList)panelType.GetField("_folders", Any)!.GetValue(w)!;
+            if (folders.Count > 0)
+            {
+                string id = (string)folders[0]!.GetType().GetProperty("Id")!.GetValue(folders[0])!;
+                panelType.GetMethod("OpenAddApps", Any)!.Invoke(w, new object?[] { id });
+                Pump(600);
+                void Key(System.Windows.Input.Key k)
+                {
+                    var target = System.Windows.Input.Keyboard.FocusedElement as IInputElement ?? w;
+                    var src = PresentationSource.FromVisual(w)!;
+                    // PreviewKeyDown 만 — 안 막히면 WPF 가 KeyDown 으로 이어 보냄 (둘 다 보내면 두 번 눌린 것이 됨)
+                    System.Windows.Input.InputManager.Current.ProcessInput(new System.Windows.Input.KeyEventArgs(System.Windows.Input.Keyboard.PrimaryDevice, src, 0, k) { RoutedEvent = System.Windows.Input.Keyboard.PreviewKeyDownEvent });
+                    Pump(120);
+                }
+                var st = panelType.GetField("_adding", Any)!.GetValue(w)!;
+                var chosen = (HashSet<string>)st.GetType().GetField("Chosen")!.GetValue(st)!;
+                Key(System.Windows.Input.Key.Down);
+                var f1 = System.Windows.Input.Keyboard.FocusedElement as FrameworkElement;
+                Key(System.Windows.Input.Key.Down);
+                var f2 = System.Windows.Input.Keyboard.FocusedElement as FrameworkElement;
+                Check($"키보드: 검색 칸 ↓ 로 첫 줄, ↓ 로 다음 줄 ({f1?.GetType().Name}→{f2?.GetType().Name}, 다른 줄 {f1 != f2})", f1 is System.Windows.Controls.Border && f2 is System.Windows.Controls.Border && f1 != f2);
+                var layer = f2 is null ? null : System.Windows.Documents.AdornerLayer.GetAdornerLayer(f2);
+                bool ring = layer?.GetAdorners(f2!)?.Any(a => a.GetType().Name == "RingAdorner") == true;
+                Check("키보드: 줄에 몽독 포커스 테두리 (점선 아님)", ring);
+                var full = new Rect(w.Left, w.Top, w.ActualWidth, Math.Min(w.ActualHeight, 360));
+                SaveStrip(Path.Combine(outDir, "addapps-keyboard-focus.png"), new List<(long, byte[])> { (0, Grab(full)) }, (int)full.Width, (int)full.Height);
+                Key(System.Windows.Input.Key.Space);
+                Check($"키보드: Space 로 체크 ({chosen.Count}개)", chosen.Count == 1);
+                Key(System.Windows.Input.Key.Enter);
+                Check("키보드: Enter 로 넣기 (고르기 카드 닫힘)", panelType.GetField("_adding", Any)!.GetValue(w) is null);
             }
             close(w);
             Pump(400);

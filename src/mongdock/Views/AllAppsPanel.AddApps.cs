@@ -118,9 +118,11 @@ internal sealed partial class AllAppsPanel
             add.Content = new TextBlock { Text = create ? (n > 0 ? Loc.F($"만들기 ({n})") : Loc.T("만들기")) : (n > 0 ? Loc.F($"넣기 ({n})") : Loc.T("넣기")), FontWeight = FontWeights.SemiBold };
             add.IsEnabled = create || n > 0;
         }
+        var rows = new List<Border>(); // 키보드로 오갈 수 있는 줄 (이미 든 앱은 빼고)
         void Fill()
         {
             list.Children.Clear();
+            rows.Clear();
             string q = st.Query.Trim();
             var apps = _apps.Where(a => !S.Hidden.Contains(a.Key, StringComparer.OrdinalIgnoreCase))
                 .Where(a => q.Length == 0 || a.Name.Contains(q, StringComparison.CurrentCultureIgnoreCase))
@@ -134,6 +136,7 @@ internal sealed partial class AllAppsPanel
                 bool inside = already.Contains(a.Key);
                 var check = DockMenus.Check(P, null, inside || st.Chosen.Contains(a.Key));
                 check.IsEnabled = !inside;
+                check.Focusable = false; // 키보드는 줄 단위로 (줄에 몽독 포커스 테두리)
                 check.VerticalAlignment = VerticalAlignment.Center;
                 check.Margin = new Thickness(4, 0, 10, 0);
                 check.Checked += (_, _) => { st.Chosen.Add(a.Key); UpdateAdd(); };
@@ -146,9 +149,11 @@ internal sealed partial class AllAppsPanel
                 line.Children.Add(img);
                 line.Children.Add(new TextBlock { Text = a.Name, FontSize = 14, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
                 if (inside) line.Children.Add(new TextBlock { Text = Loc.T("이미 들어 있어요"), FontSize = 11.5, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) });
-                var row = new Border { CornerRadius = new CornerRadius(6), Child = line, Opacity = inside ? 0.5 : 1, Background = Brushes.Transparent, Cursor = inside ? Cursors.Arrow : Cursors.Hand };
+                var row = new Border { CornerRadius = new CornerRadius(6), Child = line, Opacity = inside ? 0.5 : 1, Background = Brushes.Transparent, Cursor = inside ? Cursors.Arrow : Cursors.Hand, Focusable = !inside };
                 if (!inside)
                 {
+                    rows.Add(row);
+                    row.KeyDown += (_, e) => { if (e.Key == Key.Space) { e.Handled = true; check.IsChecked = check.IsChecked != true; } };
                     row.MouseEnter += (_, _) => row.Background = P.Hover;
                     row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
                     row.MouseLeftButtonUp += (_, e) => { if (e.OriginalSource is not CheckBox) check.IsChecked = check.IsChecked != true; };
@@ -156,6 +161,19 @@ internal sealed partial class AllAppsPanel
                 list.Children.Add(row);
             }
         }
+        // 키보드: 검색 칸에서 ↓ = 첫 줄, 목록에서 ↑↓(2열이면 ←→도) 이동, Space 체크, Enter = [넣기]/[만들기]
+        search.PreviewKeyDown += (_, e) => { if (e.Key == Key.Down && rows.Count > 0) { e.Handled = true; Keyboard.Focus(rows[0]); } };
+        list.PreviewKeyDown += (_, e) =>
+        {
+            int i = rows.FindIndex(r => r.IsKeyboardFocusWithin);
+            if (i < 0) return;
+            int step = e.Key switch { Key.Down => cols, Key.Up => -cols, Key.Right when cols > 1 => 1, Key.Left when cols > 1 => -1, _ => 0 };
+            if (step == 0) return;
+            e.Handled = true;
+            int j = i + step;
+            if (j < 0) { Keyboard.Focus(search); return; }
+            if (j < rows.Count) { Keyboard.Focus(rows[j]); rows[j].BringIntoView(); }
+        };
         search.TextChanged += (_, _) => { st.Query = search.Text; hint.Visibility = search.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed; Fill(); };
         Fill();
         UpdateAdd();
@@ -177,6 +195,7 @@ internal sealed partial class AllAppsPanel
         page.Children.Add(listScroll);
         System.Windows.Controls.Grid.SetRow(buttons, 2);
         page.Children.Add(buttons);
+        page.PreviewKeyDown += (_, e) => { if (e.Key == Key.Enter && add.IsEnabled) { e.Handled = true; ApplyAddApps(st, already); } };
 
         // 열리면 바로 입력: 새 폴더는 이름 칸(전체 선택), 넣기는 검색 칸
         Dispatcher.BeginInvoke(() =>
