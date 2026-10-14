@@ -60,16 +60,17 @@ internal static class Program
             return 0;
         }
         // --shots DIR: 홈페이지 스크린샷 8장 (site-draft/shots.md) — 시험 데이터 폴더·예시 데이터로, --lang 없으면 한국어·영어 둘 다
-        int shotsAt = Array.FindIndex(args, a => a == "--shots");
+        int shotsAt = Array.FindIndex(args, a => a is "--shots" or "--shots2"); // --shots2 = 홈페이지 v2 (독·상단바 중심)
         if (shotsAt >= 0 && shotsAt + 1 < args.Length)
         {
+            string flag = args[shotsAt];
             string shotsDir = args[shotsAt + 1];
             if (langAt < 0)
             {
                 int bad = 0;
                 foreach (var l in new[] { "ko", "en" })
                 {
-                    using var child = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!, $"--shots \"{shotsDir}\" --lang {l}") { UseShellExecute = false })!;
+                    using var child = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!, $"{flag} \"{shotsDir}\" --lang {l}") { UseShellExecute = false })!;
                     child.WaitForExit();
                     if (child.ExitCode != 0) bad++;
                 }
@@ -80,7 +81,7 @@ internal static class Program
             Environment.SetEnvironmentVariable("MONGDOCK_FAKE_BATTERY", "76,charging");
             Environment.SetEnvironmentVariable("MONGDOCK_FAKE_BRIGHTNESS", _lang == "ko" ? "내장:70,외장 모니터:40" : "internal:70,External display:40");
             Mongdock.Loc.Init(_lang);
-            return RenderShots(shotsDir, Path.Combine(data, "examples"));
+            return RenderShots(shotsDir, Path.Combine(data, "examples"), v2: flag == "--shots2");
         }
         Mongdock.Loc.Init(_lang);
         RedactionTests();
@@ -1384,7 +1385,7 @@ internal static class Program
     }
 
     /// <summary>홈페이지 스크린샷: TourScenes.Shot 로 그려 {lang}-{이름}.png (라이트).</summary>
-    private static int RenderShots(string dir, string exampleDir)
+    private static int RenderShots(string dir, string exampleDir, bool v2 = false)
     {
         Directory.CreateDirectory(dir);
         Directory.CreateDirectory(exampleDir);
@@ -1407,8 +1408,41 @@ internal static class Program
             new NotificationService(tracker, launcher), new TrayIconService(), new CalendarFeedService(settings));
         asm.GetType("Mongdock.Services.RoutineService")!.GetMethod("Init", Any)!.Invoke(null, new object[] { services });
         var scenes = asm.GetType("Mongdock.Views.TourScenes")!;
-        var names = (string[])scenes.GetField("ShotNames", Any)!.GetValue(null)!;
+        var names = v2 ? Array.Empty<string>() : (string[])scenes.GetField("ShotNames", Any)!.GetValue(null)!;
         int problems = 0;
+        if (v2)
+        {
+            void Save2(BitmapSource img, string path)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                var enc = new PngBitmapEncoder();
+                enc.Frames.Add(BitmapFrame.Create(img));
+                using var fs = File.Create(path);
+                enc.Save(fs);
+            }
+            var dark = Mongdock.ViewModels.UiPalette.Dark;
+            foreach (var set in (Array)scenes.GetField("AnimSets2", Any)!.GetValue(null)!)
+            {
+                string key = (string)set.GetType().GetField("Item1")!.GetValue(set)!;
+                int count = (int)set.GetType().GetField("Item2")!.GetValue(set)!;
+                var list = new List<string>();
+                for (int i = 0; i < count; i++)
+                {
+                    var img = (BitmapSource?)scenes.GetMethod("AnimFrame2", Any)!.Invoke(null, new object[] { services, palette, dark, key, i, list });
+                    if (img is null) { list.Add($"{i + 1}장 없음"); continue; }
+                    Save2(img, Path.Combine(dir, "anim", key, $"{_lang}-{i + 1:00}.png"));
+                }
+                Console.WriteLine($"  anim/{key} {count}장 {(list.Count == 0 ? "통과" : "문제: " + string.Join(" / ", list))}");
+                problems += list.Count;
+            }
+            var hl = new List<string>();
+            var hero2 = (BitmapSource?)scenes.GetMethod("Hero2", Any)!.Invoke(null, new object[] { services, palette, hl });
+            if (hero2 is not null) Save2(hero2, Path.Combine(dir, $"hero2-{_lang}.png"));
+            Console.WriteLine($"  hero2-{_lang}.png {(hero2 is null ? "없음" : $"{hero2.PixelWidth}×{hero2.PixelHeight}")} {(hl.Count == 0 ? "통과" : "문제: " + string.Join(" / ", hl))}");
+            settings.Dispose();
+            GC.KeepAlive(app);
+            return problems + hl.Count == 0 && hero2 is not null ? 0 : 1;
+        }
         foreach (var name in names)
         {
             var list = new List<string>();
