@@ -142,7 +142,8 @@ internal sealed class TourSession : ICoachRun
         _card.Card.Show(step, _index, _pages.Count);
         if (key is not null && count > 1) RenderRest(key, count, _index, palette);
         PrerenderNext(palette);
-        _card.Place(monitor, anchor?.Rect);
+        if (_card.IsVisible) PlaceAfterRender(monitor, anchor?.Rect);
+        else _card.Place(monitor, anchor?.Rect);
         if (!_card.IsVisible)
         {
             _card.Show();
@@ -151,6 +152,28 @@ internal sealed class TourSession : ICoachRun
             _card.SizeToContent = SizeToContent.Manual;
         }
         BringToFront();
+    }
+
+    private EventHandler? _pendingPlace;
+
+    /// <summary>
+    /// 단계가 바뀔 때 카드 옮기기는 새 내용이 화면에 그려진 뒤에 (0.5.1 깜빡임 측정 2026-10-15): 투명 창(레이어드)은 자리(SetWindowPos)가
+    /// 바로 바뀌고 내용은 다음 그리기에 바뀌어, 그 사이 한 프레임 동안 카드 그림 자리가 비쳐 어둡게 번쩍였음. 그리기 두 번 뒤에 옮김.
+    /// </summary>
+    private void PlaceAfterRender(MonitorInfo monitor, Rect? hole)
+    {
+        if (_pendingPlace is not null) CompositionTarget.Rendering -= _pendingPlace;
+        int frames = 0, at = _index;
+        EventHandler h = null!;
+        h = (_, _) =>
+        {
+            if (++frames < 3) return;
+            CompositionTarget.Rendering -= h;
+            _pendingPlace = null;
+            if (!_closed && _card is not null && _index == at) _card.Place(monitor, hole);
+        };
+        _pendingPlace = h;
+        CompositionTarget.Rendering += h;
     }
 
     /// <summary>카드 안 버튼 결과 (단계별): 결과 문구, 되돌리기(없으면 null).</summary>
@@ -414,6 +437,7 @@ internal sealed class TourSession : ICoachRun
     {
         if (_closed) return;
         _closed = true;
+        if (_pendingPlace is not null) { CompositionTarget.Rendering -= _pendingPlace; _pendingPlace = null; }
         _watch.Stop();
         _keepOnTop.Stop();
         DockState.SetCoachPinned(false);

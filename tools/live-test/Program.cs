@@ -94,6 +94,12 @@ internal static class Program
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
             return _fail == 0 ? 0 : 1;
         }
+        if (Array.IndexOf(args, "--tourflicker") >= 0)
+        {
+            TourFlicker(services, work, outDir);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            return _fail == 0 ? 0 : 1;
+        }
         if (Array.IndexOf(args, "--folderorder") >= 0)
         {
             panelType.GetProperty("EdgeScrollEnabled", Any)!.SetValue(null, false);
@@ -389,7 +395,7 @@ internal static class Program
         var pages = (System.Collections.IList)build.Invoke(null, null)!;
         string Title(object pg) => (string)pg.GetType().GetProperty("Title")!.GetValue(pg)!;
         string? Pics(object pg) => (string?)pg.GetType().GetProperty("Pictures")!.GetValue(pg);
-        Check($"둘러보기: 단계 {pages.Count}장, 그림 단계 {pages.Cast<object>().Count(x => Pics(x) is not null)}개 (6 기대), 작업 표시줄 카드 없음", pages.Cast<object>().Count(x => Pics(x) is not null) == 6 && pages.Cast<object>().All(x => !Title(x).Contains("작업 표시줄")));
+        Check($"둘러보기: 단계 {pages.Count}장, 그림 단계 {pages.Cast<object>().Count(x => Pics(x) is not null)}개 (7 기대 — 0.5.1 검색), 작업 표시줄 카드 없음", pages.Cast<object>().Count(x => Pics(x) is not null) == 7 && pages.Cast<object>().All(x => !Title(x).Contains("작업 표시줄")));
         bool ended = false;
         object? reason = null;
         var listType = typeof(List<>).MakeGenericType(asm.GetType("Mongdock.Views.CoachPage")!);
@@ -481,6 +487,91 @@ internal static class Program
         var dockState = asm.GetType("Mongdock.Services.DockState") ?? asm.GetType("Mongdock.ViewModels.DockState") ?? asm.GetTypes().First(t => t.Name == "DockState");
         var pinned = dockState.GetProperty("CoachPinned", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)?.GetValue(null);
         Check($"둘러보기: 독 고정 풀림 ({pinned ?? "속성 없음"})", pinned is null or false);
+    }
+
+    /// <summary>
+    /// --tourflicker (0.5.1): 가리키는 자리가 움직일 때 카드를 다시 만들지 않는지 + 카드 창이 한 프레임 비는지 오래 재기.
+    /// 독 확대·아이콘 수 변화는 가짜 자리(resolve)의 사각형을 바꿔 흉내 (진짜 마우스·독 없음).
+    /// 다시 만듦 = TourCard._frames 목록이 새 것으로 바뀜 (ShowCurrent → Card.Show).
+    /// </summary>
+    private static void TourFlicker(AppServices services, Rect work, string outDir)
+    {
+        var asm = typeof(Mongdock.App).Assembly;
+        var coach = asm.GetType("Mongdock.Views.CoachMarks")!;
+        var monitor = Monitors.GetPrimary();
+        var baseDock = new Rect(work.Left + work.Width / 2 - 220, work.Bottom - 78, 440, 70);
+        Rect? dock = baseDock;
+        var bar = new Rect(monitor.Bounds.Left, monitor.Bounds.Top, monitor.Bounds.Width, 32);
+        Func<CoachAnchor, (Rect Rect, MonitorInfo Monitor)?> resolve = a => a switch
+        {
+            CoachAnchor.Dock => dock is { } d ? (d, monitor) : null,
+            CoachAnchor.TopBar => (bar, monitor),
+            CoachAnchor.AllApps => dock is { } d2 ? (new Rect(d2.Left + 70, d2.Top + 9, 52, 52), monitor) : null,
+            _ => null,
+        };
+        coach.GetMethod("Init")!.Invoke(null, new object?[] { services, resolve, null });
+        var build = coach.GetMethod("BuildTourPages")!;
+        var listType = typeof(List<>).MakeGenericType(asm.GetType("Mongdock.Views.CoachPage")!);
+        var buildDel = Delegate.CreateDelegate(typeof(Func<>).MakeGenericType(listType), build);
+        bool started = (bool)coach.GetMethod("Play")!.Invoke(null, new object?[] { buildDel, null, true })!;
+        Check("깜빡임 측정: 둘러보기 시작", started);
+        if (!started) return;
+        Pump(2500); // 독 단계(첫 장) + 나머지 장 채움
+        var session = coach.GetField("_session", Any)!.GetValue(null)!;
+        var st = session.GetType();
+        var card = (Window)st.GetField("_card", Any)!.GetValue(session)!;
+        var tourCard = card.GetType().GetProperty("Card")!.GetValue(card)!;
+        var framesField = tourCard.GetType().GetField("_frames", Any)!;
+        object Frames() => framesField.GetValue(tourCard)!;
+        Rect? Hole() => (Rect?)st.GetField("_hole", Any)!.GetValue(session);
+        FlickerDir = outDir;
+        Check($"깜빡임 측정: 독 단계 그림 {((System.Collections.ICollection)Frames()).Count}장", ((System.Collections.ICollection)Frames()).Count >= 2);
+
+        // A) 가만히 25초 (자동 장 넘김 1.4초) — 카드 창이 한 프레임 비는지
+        var r = CardBlank(card, 25000, "가만히 25초");
+        Check(r, !r.Contains("튐"));
+
+        // B) 독 확대 흉내 8초: 0.3초마다 독 폭이 ±40 바뀜 (마우스를 독 위로 오가는 것)
+        var before = Frames();
+        int rebuilds = 0;
+        r = CardBlank(card, 8000, "독 확대 흉내 8초", () =>
+        {
+            var last = Frames();
+            for (int k = 0; k < 26; k++)
+            {
+                double grow = k % 2 == 0 ? 40 : 0;
+                dock = new Rect(baseDock.Left - grow, baseDock.Top - grow / 2, baseDock.Width + grow * 2, baseDock.Height + grow / 2);
+                Pump(300);
+                if (!ReferenceEquals(Frames(), last)) { rebuilds++; last = Frames(); }
+            }
+        });
+        Check(r, !r.Contains("튐"));
+        Check($"독 확대 흉내: 카드 다시 만듦 {rebuilds}번 (0 기대), 구멍이 따라감 ({Hole()?.Width:0} = {dock?.Width:0})", rebuilds == 0 && Hole() is { } h1 && Math.Abs(h1.Width - dock!.Value.Width) < 1);
+
+        // C) 아이콘 수 변화: 독 폭 +62 한 번
+        before = Frames();
+        dock = new Rect(baseDock.Left - 31, baseDock.Top, baseDock.Width + 62, baseDock.Height);
+        Pump(900);
+        Check($"아이콘 수 변화: 카드 그대로 {ReferenceEquals(before, Frames())}, 구멍 폭 {Hole()?.Width:0} (기대 {dock?.Width:0})", ReferenceEquals(before, Frames()) && Hole() is { } h2 && Math.Abs(h2.Width - dock!.Value.Width) < 1);
+
+        // D) 자리가 없어짐(독 숨음) → 이때만 카드 다시 (구멍 없음·가운데)
+        before = Frames();
+        dock = null;
+        Pump(900);
+        Check($"자리 없어짐: 카드 다시 만듦 {!ReferenceEquals(before, Frames())}, 구멍 없음 {Hole() is null}", !ReferenceEquals(before, Frames()) && Hole() is null);
+        dock = baseDock;
+        Pump(900);
+
+        // E) 단계 넘김 깜빡임 몇 번 (고친 빌드 기준)
+        for (int i = 0; i < 3; i++)
+        {
+            var f = Flicker(card, $"측정 단계 {i + 1}→{i + 2}", () => st.GetMethod("Next", Any)!.Invoke(session, null));
+            Check(f, !f.Contains("튐"));
+            Pump(600);
+        }
+        st.GetMethod("Close", Any)!.Invoke(session, new object[] { false, Enum.Parse(asm.GetType("Mongdock.Views.CoachEndReason")!, "Completed") });
+        Pump(500);
+        Check("깜빡임 측정: 둘러보기 창이 남지 않음", Application.Current.Windows.OfType<Window>().All(w => !w.IsVisible || !(w.Title?.StartsWith("mongdock Tour") ?? false)));
     }
 
         /// <summary>
