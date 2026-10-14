@@ -10,8 +10,8 @@
         {
           "kind": "feature",
           "major": true,
-          "text": "루틴: 자주 같이 여는 앱들을 루틴으로 만들어 두면, 누를 때 새 데스크톱에 정해 둔 자리로 한꺼번에 열려요. 헤드셋·모니터를 연결하면 열지 물어보게 할 수도 있어요.",
-          "text_en": "Routines: save apps you open together as a routine, and one click opens them in place on a new desktop. It can also ask when you connect a headset or display.",
+          "text": "루틴: 자주 같이 여는 앱들을 루틴으로 만들어 두면, 누를 때 새 데스크톱에 정해 둔 자리로 한꺼번에 열려요. 앱뿐 아니라 탭 여러 개를 담은 링크, 설치된 게임도 넣을 수 있어요. 헤드셋·모니터를 연결하면 열지 물어보게 할 수도 있어요.",
+          "text_en": "Routines: save apps you open together as a routine, and one click opens them in place on a new desktop. Add links with several tabs and installed games too. It can also ask when you connect a headset or display.",
           "coach": {
             "key": "routines",
             "anchor": "AllApps",
@@ -55,17 +55,29 @@
         {
           "kind": "feature",
           "major": true,
-          "text": "알림이 오면 그 앱의 독 아이콘이 한 번 튀고 빨간 점이 붙어요.",
-          "text_en": "When a notification arrives, that app's Dock icon bounces once and gets a red dot.",
+          "text": "알림이 오면 그 앱의 독 아이콘이 두 번 튀고 빨간 점이 붙어요.",
+          "text_en": "When a notification arrives, that app's Dock icon bounces twice and gets a red dot.",
           "coach": {
             "key": "bounce",
             "anchor": "Dock",
             "title": "알림이 오면 독 아이콘이 튀어요",
             "title_en": "Dock icons bounce for notifications",
-            "body": "새 알림이 온 앱은 독 아이콘이 한 번 튀고 빨간 점이 붙어요.",
-            "body_en": "When an app gets a new notification, its Dock icon bounces once and shows a red dot.",
+            "body": "새 알림이 온 앱은 독 아이콘이 두 번 튀고 빨간 점이 붙어요.",
+            "body_en": "When an app gets a new notification, its Dock icon bounces twice and shows a red dot.",
             "condition": "dock"
           }
+        },
+        {
+          "kind": "feature",
+          "major": false,
+          "text": "자주 같은 시간에 같이 여는 앱들이 보이면 루틴으로 만들지 물어봐요(기록은 PC 안에만).",
+          "text_en": "When you often open the same apps together around the same time, mongdock offers to make them a routine (the history stays on your PC)."
+        },
+        {
+          "kind": "feature",
+          "major": false,
+          "text": "루틴 데스크톱에 머문 시간을 상단바에 보여 줄 수 있어요.",
+          "text_en": "The menu bar can show how long you've been on a routine's desktop."
         },
         {
           "kind": "feature",
