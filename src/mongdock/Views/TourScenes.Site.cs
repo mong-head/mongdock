@@ -537,18 +537,29 @@ internal static partial class TourScenes
             if (f == 4) Cursor(top, new Point(Center(Need(icon, "독 메신저 아이콘")!, g).X - 60, H - 170));
         }
 
-        private bool _tourNoHotkey;
-
-        /// <summary>둘러보기 검색 단계 (0.5.1): ① 지금 설정한 단축키(없으면 상단바 검색 버튼) ② "ㄱㅅㄱ" → 계산기 앱 ③ 200*15% → 30.</summary>
+        /// <summary>
+        /// 둘러보기 검색 단계 (0.5.1, 사용자 의견 반영): 바탕 화면 + 상단바 + 독 + 검색창만 (앱 창 없음).
+        /// ① 지금 설정한 단축키(없으면 돋보기 키) ② 앱 이름 → 메모 앱 ③ 폴더 이름 → 예시 폴더 「받은 파일」.
+        /// </summary>
         public BitmapSource? BuildTourSearch(int i, List<string>? problems, string[]? keys)
         {
             _problems = problems;
             _cursorScale = 1.05;
-            var (g, top) = NewScene(null);
-            _tourNoHotkey = keys is null;
-            if (i == 0) AnimSearch(g, top, 0, keys);
-            else if (i == 1) AnimSearch(g, top, 3);
-            else AnimSearchCalc(g, top, 2);
+            var (g, _) = NewScene(null);
+            var bar = ShotBar(false);
+            // 창이 없는 바탕 화면 — 상단바 앱 이름은 실제처럼 파일 탐색기
+            if (Descendants(bar).OfType<TextBlock>().FirstOrDefault(t => t.Uid == "app") is { } appName) appName.Text = DefaultPins.ExplorerName;
+            g.Children.Add(bar);
+            ShotDock(g);
+            if (i == 0) { g.Children.Add(KeyPlate(keys ?? new[] { "" })); return Render(g); }
+            string app = Loc.T("메모"), folder = K("받은 파일", "Received files");
+            var hit = i == 1
+                ? ("notes", app, K("앱 · Enter 로 열기", "App · press Enter to open"), (ImageSource?)null)
+                : ("folder", folder, $"{Loc.T("폴더")} · {Loc.T("문서")}", MacIconRenderer.Folder());
+            string name = hit.Item2;
+            int part = Ko ? 2 : 4; // 몇 글자만 쳐도 찾음 (한국어 2글자 「받은」, 다른 언어 4글자)
+            string typed = name.Length <= part ? name : name[..part];
+            g.Children.Add(SearchCard(typed, new[] { (hit.Item1, hit.Item2, hit.Item3) }, hit.Item4));
             return Render(g);
         }
 
@@ -567,6 +578,25 @@ internal static partial class TourScenes
             };
         }
 
+        /// <summary>키캡 판 (Win + Space 등, 글자 하나가 아이콘 글꼴 영역이면 돋보기 같은 기호 키).</summary>
+        private Border KeyPlate(string[] parts)
+        {
+            // 단축키 (기본 Win + Space — 둘러보기는 지금 설정한 키). 단축키 없음 = 돋보기 키 하나 (상단바 검색 버튼)
+            var keys = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+            var keyInk = new SolidColorBrush(Color.FromRgb(0x2A, 0x2A, 0x30));
+            for (int i = 0; i < parts.Length; i++)
+            {
+                if (i > 0) keys.Children.Add(new TextBlock { Text = "+", FontSize = 26, Foreground = Brushes.White, Margin = new Thickness(14, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center });
+                bool glyph = parts[i].Length == 1 && parts[i][0] >= '';
+                bool wide = i == parts.Length - 1 && parts.Length > 1; // Space 키는 넓게
+                var label = new TextBlock { Text = parts[i], FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = keyInk };
+                if (glyph) label.FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets");
+                keys.Children.Add(new Border { CornerRadius = new CornerRadius(10), Background = new SolidColorBrush(Color.FromArgb(0xF0, 0xFF, 0xFF, 0xFF)), Padding = new Thickness(wide ? 54 : 22, 12, wide ? 54 : 22, 12), BorderBrush = new SolidColorBrush(Color.FromArgb(0x30, 0, 0, 0)), BorderThickness = new Thickness(1, 1, 1, 3), Child = label });
+            }
+            var plate = new Border { CornerRadius = new CornerRadius(18), Background = new SolidColorBrush(Color.FromRgb(0x3A, 0x37, 0x4C)), Padding = new Thickness(26, 18, 26, 18), Child = keys, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Effect = new DropShadowEffect { BlurRadius = 24, ShadowDepth = 6, Direction = 270, Opacity = 0.25 } };
+            return plate;
+        }
+
         private void AnimSearch(Grid g, Canvas top, int f, string[]? hotkey = null)
         {
             g.Children.Add(ShotBar(true));
@@ -575,21 +605,7 @@ internal static partial class TourScenes
             ShotDock(g, running: f == 4 ? new[] { "notes", "browser", "calc" } : new[] { "notes", "browser" });
             if (f == 0)
             {
-                // 단축키 (기본 Win + Space — 둘러보기는 지금 설정한 키). 단축키 없음 = 돋보기 키 하나 (상단바 검색 버튼)
-                var keys = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
-                var parts = hotkey ?? (_tourNoHotkey ? new[] { "" } : new[] { "Win", "Space" });
-                var keyInk = new SolidColorBrush(Color.FromRgb(0x2A, 0x2A, 0x30));
-                for (int i = 0; i < parts.Length; i++)
-                {
-                    if (i > 0) keys.Children.Add(new TextBlock { Text = "+", FontSize = 26, Foreground = Brushes.White, Margin = new Thickness(14, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center });
-                    bool glyph = parts[i].Length == 1 && parts[i][0] >= '';
-                    bool wide = i == parts.Length - 1 && parts.Length > 1; // Space 키는 넓게
-                    var label = new TextBlock { Text = parts[i], FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = keyInk };
-                    if (glyph) label.FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets");
-                    keys.Children.Add(new Border { CornerRadius = new CornerRadius(10), Background = new SolidColorBrush(Color.FromArgb(0xF0, 0xFF, 0xFF, 0xFF)), Padding = new Thickness(wide ? 54 : 22, 12, wide ? 54 : 22, 12), BorderBrush = new SolidColorBrush(Color.FromArgb(0x30, 0, 0, 0)), BorderThickness = new Thickness(1, 1, 1, 3), Child = label });
-                }
-                var plate = new Border { CornerRadius = new CornerRadius(18), Background = new SolidColorBrush(Color.FromRgb(0x3A, 0x37, 0x4C)), Padding = new Thickness(26, 18, 26, 18), Child = keys, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Effect = new DropShadowEffect { BlurRadius = 24, ShadowDepth = 6, Direction = 270, Opacity = 0.25 } };
-                g.Children.Add(plate);
+                g.Children.Add(KeyPlate(hotkey ?? new[] { "Win", "Space" }));
                 return;
             }
             if (f == 4) return;
@@ -604,7 +620,7 @@ internal static partial class TourScenes
         }
 
         /// <summary>Spotlight 같은 검색 창 모양 (예시 결과만 — 이 PC 앱 목록을 쓰지 않음).</summary>
-        private Border SearchCard(string typed, (string Key, string Name, string Sub)[] results)
+        private Border SearchCard(string typed, (string Key, string Name, string Sub)[] results, ImageSource? firstIcon = null)
         {
             var icons = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets");
             var field = new DockPanel { Margin = new Thickness(18, 14, 18, 14) };
@@ -626,7 +642,7 @@ internal static partial class TourScenes
                 {
                     var (key, name, sub) = results[i];
                     var row = new DockPanel { Margin = new Thickness(10, 7, 10, 7) };
-                    var ic = IconImage(Icon(key), 32);
+                    var ic = IconImage(i == 0 && firstIcon is not null ? firstIcon : Icon(key), 32);
                     ic.Margin = new Thickness(0, 0, 12, 0);
                     DockPanel.SetDock(ic, System.Windows.Controls.Dock.Left);
                     row.Children.Add(ic);
