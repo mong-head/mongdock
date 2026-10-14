@@ -218,8 +218,12 @@ internal static partial class TourScenes
 
         // ── 커서 (맥 화살표, 누름 고리, 끌고 가는 그림) ──
 
+        /// <summary>커서 크기 (둘러보기는 크게 확대한 장면이라 1.6, 홈페이지 그림은 실제 크기라 1.05).</summary>
+        private double _cursorScale = 1.6;
+
         private void Cursor(Canvas top, Point at, bool pressed = false, UIElement? carry = null)
         {
+            double cs = _cursorScale / 1.6;
             if (carry is not null)
             {
                 carry.Measure(new Size(W, H));
@@ -230,9 +234,9 @@ internal static partial class TourScenes
             }
             if (pressed)
             {
-                var ring = new Ellipse { Width = 34, Height = 34, Stroke = new SolidColorBrush(Color.FromArgb(0xE0, 0x7C, 0x6C, 0xF0)), StrokeThickness = 3, Fill = new SolidColorBrush(Color.FromArgb(0x30, 0x7C, 0x6C, 0xF0)) };
-                Canvas.SetLeft(ring, at.X - 17);
-                Canvas.SetTop(ring, at.Y - 17);
+                var ring = new Ellipse { Width = 34 * cs, Height = 34 * cs, Stroke = new SolidColorBrush(Color.FromArgb(0xE0, 0x7C, 0x6C, 0xF0)), StrokeThickness = 3 * cs, Fill = new SolidColorBrush(Color.FromArgb(0x30, 0x7C, 0x6C, 0xF0)) };
+                Canvas.SetLeft(ring, at.X - 17 * cs);
+                Canvas.SetTop(ring, at.Y - 17 * cs);
                 top.Children.Add(ring);
             }
             var arrow = new Path
@@ -242,7 +246,7 @@ internal static partial class TourScenes
                 Stroke = Brushes.Black,
                 StrokeThickness = 1.1,
                 StrokeLineJoin = PenLineJoin.Round,
-                RenderTransform = new ScaleTransform(1.6, 1.6),
+                RenderTransform = new ScaleTransform(_cursorScale, _cursorScale),
                 Effect = new DropShadowEffect { BlurRadius = 6, ShadowDepth = 1.5, Direction = 270, Opacity = 0.35 },
             };
             Canvas.SetLeft(arrow, at.X);

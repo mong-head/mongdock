@@ -112,22 +112,10 @@ internal static partial class TourScenes
             return new Image { Source = src, Width = r.Width, Height = r.Height, Stretch = Stretch.Fill };
         }
 
-        private Border Window(string app, double w, double h)
-        {
-            var win = MockWindow(app, w, h);
-            return win;
-        }
 
         // ── 1. 루틴이 열린 모습 ──
 
-        private void ShotRoutineOpen(Grid g)
-        {
-            g.Children.Add(ShotBar(true, $"‹   {Loc.T("업무 시작")} · 2/2 · 0:12   ›"));
-            Put(g, Window("notes", 604, 640), 16, 46);
-            Put(g, Window("browser", 640, 330), 628, 46);
-            Put(g, Window("calc", 640, 298), 628, 388);
-            ShotDock(g, running: new[] { "browser", "notes" }, routine: Loc.T("업무 시작"));
-        }
+        private void ShotRoutineOpen(Grid g) => RoutineDesktop(g, 3, time: true);
 
         // ── 2. 루틴 편집 창 ──
 

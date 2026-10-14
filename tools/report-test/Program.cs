@@ -1424,6 +1424,37 @@ internal static class Program
             Console.WriteLine($"  {_lang}-{name}.png {(img is null ? "" : $"{img.PixelWidth}×{img.PixelHeight}")} {(list.Count == 0 ? "통과" : "문제: " + string.Join(" / ", list))}");
             problems += list.Count;
         }
+        void SavePng(BitmapSource img, string path)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var enc = new PngBitmapEncoder();
+            enc.Frames.Add(BitmapFrame.Create(img));
+            using var fs = File.Create(path);
+            enc.Save(fs);
+        }
+        // 움직이는 장면: anim/{기능}/{lang}-NN.png
+        var sets = (Array)scenes.GetField("AnimSets", Any)!.GetValue(null)!;
+        foreach (var set in sets)
+        {
+            string key = (string)set.GetType().GetField("Item1")!.GetValue(set)!;
+            int count = (int)set.GetType().GetField("Item2")!.GetValue(set)!;
+            var list = new List<string>();
+            for (int i = 0; i < count; i++)
+            {
+                var img = (BitmapSource?)scenes.GetMethod("AnimFrame", Any)!.Invoke(null, new object[] { services, palette, key, i, exampleDir, list });
+                if (img is null) { list.Add($"{i + 1}장 없음"); continue; }
+                SavePng(img, Path.Combine(dir, "anim", key, $"{_lang}-{i + 1:00}.png"));
+            }
+            Console.WriteLine($"  anim/{key} {count}장 {(list.Count == 0 ? "통과" : "문제: " + string.Join(" / ", list))}");
+            problems += list.Count;
+        }
+        {
+            var list = new List<string>();
+            var hero = (BitmapSource?)scenes.GetMethod("Hero", Any)!.Invoke(null, new object[] { services, palette, exampleDir, list });
+            if (hero is not null) SavePng(hero, Path.Combine(dir, $"hero-{_lang}.png"));
+            Console.WriteLine($"  hero-{_lang}.png {(hero is null ? "없음" : $"{hero.PixelWidth}×{hero.PixelHeight}")} {(list.Count == 0 ? "통과" : "문제: " + string.Join(" / ", list))}");
+            problems += list.Count + (hero is null ? 1 : 0);
+        }
         settings.Dispose();
         GC.KeepAlive(app);
         return problems == 0 ? 0 : 1;
