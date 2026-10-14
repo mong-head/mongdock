@@ -129,6 +129,19 @@ public static class Loc
         return korean;
     }
 
+    /// <summary>
+    /// 문맥이 있는 문구: 같은 한국어가 다른 뜻으로 쓰일 때 (예 "파일" — 독·검색은 복수 Files, 앱 메뉴는 단수 File).
+    /// 키는 "문맥:한국어" (그 언어 → 영어 사전), 없으면 문맥 없는 <see cref="T"/>. 한국어는 원문 그대로.
+    /// </summary>
+    public static string TC(string context, string korean)
+    {
+        if (_table is null) return korean;
+        string key = context + ":" + korean;
+        if (_table.TryGetValue(key, out var t) && t.Length > 0) return t;
+        if (_english is not null && _english.TryGetValue(key, out var en) && en.Length > 0) return en;
+        return T(korean);
+    }
+
     /// <summary>보간 문자열 번역: 서식("{0}개 추가했어요.")을 키로 번역한 뒤 인자를 끼움.</summary>
     public static string F(FormattableString text)
     {

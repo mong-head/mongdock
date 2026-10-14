@@ -459,7 +459,7 @@ internal static partial class TourScenes
             var logo = new Border { Uid = "logo", Padding = new Thickness(6, 3, 6, 3), CornerRadius = new CornerRadius(6), Child = IconImage(AppIcon.WindowIcon ?? MacIconRenderer.AllApps(), 16) };
             left.Children.Add(logo);
             left.Children.Add(new TextBlock { Uid = "app", Text = Loc.T("메모"), FontWeight = FontWeights.Bold, FontSize = 13, Foreground = fg, Margin = new Thickness(8, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center });
-            foreach (var m in menus ? new[] { Loc.T("파일"), Loc.T("편집"), Loc.T("보기") } : Array.Empty<string>())
+            foreach (var m in menus ? new[] { Loc.TC("menu", "파일"), Loc.T("편집"), Loc.T("보기") } : Array.Empty<string>())
                 left.Children.Add(new Border { Uid = "menu:" + m, Padding = new Thickness(7, 3, 7, 3), CornerRadius = new CornerRadius(6), Child = new TextBlock { Text = m, FontSize = 13, Foreground = fg } });
             var right = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 14, 0) };
             foreach (var (glyph, name) in new[] { ("", "wifi"), ("", "volume"), ("", "battery") })
