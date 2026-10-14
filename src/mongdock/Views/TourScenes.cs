@@ -26,8 +26,8 @@ internal static partial class TourScenes
     public static int Count(string? key) => key switch
     {
         "allapps" => 5,
-        "dock" or "topbar" or "routines" or "stacks" or "spotlight" => 3,
-        "settings" or "bounce" => 2,
+        "dock" or "topbar" or "routines" or "stacks" => 3,
+        "settings" or "bounce" or "spotlight" => 2,
         _ => 0,
     };
 

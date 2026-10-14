@@ -109,7 +109,7 @@ public static class WhatsNew
         new("", "topbar", Loc.T("상단바 — 지금 앱의 메뉴와 제어 센터"),
             Loc.T("지금 쓰는 앱의 메뉴(파일·편집…)가 상단바에 떠요. 와이파이·소리는 제어 센터, 시계는 달력과 알림이에요."),
             CoachAnchor.TopBar, TopBarOn),
-        // 검색 단계 (0.5.1 사용자 결정): 단축키 → 앱 찾기 → 폴더 찾기. 단축키나 상단바 검색 버튼 중 하나라도 있을 때
+        // 검색 단계 (0.5.1 사용자 결정): 단축키 → 한 검색어에 앱과 폴더가 같이. 단축키나 상단바 검색 버튼 중 하나라도 있을 때
         new("", TourSearchKey, Loc.T("검색 — 앱과 폴더를 바로 열기"),
             Loc.T("{hotkey} 검색창을 열어요. 이름 몇 글자만 치면 앱과 폴더를 바로 찾아 열어요. 간단한 계산도 돼요."),
             CoachAnchor.Search, SearchReachable),

@@ -539,7 +539,7 @@ internal static partial class TourScenes
 
         /// <summary>
         /// 둘러보기 검색 단계 (0.5.1, 사용자 의견 반영): 바탕 화면 + 상단바 + 독 + 검색창만 (앱 창 없음).
-        /// ① 지금 설정한 단축키(없으면 돋보기 키) ② 앱 이름 → 메모 앱 ③ 폴더 이름 → 예시 폴더 「받은 파일」.
+        /// ① 지금 설정한 단축키(없으면 돋보기 키) ② 「사진」 몇 글자 → 사진 앱과 사진 폴더가 한 목록에.
         /// </summary>
         public BitmapSource? BuildTourSearch(int i, List<string>? problems, string[]? keys)
         {
@@ -552,14 +552,15 @@ internal static partial class TourScenes
             g.Children.Add(bar);
             ShotDock(g);
             if (i == 0) { g.Children.Add(KeyPlate(keys ?? new[] { "" })); return Render(g); }
-            string app = Loc.T("메모"), folder = K("받은 파일", "Received files");
-            var hit = i == 1
-                ? ("notes", app, K("앱 · Enter 로 열기", "App · press Enter to open"), (ImageSource?)null)
-                : ("folder", folder, $"{Loc.T("폴더")} · {Loc.T("문서")}", MacIconRenderer.Folder());
-            string name = hit.Item2;
-            int part = Ko ? 2 : 4; // 몇 글자만 쳐도 찾음 (한국어 2글자 「받은」, 다른 언어 4글자)
+            // ② 한 검색어에 앱과 폴더가 같이 (실제 검색창처럼 종류가 섞인 목록): 「사진」 → 사진 앱 + 사진 폴더
+            string name = Loc.T("사진");
+            int part = Ko ? 2 : 4; // 몇 글자만 쳐도 찾음 (한국어는 「사진」, 다른 언어는 앞 4글자)
             string typed = name.Length <= part ? name : name[..part];
-            g.Children.Add(SearchCard(typed, new[] { (hit.Item1, hit.Item2, hit.Item3) }, hit.Item4));
+            g.Children.Add(SearchCard(typed, new[]
+            {
+                ("photos", name, K("앱 · Enter 로 열기", "App · press Enter to open")),
+                ("folder", name, K("폴더", "Folder")),
+            }, null, (1, MacIconRenderer.Folder(FolderGlyph.Pictures))));
             return Render(g);
         }
 
@@ -620,7 +621,7 @@ internal static partial class TourScenes
         }
 
         /// <summary>Spotlight 같은 검색 창 모양 (예시 결과만 — 이 PC 앱 목록을 쓰지 않음).</summary>
-        private Border SearchCard(string typed, (string Key, string Name, string Sub)[] results, ImageSource? firstIcon = null)
+        private Border SearchCard(string typed, (string Key, string Name, string Sub)[] results, ImageSource? firstIcon = null, (int Row, ImageSource Icon)? rowIcon = null)
         {
             var icons = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets");
             var field = new DockPanel { Margin = new Thickness(18, 14, 18, 14) };
@@ -642,7 +643,7 @@ internal static partial class TourScenes
                 {
                     var (key, name, sub) = results[i];
                     var row = new DockPanel { Margin = new Thickness(10, 7, 10, 7) };
-                    var ic = IconImage(i == 0 && firstIcon is not null ? firstIcon : Icon(key), 32);
+                    var ic = IconImage(rowIcon is { } ri && ri.Row == i ? ri.Icon : i == 0 && firstIcon is not null ? firstIcon : Icon(key), 32);
                     ic.Margin = new Thickness(0, 0, 12, 0);
                     DockPanel.SetDock(ic, System.Windows.Controls.Dock.Left);
                     row.Children.Add(ic);
