@@ -782,8 +782,9 @@ internal static class Program
                     double ww = w.ActualWidth, wh = w.ActualHeight;
                     var checks = new (string Name, Point At, int Want)[]
                     {
-                        ("위 띠 가운데", new Point(ww / 2, 18), 2), ("최대화 동그라미", new Point(14 + 2 * 20 + 6, 18), 9),
-                        ("닫기 동그라미", new Point(14 + 6, 18), 1), ("본문", new Point(ww / 2, wh / 2), 1),
+                        ("위 띠 가운데", new Point(ww / 2, 18), 2), ("최대화 동그라미", new Point(ww - 14 - 20 - 6, 18), 9),
+                        ("닫기 동그라미", new Point(ww - 14 - 6, 18), 1), ("최소화 동그라미", new Point(ww - 14 - 40 - 6, 18), 1),
+                        ("왼쪽 위 (예전 동그라미 자리)", new Point(14 + 6, 18), 2), ("본문", new Point(ww / 2, wh / 2), 1),
                         ("오른쪽 끝", new Point(ww - 2, wh / 2), 11), ("오른쪽 아래", new Point(ww - 2, wh - 2), 17),
                     };
                     foreach (var (n, at, want) in checks)
@@ -792,24 +793,27 @@ internal static class Program
                         Console.WriteLine($"  {(got == want ? "통과" : "실패")}  제목 줄 판정 {n}: {got} (기대 {want}) — 배율 {dpiS.DpiScaleX:0.##}");
                     }
                 }
-                // 제목 줄 동그라미 3가지 상태 (활성 / 비활성 / 호버) — 왼쪽 위만 크게
+                // 제목 줄 동그라미 3가지 상태 (활성 / 비활성 / 호버) — 오른쪽 위만 크게 (0.5.1: 최소화·최대화·닫기가 오른쪽 위)
                 var preview = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.MongTitleBar")!.GetMethod("Preview", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
                 foreach (var (state, act, hov) in new[] { ("active", true, false), ("inactive", false, false), ("hover", true, true) })
                 {
                     preview.Invoke(null, new object[] { w, act, hov });
+                    whole = (FrameworkElement)w.Content; // 페이지를 다시 그리면 내용이 바뀜 — 지금 동그라미가 든 내용으로 (예전엔 다크가 회색으로 나옴)
                     whole.UpdateLayout();
                     const double z = 3;
-                    var crop = new RenderTargetBitmap((int)(260 * z), (int)(60 * z), 96 * z, 96 * z, PixelFormats.Pbgra32);
+                    // 창 전체를 그린 뒤 오른쪽 위 260×60 만 잘라 냄 (VisualBrush 뷰박스는 가끔 빈 그림이 나옴)
+                    var full = new RenderTargetBitmap((int)Math.Ceiling(whole.ActualWidth * z), (int)Math.Ceiling(whole.ActualHeight * z), 96 * z, 96 * z, PixelFormats.Pbgra32);
                     var cv = new DrawingVisual();
                     using (var dc = cv.RenderOpen())
                     {
-                        dc.DrawRectangle(w.Background ?? Brushes.White, null, new Rect(0, 0, 260, 60));
-                        dc.DrawRectangle(new VisualBrush(whole) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top, ViewboxUnits = BrushMappingMode.Absolute, Viewbox = new Rect(0, 0, 260, 60) }, null, new Rect(0, 0, 260, 60));
+                        dc.DrawRectangle(w.Background ?? Brushes.White, null, new Rect(0, 0, whole.ActualWidth, whole.ActualHeight));
+                        dc.DrawRectangle(new VisualBrush(whole) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top }, null, new Rect(0, 0, whole.ActualWidth, whole.ActualHeight));
                     }
-                    crop.Render(cv);
+                    full.Render(cv);
+                    var crop = new CroppedBitmap(full, new Int32Rect(full.PixelWidth - (int)(260 * z), 0, (int)(260 * z), (int)(60 * z)));
                     var enc3 = new PngBitmapEncoder();
                     enc3.Frames.Add(BitmapFrame.Create(crop));
-                    string cpath = Path.Combine(dir, $"titlebar-{theme}-{state}.png");
+                    string cpath = Path.Combine(dir, $"titlebar-{_lang}-{theme}-{state}.png");
                     using (var fs = File.Create(cpath)) enc3.Save(fs);
                     Console.WriteLine($"  저장  {cpath}");
                 }

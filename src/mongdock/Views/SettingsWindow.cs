@@ -132,7 +132,7 @@ internal sealed partial class SettingsWindow : Window
         };
 
         SourceInitialized += (_, _) => ApplyTitleBarTheme();
-        MongTitleBar.Install(this, _p); // 몽독 제목 줄 (#25 §8): 사이드바 라벤더가 창 맨 위까지 + 왼쪽 위 동그라미 3개
+        MongTitleBar.Install(this, _p); // 몽독 제목 줄 (#25 §8): 사이드바 라벤더가 창 맨 위까지 + 오른쪽 위 동그라미 3개(0.5.1)
         _services.Settings.SettingsChanged += OnSettingsChanged;
         _services.Calendars.Changed += OnCalendarsChanged;
         _services.TrayIcons.Changed += OnTrayIconsChanged; // SettingsWindow.Tray.cs
@@ -288,7 +288,7 @@ internal sealed partial class SettingsWindow : Window
 
     private UIElement BuildSidebar()
     {
-        var panel = new StackPanel { Margin = new Thickness(10, MongTitleBar.Height + 4, 10, 10) }; // 동그라미 아래부터
+        var panel = new StackPanel { Margin = new Thickness(10, MongTitleBar.Height + 4, 10, 10) }; // 제목 줄 띠 아래부터
         panel.Children.Add(new TextBlock
         {
             Text = AppInfo.Name,

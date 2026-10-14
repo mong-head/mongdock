@@ -326,6 +326,13 @@ internal static class CoachMarks
         var s = _services.Settings.Current;
         if (!s.FirstRunTourPending) return;
         s.FirstRunTourPending = false;
+        // 둘러보기에서 검색 단계를 봤으면 처음 쓰기 힌트 "검색"은 띄우지 않음 (0.5.1)
+        var search = WhatsNew.Tour.FirstOrDefault(t => t.Key == WhatsNew.TourSearchKey);
+        if (search is not null && search.IsAvailable(s) && !s.SeenHints.Contains(WhatsNew.SearchKey, StringComparer.OrdinalIgnoreCase))
+        {
+            s.SeenHints.Add(WhatsNew.SearchKey);
+            if (WhatsNew.Hints.All(h => s.SeenHints.Contains(h.Key, StringComparer.OrdinalIgnoreCase))) s.FirstUseHintsPending = false;
+        }
         _services.Settings.Save();
     }
 

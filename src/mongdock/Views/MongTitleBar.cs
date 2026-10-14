@@ -12,8 +12,9 @@ using Mongdock.ViewModels;
 namespace Mongdock.Views;
 
 /// <summary>
-/// 몽독 창 제목 줄 A안 (#25 §8): 윈도우 기본 제목 줄을 없애고(WindowChrome) 본문 색이 창 맨 위까지, 왼쪽 위에 맥처럼 동그라미 3개
-/// (닫기 #F09595 · 최소화 #FAC775 · 최대화 #97C459, 다크는 조금 어둡게, 창이 비활성이면 회색, 근처에 마우스를 올리면 ✕ − ⤢).
+/// 몽독 창 제목 줄 A안 (#25 §8): 윈도우 기본 제목 줄을 없애고(WindowChrome) 본문 색이 창 맨 위까지, 동그라미 3개.
+/// 0.5.1 (사용자 2026-10-15): 동그라미는 윈도우처럼 오른쪽 위에 최소화 · 최대화 · 닫기 순서(닫기가 맨 오른쪽)
+/// (최소화 #FAC775 · 최대화 #97C459 · 닫기 #F09595, 다크는 조금 어둡게, 창이 비활성이면 회색, 근처에 마우스를 올리면 − □ ×).
 /// 끌어서 옮기기·두 번 눌러 최대화·가장자리 크기 조절·Alt+Space 는 WindowChrome 이 그대로, 최대화 동그라미는 WM_NCHITTEST 에서
 /// HTMAXBUTTON 이라 마우스를 올리면 윈도우 11 스냅 레이아웃이 뜸. 크기를 못 바꾸는 창은 최대화 동그라미를 흐리게·누를 수 없게.
 /// 쓰는 법: 창 생성자에서 <see cref="Install"/> 한 번, 내용 Grid 를 만들 때마다 <see cref="Overlay"/> 를 맨 위에 얹음(내용은 위 <see cref="Height"/> 만큼 비움).
@@ -22,7 +23,9 @@ internal sealed class MongTitleBar
 {
     /// <summary>끌어 옮기는 위쪽 띠 높이 (DIP). 이 안에는 누를 것을 두지 않음.</summary>
     public const double Height = 36;
-    private const double Dot = 12, Gap = 8, Left = 14;
+    private const double Dot = 12, Gap = 8, Right = 14;
+    /// <summary>동그라미 3개가 차지하는 너비 (오른쪽 끝에서 <see cref="Right"/> 만큼 안쪽).</summary>
+    public const double DotsWidth = 3 * Dot + 2 * Gap;
 
     private static readonly Dictionary<Window, MongTitleBar> Bars = new();
 
@@ -90,10 +93,10 @@ internal sealed class MongTitleBar
         var bar = Bars[w];
         bar._p = p;
         var layer = new Grid { VerticalAlignment = VerticalAlignment.Top, Height = Height };
-        var dots = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(Left, 0, 0, 0) };
+        var dots = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, Right, 0) };
+        (bar._min, bar._minGlyph) = bar.Button(dots, "", Loc.T("최소화"), () => w.WindowState = WindowState.Minimized, enabled: w.ResizeMode != ResizeMode.NoResize, first: true);
+        (bar._max, bar._maxGlyph) = bar.Button(dots, "", Loc.T("최대화"), bar.ToggleMax, enabled: bar._canMax);
         (bar._close, bar._closeGlyph) = bar.Button(dots, "", Loc.T("닫기"), () => w.Close(), enabled: true);
-        (bar._min, bar._minGlyph) = bar.Button(dots, "", Loc.T("최소화"), () => w.WindowState = WindowState.Minimized, enabled: w.ResizeMode != ResizeMode.NoResize);
-        (bar._max, bar._maxGlyph) = bar.Button(dots, "", Loc.T("최대화"), bar.ToggleMax, enabled: bar._canMax);
         layer.Children.Add(dots);
         if (!string.IsNullOrEmpty(title))
             layer.Children.Add(new TextBlock
@@ -103,6 +106,8 @@ internal sealed class MongTitleBar
                 Foreground = p.SoftAccentText,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(Right + DotsWidth + 12, 0, Right + DotsWidth + 12, 0), // 가운데 제목이 오른쪽 동그라미와 겹치지 않게 양쪽 같은 여백
                 IsHitTestVisible = false,
             });
         Grid.SetColumnSpan(layer, 99);
@@ -111,9 +116,9 @@ internal sealed class MongTitleBar
         return layer;
     }
 
-    private (Ellipse, TextBlock) Button(Panel host, string glyph, string tip, Action click, bool enabled)
+    private (Ellipse, TextBlock) Button(Panel host, string glyph, string tip, Action click, bool enabled, bool first = false)
     {
-        var cell = new Grid { Width = Dot, Height = Dot, Margin = new Thickness(0, 0, Gap, 0), ToolTip = tip, Cursor = Cursors.Arrow };
+        var cell = new Grid { Width = Dot, Height = Dot, Margin = new Thickness(first ? 0 : Gap, 0, 0, 0), ToolTip = tip, Cursor = Cursors.Arrow };
         var dot = new Ellipse { Width = Dot, Height = Dot };
         var mark = new TextBlock
         {
@@ -161,8 +166,9 @@ internal sealed class MongTitleBar
         try
         {
             var p = Mouse.GetPosition(_w);
-            double right = Left + 3 * Dot + 2 * Gap + 6;
-            over = p.X >= Left - 6 && p.X <= right && p.Y >= 0 && p.Y <= Height;
+            double right = _w.ActualWidth - Right + 6, left = _w.ActualWidth - Right - DotsWidth - 6;
+            if (_w.WindowState == WindowState.Maximized) { right -= 7; left -= 7; } // 최대화 때 내용 안쪽 여백(7)
+            over = p.X >= left && p.X <= right && p.Y >= 0 && p.Y <= Height;
         }
         catch (InvalidOperationException) { }
         if (over == _hover || _previewActive is not null) return;

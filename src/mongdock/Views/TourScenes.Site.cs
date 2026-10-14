@@ -537,7 +537,37 @@ internal static partial class TourScenes
             if (f == 4) Cursor(top, new Point(Center(Need(icon, "독 메신저 아이콘")!, g).X - 60, H - 170));
         }
 
-        private void AnimSearch(Grid g, Canvas top, int f)
+        private bool _tourNoHotkey;
+
+        /// <summary>둘러보기 검색 단계 (0.5.1): ① 지금 설정한 단축키(없으면 상단바 검색 버튼) ② "ㄱㅅㄱ" → 계산기 앱 ③ 200*15% → 30.</summary>
+        public BitmapSource? BuildTourSearch(int i, List<string>? problems, string[]? keys)
+        {
+            _problems = problems;
+            _cursorScale = 1.05;
+            var (g, top) = NewScene(null);
+            _tourNoHotkey = keys is null;
+            if (i == 0) AnimSearch(g, top, 0, keys);
+            else if (i == 1) AnimSearch(g, top, 3);
+            else AnimSearchCalc(g, top, 2);
+            return Render(g);
+        }
+
+        /// <summary>지금 Spotlight 단축키를 누르는 키 이름 (Win·Space 등). 단축키 없음이면 null (상단바 검색 버튼을 누르는 그림).</summary>
+        private static string[]? Hotkey(AppServices services)
+        {
+            SpotlightHotkey key;
+            try { key = SpotlightHotkeyController.Resolve(services.Settings.Current.TopBar.SpotlightHotkey); }
+            catch { key = services.Settings.Current.TopBar.SpotlightHotkey; }
+            return key switch
+            {
+                SpotlightHotkey.WinSpace => new[] { "Win", "Space" },
+                SpotlightHotkey.AltSpace => new[] { "Alt", "Space" },
+                SpotlightHotkey.CtrlSpace => new[] { "Ctrl", "Space" },
+                _ => null,
+            };
+        }
+
+        private void AnimSearch(Grid g, Canvas top, int f, string[]? hotkey = null)
         {
             g.Children.Add(ShotBar(true));
             Put(g, Window("notes", 600, 560), 120, 96);
@@ -545,13 +575,20 @@ internal static partial class TourScenes
             ShotDock(g, running: f == 4 ? new[] { "notes", "browser", "calc" } : new[] { "notes", "browser" });
             if (f == 0)
             {
-                // Win + Space
+                // 단축키 (기본 Win + Space — 둘러보기는 지금 설정한 키). 단축키 없음 = 돋보기 키 하나 (상단바 검색 버튼)
                 var keys = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
-                foreach (var (k, i) in new[] { ("Win", 0), ("+", 1), ("Space", 2) })
-                    keys.Children.Add(k == "+"
-                        ? new TextBlock { Text = "+", FontSize = 26, Foreground = Brushes.White, Margin = new Thickness(14, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center }
-                        : new Border { CornerRadius = new CornerRadius(10), Background = new SolidColorBrush(Color.FromArgb(0xF0, 0xFF, 0xFF, 0xFF)), Padding = new Thickness(i == 0 ? 22 : 54, 12, i == 0 ? 22 : 54, 12), BorderBrush = new SolidColorBrush(Color.FromArgb(0x30, 0, 0, 0)), BorderThickness = new Thickness(1, 1, 1, 3), Child = new TextBlock { Text = k, FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(Color.FromRgb(0x2A, 0x2A, 0x30)) } });
-                var plate = new Border { CornerRadius = new CornerRadius(18), Background = new SolidColorBrush(Color.FromArgb(0x8C, 0x20, 0x1E, 0x30)), Padding = new Thickness(26, 18, 26, 18), Child = keys, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+                var parts = hotkey ?? (_tourNoHotkey ? new[] { "" } : new[] { "Win", "Space" });
+                var keyInk = new SolidColorBrush(Color.FromRgb(0x2A, 0x2A, 0x30));
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    if (i > 0) keys.Children.Add(new TextBlock { Text = "+", FontSize = 26, Foreground = Brushes.White, Margin = new Thickness(14, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center });
+                    bool glyph = parts[i].Length == 1 && parts[i][0] >= '';
+                    bool wide = i == parts.Length - 1 && parts.Length > 1; // Space 키는 넓게
+                    var label = new TextBlock { Text = parts[i], FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = keyInk };
+                    if (glyph) label.FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets");
+                    keys.Children.Add(new Border { CornerRadius = new CornerRadius(10), Background = new SolidColorBrush(Color.FromArgb(0xF0, 0xFF, 0xFF, 0xFF)), Padding = new Thickness(wide ? 54 : 22, 12, wide ? 54 : 22, 12), BorderBrush = new SolidColorBrush(Color.FromArgb(0x30, 0, 0, 0)), BorderThickness = new Thickness(1, 1, 1, 3), Child = label });
+                }
+                var plate = new Border { CornerRadius = new CornerRadius(18), Background = new SolidColorBrush(Color.FromRgb(0x3A, 0x37, 0x4C)), Padding = new Thickness(26, 18, 26, 18), Child = keys, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Effect = new DropShadowEffect { BlurRadius = 24, ShadowDepth = 6, Direction = 270, Opacity = 0.25 } };
                 g.Children.Add(plate);
                 return;
             }

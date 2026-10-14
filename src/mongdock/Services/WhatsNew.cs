@@ -83,10 +83,21 @@ public static class WhatsNew
     public const string IntroKey = "intro";
     /// <summary>검색 카드 — Spotlight 를 직접 열었다 닫으면 다음으로.</summary>
     public const string SearchKey = "search";
+    /// <summary>첫 설치 둘러보기의 검색 단계 (그림 키 같음). 이 단계를 보면 처음 쓰기 힌트 "검색"은 띄우지 않음.</summary>
+    public const string TourSearchKey = "spotlight";
+
+    /// <summary>몽독 검색을 열 길이 있는지: 단축키가 있거나 상단바 검색 버튼(Spotlight 방식)이 보임.</summary>
+    private static bool SearchReachable(Settings s)
+    {
+        SpotlightHotkey key;
+        try { key = Views.SpotlightHotkeyController.Resolve(s.TopBar.SpotlightHotkey); }
+        catch { key = s.TopBar.SpotlightHotkey; }
+        return key != SpotlightHotkey.None || TopBarOn(s) && s.TopBar.ShowQuickButtons && s.TopBar.SearchMode == SearchMode.Spotlight;
+    }
 
     /// <summary>
-    /// 첫 설치 둘러보기 (2026-10-14 새 방식 — spec-coach-tour.md): ① 시스템 변경 안내(그림 없음) + 그림 6단계
-    /// (독·상단바·앱 모음 판·루틴·독 폴더와 휴지통·설정). 그림은 Assets/Tour/tour-{key}-{n}-{light|dark}.png (report-test --tour).
+    /// 첫 설치 둘러보기 (2026-10-14 새 방식 — spec-coach-tour.md): 그림 7단계
+    /// (독·상단바·검색(0.5.1)·앱 모음 판·루틴·독 폴더와 휴지통·설정). 그림은 Assets/Tour/tour-{key}-{n}-{light|dark}.png (report-test --tour).
     /// 마지막 단계(settings)는 늘 마지막 카드 (자동 실행 버튼). 검색·로고 메뉴는 처음 써 볼 때 <see cref="Hints"/>.
     /// </summary>
     public static readonly IReadOnlyList<CoachStep> Tour =
@@ -98,6 +109,10 @@ public static class WhatsNew
         new("", "topbar", Loc.T("상단바 — 지금 앱의 메뉴와 제어 센터"),
             Loc.T("지금 쓰는 앱의 메뉴(파일·편집…)가 상단바에 떠요. 와이파이·소리는 제어 센터, 시계는 달력과 알림이에요."),
             CoachAnchor.TopBar, TopBarOn),
+        // 검색 단계 (0.5.1 사용자 결정): 단축키 → 검색창 → 앱·계산 결과. 단축키나 상단바 검색 버튼 중 하나라도 있을 때
+        new("", TourSearchKey, Loc.T("검색 — 앱·파일·계산을 한 번에"),
+            Loc.T("{hotkey} 검색창을 열어요. 앱·파일·윈도우 설정을 찾고, 200*15% 같은 계산도 바로 돼요."),
+            CoachAnchor.Search, SearchReachable),
         new("", "allapps", Loc.T("앱 모음 판 — 모든 앱을 한곳에"),
             Loc.T("자주 여는 앱은 추천에서 +로 즐겨찾기에 넣어요. 폴더를 펼쳐 순서를 바꾸고, 잠자는 앱은 골라서 정리해요."),
             CoachAnchor.AllApps, s => s.Dock.Enabled),
@@ -113,7 +128,7 @@ public static class WhatsNew
     ];
 
     /// <summary>둘러보기 그림이 있는 단계 키.</summary>
-    public static readonly IReadOnlySet<string> TourPictures = new HashSet<string> { "dock", "topbar", "allapps", "routines", "stacks", "settings", "bounce" };
+    public static readonly IReadOnlySet<string> TourPictures = new HashSet<string> { "dock", "topbar", TourSearchKey, "allapps", "routines", "stacks", "settings", "bounce" };
 
     /// <summary>
     /// 둘러보기에서 뺀 기능 — 처음 그 요소를 쓰고(패널·메뉴를 닫은 뒤) 한 번만 짧은 카드 (Views/FirstUseHints).
@@ -143,7 +158,8 @@ public static class WhatsNew
 
     /// <summary>마무리 카드 "이 밖에도" 목록 (힌트 제목 + 알림).</summary>
     public static IReadOnlyList<string> ExtraFeatureLines(Settings s) =>
-        Hints.Where(h => h.IsAvailable(s)).Select(h => h.Title)
+        Hints.Where(h => h.IsAvailable(s) && !(h.Key == SearchKey && Tour.Any(t => t.Key == TourSearchKey && t.IsAvailable(s)))) // 검색은 둘러보기 단계로 봄
+            .Select(h => h.Title)
             .Concat(s.Notifications.ShowNotificationBanners ? new[] { Loc.T("알림은 오른쪽 위 배너로") } : Array.Empty<string>())
             .ToList();
 

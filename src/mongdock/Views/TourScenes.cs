@@ -26,7 +26,7 @@ internal static partial class TourScenes
     public static int Count(string? key) => key switch
     {
         "allapps" => 5,
-        "dock" or "topbar" or "routines" or "stacks" => 3,
+        "dock" or "topbar" or "routines" or "stacks" or "spotlight" => 3,
         "settings" or "bounce" => 2,
         _ => 0,
     };
@@ -62,7 +62,7 @@ internal static partial class TourScenes
     public static List<string> Check(AppServices services, UiPalette p, IEnumerable<string>? keys = null)
     {
         var problems = new List<string>();
-        foreach (var key in keys ?? new[] { "dock", "topbar", "allapps", "routines", "stacks", "settings", "bounce" })
+        foreach (var key in keys ?? new[] { "dock", "topbar", "spotlight", "allapps", "routines", "stacks", "settings", "bounce" })
             for (int i = 0; i < Count(key); i++)
             {
                 var local = new List<string>();
@@ -167,6 +167,8 @@ internal static partial class TourScenes
         public BitmapSource? Build(string key, int i, List<string>? problems)
         {
             _problems = problems;
+            // 검색은 홈페이지 검색 장면을 800×500 화면으로 그려 둘러보기 크기(960×600 픽셀)로 — 검색창이 다른 단계처럼 크게 보이게
+            if (key == "spotlight") return new Scene(_services, _p, 800, 500, Scale * W / 800).BuildTourSearch(i, problems, Hotkey(_services));
             var (g, top) = NewScene(key is "allapps" && i > 1 || key == "settings" && i == 1 ? PanelBg() : null);
             switch (key)
             {
