@@ -59,6 +59,29 @@ internal static class Program
             RenderSettingsPages(args[settingsAt + 1]);
             return 0;
         }
+        // --shots DIR: 홈페이지 스크린샷 8장 (site-draft/shots.md) — 시험 데이터 폴더·예시 데이터로, --lang 없으면 한국어·영어 둘 다
+        int shotsAt = Array.FindIndex(args, a => a == "--shots");
+        if (shotsAt >= 0 && shotsAt + 1 < args.Length)
+        {
+            string shotsDir = args[shotsAt + 1];
+            if (langAt < 0)
+            {
+                int bad = 0;
+                foreach (var l in new[] { "ko", "en" })
+                {
+                    using var child = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!, $"--shots \"{shotsDir}\" --lang {l}") { UseShellExecute = false })!;
+                    child.WaitForExit();
+                    if (child.ExitCode != 0) bad++;
+                }
+                return bad == 0 ? 0 : 1;
+            }
+            string data = Path.Combine(Path.GetTempPath(), "mongdock-shots-" + Guid.NewGuid().ToString("N"));
+            Environment.SetEnvironmentVariable("MONGDOCK_DATA_DIR", data);
+            Environment.SetEnvironmentVariable("MONGDOCK_FAKE_BATTERY", "76,charging");
+            Environment.SetEnvironmentVariable("MONGDOCK_FAKE_BRIGHTNESS", _lang == "ko" ? "내장:70,외장 모니터:40" : "internal:70,External display:40");
+            Mongdock.Loc.Init(_lang);
+            return RenderShots(shotsDir, Path.Combine(data, "examples"));
+        }
         Mongdock.Loc.Init(_lang);
         RedactionTests();
         MenuRuleLanguageTests();
@@ -1358,6 +1381,52 @@ internal static class Program
         if (!DefaultPins.DockStacksMissing(new List<PinItem> { App("a") })) problems.Add("넣기 규칙: 둘 다 없는데 버튼이 안 보임");
         Console.WriteLine($"  다운로드·휴지통 넣기 규칙 (다운로드 폴더 {(dl is null ? "없음" : "있음")}): {(problems.Count == 0 ? "통과" : $"문제 {problems.Count}개")} — ① {Show(a)} / ② {Show(b)}");
         return problems;
+    }
+
+    /// <summary>홈페이지 스크린샷: TourScenes.Shot 로 그려 {lang}-{이름}.png (라이트).</summary>
+    private static int RenderShots(string dir, string exampleDir)
+    {
+        Directory.CreateDirectory(dir);
+        Directory.CreateDirectory(exampleDir);
+        // 앱 리소스(몽독 로고 등 pack://application 경로)를 report-test 가 아니라 몽독 어셈블리에서 찾게
+        try { Application.ResourceAssembly = typeof(Mongdock.App).Assembly; } catch (InvalidOperationException) { }
+        var app = new Mongdock.App();
+        Mongdock.Loc.Init(_lang);
+        app.InitializeComponent();
+        app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        var asm = typeof(Mongdock.App).Assembly;
+        var settings = new SettingsService(); // 시험 데이터 폴더 (MONGDOCK_DATA_DIR)
+        settings.Current.Dock.Theme = DockTheme.Light;
+        Mongdock.ViewModels.UiFonts.Apply(settings.Current);
+        Mongdock.ViewModels.UiTheme.Apply(settings.Current);
+        var palette = Mongdock.ViewModels.UiTheme.Palette(settings.Current);
+        var tracker = new WindowTracker();
+        var launcher = new AppLauncher(tracker);
+        var services = new AppServices(settings, tracker, launcher, new IconService(), new DesktopWindowService(), new VirtualDesktopService(),
+            new ShellActions(), new ImeService(), new StatusService(), new MediaService(), new AppMenuService(settings), new StartupService(),
+            new NotificationService(tracker, launcher), new TrayIconService(), new CalendarFeedService(settings));
+        asm.GetType("Mongdock.Services.RoutineService")!.GetMethod("Init", Any)!.Invoke(null, new object[] { services });
+        var scenes = asm.GetType("Mongdock.Views.TourScenes")!;
+        var names = (string[])scenes.GetField("ShotNames", Any)!.GetValue(null)!;
+        int problems = 0;
+        foreach (var name in names)
+        {
+            var list = new List<string>();
+            var img = (BitmapSource?)scenes.GetMethod("Shot", Any)!.Invoke(null, new object[] { services, palette, name, exampleDir, list });
+            if (img is null) list.Add("그림 없음");
+            else
+            {
+                var enc = new PngBitmapEncoder();
+                enc.Frames.Add(BitmapFrame.Create(img));
+                using var fs = File.Create(Path.Combine(dir, $"{_lang}-{name}.png"));
+                enc.Save(fs);
+            }
+            Console.WriteLine($"  {_lang}-{name}.png {(img is null ? "" : $"{img.PixelWidth}×{img.PixelHeight}")} {(list.Count == 0 ? "통과" : "문제: " + string.Join(" / ", list))}");
+            problems += list.Count;
+        }
+        settings.Dispose();
+        GC.KeepAlive(app);
+        return problems == 0 ? 0 : 1;
     }
 
     private static int RenderTour(string? dir, bool checkOnly)

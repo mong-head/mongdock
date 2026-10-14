@@ -56,6 +56,13 @@ internal sealed class NotificationListView : Border
 
     /// <param name="maxHeight">이보다 길면 안에서 스크롤 (휠).</param>
     /// <param name="showHeader">맨 위 "알림" 제목 줄 표시 (꺼도 "모두 지우기" 줄은 알림이 있을 때 표시).</param>
+    /// <summary>그림 전용(화면 밖이라 Loaded 가 안 옴): 지금 알림으로 채움.</summary>
+    internal void RebuildForScene()
+    {
+        _animating = 0;
+        Rebuild();
+    }
+
     public NotificationListView(AppServices services, UiPalette palette, double maxHeight = 420, bool showHeader = true)
     {
         _services = services;

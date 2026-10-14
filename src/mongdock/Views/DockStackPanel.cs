@@ -392,11 +392,15 @@ internal abstract class DockStackPanel : Window
     /// 썸네일 칸 하나. click = 누름(null 이면 누름 없음), dragPath = 다른 앱으로 끌어낼 파일(null 이면 끌기 없음).
     /// 썸네일은 판을 먼저 보여 준 뒤 하나씩 (느린 미리보기가 판을 늦추지 않게, 닫히면 멈춤).
     /// </summary>
+    /// <summary>그림 전용: 파일 그림을 바로 읽음 (홈페이지 그림).</summary>
+    internal static bool ThumbsNow { get; set; }
+
     protected Border MakeCell(string name, string thumbPath, string tooltip, Action? click, string? dragPath, ContextMenu? menu)
     {
         var image = new Image { Width = Thumb, Height = Thumb, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Center };
         RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
-        Dispatcher.BeginInvoke(() => { if (!_closing) image.Source = DockFolderService.Thumbnail(thumbPath, 96); }, DispatcherPriority.Background);
+        if (ThumbsNow) image.Source = DockFolderService.Thumbnail(thumbPath, 96); // 그림 전용 (홈페이지 그림 — 화면 밖이라 디스패처를 돌리지 않음)
+        else Dispatcher.BeginInvoke(() => { if (!_closing) image.Source = DockFolderService.Thumbnail(thumbPath, 96); }, DispatcherPriority.Background);
         return CellWith(image, name, thumbPath, tooltip, click, dragPath, menu);
     }
 

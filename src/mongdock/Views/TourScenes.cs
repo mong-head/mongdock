@@ -17,7 +17,7 @@ namespace Mongdock.Views;
 /// 장면 속 앱은 사용자 앱이 아니라 예시 앱(기호 아이콘 + 번역된 이름). 언어·테마별로 메모리에만 캐시 (디스크에 저장하지 않음).
 /// 점검: <see cref="Check"/> 가 모든 장을 그려 가리킬 요소를 찾았는지·그림이 비어 있지 않은지 (report-test --tourcheck).
 /// </summary>
-internal static class TourScenes
+internal static partial class TourScenes
 {
     public const double W = 640, H = 400;
     private const double Scale = 1.5; // 카드 그림 영역(약 524 DIP)을 화면 배율 1.5 까지 또렷하게
@@ -131,8 +131,10 @@ internal static class TourScenes
 
     // ───────────────────────── 장면 ─────────────────────────
 
-    private sealed class Scene
+    private sealed partial class Scene
     {
+        // 장면 크기·그림 배율: 둘러보기는 640×400 을 1.5배, 홈페이지 그림(Shots)은 실제 화면처럼 1280×800 을 1.25배
+        private readonly double W = TourScenes.W, H = TourScenes.H, Scale = TourScenes.Scale;
         private readonly AppServices _services;
         private readonly UiPalette _p;
         private readonly bool _dark;
@@ -146,6 +148,13 @@ internal static class TourScenes
             _dark = !p.IsLight;
             var dock = new DockSettings { Edge = DockEdge.Bottom, IconSize = 52, Theme = _dark ? DockTheme.Dark : DockTheme.Light };
             _layout = DockLayout.From(dock, !_dark);
+        }
+
+        public Scene(AppServices services, UiPalette p, double w, double h, double scale) : this(services, p)
+        {
+            W = w;
+            H = h;
+            Scale = scale;
         }
 
         /// <summary>요소를 찾았는지 (못 찾으면 점검 문제로).</summary>
@@ -188,14 +197,14 @@ internal static class TourScenes
             return (g, top);
         }
 
-        private static void Layout(FrameworkElement g)
+        private void Layout(FrameworkElement g)
         {
             g.Measure(new Size(W, H));
             g.Arrange(new Rect(0, 0, W, H));
             g.UpdateLayout();
         }
 
-        private static BitmapSource Render(FrameworkElement g)
+        private BitmapSource Render(FrameworkElement g)
         {
             Layout(g);
             var rtb = new RenderTargetBitmap((int)(W * Scale), (int)(H * Scale), 96 * Scale, 96 * Scale, PixelFormats.Pbgra32);
@@ -317,7 +326,7 @@ internal static class TourScenes
         private sealed record DockParts(Border Panel, List<FrameworkElement> Views, List<DockItemViewModel> Items);
 
         /// <summary>예시 독: 파일 탐색기(폴더)·앱 모음·예시 앱 4개 (+ 구분선·다운로드 폴더·휴지통).</summary>
-        private DockParts MakeDock(bool withStacks = false, bool trashFull = false, string[]? running = null)
+        private DockParts MakeDock(bool withStacks = false, bool trashFull = false, string[]? running = null, string? routine = null, string? folderName = null, string? notify = null)
         {
             var views = new List<FrameworkElement>();
             var items = new List<DockItemViewModel>();
@@ -333,10 +342,12 @@ internal static class TourScenes
             Add("files", false, Loc.T("파일 탐색기"), MacIconRenderer.Folder());
             Add("allapps", false, Loc.T("앱 모음"), MacIconRenderer.AllApps());
             foreach (var k in new[] { "browser", "notes", "photos", "chat" }) Add(k, false, Loc.T(Examples.First(x => x.Key == k).Name), Icon(k));
+            if (routine is not null) Add("routine", false, routine, MacIconRenderer.Symbol("blue", "\uE821", null));
+            if (notify is not null && items.FirstOrDefault(x => x.Id == notify) is { } n) n.HasNotification = true;
             if (withStacks)
             {
                 Add("sep", true, "", null);
-                Add("downloads", false, Loc.T("다운로드"), MacIconRenderer.Folder(FolderGlyph.Downloads));
+                Add("downloads", false, folderName ?? Loc.T("다운로드"), folderName is null ? MacIconRenderer.Folder(FolderGlyph.Downloads) : MacIconRenderer.Folder());
                 Add("trash", false, Loc.T("휴지통"), MacIconRenderer.Trash(trashFull));
             }
             var panel = new Border
@@ -488,17 +499,29 @@ internal static class TourScenes
             Descendants(root).OfType<FrameworkElement>().FirstOrDefault(e => e.Uid == uid);
 
         /// <summary>상태 판(제어 센터·달력)을 실제 코드로 그린 그림.</summary>
-        private ImageSource? StatusPanel(StatusPanelKind kind, out Size size)
+        private ImageSource? StatusPanel(StatusPanelKind kind, out Size size, AppServices? services = null)
         {
             size = default;
             StatusPanelWindow? w = null;
             try
             {
-                w = new StatusPanelWindow(_services, kind, _p, 0);
+                w = new StatusPanelWindow(services ?? _services, kind, _p, 0);
                 w.RefreshForScene(); // 달력 날짜처럼 띄울 때 채우는 내용
                 var content = (FrameworkElement)w.Content;
                 content.Opacity = 1;
                 content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                var lists = Descendants(content).OfType<NotificationListView>().ToList();
+                if (lists.Count > 0)
+                {
+                    foreach (var l in lists)
+                    {
+                        l.RebuildForScene(); // 알림 목록은 화면에 뜰 때(Loaded) 채워짐 → 그림에선 직접
+                        l.Measure(new Size(300, double.PositiveInfinity)); // 목록부터 다시 재야 위로 전해짐
+                        l.MaxListHeight = 320; // 비어 있을 때 맞춘 높이(0)가 남지 않게 원래 최대 높이로
+                        for (DependencyObject? d = l; d is not null; d = VisualTreeHelper.GetParent(d)) (d as UIElement)?.InvalidateMeasure();
+                    }
+                    content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                }
                 size = content.DesiredSize;
                 content.Arrange(new Rect(size));
                 content.UpdateLayout();
@@ -593,25 +616,38 @@ internal static class TourScenes
         private static readonly string[] PanelApps = { "browser", "notes", "music", "photos", "mail", "calendar", "chat", "video", "calc", "game", "store", "settings" };
 
         /// <summary>예시 설정으로 판을 만들어 mode 장면을 준비하고, 그 판의 내용(그림 대상)과 판을 돌려줌. 쓰고 나면 Close.</summary>
-        private (AllAppsPanel Panel, FrameworkElement Content) MakePanel(string mode)
+        private (AllAppsPanel Panel, FrameworkElement Content) MakePanel(string mode, bool site = false, (double W, double H)? size = null)
         {
-            var apps = PanelApps.Select(Entry).ToList();
+            var apps = PanelApps.Where(k => !site || k != "game").Select(Entry).ToList();
             var s = new Settings();
             s.Dock.Theme = _dark ? DockTheme.Dark : DockTheme.Light;
             s.AllApps.Favorites.AddRange(new[] { "tour:browser", "tour:mail", "tour:notes" });
             s.AllApps.ShowSuggestions = true;
-            string work = AppFolders.Create(s, apps, Loc.T("업무"), "tour:mail", "tour:calendar", "tour:notes", "tour:calc", "tour:chat");
-            AppFolders.Create(s, apps, Loc.T("사진·영상"), "tour:photos", "tour:video", "tour:music");
-            AppFolders.Create(s, apps, Loc.T("게임"), "tour:game", "tour:store");
-            s.Routines.Add(new RoutineDef { Name = Loc.T("업무 시작"), Icon = new PinIcon { Mode = PinIconMode.Glyph, Color = "blue", Glyph = "" } });
-            s.Routines.Add(new RoutineDef { Name = Loc.T("게임"), Icon = new PinIcon { Mode = PinIconMode.Glyph, Color = "green", Glyph = "" } });
+            string work;
+            if (site)
+            {
+                s.AllApps.CleanupPromptMonth = DateTime.Now.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture); // "잠자는 앱이 n개" 띠는 이번 달 닫음 (예시 앱 수와 안 맞음)
+                work = AppFolders.Create(s, apps, Loc.T("업무"), "tour:mail", "tour:calendar", "tour:notes", "tour:chat");
+                AppFolders.Create(s, apps, Loc.T("도구"), "tour:calc", "tour:settings", "tour:store");
+                AppFolders.Create(s, apps, Loc.T("사진·영상"), "tour:photos", "tour:video", "tour:music");
+                s.Routines.Add(new RoutineDef { Name = Loc.T("업무 시작"), Icon = new PinIcon { Mode = PinIconMode.Glyph, Color = "blue", Glyph = "\uE821" } });
+                s.Routines.Add(new RoutineDef { Name = Loc.T("공부"), Icon = new PinIcon { Mode = PinIconMode.Glyph, Color = "green", Glyph = "\uE7BE" } });
+            }
+            else
+            {
+                work = AppFolders.Create(s, apps, Loc.T("업무"), "tour:mail", "tour:calendar", "tour:notes", "tour:calc", "tour:chat");
+                AppFolders.Create(s, apps, Loc.T("사진·영상"), "tour:photos", "tour:video", "tour:music");
+                AppFolders.Create(s, apps, Loc.T("게임"), "tour:game", "tour:store");
+                s.Routines.Add(new RoutineDef { Name = Loc.T("업무 시작"), Icon = new PinIcon { Mode = PinIconMode.Glyph, Color = "blue", Glyph = "" } });
+                s.Routines.Add(new RoutineDef { Name = Loc.T("게임"), Icon = new PinIcon { Mode = PinIconMode.Glyph, Color = "green", Glyph = "" } });
+            }
             var services = _services with { Settings = new SettingsService(s) };
             var monitor = _services.DesktopWindows.ResolveMonitor("");
             AllAppsPanel.SceneMode = true;
-            AllAppsPanel.SizeForTest = (720, 900); // 장면에 맞게 좁은 판 (한 줄 칸 수가 줄어 크게 잘림)
+            AllAppsPanel.SizeForTest = size ?? (720, 900); // 장면에 맞게 좁은 판 (한 줄 칸 수가 줄어 크게 잘림)
             AllAppsPanel.ExampleIcons = a => a.Key.StartsWith("tour:", StringComparison.Ordinal) ? Icon(a.Key[5..]) : null;
             AllAppsPanel.SuggestionsOverride = () => new List<string> { AllAppsCatalog.Identity(Entry("photos")), AllAppsCatalog.Identity(Entry("music")) };
-            AllAppsPanel.UnusedOverride = list => list.Where(a => a.Key is "tour:video" or "tour:game" or "tour:store" or "tour:calc")
+            AllAppsPanel.UnusedOverride = list => list.Where(a => a.Key is "tour:video" or "tour:game" or "tour:store" or "tour:calc" || (site && a.Key == "tour:music"))
                 .Select((a, i) => new UnusedApps.Row(a, DateTime.Now.AddDays(-80 - 30 * i), (long)(i + 2) * 310_000_000)).ToList();
             try
             {
@@ -619,7 +655,7 @@ internal static class TourScenes
                 panel.SceneSetup(apps, mode, work);
                 var content = (FrameworkElement)panel.Content;
                 content.Opacity = 1;
-                foreach (var sv in Descendants(content).OfType<ScrollViewer>()) { sv.MaxHeight = double.PositiveInfinity; sv.Height = double.NaN; }
+                if (size is null) foreach (var sv in Descendants(content).OfType<ScrollViewer>()) { sv.MaxHeight = double.PositiveInfinity; sv.Height = double.NaN; } // 홈페이지 그림은 실제 판 크기 그대로
                 content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
                 content.Arrange(new Rect(content.DesiredSize));
                 content.UpdateLayout();

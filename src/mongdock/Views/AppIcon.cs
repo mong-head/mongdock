@@ -11,7 +11,7 @@ namespace Mongdock.Views;
 /// </summary>
 internal static class AppIcon
 {
-    private static readonly Uri IcoUri = new("pack://application:,,,/Assets/mongdock.ico", UriKind.Absolute);
+    private static readonly Uri IcoUri = new("pack://application:,,,/mongdock;component/Assets/mongdock.ico", UriKind.Absolute); // 어셈블리 이름까지 (시험 도구에서 그릴 때도 찾게)
     private static ImageSource? _window;
     private static bool _windowFailed;
 

@@ -87,6 +87,13 @@ public sealed class NotificationService : INotificationService, IDisposable
     }
 
     public bool IsAvailable { get; private set; }
+
+    /// <summary>그림 전용(둘러보기·홈페이지 그림): 이 목록을 최근 알림으로 (실제 알림은 읽지 않는 새 서비스에만).</summary>
+    internal void UseForScene(IReadOnlyList<NotificationItem> items)
+    {
+        _recent = items;
+        IsAvailable = true;
+    }
     public IReadOnlyList<NotificationItem> Recent => _recent;
     public event EventHandler? Changed;
     public event EventHandler<NotificationItem>? Arrived;

@@ -138,6 +138,34 @@ internal sealed class NotificationBannerWindow : Window
 
     // ───────────────────────── 창 ─────────────────────────
 
+    /// <summary>
+    /// 그림 전용(홈페이지 그림): 띄우지 않은 배너 창에 알림 하나를 넣고 그 내용을 돌려줌 (나타나기 애니메이션은 끝 상태로). 다 쓰면 창을 Close.
+    /// </summary>
+    internal static (Window Window, FrameworkElement Content) ForScene(AppServices services, UiPalette palette, NotificationItem item, ImageSource? icon, IReadOnlyList<BannerButton> buttons)
+    {
+        var w = new NotificationBannerWindow(services, palette);
+        w.Add(item, icon, null, buttons, TimeSpan.FromMinutes(10), null);
+        var root = (FrameworkElement)w.Content;
+        foreach (var fe in Descendants(root))
+        {
+            fe.BeginAnimation(OpacityProperty, null);
+            if (fe.Opacity < 0.99 && fe is not TextBlock) fe.Opacity = 1;
+            if (fe.RenderTransform is TranslateTransform tt) { tt.BeginAnimation(TranslateTransform.XProperty, null); tt.BeginAnimation(TranslateTransform.YProperty, null); tt.X = 0; tt.Y = 0; }
+        }
+        return (w, root);
+
+        static IEnumerable<UIElement> Descendants(DependencyObject d)
+        {
+            int n = VisualTreeHelper.GetChildrenCount(d);
+            for (int i = 0; i < n; i++)
+            {
+                var c = VisualTreeHelper.GetChild(d, i);
+                if (c is UIElement u) yield return u;
+                foreach (var x in Descendants(c)) yield return x;
+            }
+        }
+    }
+
     private NotificationBannerWindow(AppServices services, UiPalette palette)
     {
         _services = services;

@@ -25,7 +25,7 @@ internal sealed partial class AllAppsPanel
     {
         _apps = apps;
         _expanded = mode == "folder" ? expand : null;
-        _allOpen = mode == "unused";
+        _allOpen = mode is "unused" or "all"; // "all" = 처음 화면 + 모든 앱 펼침 (홈페이지 그림)
         _allFilter = mode == "unused" ? AllFilter.Unused : AllFilter.All;
         _unused = null;
         _unusedChecked.Clear();
