@@ -267,13 +267,28 @@ internal sealed class TourSession : ICoachRun
         _ => r is { } rr ? Math.Min(rr.Height / 2 + 3, 10) : 10,
     };
 
-    /// <summary>가리키는 자리가 움직이면(자동 숨김 독이 나타남·알약 폭이 바뀜) 구멍·카드를 다시 맞춤.</summary>
+    /// <summary>
+    /// 가리키는 자리가 움직이면(자동 숨김 독이 나타남·독 확대·아이콘 수가 바뀜·알약 폭이 바뀜) 구멍·카드 자리만 다시 맞춤.
+    /// 0.5.1 깜빡임 수정: 예전엔 여기서 ShowCurrent 로 카드 내용을 통째로 다시 만들어, 독 위에 마우스만 올려도(확대로 독 폭이 바뀜)
+    /// 그림이 첫 장으로 돌아가고 나머지 장을 다시 채우며 번쩍였음. 자리가 생기거나 없어질 때([직접 해 보기] 표시가 바뀜)만 카드를 다시 만듦.
+    /// </summary>
     private void FollowAnchor()
     {
-        if (_closed || _trying || _index >= _pages.Count) return;
-        var now = Resolve(_pages[_index].Anchor)?.Rect;
+        if (_closed || _trying || _index >= _pages.Count || _card is null || _dim is null) return;
+        var page = _pages[_index];
+        var found = Resolve(page.Anchor);
+        var now = found?.Rect;
         bool same = now is null ? _hole is null : _hole is { } h && Math.Abs(h.Left - now.Value.Left) < 1 && Math.Abs(h.Top - now.Value.Top) < 1 && Math.Abs(h.Width - now.Value.Width) < 1 && Math.Abs(h.Height - now.Value.Height) < 1;
-        if (!same) ShowCurrent(animate: true);
+        if (same) return;
+        if ((now is null) != (_hole is null) || found is { } f && f.Monitor.DeviceName != _monitor?.DeviceName)
+        {
+            Log.Info($"둘러보기 자리 {(now is null ? "없어짐" : "생김")} → 카드 다시 ({_index + 1}/{_pages.Count})");
+            ShowCurrent(animate: true);
+            return;
+        }
+        _hole = now;
+        _dim.MoveTo(now, Radius(page.Anchor, now), animate: true);
+        _card.Place(_monitor ?? _services.DesktopWindows.ResolveMonitor(""), now);
     }
 
     // ── 직접 해 보기 ──
