@@ -68,7 +68,7 @@ internal static class Program
             if (langAt < 0)
             {
                 int bad = 0;
-                foreach (var l in new[] { "ko", "en" })
+                foreach (var l in new[] { "ko", "en", "ja", "zh-Hans", "zh-Hant", "de", "fr", "es" })
                 {
                     using var child = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!, $"{flag} \"{shotsDir}\" --lang {l}") { UseShellExecute = false })!;
                     child.WaitForExit();
@@ -1387,6 +1387,7 @@ internal static class Program
     /// <summary>홈페이지 스크린샷: TourScenes.Shot 로 그려 {lang}-{이름}.png (라이트).</summary>
     private static int RenderShots(string dir, string exampleDir, bool v2 = false)
     {
+        string Pre = _lang.ToLowerInvariant(); // 파일 이름: ko, en, ja, zh-hans, zh-hant, de, fr, es
         Directory.CreateDirectory(dir);
         Directory.CreateDirectory(exampleDir);
         // 앱 리소스(몽독 로고 등 pack://application 경로)를 report-test 가 아니라 몽독 어셈블리에서 찾게
@@ -1430,15 +1431,15 @@ internal static class Program
                 {
                     var img = (BitmapSource?)scenes.GetMethod("AnimFrame2", Any)!.Invoke(null, new object[] { services, palette, dark, key, i, list });
                     if (img is null) { list.Add($"{i + 1}장 없음"); continue; }
-                    Save2(img, Path.Combine(dir, "anim", key, $"{_lang}-{i + 1:00}.png"));
+                    Save2(img, Path.Combine(dir, "anim", key, $"{Pre}-{i + 1:00}.png"));
                 }
                 Console.WriteLine($"  anim/{key} {count}장 {(list.Count == 0 ? "통과" : "문제: " + string.Join(" / ", list))}");
                 problems += list.Count;
             }
             var hl = new List<string>();
             var hero2 = (BitmapSource?)scenes.GetMethod("Hero2", Any)!.Invoke(null, new object[] { services, palette, hl });
-            if (hero2 is not null) Save2(hero2, Path.Combine(dir, $"hero2-{_lang}.png"));
-            Console.WriteLine($"  hero2-{_lang}.png {(hero2 is null ? "없음" : $"{hero2.PixelWidth}×{hero2.PixelHeight}")} {(hl.Count == 0 ? "통과" : "문제: " + string.Join(" / ", hl))}");
+            if (hero2 is not null) Save2(hero2, Path.Combine(dir, $"hero2-{Pre}.png"));
+            Console.WriteLine($"  hero2-{Pre}.png {(hero2 is null ? "없음" : $"{hero2.PixelWidth}×{hero2.PixelHeight}")} {(hl.Count == 0 ? "통과" : "문제: " + string.Join(" / ", hl))}");
             settings.Dispose();
             GC.KeepAlive(app);
             return problems + hl.Count == 0 && hero2 is not null ? 0 : 1;
@@ -1452,10 +1453,10 @@ internal static class Program
             {
                 var enc = new PngBitmapEncoder();
                 enc.Frames.Add(BitmapFrame.Create(img));
-                using var fs = File.Create(Path.Combine(dir, $"{_lang}-{name}.png"));
+                using var fs = File.Create(Path.Combine(dir, $"{Pre}-{name}.png"));
                 enc.Save(fs);
             }
-            Console.WriteLine($"  {_lang}-{name}.png {(img is null ? "" : $"{img.PixelWidth}×{img.PixelHeight}")} {(list.Count == 0 ? "통과" : "문제: " + string.Join(" / ", list))}");
+            Console.WriteLine($"  {Pre}-{name}.png {(img is null ? "" : $"{img.PixelWidth}×{img.PixelHeight}")} {(list.Count == 0 ? "통과" : "문제: " + string.Join(" / ", list))}");
             problems += list.Count;
         }
         void SavePng(BitmapSource img, string path)
@@ -1477,7 +1478,7 @@ internal static class Program
             {
                 var img = (BitmapSource?)scenes.GetMethod("AnimFrame", Any)!.Invoke(null, new object[] { services, palette, key, i, exampleDir, list });
                 if (img is null) { list.Add($"{i + 1}장 없음"); continue; }
-                SavePng(img, Path.Combine(dir, "anim", key, $"{_lang}-{i + 1:00}.png"));
+                SavePng(img, Path.Combine(dir, "anim", key, $"{Pre}-{i + 1:00}.png"));
             }
             Console.WriteLine($"  anim/{key} {count}장 {(list.Count == 0 ? "통과" : "문제: " + string.Join(" / ", list))}");
             problems += list.Count;
@@ -1485,8 +1486,8 @@ internal static class Program
         {
             var list = new List<string>();
             var hero = (BitmapSource?)scenes.GetMethod("Hero", Any)!.Invoke(null, new object[] { services, palette, exampleDir, list });
-            if (hero is not null) SavePng(hero, Path.Combine(dir, $"hero-{_lang}.png"));
-            Console.WriteLine($"  hero-{_lang}.png {(hero is null ? "없음" : $"{hero.PixelWidth}×{hero.PixelHeight}")} {(list.Count == 0 ? "통과" : "문제: " + string.Join(" / ", list))}");
+            if (hero is not null) SavePng(hero, Path.Combine(dir, $"hero-{Pre}.png"));
+            Console.WriteLine($"  hero-{Pre}.png {(hero is null ? "없음" : $"{hero.PixelWidth}×{hero.PixelHeight}")} {(list.Count == 0 ? "통과" : "문제: " + string.Join(" / ", list))}");
             problems += list.Count + (hero is null ? 1 : 0);
         }
         settings.Dispose();

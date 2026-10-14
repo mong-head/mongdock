@@ -33,7 +33,14 @@ internal static partial class TourScenes
 
     private sealed partial class Scene
     {
-        private static string K(string ko, string en) => Ko ? ko : en;
+        /// <summary>예시 글: 한국어 원문, 다른 언어는 번역 파일(i18n)의 "site:" 키에서 — 없으면 영어.</summary>
+        private static string K(string ko, string en)
+        {
+            if (Ko || ko.Length == 0) return ko;
+            string key = "site:" + ko; // 그림 전용 키 (앱 문구 번역과 섞이지 않게)
+            string t = Loc.T(key);
+            return t != key ? t : en;
+        }
 
         // ───────────────────────── 그럴듯한 창 ─────────────────────────
 
@@ -99,9 +106,7 @@ internal static partial class TourScenes
             foreach (var m in new[] { K("파일", "File"), K("편집", "Edit"), K("보기", "View") })
                 menu.Children.Add(new TextBlock { Text = m, FontSize = 12, Foreground = _p.SubText, Margin = new Thickness(6, 0, 10, 0) });
             var text = new StackPanel { Margin = new Thickness(18, 12, 18, 12) };
-            string[] lines = Ko
-                ? new[] { "주간 회의 메모 — 10월 14일", "", "• 홈페이지 시안 검토 (수요일까지)", "• 새 기능 소개 영상 대본 정리", "• 다음 배포: 금요일 오후", "", "할 일", "  - 스크린샷 다시 그리기", "  - 변경 내역 문구 확인", "  - 설치 안내 페이지 다듬기", "", "메모", "  루틴은 '업무 시작' 하나로 아침 앱을 한 번에 연다." }
-                : new[] { "Weekly meeting notes — Oct 14", "", "• Review the homepage draft (by Wed)", "• Write the new-features video script", "• Next release: Friday afternoon", "", "To do", "  - Redraw the screenshots", "  - Check the release notes", "  - Polish the install guide", "", "Note", "  One 'Start work' routine opens the morning apps at once." };
+            string[] lines = new[] { K("주간 회의 메모 — 10월 14일", "Weekly meeting notes — Oct 14"), K("", ""), K("• 홈페이지 시안 검토 (수요일까지)", "• Review the homepage draft (by Wed)"), K("• 새 기능 소개 영상 대본 정리", "• Write the new-features video script"), K("• 다음 배포: 금요일 오후", "• Next release: Friday afternoon"), K("", ""), K("할 일", "To do"), K("  - 스크린샷 다시 그리기", "  - Redraw the screenshots"), K("  - 변경 내역 문구 확인", "  - Check the release notes"), K("  - 설치 안내 페이지 다듬기", "  - Polish the install guide"), K("", ""), K("메모", "Note"), K("  루틴은 '업무 시작' 하나로 아침 앱을 한 번에 연다.", "  One 'Start work' routine opens the morning apps at once.") };
             foreach (var l in lines)
                 text.Children.Add(new TextBlock { Text = l.Length == 0 ? " " : l, FontSize = 13.5, Foreground = _p.Text, Margin = new Thickness(0, 2, 0, 2), FontWeight = l == lines[0] ? FontWeights.SemiBold : FontWeights.Normal });
             var body = new DockPanel();
@@ -234,13 +239,12 @@ internal static partial class TourScenes
         private Border MailWindow(double w, double h)
         {
             var list = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
-            var rows = Ko
-                ? new[] { ("디", "디자인 팀", "홈페이지 시안 2차", "수정한 시안을 올렸어요. 금요일까지 의견 주세요.", "10:12"), ("주", "주간 소식", "이번 주 업데이트 정리", "새 기능 세 가지와 고친 문제를 모았어요.", "9:40"), ("일", "일정 알림", "내일 오전 10시 회의", "회의실 2 · 30분", "어제"), ("도", "도서관", "예약한 책이 도착했어요", "이번 주 안에 찾아가세요.", "월") }
-                : new[] { ("D", "Design team", "Homepage draft v2", "The updated draft is up. Comments by Friday, please.", "10:12"), ("W", "Weekly digest", "This week's updates", "Three new features and the fixes, in one place.", "9:40"), ("R", "Reminders", "Meeting tomorrow at 10 AM", "Room 2 · 30 min", "Yesterday"), ("L", "Library", "Your hold has arrived", "Pick it up this week.", "Mon") };
+            var rows = new[] { (K("디", "D"), K("디자인 팀", "Design team"), K("홈페이지 시안 2차", "Homepage draft v2"), K("수정한 시안을 올렸어요. 금요일까지 의견 주세요.", "The updated draft is up. Comments by Friday, please."), K("10:12", "10:12")), (K("주", "W"), K("주간 소식", "Weekly digest"), K("이번 주 업데이트 정리", "This week's updates"), K("새 기능 세 가지와 고친 문제를 모았어요.", "Three new features and the fixes, in one place."), K("9:40", "9:40")), (K("일", "R"), K("일정 알림", "Reminders"), K("내일 오전 10시 회의", "Meeting tomorrow at 10 AM"), K("회의실 2 · 30분", "Room 2 · 30 min"), K("어제", "Yesterday")), (K("도", "L"), K("도서관", "Library"), K("예약한 책이 도착했어요", "Your hold has arrived"), K("이번 주 안에 찾아가세요.", "Pick it up this week."), K("월", "Mon")) };
             var avatar = new[] { Color.FromRgb(0x8C, 0x7E, 0xEE), Color.FromRgb(0x4F, 0x9D, 0xF0), Color.FromRgb(0x2E, 0xB6, 0x7D), Color.FromRgb(0xF2, 0x9B, 0x38) };
             for (int i = 0; i < rows.Length; i++)
             {
-                var (ini, from, subj, prev, time) = rows[i];
+                var (_, from, subj, prev, time) = rows[i];
+                string ini = from.Length > 0 ? from[..1].ToUpperInvariant() : "?";
                 var row = new DockPanel { Margin = new Thickness(14, 8, 14, 8) };
                 var av = new Border { Width = 32, Height = 32, CornerRadius = new CornerRadius(16), Background = new SolidColorBrush(avatar[i]), Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Top, Child = new TextBlock { Text = ini, Foreground = Brushes.White, FontWeight = FontWeights.SemiBold, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
                 DockPanel.SetDock(av, System.Windows.Controls.Dock.Left);
@@ -399,7 +403,7 @@ internal static partial class TourScenes
         private void AnimStacks(Grid g, Canvas top, int f, string exampleDir)
         {
             g.Children.Add(ShotBar(false));
-            string folderName = Ko ? "받은 파일" : "Received files";
+            string folderName = K("받은 파일", "Received files");
             string dir = Path.Combine(exampleDir, folderName);
             MakeExampleFolder(dir);
             var d = MakeDock(withStacks: true, trashFull: f == 4, running: new[] { "files" }, folderName: folderName);
@@ -411,7 +415,7 @@ internal static partial class TourScenes
             var folder = Need(d.Views[fi], "독 예시 폴더")!;
             var trash = Need(d.Views[ti], "독 휴지통")!;
             var fb = Bounds(folder, g);
-            Image FileImage() => IconImage(DockFolderService.Thumbnail(Path.Combine(dir, Ko ? "사진1.png" : "Photo1.png"), 96) ?? Icon("photos"), 52);
+            Image FileImage() => IconImage(DockFolderService.Thumbnail(Path.Combine(dir, K("사진1.png", "Photo1.png")), 96) ?? Icon("photos"), 52);
             switch (f)
             {
                 case 0:

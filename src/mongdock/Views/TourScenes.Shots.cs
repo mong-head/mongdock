@@ -137,7 +137,7 @@ internal static partial class TourScenes
                 Icon = new PinIcon { Mode = PinIconMode.Glyph, Color = "blue", Glyph = "" },
                 Items =
                 {
-                    App("notepad.exe", Ko ? "메모장" : "Notepad", RoutinePlacementMode.Left),
+                    App("notepad.exe", K("메모장", "Notepad"), RoutinePlacementMode.Left),
                     new RoutineItem
                     {
                         Kind = RoutineItemKind.Url, Target = "https://learn.microsoft.com",
@@ -145,7 +145,7 @@ internal static partial class TourScenes
                         Monitor = new RoutineMonitor { Mode = RoutineMonitorMode.Index, Index = 1 },
                         Placement = new RoutinePlacement { Mode = RoutinePlacementMode.Right },
                     },
-                    App("calc.exe", Ko ? "계산기" : "Calculator", RoutinePlacementMode.Saved),
+                    App("calc.exe", K("계산기", "Calculator"), RoutinePlacementMode.Saved),
                 },
             };
             def.Items[2].Placement.Rect = new[] { 0.55, 0.5, 0.4, 0.45 };
@@ -229,7 +229,7 @@ internal static partial class TourScenes
         private void ShotDockFolder(Grid g, string exampleDir)
         {
             g.Children.Add(ShotBar(false));
-            string folderName = Ko ? "받은 파일" : "Received files";
+            string folderName = K("받은 파일", "Received files");
             string dir = Path.Combine(exampleDir, folderName);
             MakeExampleFolder(dir);
             var d = ShotDock(g, withStacks: true, running: new[] { "files" }, folderName: folderName);
@@ -254,9 +254,7 @@ internal static partial class TourScenes
         private static void MakeExampleFolder(string dir)
         {
             Directory.CreateDirectory(dir);
-            var names = Ko
-                ? new[] { "회의록.txt", "사진1.png", "발표자료.pdf", "영수증.pdf", "메모.txt", "지도.png" }
-                : new[] { "Meeting notes.txt", "Photo1.png", "Slides.pdf", "Receipt.pdf", "Notes.txt", "Map.png" };
+            var names = new[] { K("회의록.txt", "Meeting notes.txt"), K("사진1.png", "Photo1.png"), K("발표자료.pdf", "Slides.pdf"), K("영수증.pdf", "Receipt.pdf"), K("메모.txt", "Notes.txt"), K("지도.png", "Map.png") };
             var colors = new[] { Color.FromRgb(0x6F, 0xA8, 0xF2), Color.FromRgb(0x7C, 0xC8, 0x95) };
             int c = 0;
             foreach (var n in names)
@@ -280,7 +278,7 @@ internal static partial class TourScenes
                     enc.Save(fs);
                 }
                 else if (n.EndsWith(".pdf", StringComparison.Ordinal)) File.WriteAllText(path, "%PDF-1.4\n%%EOF\n");
-                else File.WriteAllText(path, Ko ? "예시 파일" : "Example file");
+                else File.WriteAllText(path, K("예시 파일", "Example file"));
             }
         }
 
@@ -316,9 +314,9 @@ internal static partial class TourScenes
             var now = DateTime.Now;
             notes.UseForScene(new List<NotificationItem>
             {
-                new(3, clock, Ko ? "알람 및 시계" : "Clock", Ko ? "타이머" : "Timer", new[] { Ko ? "5분 타이머가 끝났어요." : "Your 5-minute timer is done." }, now.AddMinutes(-2), null, null, false, null),
-                new(2, ps, "Windows PowerShell", Ko ? "예시 알림" : "Example notification",
-                    new[] { Ko ? "몽독 알림 목록 예시예요. 긴 알림은 눌러서 끝까지 펼쳐 볼 수 있어요." : "This is an example in the mongdock notification list. Click a long notification to read all of it." }, now.AddMinutes(-9), null, null, false, null),
+                new(3, clock, K("알람 및 시계", "Clock"), K("타이머", "Timer"), new[] { K("5분 타이머가 끝났어요.", "Your 5-minute timer is done.") }, now.AddMinutes(-2), null, null, false, null),
+                new(2, ps, "Windows PowerShell", K("예시 알림", "Example notification"),
+                    new[] { K("몽독 알림 목록 예시예요. 긴 알림은 눌러서 끝까지 펼쳐 볼 수 있어요.", "This is an example in the mongdock notification list. Click a long notification to read all of it.") }, now.AddMinutes(-9), null, null, false, null),
             });
             var sv2 = _services with { Notifications = notes };
             var img = StatusPanel(StatusPanelKind.Calendar, out var size, sv2);
