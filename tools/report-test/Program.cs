@@ -2292,18 +2292,35 @@ internal static class Program
             panelType.GetProperty("LoadIconsNow", Any)!.SetValue(null, true);
             T("Mongdock.Services.AllAppsCatalog").GetMethod("Apps")!.Invoke(null, new object[] { false }); // 판이 앱 목록을 바로 쓰게
             var savedRoutines = settings.Current.Routines.ToList();
-            foreach (var mode in new[] { "panel", "panel-empty" })
+            // 실행 중 점 그림용: RoutineService.Runs 에 "여는 중" 상태를 넣음 (창 없이 IsOpening = true)
+            var runsField = T("Mongdock.Services.RoutineService").GetField("Runs", Any)!;
+            var runs = (System.Collections.IDictionary)runsField.GetValue(null)!;
+            void FakeRunning(string id)
+            {
+                var state = Activator.CreateInstance(runsField.FieldType.GetGenericArguments()[1], nonPublic: true)!;
+                state.GetType().GetField("Running")!.SetValue(state, true);
+                runs[id] = state;
+            }
+            foreach (var mode in new[] { "panel", "panel-running", "panel-empty" })
             {
                 settings.Current.Routines.Clear();
-                if (mode == "panel")
+                if (mode != "panel-empty")
                 {
                     settings.Current.Routines.Add(work);
                     settings.Current.Routines.Add(new RoutineDef { Id = "r-test2", Name = "게임", Icon = new PinIcon { Mode = PinIconMode.Glyph, Color = "blue", Glyph = "\uE7FC" }, Items = { App(notepad, "Steam", RoutinePlacementMode.Max) } });
+                }
+                if (mode == "panel-running") // 짧은 이름·긴 이름(잘림) 실행 중 + 꺼진 루틴 하나
+                {
+                    string longName = _lang == "de" ? "Wochenendabend Spielen und Entspannen" : _lang == "ko" ? "주말 저녁 게임하고 쉬는 시간" : "Weekend evening games and chill";
+                    settings.Current.Routines.Add(new RoutineDef { Id = "r-test-long", Name = longName, Icon = new PinIcon { Mode = PinIconMode.Glyph, Color = "green", Text = "W" }, Items = { App(notepad, "Steam", RoutinePlacementMode.Max) } });
+                    FakeRunning(work.Id);
+                    FakeRunning("r-test-long");
                 }
                 var w = New("Mongdock.Views.AllAppsPanel", services, palette, new Rect(800, 1000, 52, 52), DockEdge.Bottom, Monitors.GetPrimary());
                 panelType.GetMethod("Rebuild", Any)!.Invoke(w, null);
                 Save((FrameworkElement)w.Content, mode, 360);
                 w.Close();
+                runs.Clear();
             }
             settings.Current.Routines.Clear();
             settings.Current.Routines.AddRange(savedRoutines);
