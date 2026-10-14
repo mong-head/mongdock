@@ -1419,5 +1419,6 @@
  "site:앱 · Enter 로 열기": "App · Eingabetaste zum Öffnen",
  "site:앱·파일·설정 검색": "Apps, Dateien und Einstellungen suchen",
  "site:200 × 15% · Enter 로 결과 복사": "200 × 15 % · Eingabetaste zum Kopieren",
- "menu:파일": "Datei"
+ "menu:파일": "Datei",
+ "one:파일": "Datei"
 }

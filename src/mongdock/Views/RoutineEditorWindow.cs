@@ -558,7 +558,7 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
                     if (PickPath(kind == 2) is { } path) field.Text = path;
                 };
                 var open = new StackPanel();
-                open.Children.Add(Segments(new[] { Loc.T("없음"), Loc.T("파일"), Loc.T("폴더"), Loc.T("웹 주소") }, kind, i =>
+                open.Children.Add(Segments(new[] { Loc.T("없음"), Loc.TC("one", "파일"), Loc.T("폴더"), Loc.T("웹 주소") }, kind, i =>
                 {
                     kind = i;
                     if (i == 0) field.Text = "";
