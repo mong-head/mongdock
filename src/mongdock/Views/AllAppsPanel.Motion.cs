@@ -306,20 +306,6 @@ internal sealed partial class AllAppsPanel
         el.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(ms)) { EasingFunction = ease, FillBehavior = FillBehavior.Stop });
     }
 
-    /// <summary>마우스 올림: 아이콘 1.06배 (100ms) / 내림: 1배.</summary>
-    private static void HoverIcon(FrameworkElement icon, bool on)
-    {
-        if (!Motion) return;
-        if (icon.RenderTransform is not ScaleTransform s)
-        {
-            icon.RenderTransformOrigin = new Point(0.5, 0.5);
-            icon.RenderTransform = s = new ScaleTransform(1, 1);
-        }
-        var a = new DoubleAnimation(on ? 1.06 : 1, TimeSpan.FromMilliseconds(100)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } };
-        s.BeginAnimation(ScaleTransform.ScaleXProperty, a);
-        s.BeginAnimation(ScaleTransform.ScaleYProperty, a);
-    }
-
     /// <summary>칩 숫자가 처음 붙을 때 흐릿→보임.</summary>
     private static void FadeIn(UIElement el) =>
         el.BeginAnimation(OpacityProperty, Motion ? new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(FadeMs)) { FillBehavior = FillBehavior.Stop } : null);

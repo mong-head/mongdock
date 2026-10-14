@@ -72,10 +72,13 @@ internal sealed class MongTitleBar
         {
             if (PresentationSource.FromVisual(w) is HwndSource src) src.AddHook(bar.Hook);
         };
-        w.IsVisibleChanged += (_, _) => { if (w.IsVisible) bar._poll.Start(); else bar._poll.Stop(); };
+        // 마우스 올림 확인은 보이고 최소화가 아닐 때만 (최소화해 둔 설정 창이 초당 12번 깨지 않게 — 0.5.0 검토 13번)
+        void SyncPoll() { if (w.IsVisible && w.WindowState != WindowState.Minimized) bar._poll.Start(); else bar._poll.Stop(); }
+        w.IsVisibleChanged += (_, _) => SyncPoll();
         w.Closed += (_, _) => { bar._poll.Stop(); Bars.Remove(w); };
         w.StateChanged += (_, _) =>
         {
+            SyncPoll();
             // 최대화하면 WindowChrome 창이 화면 밖으로 테두리만큼 넘침 — 그만큼 안쪽 여백
             if (w.Content is FrameworkElement c) c.Margin = w.WindowState == WindowState.Maximized ? new Thickness(7) : new Thickness(0);
         };

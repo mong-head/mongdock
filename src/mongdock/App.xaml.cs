@@ -214,7 +214,8 @@ public partial class App : Application
         NewBadges.Init(settings, settings.CreatedThisRun); // 새 기능 NEW 배지 (업데이트 받은 기존 사용자만)
         RoutineUi.Init(_services); // 루틴 실행·끝내기 (#24-A)
         TaskbarOverlapHint.Init(_services); // 윈도우 작업 표시줄 자동 숨김이 독을 덮는 조합이면 한 번 물음
-        IconFiles.Cleanup(settings); // 어떤 핀·루틴도 안 쓰는 루틴·독 폴더 그림
+        if (SettingsService.RecoveredFromCorrupt) Log.Warn("설정을 손상 복구로 시작 → 안 쓰는 그림 정리 건너뜀");
+        else IconFiles.Cleanup(settings); // 어떤 핀·루틴도 안 쓰는 루틴·독 폴더 그림
     }
 
     /// <summary>코치마크 앵커 위치: 독은 독 창, 나머지는 주 모니터 상단바 (안 보이면 null).</summary>
@@ -343,7 +344,6 @@ public partial class App : Application
         }
     }
 
-    /// <summary>mongdock 을 한 번 더 실행했을 때: 트레이가 숨김 아이콘 영역에 있어도 다시 켤 수 있게.</summary>
     /// <summary>
     /// 몽독 다시 시작 (설정 → 일반 → 언어를 바꾼 뒤): 새 몽독을 --relaunch 로 띄우고 이 몽독은 정상 종료.
     /// 스토어판은 패키지 안 exe 를 직접 못 띄우므로 실행 별칭(mongdock.exe)으로.

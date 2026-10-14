@@ -1420,5 +1420,13 @@
  "site:앱·파일·설정 검색": "Apps, Dateien und Einstellungen suchen",
  "site:200 × 15% · Enter 로 결과 복사": "200 × 15 % · Eingabetaste zum Kopieren",
  "menu:파일": "Datei",
- "one:파일": "Datei"
+ "one:파일": "Datei",
+ "되돌렸어요 — 뺀 앱을 원래 자리에 다시 넣었어요": "Rückgängig gemacht – die Apps sind wieder an ihrem Platz",
+ "{0}개를 즐겨찾기·폴더·독에서 뺐어요 (그중 {1}개는 숨김)": "{0} aus Favoriten, Ordnern und Dock entfernt ({1} ausgeblendet)",
+ "{0}개를 즐겨찾기·폴더·독에서 뺐어요": "{0} aus Favoriten, Ordnern und Dock entfernt",
+ "다른 이름의 제거 프로그램이 실행돼요": "Ein Deinstallationsprogramm mit anderem Namen wird ausgeführt",
+ "지우는 중 문제가 생겼어요": "Beim Deinstallieren ist ein Problem aufgetreten",
+ "제거 프로그램: {0}": "Deinstallationsprogramm: {0}",
+ "다른 앱 트레이 아이콘은 상단바 오른쪽에 있어요. 설정 → 일반 → '윈도우 작업 표시줄 숨기기'에서도 바꿀 수 있어요.": "Die Infobereich-Symbole anderer Apps sind rechts in der Menüleiste. Änderbar unter Einstellungen → Allgemein → „Windows-Taskleiste ausblenden“.",
+ "상단바가 꺼져 있어 다른 앱 트레이 아이콘을 볼 곳이 없어요. 설정 → 상단바를 켜면 오른쪽에 보여요.": "Die Menüleiste ist aus, daher können die Infobereich-Symbole anderer Apps nirgends erscheinen. Schalte sie unter Einstellungen → Menüleiste ein, dann erscheinen sie rechts."
 }

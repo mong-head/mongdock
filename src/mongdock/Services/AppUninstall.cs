@@ -18,7 +18,8 @@ namespace Mongdock.Services;
 internal static class AppUninstall
 {
     /// <summary>지우는 단위 하나 (같은 설치 묶음 앱 여럿 = 한 단위).</summary>
-    internal sealed record Removal(string Id, string Name, string? Command, string? RegKey, string? Family, string? Cannot);
+    /// <summary>Publisher = 제거 항목의 게시자 (확인 카드에 "제거 프로그램: 이름 · 게시자").</summary>
+    internal sealed record Removal(string Id, string Name, string? Command, string? RegKey, string? Family, string? Cannot, string? Publisher = null);
 
     internal sealed record Job(Removal What, List<UnusedApps.Row> Rows)
     {
@@ -255,8 +256,10 @@ internal static class AppUninstall
             if (File.Exists(exe) || !exe.Contains('\\')) return (exe, args); // msiexec.exe 처럼 경로 없는 이름은 그대로
             at += 4;
         }
-        int sp = cmd.IndexOf(' ');
-        return sp < 0 ? (cmd, "") : (cmd[..sp], cmd[(sp + 1)..].Trim());
+        // 따옴표 없고 .exe 를 못 찾음: 첫 공백에서 자르지 않음 (C:\Program 같은 엉뚱한 실행 — 0.5.0 검토 17번).
+        // 공백 없는 한 덩어리이고 그 파일이 있거나 경로 없는 이름일 때만, 그 밖은 "제거 명령을 못 읽음"
+        if (!cmd.Contains(' ') && (File.Exists(cmd) || !cmd.Contains('\\'))) return (cmd, "");
+        return null;
     }
 
     /// <summary>레지스트리 항목이 아직 있는지 (RegKey = "HKLM64|이름" 같은 꼴).</summary>

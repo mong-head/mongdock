@@ -148,7 +148,7 @@ internal static partial class TourScenes
                     App("calc.exe", K("계산기", "Calculator"), RoutinePlacementMode.Saved),
                 },
             };
-            def.Items[2].Placement.Rect = new[] { 0.55, 0.5, 0.4, 0.45 };
+            def.Items[2].Placement!.Rect = new[] { 0.55, 0.5, 0.4, 0.45 };
             RoutineEditorWindow? w = null;
             try
             {

@@ -101,7 +101,17 @@ internal sealed partial class AllAppsPanel
             line.Children.Add(image);
             // 묶음이면 묶음 이름 + 그 안의 앱들 ("한컴오피스 2020 · 한글, 한셀, 한쇼")
             string label = job.Rows.Count > 1 ? $"{job.Name} · {string.Join(", ", job.Rows.Select(r => r.App.Name))}" : job.Rows[0].App.Name;
-            line.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
+            var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            texts.Children.Add(new TextBlock { Text = label, TextTrimming = TextTrimming.CharacterEllipsis });
+            // 실제로 돌릴 제거 항목을 늘 보여 줌, 앱 이름과 다르면 주의 (0.5.0 검토 2번)
+            if (job.What.Cannot is null && job.What.Command is { Length: > 0 })
+            {
+                string by = job.What.Publisher is { Length: > 0 } pub ? $"{job.What.Name} · {pub}" : job.What.Name;
+                texts.Children.Add(new TextBlock { Text = Loc.F($"제거 프로그램: {by}"), FontSize = UiText.Sub, Foreground = P.SubText, TextTrimming = TextTrimming.CharacterEllipsis });
+                if (!SameProduct(job.What.Name, job.Rows.Select(r => r.App.Name)))
+                    texts.Children.Add(new TextBlock { Text = "\u26A0 " + Loc.T("다른 이름의 제거 프로그램이 실행돼요"), FontSize = UiText.Sub, Foreground = P.HolidayText, TextWrapping = TextWrapping.Wrap });
+            }
+            line.Children.Add(texts);
             root.Children.Add(line);
         }
         root.Children.Add(new TextBlock
@@ -124,6 +134,15 @@ internal sealed partial class AllAppsPanel
         buttons.Children.Add(go);
         root.Children.Add(buttons);
         return root;
+    }
+
+    /// <summary>제거 항목 이름이 앱 이름(들)과 같은 제품으로 보이는지: 한쪽이 다른 쪽을 품으면 같다고 봄 (대소문자·공백 무시).</summary>
+    internal static bool SameProduct(string uninstallName, IEnumerable<string> appNames)
+    {
+        static string Norm(string s) => new string(s.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+        string u = Norm(uninstallName);
+        if (u.Length == 0) return false;
+        return appNames.Select(Norm).Where(a => a.Length > 0).Any(a => u.Contains(a) || a.Contains(u));
     }
 
     private const int SkipAfterSec = 15;
@@ -150,17 +169,35 @@ internal sealed partial class AllAppsPanel
             if (sec > SkipAfterSec && sec < SkipAfterSec + 0.6 && !IsClosing) Rebuild();
         };
         watch.Start();
-        _removeCancel = new CancellationTokenSource();
-        _removeProgress = (1, Math.Max(1, jobs.Count(j => j.What.Cannot is null)), jobs.FirstOrDefault(j => j.What.Cannot is null)?.Name ?? "");
-        Rebuild();
-        var result = await AppUninstall.RunAsync(jobs, (i, n, name) =>
+        AppUninstall.Result result;
+        try
         {
-            _removeProgress = (i, n, name);
+            _removeCancel = new CancellationTokenSource();
+            _removeProgress = (1, Math.Max(1, jobs.Count(j => j.What.Cannot is null)), jobs.FirstOrDefault(j => j.What.Cannot is null)?.Name ?? "");
+            Rebuild();
+            result = await AppUninstall.RunAsync(jobs, (i, n, name) =>
+            {
+                _removeProgress = (i, n, name);
+                if (!IsClosing) Rebuild();
+            }, _removeCancel.Token);
+        }
+        catch (Exception ex)
+        {
+            // 진행 중 예외: 판이 "지우는 중"에 갇히지 않게 (0.5.0 검토 8번)
+            Log.Error("잠자는 앱 지우기 실패", ex);
+            _removeJobs = null;
+            _removeSummary = Loc.T("지우는 중 문제가 생겼어요");
             if (!IsClosing) Rebuild();
-        }, _removeCancel.Token);
-        watch.Stop();
-        Topmost = true;
-        HoldOpen = false;
+            return;
+        }
+        finally
+        {
+            watch.Stop();
+            Topmost = true;
+            HoldOpen = false;
+            _removeRunning = false;
+            _removeCancel = null;
+        }
         int asked = jobs.Count;
         int left = asked - result.Removed - result.Settings;
         _removeSummary = result.Settings > 0
@@ -168,8 +205,6 @@ internal sealed partial class AllAppsPanel
             : Loc.F($"{result.Removed}개 지움 · {left}개 남음 (취소 또는 실패)");
         Log.Info($"잠자는 앱 지우기 끝: 지움 {result.Removed}, 실패·취소 {result.Failed}, 설정으로 {result.Settings}, 지울 수 없음 {result.Skipped}");
         _removeJobs = null;
-        _removeRunning = false;
-        _removeCancel = null;
         if (IsClosing) return;
         // 앱 목록을 새로 만들고(지운 앱은 빠짐) 잠자는 앱을 다시 셈
         _unusedChecked.Clear();

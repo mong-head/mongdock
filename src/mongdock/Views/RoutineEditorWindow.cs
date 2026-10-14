@@ -771,7 +771,7 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
             if (gameList is null)
             {
                 rows.Children.Add(Muted("…"));
-                Task.Run(GameCatalog.All).ContinueWith(t => Dispatcher.BeginInvoke(() =>
+                Task.Run(GameCatalog.Fresh).ContinueWith(t => Dispatcher.BeginInvoke(() =>
                 {
                     gameList = t.Status == TaskStatus.RanToCompletion ? t.Result : new List<GameCatalog.Game>();
                     if (IsLoaded && games) FillGames();

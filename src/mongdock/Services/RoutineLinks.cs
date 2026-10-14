@@ -50,7 +50,13 @@ internal static class RoutineLinks
     public static bool Allowed(Uri u) => IsWeb(u)
         || (AppSchemes.Contains(u.Scheme) || GameCatalog.IsLauncherScheme(u.Scheme))
            && !u.OriginalString.Any(c => c == '"' || char.IsWhiteSpace(c) || char.IsControl(c))
+           && SteamOk(u)
            && AppFor(u.Scheme) is not null;
+
+    /// <summary>스팀 링크는 게임 실행(steam://rungameid/숫자)만 — 제거·설치 같은 다른 명령은 막음 (0.5.0 검토 16번, 남이 준 설정 파일 가져오기).</summary>
+    private static bool SteamOk(Uri u) =>
+        !u.Scheme.Equals("steam", StringComparison.OrdinalIgnoreCase)
+        || System.Text.RegularExpressions.Regex.IsMatch(u.OriginalString, @"^steam://rungameid/\d+/?$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     // ── 연결된 앱 ──
 

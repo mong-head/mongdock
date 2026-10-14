@@ -1420,5 +1420,13 @@
  "site:앱·파일·설정 검색": "Search apps, files and settings",
  "site:200 × 15% · Enter 로 결과 복사": "200 × 15% · press Enter to copy",
  "menu:파일": "File",
- "one:파일": "File"
+ "one:파일": "File",
+ "되돌렸어요 — 뺀 앱을 원래 자리에 다시 넣었어요": "Undone — the apps are back where they were",
+ "{0}개를 즐겨찾기·폴더·독에서 뺐어요 (그중 {1}개는 숨김)": "Removed {0} from Favorites, folders and the Dock ({1} hidden)",
+ "{0}개를 즐겨찾기·폴더·독에서 뺐어요": "Removed {0} from Favorites, folders and the Dock",
+ "다른 이름의 제거 프로그램이 실행돼요": "An uninstaller with a different name will run",
+ "지우는 중 문제가 생겼어요": "Something went wrong while uninstalling",
+ "제거 프로그램: {0}": "Uninstaller: {0}",
+ "다른 앱 트레이 아이콘은 상단바 오른쪽에 있어요. 설정 → 일반 → '윈도우 작업 표시줄 숨기기'에서도 바꿀 수 있어요.": "Other apps' tray icons are on the right of the menu bar. You can change this in Settings → General → 'Hide the Windows taskbar'.",
+ "상단바가 꺼져 있어 다른 앱 트레이 아이콘을 볼 곳이 없어요. 설정 → 상단바를 켜면 오른쪽에 보여요.": "The menu bar is off, so other apps' tray icons have nowhere to show. Turn on the menu bar in Settings → Menu Bar to see them on the right."
 }

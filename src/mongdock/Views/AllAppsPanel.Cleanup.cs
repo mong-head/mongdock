@@ -200,9 +200,42 @@ internal sealed partial class AllAppsPanel
         return root;
     }
 
+    /// <summary>정리 [적용] 결과 한 줄 + [되돌리기] (판 맨 위, 다음에 판을 열 때까지).</summary>
+    private (string Message, Action? Undo)? _cleanupResult;
+
+    /// <summary>결과 줄: "n개를 뺐어요 [되돌리기]" — 되돌리면 "되돌렸어요".</summary>
+    private UIElement? CleanupResultRow()
+    {
+        if (_cleanupResult is not { } r) return null;
+        var row = new DockPanel { LastChildFill = true };
+        if (r.Undo is { } undo)
+        {
+            var link = SmallLink(Loc.T("되돌리기"), () =>
+            {
+                try { undo(); }
+                catch (Exception ex) { Log.Error("안 쓰는 앱 정리 되돌리기 실패", ex); }
+                _cleanupResult = (Loc.T("되돌렸어요 — 뺀 앱을 원래 자리에 다시 넣었어요"), null);
+                Rebuild();
+            });
+            link.Margin = new Thickness(10, 0, 0, 0);
+            link.FontWeight = FontWeights.SemiBold;
+            DockPanel.SetDock(link, Dock.Right);
+            row.Children.Add(link);
+        }
+        row.Children.Add(new TextBlock { Text = r.Message, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap });
+        return new Border { Background = P.PanelTint, CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 7, 10, 7), Margin = new Thickness(4, 0, 4, 8), Child = row };
+    }
+
     private void ApplyCleanup(List<CleanupRow> rows)
     {
         var settings = Services.Settings.Current;
+        // 되돌리기용: 빼기 전 즐겨찾기·폴더·숨김 목록과 뺄 핀(자리·사용자 아이콘·인수 그대로) — 0.5.0 검토 9번
+        var options = new System.Text.Json.JsonSerializerOptions();
+        string groupsBefore = System.Text.Json.JsonSerializer.Serialize(S.Groups, options);
+        string overridesBefore = System.Text.Json.JsonSerializer.Serialize(S.Overrides, options);
+        var favoritesBefore = S.Favorites.ToList();
+        var hiddenBefore = S.Hidden.ToList();
+        var pinsRemoved = new List<(int Index, PinItem Pin)>();
         bool openUninstall = false;
         int removed = 0, hidden = 0;
         foreach (var r in rows)
@@ -217,7 +250,11 @@ internal sealed partial class AllAppsPanel
                     AppFolders.RemoveFrom(settings, _apps, f.Id, app.Key);
                 if (r.Choice == CleanupChoice.Hide && !S.Hidden.Contains(app.Key, StringComparer.OrdinalIgnoreCase)) { S.Hidden.Add(app.Key); hidden++; }
             }
-            if (r.Pin is { } pin) settings.Pins.Remove(pin);
+            if (r.Pin is { } pin)
+            {
+                int at = settings.Pins.IndexOf(pin);
+                if (at >= 0) { pinsRemoved.Add((at, pin)); settings.Pins.RemoveAt(at); }
+            }
             removed++;
         }
         S.CleanupUsed = true;
@@ -225,6 +262,20 @@ internal sealed partial class AllAppsPanel
         _cleanup = null;
         _bannerCount = null;
         Log.Info($"안 쓰는 앱 정리: 빼기 {removed}개 (숨김 {hidden}개){(openUninstall ? ", 윈도우 앱 목록 열기" : "")}");
+        if (removed > 0)
+            _cleanupResult = (hidden > 0 ? Loc.F($"{removed}개를 즐겨찾기·폴더·독에서 뺐어요 (그중 {hidden}개는 숨김)") : Loc.F($"{removed}개를 즐겨찾기·폴더·독에서 뺐어요"), () =>
+            {
+                var s = Services.Settings.Current;
+                S.Favorites = favoritesBefore;
+                S.Hidden = hiddenBefore;
+                S.Groups = System.Text.Json.JsonSerializer.Deserialize<List<AppGroupDef>>(groupsBefore, options) ?? new();
+                S.Overrides = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(overridesBefore, options) ?? new();
+                // 뺀 핀은 원래 자리에 (그 사이 다시 넣었으면 건너뜀)
+                foreach (var (index, pin) in pinsRemoved.OrderBy(x => x.Index))
+                    if (!s.Pins.Contains(pin)) s.Pins.Insert(Math.Min(index, s.Pins.Count), pin);
+                Log.Info($"안 쓰는 앱 정리 되돌림 (핀 {pinsRemoved.Count}개)");
+                Save();
+            });
         Save();
         if (openUninstall)
         {

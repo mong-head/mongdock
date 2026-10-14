@@ -1420,5 +1420,13 @@
  "site:앱·파일·설정 검색": "Buscar apps, archivos y ajustes",
  "site:200 × 15% · Enter 로 결과 복사": "200 × 15 % · pulsa Intro para copiar",
  "menu:파일": "Archivo",
- "one:파일": "Archivo"
+ "one:파일": "Archivo",
+ "되돌렸어요 — 뺀 앱을 원래 자리에 다시 넣었어요": "Deshecho: las apps han vuelto a su sitio",
+ "{0}개를 즐겨찾기·폴더·독에서 뺐어요 (그중 {1}개는 숨김)": "Se quitaron {0} de Favoritos, carpetas y el Dock ({1} ocultas)",
+ "{0}개를 즐겨찾기·폴더·독에서 뺐어요": "Se quitaron {0} de Favoritos, carpetas y el Dock",
+ "다른 이름의 제거 프로그램이 실행돼요": "Se ejecutará un desinstalador con otro nombre",
+ "지우는 중 문제가 생겼어요": "Hubo un problema al desinstalar",
+ "제거 프로그램: {0}": "Desinstalador: {0}",
+ "다른 앱 트레이 아이콘은 상단바 오른쪽에 있어요. 설정 → 일반 → '윈도우 작업 표시줄 숨기기'에서도 바꿀 수 있어요.": "Los iconos de la bandeja de otras apps están a la derecha de la barra de menús. Puedes cambiarlo en Ajustes → General → «Ocultar la barra de tareas de Windows».",
+ "상단바가 꺼져 있어 다른 앱 트레이 아이콘을 볼 곳이 없어요. 설정 → 상단바를 켜면 오른쪽에 보여요.": "La barra de menús está desactivada, así que los iconos de la bandeja de otras apps no tienen dónde verse. Actívala en Ajustes → Barra de menús para verlos a la derecha."
 }

@@ -150,6 +150,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
         {
             // 손상된 파일은 덮어쓰기 전에 백업해 둔다 (다음 Save 가 덮어쓸 수 있으므로).
             Log.Error("settings.json 파싱 실패 → 기본값으로 시작 (원본은 백업)", ex);
+            RecoveredFromCorrupt = true;
             try
             {
                 string backup = SettingsPath + ".corrupt-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
@@ -163,6 +164,12 @@ public sealed class SettingsService : ISettingsService, IDisposable
             return new Settings();
         }
     }
+
+    /// <summary>
+    /// 이번 실행이 손상된 settings.json 대신 기본값으로 시작했는지. 그러면 "안 쓰는 그림 정리" 등 설정을 기준으로 지우는 일은 건너뜀
+    /// (빈 설정이라 모든 루틴·독 폴더 그림이 안 쓰는 것으로 보임 — .corrupt 백업으로 되살릴 수 있게, 0.5.0 검토 4번).
+    /// </summary>
+    public static bool RecoveredFromCorrupt { get; private set; }
 
     // ───────────────────────── 옛 형식 이관 ─────────────────────────
 

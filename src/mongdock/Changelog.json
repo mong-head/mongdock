@@ -3,7 +3,7 @@
   "versions": [
     {
       "version": "0.5.0",
-      "date": "2026-10-09",
+      "date": "2026-10-15",
       "headline": "루틴 · 새 앱 모음 판 · 독 폴더",
       "headline_en": "Routines · a new All Apps · Dock folders",
       "entries": [
@@ -25,8 +25,8 @@
         {
           "kind": "feature",
           "major": true,
-          "text": "앱 모음 판이 새로워졌어요: 즐겨찾기와 추천, 쓰는 앱만 담는 폴더(펼쳐서 순서 바꾸기), 오래 안 쓴 잠자는 앱 정리.",
-          "text_en": "A new All Apps panel: Favorites with suggestions, folders that hold only the apps you use (open them to reorder), and cleanup for apps you haven't used in a while.",
+          "text": "앱 모음 판이 새로워졌어요: 즐겨찾기와 추천, 쓰는 앱만 담는 폴더(펼쳐서 순서 바꾸기), 오래 안 쓴 잠자는 앱 정리 — 숨기거나 골라서 Windows에서 제거할 수 있어요.",
+          "text_en": "A new All Apps panel: Favorites with suggestions, folders that hold only the apps you use (open them to reorder), and cleanup for apps you haven't used in a while — hide them, or pick some to uninstall from Windows.",
           "coach": {
             "key": "allapps",
             "anchor": "AllApps",
@@ -66,6 +66,18 @@
             "body_en": "When an app gets a new notification, its Dock icon bounces twice and shows a red dot.",
             "condition": "dock"
           }
+        },
+        {
+          "kind": "feature",
+          "major": false,
+          "text": "몽독 화면을 8개 언어로 쓸 수 있어요: 한국어·영어·일본어·중국어(간체·번체)·독일어·프랑스어·스페인어 (설정 → 일반 → 언어).",
+          "text_en": "mongdock now speaks 8 languages: Korean, English, Japanese, Chinese (Simplified and Traditional), German, French and Spanish (Settings → General → Language)."
+        },
+        {
+          "kind": "feature",
+          "major": false,
+          "text": "설정을 파일 하나로 내보내고 다른 PC에서 가져올 수 있어요 (설정 → 일반).",
+          "text_en": "Export your settings to one file and import them on another PC (Settings → General)."
         },
         {
           "kind": "feature",
@@ -114,6 +126,24 @@
           "major": false,
           "text": "상단바 트레이 아이콘을 한 번 클릭으로 열어요.",
           "text_en": "Open menu bar tray icons with a single click."
+        },
+        {
+          "kind": "improvement",
+          "major": false,
+          "text": "상단바 시계에 날짜가 함께 보여요 (설정 → 상단바에서 끌 수 있어요).",
+          "text_en": "The menu bar clock shows the date too (you can turn it off in Settings → Menu Bar)."
+        },
+        {
+          "kind": "improvement",
+          "major": false,
+          "text": "독의 'Finder'는 '파일 탐색기', 'Launchpad'는 '앱 모음'으로 이름이 바뀌었어요.",
+          "text_en": "In the Dock, 'Finder' is now 'File Explorer' and 'Launchpad' is now 'All Apps'."
+        },
+        {
+          "kind": "improvement",
+          "major": false,
+          "text": "사용 통계는 동의한 경우에만 보내도록 바뀌어, 보낼지 한 번 더 여쭤봐요.",
+          "text_en": "Usage statistics are now sent only with your consent, so we ask you once more."
         },
         {
           "kind": "improvement",

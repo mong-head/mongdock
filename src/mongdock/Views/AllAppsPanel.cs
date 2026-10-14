@@ -283,7 +283,8 @@ internal sealed partial class AllAppsPanel : DockStackPanel
             return root;
         }
 
-        if (CleanupBanner() is { } banner) root.Children.Add(banner);
+        if (CleanupResultRow() is { } result) root.Children.Add(result);
+        else if (CleanupBanner() is { } banner) root.Children.Add(banner);
 
         // 루틴 (맨 위 — 루틴 칸 + [+ 루틴 추가], 0개면 설명 카드)
         root.Children.Add(RoutineSection());

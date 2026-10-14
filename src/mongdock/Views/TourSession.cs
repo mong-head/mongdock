@@ -343,7 +343,6 @@ internal sealed class TourSession : ICoachRun
     /// </summary>
     private void BringToFront()
     {
-        const uint flags = 0x0001 | 0x0002 | User32Flags.NoActivate;
         var ours = new HashSet<IntPtr>(new Window?[] { _dim, _card, _pill }.Where(w => w is not null && w.IsVisible).Select(w => new WindowInteropHelper(w!).Handle).Where(h => h != IntPtr.Zero));
         if (ours.Count == 0) return;
         bool covered = false;

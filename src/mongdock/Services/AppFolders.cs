@@ -210,8 +210,4 @@ internal static class AppFolders
         foreach (var (key, id) in moves)
             if (AllAppsCatalog.GroupOrder(s).Contains(id)) AddTo(settings, apps, id, key);
     }
-
-    /// <summary>앱이 들어 있는 폴더 id (보이는 폴더 기준). 없으면 null.</summary>
-    public static string? FolderOf(List<AppFolder> folders, string appKey) =>
-        folders.FirstOrDefault(f => f.Apps.Any(a => a.Key.Equals(appKey, StringComparison.OrdinalIgnoreCase)))?.Id;
 }

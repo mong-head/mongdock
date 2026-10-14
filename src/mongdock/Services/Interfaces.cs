@@ -483,15 +483,8 @@ public interface ITrayIconService
 /// 시계 달력에 펼쳐 보일 구독 일정 한 회차 (로컬 시각). 종일이면 Start = 그 날 0시, End = 끝 다음 날 0시(배타).
 /// Color = 그 캘린더 색 "#RRGGBB".
 /// </summary>
-public sealed record CalendarOccurrence(string FeedId, string Title, string? Location, DateTime Start, DateTime End, bool AllDay, string Color)
-{
-    /// <summary>그 날(0시~다음 날 0시)에 걸치는지. 길이 0 인 일정은 시작한 날만.</summary>
-    public bool OccursOn(DateTime day)
-    {
-        day = day.Date;
-        return End > Start ? Start < day.AddDays(1) && End > day : Start >= day && Start < day.AddDays(1);
-    }
-}
+public sealed record CalendarOccurrence(string FeedId, string Title, string? Location, DateTime Start, DateTime End, bool AllDay, string Color);
+
 
 /// <summary>구독 캘린더 상태. LastSync = 마지막으로 성공(304 포함)한 시각, Error = 사용자에게 보일 마지막 오류(성공하면 null).</summary>
 public sealed record CalendarFeedStatus(DateTime? LastSync, string? Error, bool Busy, int EventCount);

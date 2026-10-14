@@ -1017,11 +1017,28 @@ internal static class RoutineService
                  || head.Length > 0 && Path.GetFileNameWithoutExtension(r.Name).Equals(head, StringComparison.OrdinalIgnoreCase))
                 && Opens(r.Name))
             .Select(r => PinFactory.ShortcutTarget(r.Lnk))
-            .Where(t => !string.IsNullOrEmpty(t) && File.Exists(t))
+            .Where(t => !string.IsNullOrEmpty(t) && QuickExists(t!, folderOk: false))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(2)
             .ToList();
         return hits.Count == 1 ? hits[0] : null;
+    }
+
+    /// <summary>
+    /// "지금 화면 저장"의 경로 확인: UNC(\서버\…)·네트워크 드라이브는 확인하지 않고(없다고 봄), 로컬도 디스크 확인은 다른 스레드에서 0.8초까지만 기다림
+    /// — 끊긴 네트워크 드라이브·느린 디스크에서 독·상단바가 멈추지 않게 (0.5.0 검토 7번).
+    /// </summary>
+    internal static bool QuickExists(string path, bool folderOk = true)
+    {
+        if (path.StartsWith(@"\\", StringComparison.Ordinal) || path.StartsWith("//", StringComparison.Ordinal)) return false;
+        try
+        {
+            string? root = Path.GetPathRoot(path);
+            if (string.IsNullOrEmpty(root) || new DriveInfo(root).DriveType is DriveType.Network or DriveType.NoRootDirectory or DriveType.Unknown) return false;
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException) { return false; }
+        var check = Task.Run(() => File.Exists(path) || folderOk && Directory.Exists(path));
+        return check.Wait(800) && check.Result;
     }
 
     /// <summary>프로세스 실행 인자에 있는 파일·폴더 (예 code C:\dev\mongdock). 확실할 때만 (실제로 있는 경로).</summary>
@@ -1038,7 +1055,7 @@ internal static class RoutineService
                 string a = Environment.ExpandEnvironmentVariables(args[i]);
                 if (!Path.IsPathFullyQualified(a)) continue;
                 if (string.Equals(Path.GetFullPath(a), Path.GetFullPath(exePath), StringComparison.OrdinalIgnoreCase)) continue;
-                if (File.Exists(a) || Directory.Exists(a)) return a;
+                if (QuickExists(a)) return a;
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { }

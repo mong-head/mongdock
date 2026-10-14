@@ -54,10 +54,11 @@ internal static class TaskbarOverlapHint
                 Loc.T("작업 표시줄 숨기기"), Loc.T("독을 왼쪽으로 옮기기"), Loc.T("그대로 두기"));
             s = services.Settings.Current;
             var oldEdge = s.Dock.Edge;
+            bool oldTray = s.TopBar.ShowTrayIcons;
             switch (choice)
             {
                 case ConfirmCardWindow.Choice.Confirm:
-                    s.HideWindowsTaskbar = true; // 몽독이 숨기는 동안 작업 표시줄이 올라오지 않음
+                    s.SetHideWindowsTaskbar(true); // 몽독이 숨기는 동안 작업 표시줄이 올라오지 않음 (트레이 아이콘도 상단바로 — 0.5.0 검토 3번)
                     break;
                 case ConfirmCardWindow.Choice.Cancel:
                     s.Dock.Edge = DockEdge.Left; // 화면 왼쪽 세로 독 (위쪽은 상단바와 겹쳐 어색함)
@@ -71,9 +72,13 @@ internal static class TaskbarOverlapHint
             services.Settings.Save();
             // 고른 직후 같은 자리에 결과 한 줄 + [되돌리기] (2026-10-14: 설정을 조용히 바꾸지 않기)
             if (choice == ConfirmCardWindow.Choice.Confirm)
-                ConfirmCardWindow.ShowResult(services, Loc.T("작업 표시줄을 숨겼어요"), Loc.T("설정 → 일반 → '윈도우 작업 표시줄 숨기기'에서도 바꿀 수 있어요."), () =>
+                ConfirmCardWindow.ShowResult(services, Loc.T("작업 표시줄을 숨겼어요"),
+                    services.Settings.Current.TopBar.Enabled
+                        ? Loc.T("다른 앱 트레이 아이콘은 상단바 오른쪽에 있어요. 설정 → 일반 → '윈도우 작업 표시줄 숨기기'에서도 바꿀 수 있어요.")
+                        : Loc.T("상단바가 꺼져 있어 다른 앱 트레이 아이콘을 볼 곳이 없어요. 설정 → 상단바를 켜면 오른쪽에 보여요."), () =>
                 {
                     services.Settings.Current.SetHideWindowsTaskbar(false);
+                    services.Settings.Current.TopBar.ShowTrayIcons = oldTray;
                     services.Settings.Save();
                     Log.Info("작업 표시줄 겹침 안내: 숨기기 되돌림");
                     return Loc.T("되돌렸어요 — 작업 표시줄이 다시 보여요");

@@ -15,6 +15,7 @@ internal static class IconFiles
     public static void Cleanup(ISettingsService settings, params string?[] keep)
     {
         if (settings is not SettingsService service) return;
+        if (SettingsService.RecoveredFromCorrupt) return; // 손상 복구로 시작한 실행: 빈 설정 기준으로 그림을 지우지 않음 (0.5.0 검토 4번)
         try
         {
             var s = settings.Current;

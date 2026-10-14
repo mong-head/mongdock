@@ -1420,5 +1420,13 @@
  "site:앱·파일·설정 검색": "Rechercher apps, fichiers et réglages",
  "site:200 × 15% · Enter 로 결과 복사": "200 × 15 % · Entrée pour copier",
  "menu:파일": "Fichier",
- "one:파일": "Fichier"
+ "one:파일": "Fichier",
+ "되돌렸어요 — 뺀 앱을 원래 자리에 다시 넣었어요": "Annulé — les apps sont revenues à leur place",
+ "{0}개를 즐겨찾기·폴더·독에서 뺐어요 (그중 {1}개는 숨김)": "{0} retirées des favoris, dossiers et du Dock ({1} masquées)",
+ "{0}개를 즐겨찾기·폴더·독에서 뺐어요": "{0} retirées des favoris, dossiers et du Dock",
+ "다른 이름의 제거 프로그램이 실행돼요": "Un programme de désinstallation d'un autre nom va s'exécuter",
+ "지우는 중 문제가 생겼어요": "Un problème est survenu pendant la désinstallation",
+ "제거 프로그램: {0}": "Programme de désinstallation : {0}",
+ "다른 앱 트레이 아이콘은 상단바 오른쪽에 있어요. 설정 → 일반 → '윈도우 작업 표시줄 숨기기'에서도 바꿀 수 있어요.": "Les icônes de la zone de notification des autres apps sont à droite de la barre des menus. Modifiable dans Paramètres → Général → « Masquer la barre des tâches Windows ».",
+ "상단바가 꺼져 있어 다른 앱 트레이 아이콘을 볼 곳이 없어요. 설정 → 상단바를 켜면 오른쪽에 보여요.": "La barre des menus est désactivée : les icônes de notification des autres apps n'ont nulle part où s'afficher. Activez-la dans Paramètres → Barre des menus pour les voir à droite."
 }

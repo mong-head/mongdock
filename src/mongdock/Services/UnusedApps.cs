@@ -93,7 +93,7 @@ internal static class UnusedApps
     public static void Forget() => Latest = null;
 
     private sealed record Uninstall(string Name, string? Location, string? Icon, DateTime? Installed, long? Bytes,
-        string? Command = null, string? RegKey = null, bool Protected = false);
+        string? Command = null, string? RegKey = null, bool Protected = false, string? Publisher = null);
 
     /// <summary>
     /// 후보(마지막 사용이 60일 넘었거나 없음, 실행 중 아님 — UI 스레드에서 거른 것) → 기본 도구·시작 프로그램·새로 설치한 앱을 빼고 용량을 붙임.
@@ -129,7 +129,7 @@ internal static class UnusedApps
                 bytes = u.Bytes;
                 bundle = ("uninstall:" + uninstall.IndexOf(u), u.Name);
                 string? cannot = u.Protected ? Loc.T("보호된 앱이에요") : u.Command is not { Length: > 0 } ? Loc.T("제거 프로그램이 없어요") : null;
-                remove = new AppUninstall.Removal("uninstall:" + (u.RegKey ?? u.Name), u.Name, u.Command, u.RegKey, null, cannot);
+                remove = new AppUninstall.Removal("uninstall:" + (u.RegKey ?? u.Name), u.Name, u.Command, u.RegKey, null, cannot, u.Publisher);
             }
             else remove = new AppUninstall.Removal("app:" + app.Key, app.Name, null, null, null, Loc.T("제거 프로그램이 없어요"));
             installed ??= ShortcutDate(app);
@@ -138,7 +138,7 @@ internal static class UnusedApps
             bundles.Add(bundle);
         }
         // 같은 설치 묶음에서 크기를 가져온 앱이 둘 이상이면 묶음 표시 (크기는 묶음 전체라 앱마다 같음)
-        var shared = bundles.OfType<(string Key, string? Name)>().GroupBy(b => b.Key).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
+        var shared = bundles.Where(b => b.HasValue).Select(b => b!.Value).GroupBy(b => b.Key).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
         for (int i = 0; i < rows.Count; i++)
             if (bundles[i] is { } b && shared.Contains(b.Key)) rows[i] = rows[i] with { BundleKey = b.Key, BundleName = b.Name };
         return rows;
@@ -207,7 +207,7 @@ internal static class UnusedApps
                     string? icon = (k.GetValue("DisplayIcon") as string)?.Split(',')[0].Trim().Trim('"');
                     bool prot = k.GetValue("SystemComponent") is int sc && sc == 1 || k.GetValue("NoRemove") is int nr && nr == 1;
                     list.Add(new Uninstall(display, (k.GetValue("InstallLocation") as string)?.Trim().Trim('"').TrimEnd('\\'), icon, installed, bytes,
-                        k.GetValue("UninstallString") as string, tag + "|" + name, prot));
+                        k.GetValue("UninstallString") as string, tag + "|" + name, prot, (k.GetValue("Publisher") as string)?.Trim()));
                 }
             }
             catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException) { }
@@ -222,11 +222,54 @@ internal static class UnusedApps
         {
             var byIcon = list.FirstOrDefault(u => u.Icon is { Length: > 0 } i && string.Equals(i, exe, StringComparison.OrdinalIgnoreCase));
             if (byIcon is not null) return byIcon;
-            var byDir = list.Where(u => u.Location is { Length: > 3 } l && exe.StartsWith(l + "\\", StringComparison.OrdinalIgnoreCase))
+            var byDir = list.Where(u => u.Location is { Length: > 3 } l && InLocation(exe, l))
                 .OrderByDescending(u => u.Location!.Length).FirstOrDefault();
             if (byDir is not null) return byDir;
         }
         return list.FirstOrDefault(u => string.Equals(u.Name, app.Name, StringComparison.CurrentCultureIgnoreCase));
+    }
+
+    /// <summary>
+    /// 넓은 폴더(Program Files·Common Files·AppData·ProgramData·Windows·사용자 폴더·드라이브 루트 등) — InstallLocation 이 이것이면 폴더로 잇지 않음.
+    /// (0.5.0 검토 2번: 자기 제거 항목이 없는 앱이 넓은 폴더를 적은 엉뚱한 제품에 묶여, 지우기로 다른 제품이 지워질 수 있었음)
+    /// </summary>
+    private static readonly Lazy<string[]> BroadFolders = new(() =>
+    {
+
+        var list = new[]
+        {
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonProgramFiles),
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonProgramFilesX86),
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs"),
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AppData"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AppData", "LocalLow"),
+        };
+        return list.Where(x => x.Length > 0).Select(x => x.TrimEnd('\\')).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    });
+
+    /// <summary>
+    /// exe 가 그 제거 항목의 InstallLocation 에 속하는지.
+    /// 넓은 폴더 자체·드라이브 루트면 아님. 넓은 폴더 바로 아래(회사 폴더일 수 있음, 예 Program Files\회사)면 exe 가 그 폴더에 바로 있을 때만
+    /// (같은 회사의 다른 제품 하위 폴더에 있는 앱은 잇지 않음). 그보다 깊은 앱 폴더면 그 안 어디든.
+    /// </summary>
+    internal static bool InLocation(string exe, string location)
+    {
+        string loc = location.TrimEnd('\\');
+        if (!exe.StartsWith(loc + "\\", StringComparison.OrdinalIgnoreCase)) return false;
+        if (loc.Length <= 3 || loc.EndsWith(':')) return false; // 드라이브 루트
+        var broad = BroadFolders.Value;
+        if (broad.Any(b => string.Equals(b, loc, StringComparison.OrdinalIgnoreCase))) return false;
+        string? parent = Path.GetDirectoryName(loc)?.TrimEnd('\\');
+        bool underBroad = parent is not null && (parent.Length <= 3 || broad.Any(b => string.Equals(b, parent, StringComparison.OrdinalIgnoreCase)));
+        if (underBroad) return string.Equals(Path.GetDirectoryName(exe)?.TrimEnd('\\'), loc, StringComparison.OrdinalIgnoreCase);
+        return true;
     }
 
     private static DateTime? ShortcutDate(AppEntry app)

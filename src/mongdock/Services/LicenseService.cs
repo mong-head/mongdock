@@ -51,7 +51,12 @@ public sealed class LicenseService : IDisposable
     {
         _ownerWindow = ownerWindow;
         _dispatcher = Dispatcher.CurrentDispatcher;
+#if DEBUG
+        // 시험 전용 스위치는 DEBUG 빌드에서만 (출시 빌드는 환경 변수를 읽지 않고 이 이름도 exe 에 남지 않음 — 0.5.0 검토 1번)
         _fake = ParseFake(Environment.GetEnvironmentVariable("MONGDOCK_FAKE_LICENSE"));
+#else
+        _fake = null;
+#endif
         Current = _fake is { } f ? Make(f.State, f.Expiration, "fake")
             : !AppInfo.IsPackaged ? new LicenseInfo(LicenseState.Full, 0, null, "general")
             : FromCache() ?? new LicenseInfo(LicenseState.Full, 0, null, "default");
@@ -262,6 +267,7 @@ public sealed class LicenseService : IDisposable
         _ => $"정식 ({i.Source})",
     };
 
+#if DEBUG
     /// <summary>MONGDOCK_FAKE_LICENSE: "trial:3" · "expired" · "full". 틀린 값이면 null(스위치 없음).</summary>
     private static (LicenseState, DateTimeOffset?)? ParseFake(string? value)
     {
@@ -278,6 +284,7 @@ public sealed class LicenseService : IDisposable
         Log.Warn($"MONGDOCK_FAKE_LICENSE 값 '{value}' 를 모름 (trial:N / expired / full)");
         return null;
     }
+#endif
 
     // ───────────────────────── 캐시 (license.json) ─────────────────────────
 

@@ -25,10 +25,13 @@ internal static class GameCatalog
         get
         {
             var c = _cache;
-            if (c is null || DateTime.UtcNow - _cacheAt >= TimeSpan.FromMinutes(5)) Warm();
+            if (c is null || DateTime.UtcNow - _cacheAt >= CacheLife) Warm();
             return c;
         }
     }
+
+    /// <summary>다시 읽는 주기: 하루 (게임 탭을 열 때는 <see cref="Fresh"/> 로 바로 다시 — 0.5.0 검토 12번: 5분마다 외장 디스크·바탕 화면 전체를 깨움).</summary>
+    private static readonly TimeSpan CacheLife = TimeSpan.FromDays(1);
 
     private static int _warming;
 
@@ -46,9 +49,28 @@ internal static class GameCatalog
         lock (_lock) return AllLocked();
     }
 
+    /// <summary>게임 탭을 열 때: 캐시를 버리고 새로 읽음 (방금 설치한 게임도 보이게).</summary>
+    public static List<Game> Fresh()
+    {
+        lock (_lock)
+        {
+            _cache = null;
+            return AllLocked();
+        }
+    }
+
+    /// <summary>폴더 훑기 공통: 접근 못 하는 곳·숨김·시스템·연결 지점(junction·심볼릭 링크)은 건너뜀.</summary>
+    private static EnumerationOptions Walk(int depth) => new()
+    {
+        RecurseSubdirectories = depth > 0,
+        MaxRecursionDepth = depth,
+        IgnoreInaccessible = true,
+        AttributesToSkip = FileAttributes.Hidden | FileAttributes.System | FileAttributes.ReparsePoint,
+    };
+
     private static List<Game> AllLocked()
     {
-        if (_cache is not null && DateTime.UtcNow - _cacheAt < TimeSpan.FromMinutes(5)) return _cache;
+        if (_cache is not null && DateTime.UtcNow - _cacheAt < CacheLife) return _cache;
         var list = new List<Game>();
         try { list.AddRange(Steam()); } catch (Exception ex) { Log.Warn($"스팀 게임 목록 실패: {ex.GetType().Name}"); }
         try { list.AddRange(Epic()); } catch (Exception ex) { Log.Warn($"에픽 게임 목록 실패: {ex.GetType().Name}"); }
@@ -117,7 +139,7 @@ internal static class GameCatalog
     private static string? MainExe(string dir, string name)
     {
         if (!Directory.Exists(dir)) return null;
-        var exes = Directory.EnumerateFiles(dir, "*.exe", new EnumerationOptions { RecurseSubdirectories = true, MaxRecursionDepth = 2, IgnoreInaccessible = true })
+        var exes = Directory.EnumerateFiles(dir, "*.exe", Walk(2))
             .Where(f => !Regex.IsMatch(Path.GetFileName(f), @"unins|crash|report|setup|install|redist|vc_redist|dxsetup|launcher|helper|update|easyanticheat|be_service|ue4prereq", RegexOptions.IgnoreCase))
             .ToList();
         if (exes.Count == 0) return null;
@@ -182,7 +204,8 @@ internal static class GameCatalog
         {
             string root = Environment.GetFolderPath(sf);
             if (!Directory.Exists(root)) continue;
-            foreach (var url in Directory.EnumerateFiles(root, "*.url", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true }))
+            // 바탕 화면은 한 단계 아래 폴더까지만, 시작 메뉴는 세 단계까지 (큰 바탕 화면·연결 지점 따라가지 않음)
+            foreach (var url in Directory.EnumerateFiles(root, "*.url", Walk(sf == Environment.SpecialFolder.DesktopDirectory ? 1 : 3)))
             {
                 string? link = null, icon = null;
                 string[] lines;

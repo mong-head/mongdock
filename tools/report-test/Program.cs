@@ -209,6 +209,7 @@ internal static class Program
         if (Array.IndexOf(args, "--dockfit") >= 0) { DockFitReport(); return 0; }
         if (Array.IndexOf(args, "--clipdemo") >= 0) { ClipDemo(); return 0; }
         if (Array.IndexOf(args, "--suggest") >= 0) return SuggestTable();
+        if (Array.IndexOf(args, "--reviewcheck") >= 0) return ReviewCheck(); // 0.5.0 검토 수정 점검 (화면 없음)
         int unin = Array.FindIndex(args, a => a == "--uninstall");
         if (unin >= 0) return UninstallTest(unin + 1 < args.Length ? args[unin + 1] : null);
         if (Array.IndexOf(args, "--games") >= 0)
@@ -1493,6 +1494,47 @@ internal static class Program
         settings.Dispose();
         GC.KeepAlive(app);
         return problems == 0 ? 0 : 1;
+    }
+
+    /// <summary>0.5.0 검토 수정 점검: 제거 항목 폴더 연결(넓은 폴더 빼기), 이름 비교, 따옴표 없는 제거 명령, 스팀 링크, 빠른 경로 확인.</summary>
+    private static int ReviewCheck()
+    {
+        var asm = typeof(Mongdock.App).Assembly;
+        int bad = 0;
+        void Check(string what, bool ok) { Console.WriteLine($"  {(ok ? "통과" : "실패")}  {what}"); if (!ok) bad++; }
+        var unused = asm.GetType("Mongdock.Services.UnusedApps")!;
+        bool In(string exe, string loc) => (bool)unused.GetMethod("InLocation", Any)!.Invoke(null, new object[] { exe, loc })!;
+        string pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        string common = Environment.GetFolderPath(Environment.SpecialFolder.CommonProgramFiles);
+        string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        Check("Program Files 자체는 연결 안 함", !In($@"{pf}\Tool\tool.exe", pf));
+        Check("Common Files 자체는 연결 안 함", !In($@"{common}\Vendor\x.exe", common));
+        Check("AppData/Local 자체는 연결 안 함", !In($@"{local}\App\app.exe", local));
+        Check("드라이브 루트는 연결 안 함", !In(@"C:\Tools\a.exe", @"C:\"));
+        Check("회사 폴더(Program Files/회사): 다른 제품 하위 폴더 앱은 연결 안 함", !In($@"{pf}\Vendor\ProductB\b.exe", $@"{pf}\Vendor"));
+        Check("Program Files/앱: 바로 안의 exe 는 연결", In($@"{pf}\Notepad++\notepad++.exe", $@"{pf}\Notepad++"));
+        Check("깊은 앱 폴더: 하위 exe 도 연결", In($@"{pf}\Vendor\Product\bin\p.exe", $@"{pf}\Vendor\Product"));
+        Check("다른 폴더는 연결 안 함", !In(@"D:\Apps\x.exe", $@"{pf}\Vendor\Product"));
+        var panel = asm.GetType("Mongdock.Views.AllAppsPanel")!;
+        bool Same(string u, params string[] names) => (bool)panel.GetMethod("SameProduct", Any)!.Invoke(null, new object[] { u, names })!;
+        Check("이름 비교: 같은 제품", Same("Notepad++ (64-bit x64)", "Notepad++"));
+        Check("이름 비교: 다른 제품이면 주의", !Same("Contoso Suite 2024", "작은 도구 A"));
+        var un = asm.GetType("Mongdock.Services.AppUninstall")!;
+        object? Split(string c) => un.GetMethod("Split", Any)!.Invoke(null, new object[] { c });
+        Check("따옴표 없고 exe 못 찾음 → 첫 공백에서 자르지 않음", Split(@"C:\Program Files\Nope Tool\gone uninstall /S") is null);
+        Check("따옴표 경로는 그대로", Split("\"C:\\X Y\\u.exe\" /S") is not null);
+        Check("msiexec 는 그대로", Split("MsiExec.exe /I{12345678-1234-1234-1234-123456789012}") is not null);
+        var links = asm.GetType("Mongdock.Services.RoutineLinks")!;
+        bool SteamOk(string u) => (bool)links.GetMethod("SteamOk", Any)!.Invoke(null, new object[] { new Uri(u) })!;
+        Check("스팀: rungameid 허용", SteamOk("steam://rungameid/570"));
+        Check("스팀: uninstall 막음", !SteamOk("steam://uninstall/570"));
+        Check("스팀: install 막음", !SteamOk("steam://install/570"));
+        var rs = asm.GetType("Mongdock.Services.RoutineService")!;
+        bool Quick(string pth) => (bool)rs.GetMethod("QuickExists", Any)!.Invoke(null, new object[] { pth, true })!;
+        Check("UNC 경로는 확인 안 함(없다고 봄)", !Quick(@"\\server\share\file.txt"));
+        Check("로컬 경로는 확인", Quick(Environment.GetFolderPath(Environment.SpecialFolder.Windows)));
+        Console.WriteLine(bad == 0 ? "검토 수정 점검: 모두 통과" : $"검토 수정 점검: {bad}개 실패");
+        return bad == 0 ? 0 : 1;
     }
 
     private static int RenderTour(string? dir, bool checkOnly)

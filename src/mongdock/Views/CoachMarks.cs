@@ -498,26 +498,6 @@ internal static class CoachMarks
         return BuildWhatsNew(older ?? new Version(0, 0, 0), current);
     }
 
-    /// <summary>"주요 기능 둘러보기 ▶": 모든 버전의 major + coach 단계, 최신 순, 같은 Key 는 최신 것만, 최대 8장.</summary>
-    public static List<CoachPage> BuildMajorTour()
-    {
-        if (_services is null) return new List<CoachPage>();
-        var s = _services.Settings.Current;
-        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var pages = new List<CoachPage>();
-        foreach (var release in Changelog.Releases)
-        {
-            foreach (var e in release.Majors)
-            {
-                if (pages.Count >= MaxReplaySteps) return pages;
-                if (e.Coach is null || !keys.Add(e.Coach.Key)) continue;
-                var step = WhatsNew.Releases.FirstOrDefault(x => x.Version == release.VersionText && string.Equals(x.Key, e.Coach.Key, StringComparison.OrdinalIgnoreCase));
-                if (step is not null) pages.Add(ReplayPage(step, s));
-            }
-        }
-        return pages;
-    }
-
     /// <summary>정보 페이지 "처음 사용 둘러보기".</summary>
     public static List<CoachPage> BuildTourPages() => _services is null ? new List<CoachPage>() : BuildTour();
 

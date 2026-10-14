@@ -63,14 +63,6 @@ internal static class RoutineIcons
     public static string Key(RoutineDef r) =>
         $"{r.Icon?.Mode}|{r.Icon?.Color}|{r.Icon?.Glyph}|{r.Icon?.Text}|{r.Icon?.File}|" + string.Join("|", r.Items.Take(4).Select(i => $"{i.Kind}:{i.Aumid}:{i.Target}"));
 
-    /// <summary>데스크톱 설명 ("새 데스크톱" 등) — 툴팁·편집 창.</summary>
-    public static string DesktopText(RoutineDesktop d) => d.Mode switch
-    {
-        RoutineDesktopMode.Current => Loc.T("지금 데스크톱"),
-        RoutineDesktopMode.Index => Loc.F($"데스크톱 {d.Index}"),
-        _ => Loc.T("새 데스크톱"),
-    };
-
     /// <summary>툴팁 "업무 시작 · 4개 · 새 데스크톱".</summary>
     public static string Tooltip(RoutineDef r) => $"{r.Name} · {Loc.F($"{r.Items.Count}개")}"; // 늘 새 데스크톱이라 데스크톱은 빼고
 
