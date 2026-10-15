@@ -59,6 +59,14 @@ internal static class Program
             RenderSettingsPages(args[settingsAt + 1]);
             return 0;
         }
+        // --license [DIR]: 체험판·구매·스토어 업데이트 규칙 점검 (+ DIR 이면 정보 페이지·카드 그림, ko·de 라이트·다크) — 스토어·실제 입력 없음
+        int licenseAt = Array.FindIndex(args, a => a == "--license");
+        if (licenseAt >= 0)
+        {
+            Environment.SetEnvironmentVariable("MONGDOCK_DATA_DIR", Path.Combine(Path.GetTempPath(), "mongdock-license-png-" + Guid.NewGuid().ToString("N")));
+            string? dir = licenseAt + 1 < args.Length && !args[licenseAt + 1].StartsWith("--") ? args[licenseAt + 1] : null;
+            return LicenseCheck.Run(dir, langAt >= 0 ? new[] { _lang } : new[] { "ko", "de" });
+        }
         // --shots DIR: 홈페이지 스크린샷 8장 (site-draft/shots.md) — 시험 데이터 폴더·예시 데이터로, --lang 없으면 한국어·영어 둘 다
         int shotsAt = Array.FindIndex(args, a => a is "--shots" or "--shots2"); // --shots2 = 홈페이지 v2 (독·상단바 중심)
         if (shotsAt >= 0 && shotsAt + 1 < args.Length)

@@ -84,7 +84,16 @@ public sealed class LicenseService : IDisposable
     public event EventHandler? Changed;
 
     /// <summary>스토어로 확인하는 판인지 (스토어판 또는 시험 스위치). 일반판이면 체험·구매 화면을 아예 안 보임.</summary>
-    public bool Managed => _fake is not null || AppInfo.IsPackaged;
+    public bool Managed => _fake is not null || AppInfo.IsPackaged || _forTest;
+
+    private bool _forTest;
+
+    /// <summary>report-test 그림용: 스토어판처럼 보이게 하고 상태를 바로 넣음 (리플렉션으로만 닿음, 스토어·환경 변수와 무관).</summary>
+    internal void SetForTest(LicenseInfo info)
+    {
+        _forTest = true;
+        Current = info;
+    }
 
     public void Start()
     {
