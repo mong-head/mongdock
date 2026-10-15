@@ -11,6 +11,11 @@
           "kind": "feature",
           "text": "윈도우 업데이트가 기다리고 있으면 로고 메뉴에서 '업데이트 후 다시 시작'·'업데이트 후 시스템 종료'를 고를 수 있어요.",
           "text_en": "When a Windows update is waiting, the logo menu offers 'Update and restart' and 'Update and shut down'."
+        },
+        {
+          "kind": "improvement",
+          "text": "루틴 탐색기 창이 각자 정한 자리로 열려요.",
+          "text_en": "Routine File Explorer windows open in their own places."
         }
       ]
     },
