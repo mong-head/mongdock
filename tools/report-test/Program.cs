@@ -2667,6 +2667,38 @@ internal static class Program
             var elsewhere = Card(Mongdock.Loc.F($"이미 켜져 있는 앱 {3}개는 원래 데스크톱에 있어요"), "Chrome · 카카오톡 · Notion", Mongdock.Loc.T("그 데스크톱으로 가기"), Mongdock.Loc.T("닫기"), null);
             Save((FrameworkElement)elsewhere.Content, "elsewhere");
             elsewhere.Close();
+
+            // 7) 0.6.2 로고 메뉴 전원 줄 (업데이트가 다시 시작을 기다릴 때 / 아닐 때) + 「업데이트 후 다시 시작」 확인 카드
+            {
+                var tb = T("Mongdock.Views.TopBarWindow");
+                var dm = T("Mongdock.Views.DockMenus");
+                foreach (bool pending in new[] { true, false })
+                {
+                    var power = ((System.Collections.IEnumerable)tb.GetMethod("PowerItems", Any)!.Invoke(null, new object[] { pending })!).Cast<object>().ToList();
+                    string P(object o, string n) => (string)o.GetType().GetProperty(n)!.GetValue(o)!;
+                    var stack = new System.Windows.Controls.StackPanel { Margin = new Thickness(5) };
+                    System.Windows.Controls.MenuItem Mi(string label) => (System.Windows.Controls.MenuItem)dm.GetMethod("Item", Any)!.Invoke(null, new object?[] { label, (Action)(() => { }), true, null })!;
+                    stack.Children.Add(Mi(Mongdock.Loc.T("작업 관리자")));
+                    stack.Children.Add(new System.Windows.Controls.Separator());
+                    stack.Children.Add(Mi(Mongdock.Loc.T("절전")));
+                    foreach (var pw in power) stack.Children.Add(Mi(P(pw, "Label")));
+                    stack.Children.Add(new System.Windows.Controls.Separator());
+                    stack.Children.Add(Mi(Mongdock.Loc.T("화면 잠금")));
+                    var box = new System.Windows.Controls.Border { Child = stack, CornerRadius = new CornerRadius(10), Width = 280 };
+                    box.SetResourceReference(System.Windows.Controls.Border.BackgroundProperty, "Menu.Background");
+                    var host = new System.Windows.Controls.Border { Padding = new Thickness(12), Child = box, Background = (Brush)palette.GetType().GetProperty("WindowBackground")!.GetValue(palette)! };
+                    host.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                    host.Arrange(new Rect(host.DesiredSize));
+                    host.UpdateLayout();
+                    Save(host, pending ? "logomenu-update" : "logomenu-normal");
+                    if (pending)
+                    {
+                        var c = Card(P(power[0], "Title"), P(power[0], "Body"), P(power[0], "Button"), null, null);
+                        Save((FrameworkElement)c.Content, "confirm-update-restart");
+                        c.Close();
+                    }
+                }
+            }
             settings.Dispose();
         }
         GC.KeepAlive(app);

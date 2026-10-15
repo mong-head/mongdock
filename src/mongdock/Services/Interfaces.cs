@@ -181,6 +181,8 @@ public interface IShellActions
     void Sleep();                // SetSuspendState
     void Restart();              // shutdown /r /t 0
     void Shutdown();             // shutdown /s /t 0
+    void RestartWithUpdates();   // InitiateShutdown(RESTART | INSTALL_UPDATES) — 윈도우 업데이트가 다시 시작을 기다릴 때
+    void ShutdownWithUpdates();  // InitiateShutdown(POWEROFF | INSTALL_UPDATES)
     void LockScreen();           // LockWorkStation
     void SignOut();              // ExitWindowsEx(EWX_LOGOFF)
 }

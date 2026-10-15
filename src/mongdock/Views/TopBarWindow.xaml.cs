@@ -868,6 +868,23 @@ public partial class TopBarWindow : Window
         return true;
     }
 
+    /// <summary>로고 메뉴 전원 줄 (메뉴 글자, 확인 카드 제목·본문·버튼). 업데이트가 다시 시작을 기다리면 시작 메뉴처럼 「업데이트 후 …」 (0.6.2).</summary>
+    internal sealed record PowerItem(bool Restart, bool Updates, string Label, string Title, string Body, string Button);
+
+    internal static IReadOnlyList<PowerItem> PowerItems(bool updatePending) => updatePending
+        ? new[]
+        {
+            new PowerItem(true, true, Loc.T("업데이트 후 다시 시작…"), Loc.T("업데이트를 설치하고 다시 시작할까요?"),
+                Loc.T("업데이트를 설치하는 동안 몇 분 걸릴 수 있어요. 저장하지 않은 작업은 사라질 수 있어요."), Loc.T("업데이트 후 다시 시작")),
+            new PowerItem(false, true, Loc.T("업데이트 후 시스템 종료…"), Loc.T("업데이트를 설치하고 시스템을 종료할까요?"),
+                Loc.T("업데이트를 설치하는 동안 몇 분 걸릴 수 있어요. 저장하지 않은 작업은 사라질 수 있어요."), Loc.T("업데이트 후 종료")),
+        }
+        : new[]
+        {
+            new PowerItem(true, false, Loc.T("다시 시작…"), Loc.T("지금 컴퓨터를 다시 시작할까요?"), Loc.T("저장하지 않은 작업은 사라질 수 있어요."), Loc.T("다시 시작")),
+            new PowerItem(false, false, Loc.T("시스템 종료…"), Loc.T("지금 시스템을 종료할까요?"), Loc.T("저장하지 않은 작업은 사라질 수 있어요."), Loc.T("종료")),
+        };
+
     private void TogglePanel(StatusPanelKind kind, FrameworkElement anchor)
     {
         // 닫히는 중(페이드 아웃)인 패널은 열린 것으로 치지 않음 — 그 사이 같은 아이콘을 다시 누르면 새로 연다
@@ -1122,10 +1139,10 @@ public partial class TopBarWindow : Window
         menu.Items.Add(DockMenus.Item(Loc.T("작업 관리자"), shell.OpenTaskManager));
         menu.Items.Add(new Separator());
         menu.Items.Add(DockMenus.Item(Loc.T("절전"), shell.Sleep));
-        menu.Items.Add(DockMenus.Item(Loc.T("다시 시작…"), () => ConfirmCardWindow.Ask(_services,
-            Loc.T("지금 컴퓨터를 다시 시작할까요?"), Loc.T("저장하지 않은 작업은 사라질 수 있어요."), Loc.T("다시 시작"), shell.Restart)));
-        menu.Items.Add(DockMenus.Item(Loc.T("시스템 종료…"), () => ConfirmCardWindow.Ask(_services,
-            Loc.T("지금 시스템을 종료할까요?"), Loc.T("저장하지 않은 작업은 사라질 수 있어요."), Loc.T("종료"), shell.Shutdown)));
+        foreach (var power in PowerItems(WindowsUpdateState.RestartPending()))
+            menu.Items.Add(DockMenus.Item(power.Label, () => ConfirmCardWindow.Ask(_services, power.Title, power.Body, power.Button, power.Restart
+                ? (power.Updates ? shell.RestartWithUpdates : shell.Restart)
+                : (power.Updates ? shell.ShutdownWithUpdates : shell.Shutdown))));
         menu.Items.Add(new Separator());
         menu.Items.Add(DockMenus.Item(Loc.T("화면 잠금"), shell.LockScreen));
         menu.Items.Add(DockMenus.Item(Loc.T("로그아웃…"), () => ConfirmCardWindow.Ask(_services,
