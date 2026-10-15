@@ -490,6 +490,18 @@ internal static class RoutineService
         };
     }
 
+    /// <summary>앱 항목 실행 인자: 계정 + 새 창(브라우저는 늘, VS Code 류는 켜져 있을 때만, 실행 옵션에 이미 있으면 안 붙임) + 실행 옵션 + 함께 열 것.</summary>
+    internal static string AppArgs(RoutineItem item, bool running)
+    {
+        string? newWindow = NewWindowArg(item) is { Length: > 0 } nw
+            && (IsBrowserNewWindow(nw) || running)
+            && !(item.Args ?? "").Contains(nw, StringComparison.OrdinalIgnoreCase) ? nw : null;
+        return string.Join(" ", new[] { RoutineProfiles.Arg(item), newWindow, item.Args, Quote(item.Open) }.Where(s => !string.IsNullOrWhiteSpace(s)));
+    }
+
+    /// <summary>브라우저의 새 창 인자인지 (크로미움 --new-window, 파이어폭스 -new-window).</summary>
+    private static bool IsBrowserNewWindow(string arg) => arg is "--new-window" or "-new-window";
+
     /// <summary>이미 다른 데스크톱에 켜져 있어 열지 않은 앱들 (이름, 첫 창) — 안내 카드를 띄움. UI 스레드.</summary>
     public static event Action<List<(string Name, IntPtr Hwnd)>>? ElsewhereShown;
     /// <summary>열 것이 없고 루틴 앱이 전부 이 데스크톱에 있어 앞으로만 가져옴 (짧은 "이미 열려 있어요"). UI 스레드.</summary>
@@ -577,10 +589,10 @@ internal static class RoutineService
         {
             case RoutineItemKind.App:
             {
-                // 새 창을 열 수 있는 앱이 이미 켜져 있으면 새 창 인자를 붙임 (안 붙이면 원래 데스크톱의 창이 앞으로 옴)
-                string? newWindow = NewWindowArg(item) is { Length: > 0 } nw && services.Windows.Windows.Any(w => IsItemWindow(item, w))
-                    && !(item.Args ?? "").Contains(nw, StringComparison.OrdinalIgnoreCase) ? nw : null;
-                string args = string.Join(" ", new[] { RoutineProfiles.Arg(item), newWindow, item.Args, Quote(item.Open) }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                // 새 창 인자 (안 붙이면 이미 열린 창이 앞으로 오거나 그 창에 탭으로 들어감):
+                // 브라우저는 늘 (0.6.1 사용자 제보 — 다른 데스크톱·다른 계정 창이 있으면 창 목록으로 못 알아채 탭으로 들어갔음),
+                // VS Code 류는 켜져 있을 때만 (안 켜져 있을 때 -n 이면 지난 작업 창을 되살리지 않고 빈 창이 됨)
+                string args = AppArgs(item, running: services.Windows.Windows.Any(w => IsItemWindow(item, w)));
                 if (!string.IsNullOrWhiteSpace(item.Aumid))
                     services.Launcher.Launch(new PinItem { Kind = PinKind.Aumid, Target = item.Aumid, Arguments = args.Length > 0 ? args : null, Name = item.Name ?? "" });
                 else if (File.Exists(Environment.ExpandEnvironmentVariables(item.Target)))
@@ -607,12 +619,11 @@ internal static class RoutineService
                 var web = links.Where(RoutineLinks.IsWeb).ToList();
                 if (web.Count > 0)
                 {
-                    var placement = item.Placement?.Mode ?? RoutinePlacementMode.Keep;
-                    bool newWindow = web.Count > 1 || placement != RoutinePlacementMode.Keep;
-                    // 브라우저 계정을 골랐으면 (0.6.1): 그 계정으로 — 탭이 여럿이거나 자리를 정했으면 새 창, 아니면 그 계정 창에 탭
+                    // 아는 브라우저면 늘 새 창 (0.6.1 사용자 제보: 주소 하나·자리 "그대로"면 이미 열린 창 — 다른 데스크톱일 수도 — 에 탭으로 들어갔음).
+                    // 브라우저 계정을 골랐으면 그 계정 창으로
                     if (RoutineProfiles.Arg(item) is { } profileArg && RoutineProfiles.BrowserExe(item) is { } chromium)
-                        Start(chromium, profileArg + " " + (newWindow ? RoutineLinks.TabArgs(RoutineLinks.Browser.Chromium, web) : string.Join(" ", web.Select(u => $"\"{u.AbsoluteUri}\""))));
-                    else if (newWindow && DefaultBrowser() is { } browser && RoutineLinks.Kind(browser) is var kind && kind != RoutineLinks.Browser.Unknown)
+                        Start(chromium, profileArg + " " + RoutineLinks.TabArgs(RoutineLinks.Browser.Chromium, web));
+                    else if (DefaultBrowser() is { } browser && RoutineLinks.Kind(browser) is var kind && kind != RoutineLinks.Browser.Unknown)
                         Start(browser, RoutineLinks.TabArgs(kind, web));
                     else
                         foreach (var u in web) Start(u.AbsoluteUri, null); // 모르는 브라우저는 하나씩

@@ -1618,6 +1618,16 @@ internal static class Program
             Check("안 고름 → 인자 없음", Arg(chrome) is null);
             var store = new RoutineItem { Kind = RoutineItemKind.App, Aumid = "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App", Profile = "Profile 1" };
             Check("스토어 앱(AUMID) → 계정 없음", Arg(store) is null);
+            // 새 창 (0.6.1 제보: 다른 데스크톱·다른 계정 창이 있어도 크롬 탭으로 들어감) — 브라우저는 켜져 있든 말든 늘 새 창
+            var rs = asm.GetType("Mongdock.Services.RoutineService")!;
+            string Args(RoutineItem i, bool running) => (string)rs.GetMethod("AppArgs", Any)!.Invoke(null, new object[] { i, running })!;
+            var web = new RoutineItem { Kind = RoutineItemKind.App, Target = @"C:\Program Files\Google\Chrome\Application\chrome.exe", Open = "https://mail.company.com", Profile = "Profile 1" };
+            Check($"크롬 (안 켜진 줄 앎) → {Args(web, false)}", Args(web, false) == "--profile-directory=\"Profile 1\" --new-window https://mail.company.com");
+            web.Args = "--new-window";
+            Check($"실행 옵션에 이미 --new-window → 한 번만 ({Args(web, true)})", Args(web, true) == "--profile-directory=\"Profile 1\" --new-window https://mail.company.com");
+            var code = new RoutineItem { Kind = RoutineItemKind.App, Target = @"C:\x\Code.exe", Open = @"C:\dev\mongdock" };
+            Check($"VS Code 안 켜짐 → -n 없음 ({Args(code, false)})", Args(code, false) == @"C:\dev\mongdock");
+            Check($"VS Code 켜짐 → -n ({Args(code, true)})", Args(code, true) == @"-n C:\dev\mongdock");
         }
         finally { rp.GetProperty("ProfilesForTest", Any)!.SetValue(null, null); }
         // 저장 형식: 없으면 안 씀, 있으면 "profile", 옛 판(모르는 키 무시)과 같은 방식
