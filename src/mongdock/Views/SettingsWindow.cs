@@ -1319,7 +1319,8 @@ internal sealed partial class SettingsWindow : Window
         head.Children.Add(AboutCoachLinks()); // SettingsWindow.Changelog.cs: 이 버전 둘러보기 ▶ · 변경 내역 보기 ›
         body.Children.Add(head);
 
-        if (!AppInfo.IsPackaged) BuildUpdateSection(body); // SettingsWindow.Update.cs (스토어판은 스토어가 업데이트)
+        if (StoreUpdateService.Instance is { } storeUpdates) BuildStoreUpdateSection(body, storeUpdates); // SettingsWindow.StoreUpdate.cs (스토어판)
+        else if (!AppInfo.IsPackaged) BuildUpdateSection(body); // SettingsWindow.Update.cs (GitHub 릴리스)
         body.Children.Add(SectionTitle(Loc.T("정보")));
 
         string folder = Path.GetDirectoryName(_services.Settings.SettingsPath) ?? AppInfo.DataDirectory;

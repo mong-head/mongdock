@@ -147,8 +147,8 @@ public static class LicenseUi
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
-    /// <summary>지금 앞에 있는 몽독 창(카드·설정 창), 없으면 넘겨받은 창(독).</summary>
-    private static IntPtr OwnerHandle(Window? fallback)
+    /// <summary>지금 앞에 있는 몽독 창(카드·설정 창), 없으면 넘겨받은 창(독). 스토어 창(구매·업데이트)의 주인.</summary>
+    internal static IntPtr OwnerHandle(Window? fallback)
     {
         try
         {

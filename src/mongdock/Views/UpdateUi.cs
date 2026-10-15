@@ -17,6 +17,37 @@ internal static class UpdateUi
     /// <summary>App 시작 때 한 번: Available → 배너. Dispose 하면 구독 해제.</summary>
     public static IDisposable Attach(AppServices services, UpdateService updates) => new Hook(services, updates);
 
+    /// <summary>스토어판: 새 버전을 처음 찾으면 같은 배너 (버전마다 한 번). 누르면 정보 페이지의 [업데이트].</summary>
+    public static IDisposable Attach(AppServices services, StoreUpdateService updates) => new StoreHook(services, updates);
+
+    private sealed class StoreHook : IDisposable
+    {
+        private readonly AppServices _services;
+        private readonly StoreUpdateService _updates;
+
+        public StoreHook(AppServices services, StoreUpdateService updates)
+        {
+            _services = services;
+            _updates = updates;
+            _updates.Available += OnAvailable;
+        }
+
+        private void OnAvailable(object? sender, Version? version)
+        {
+            var s = _services.Settings.Current;
+            if (version is not null && WhatsNew.Parse(s.NotifiedUpdateVersion) == version) return;
+            var item = new NotificationItem(BannerId, "", AppInfo.Name, Loc.T("mongdock 업데이트 있음 · v") + (version?.ToString(3) ?? "?"),
+                new[] { Loc.T("눌러서 새 버전 정보를 보고 설치할 수 있어요.") }, DateTime.Now, null, null, false, null);
+            if (NotificationBannerWindow.ShowCustom(item, AppIcon(_services), () => OpenAbout(_services)) && version is not null)
+            {
+                s.NotifiedUpdateVersion = version.ToString(3);
+                _services.Settings.Save();
+            }
+        }
+
+        public void Dispose() => _updates.Available -= OnAvailable;
+    }
+
     private sealed class Hook : IDisposable
     {
         private readonly AppServices _services;
@@ -63,13 +94,15 @@ internal static class UpdateUi
     /// <summary>새 버전이 있으면 메뉴 맨 위에 "업데이트 있음 — v0.3.1 설치…" + 구분선. 없으면 아무것도 안 넣음.</summary>
     public static void AddMenuItems(ItemsControl menu, AppServices services)
     {
-        if (UpdateService.Instance?.Pending is not { } info) return;
-        var item = DockMenus.Item(Loc.F($"업데이트 있음 — v{info.VersionText} 설치…"), () => OpenAbout(services));
+        string? version = UpdateService.Instance?.Pending?.VersionText
+            ?? (StoreUpdateService.Instance is { HasPending: true } store ? store.PendingVersion?.ToString(3) ?? "?" : null);
+        if (version is null) return;
+        var item = DockMenus.Item(Loc.F($"업데이트 있음 — v{version} 설치…"), () => OpenAbout(services));
         item.FontWeight = System.Windows.FontWeights.SemiBold;
         menu.Items.Insert(0, item);
         menu.Items.Insert(1, new Separator());
     }
 
     /// <summary>상단바 로고 배지를 보여야 하는지.</summary>
-    public static bool HasPending => UpdateService.Instance?.Pending is not null;
+    public static bool HasPending => UpdateService.Instance?.Pending is not null || StoreUpdateService.Instance?.HasPending == true;
 }

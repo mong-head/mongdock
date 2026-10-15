@@ -59,13 +59,20 @@ public static class CrashReporter
                     crashed = false;
                     Log.Info($"지난 실행은 재부팅 전 세션 (시작 {s0:yyyy-MM-dd HH:mm:ss}, 부팅 {bootTime:yyyy-MM-dd HH:mm:ss}) → 비정상 종료로 보지 않음");
                 }
+                // 지난 세션이 다른 버전이면 업데이트(스토어가 설치하며 끔)로 끝난 것 → 몽독 탓이 아님
+                string? ver = doc.RootElement.TryGetProperty("ver", out var v) ? v.GetString() : null;
+                if (crashed && ver is not null && ver != WhatsNew.Current.ToString(3))
+                {
+                    crashed = false;
+                    Log.Info($"지난 실행은 v{ver} (지금 v{WhatsNew.Current.ToString(3)}) → 업데이트로 끝남, 비정상 종료로 보지 않음");
+                }
             }
             ErrorRecord? error = ReadError();
             if (crashed || error is not null) pending = new Pending(crashed, started, error);
             if (crashed) Log.Warn($"지난 실행이 정상 종료되지 않음 (시작 {started:yyyy-MM-dd HH:mm:ss})");
 
             var now = Process.GetCurrentProcess();
-            AtomicFile.WriteAllText(SessionPath, JsonSerializer.Serialize(new { pid = Environment.ProcessId, started = now.StartTime }));
+            AtomicFile.WriteAllText(SessionPath, JsonSerializer.Serialize(new { pid = Environment.ProcessId, started = now.StartTime, ver = WhatsNew.Current.ToString(3) }));
         }
         catch (Exception ex)
         {

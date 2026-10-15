@@ -23,6 +23,7 @@ public partial class App : Application
     private HotkeyController? _hotkeys;
     private IDisposable? _banners;
     private UpdateService? _updates;
+    private StoreUpdateService? _storeUpdates;
     private UsageStatsService? _stats;
     private IDisposable? _updateUi;
     private IDisposable? _lowBattery;
@@ -180,16 +181,19 @@ public partial class App : Application
         // 상단바 창들보다 먼저 구독 → 모니터가 분리되면 그 상단바가 이벤트를 처리하기 전에 닫힘
         _services.DesktopWindows.DisplayChanged += OnDisplayChanged;
         _services.Settings.SettingsChanged += OnSettingsChanged;
-        // 새 버전 확인 (상단바 로고 배지가 UpdateService.Instance 를 쓰므로 상단바보다 먼저).
-        // 스토어판은 스토어가 업데이트 → 만들지 않음 (Instance 가 null 이면 배지·메뉴 항목·정보 페이지 업데이트 영역이 모두 숨음)
-        if (!AppInfo.IsPackaged) _updates = new UpdateService(settings, () => AppState.Paused);
+        // 새 버전 확인 (상단바 로고 배지가 Instance 를 쓰므로 상단바보다 먼저). 일반판은 GitHub 릴리스(UpdateService),
+        // 스토어판은 StoreUpdateService (스토어에 새 버전을 묻고 [업데이트]는 스토어 창) — 배지·메뉴·정보 페이지는 둘 중 있는 것을 씀
+        if (StoreUpdateService.Wanted) _storeUpdates = new StoreUpdateService(() => LicenseUi.OwnerHandle(_dock), () => AppState.Paused);
+        else _updates = new UpdateService(settings, () => AppState.Paused);
         SyncTopBars();
         _tray = new TrayController(_services);
         _hotkeys = new HotkeyController(_services, RunHotkey);
         _banners = NotificationBannerWindow.Attach(_services);
         if (_updates is not null) _updateUi = UpdateUi.Attach(_services, _updates);
+        else if (_storeUpdates is not null) _updateUi = UpdateUi.Attach(_services, _storeUpdates);
         _lowBattery = LowBatteryBanner.Attach(_services); // 배터리 20·10·5% 알림 (배너 호스트 다음)
         _updates?.Start(); // 1분 뒤 첫 확인, 이후 12시간마다
+        _storeUpdates?.Start(); // 1분 뒤 첫 확인, 이후 하루 한 번
         _stats = UsageStatsService.Start(_services); // 사용 통계: 2분 뒤 첫 확인, 이후 1시간마다 (그날 처음이면 하나)
         StatsConsent.Attach(_services); // 아직 안 물었으면 첫 안내가 끝난 뒤·업데이트 뒤에 "사용 통계를 보낼까요?" 한 번
         _services.Notifications.Start();
@@ -462,6 +466,7 @@ public partial class App : Application
         _updateUi?.Dispose();
         _lowBattery?.Dispose();
         _updates?.Dispose();
+        _storeUpdates?.Dispose();
         _stats?.Dispose();
         LicenseUi.Detach();
         if (_services is not null)
