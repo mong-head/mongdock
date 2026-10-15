@@ -37,6 +37,24 @@ internal static partial class TourScenes
 
     public static ImageSource? Cached(string key, int i, bool light) => Cache.TryGetValue(CacheKey(key, i, light), out var img) ? img : null;
 
+    /// <summary>캐시에 든 장 수 (메모리 진단·시험).</summary>
+    public static int CachedCount => Cache.Count;
+
+    /// <summary>
+    /// 둘러보기가 끝나면 장면 그림을 놓아줌 (0.6.x 메모리: 한 장 960×600 = 2.3MB, 첫 설치 둘러보기 ~24장 + 그리느라 만든 화면 밖 판 그림 —
+    /// 예전엔 몽독을 다시 켤 때까지 남아 전용 메모리가 150MB → 300MB 대로 올라간 채였음). 다시 보면 그때 다시 그림.
+    /// RenderTargetBitmap 은 GC 가 종료자를 돌릴 때까지 네이티브 메모리를 쥐고 있어 바로 돌려받으려고 GC 도 같이.
+    /// </summary>
+    public static int ReleaseCache()
+    {
+        int n = Cache.Count;
+        Cache.Clear();
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        return n;
+    }
+
     /// <summary>한 장 그리기 (캐시 있으면 그것). UI 스레드에서. 실패하면 null.</summary>
     public static ImageSource? Frame(AppServices services, string key, int i, UiPalette p)
     {

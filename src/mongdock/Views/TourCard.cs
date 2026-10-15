@@ -92,6 +92,20 @@ internal sealed class TourCard : Border
     public event Action? InlineClicked;
     public event Action? UndoClicked;
 
+    private readonly Border _pictureBack;
+
+    /// <summary>
+    /// 일반 창(투명 창 아님) 카드용 (윈도우 11, 시험 중 — TourCardWindow.PlainWindow): 그림자·둥근 모서리는 DWM 이 그리므로
+    /// 카드 자체의 그림자·모서리를 뺌.
+    /// </summary>
+    internal void UsePlainWindow()
+    {
+        Effect = null;
+        CornerRadius = new CornerRadius(0);
+        BorderThickness = new Thickness(0);
+        _pictureBack.CornerRadius = new CornerRadius(0);
+    }
+
     public TourCard(UiPalette p)
     {
         _p = p;
@@ -106,7 +120,7 @@ internal sealed class TourCard : Border
         RenderOptions.SetBitmapScalingMode(_front, BitmapScalingMode.HighQuality);
         RenderOptions.SetBitmapScalingMode(_back, BitmapScalingMode.HighQuality);
         var picture = _picture = new Grid { Height = PictureHeight, ClipToBounds = true };
-        picture.Children.Add(new Border { Background = p.PanelTint, CornerRadius = new CornerRadius(16, 16, 0, 0) });
+        picture.Children.Add(_pictureBack = new Border { Background = p.PanelTint, CornerRadius = new CornerRadius(16, 16, 0, 0) });
         var frames = new Grid { Margin = new Thickness(18, 18, 18, 26) };
         frames.Children.Add(_back);
         frames.Children.Add(_front);

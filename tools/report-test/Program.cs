@@ -209,6 +209,7 @@ internal static class Program
         if (Array.IndexOf(args, "--dockfit") >= 0) { DockFitReport(); return 0; }
         if (Array.IndexOf(args, "--clipdemo") >= 0) { ClipDemo(); return 0; }
         if (Array.IndexOf(args, "--suggest") >= 0) return SuggestTable();
+        if (Array.IndexOf(args, "--tourmem") >= 0) return TourMemory(); // 둘러보기 장면 그림 메모리: 다 그린 뒤 / 정리 뒤 (화면 없음)
         if (Array.IndexOf(args, "--hotkeycheck") >= 0) return HotkeyCheck(); // 0.6 단축키 규칙·저장·키 처리 점검 (화면·실제 입력 없음)
         if (Array.IndexOf(args, "--reviewcheck") >= 0) return ReviewCheck(); // 0.5.0 검토 수정 점검 (화면 없음)
         int unin = Array.FindIndex(args, a => a == "--uninstall");
@@ -1531,6 +1532,57 @@ internal static class Program
     }
 
     /// <summary>0.5.0 검토 수정 점검: 제거 항목 폴더 연결(넓은 폴더 빼기), 이름 비교, 따옴표 없는 제거 명령, 스팀 링크, 빠른 경로 확인.</summary>
+    /// <summary>
+    /// --tourmem: 둘러보기 장면을 앱처럼 그려 캐시에 담은 뒤(첫 설치 둘러보기 + 0.6.0 업데이트, 라이트·다크) 전용 메모리·작업 집합,
+    /// 그다음 TourScenes.ReleaseCache(둘러보기가 끝날 때 앱이 부르는 것) 뒤 값. 각 값은 GC 3번 뒤.
+    /// </summary>
+    private static int TourMemory()
+    {
+        var app = new Mongdock.App();
+        Mongdock.Loc.Init(_lang);
+        app.InitializeComponent();
+        app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        var settings = new SettingsService();
+        Mongdock.ViewModels.UiFonts.Apply(settings.Current);
+        var tracker = new WindowTracker();
+        var launcher = new AppLauncher(tracker);
+        var services = new AppServices(settings, tracker, launcher, new IconService(), new DesktopWindowService(), new VirtualDesktopService(),
+            new ShellActions(), new ImeService(), new StatusService(), new MediaService(), new AppMenuService(settings), new StartupService(),
+            new NotificationService(tracker, launcher), new TrayIconService(), new CalendarFeedService(settings));
+        var scenes = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.TourScenes")!;
+        int Count(string key) => (int)scenes.GetMethod("Count", Any)!.Invoke(null, new object?[] { key })!;
+        string Mem()
+        {
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+            var proc = System.Diagnostics.Process.GetCurrentProcess();
+            proc.Refresh();
+            return $"전용 {proc.PrivateMemorySize64 / 1048576}MB, 작업 집합 {proc.WorkingSet64 / 1048576}MB, GC 힙 {GC.GetTotalMemory(false) / 1048576}MB";
+        }
+        // 앱처럼 처음 한 장을 한 번 그려 WPF 준비(글꼴·자원)를 끝낸 뒤를 기준으로
+        settings.Current.Dock.Theme = DockTheme.Light;
+        Mongdock.ViewModels.UiTheme.Apply(settings.Current);
+        scenes.GetMethod("Frame", Any)!.Invoke(null, new object[] { services, "settings", 0, Mongdock.ViewModels.UiTheme.Palette(settings.Current) });
+        scenes.GetMethod("ReleaseCache", Any)!.Invoke(null, null);
+        string baseline = Mem();
+        Console.WriteLine($"  기준 (장면 0장): {baseline}");
+        var keys = new[] { "dock", "topbar", "spotlight", "allapps", "routines", "stacks", "settings", "hotkeys" };
+        foreach (var theme in new[] { DockTheme.Light, DockTheme.Dark })
+        {
+            settings.Current.Dock.Theme = theme;
+            Mongdock.ViewModels.UiTheme.Apply(settings.Current);
+            var palette = Mongdock.ViewModels.UiTheme.Palette(settings.Current);
+            foreach (var key in keys)
+                for (int i = 0; i < Count(key); i++)
+                    scenes.GetMethod("Frame", Any)!.Invoke(null, new object[] { services, key, i, palette });
+            int cached = (int)scenes.GetProperty("CachedCount", Any)!.GetValue(null)!;
+            Console.WriteLine($"  {theme} 까지 그린 뒤 (캐시 {cached}장): {Mem()}");
+        }
+        int released = (int)scenes.GetMethod("ReleaseCache", Any)!.Invoke(null, null)!;
+        Console.WriteLine($"  정리 뒤 ({released}장 놓음, 캐시 {(int)scenes.GetProperty("CachedCount", Any)!.GetValue(null)!}장): {Mem()}");
+        GC.KeepAlive(app);
+        return 0;
+    }
+
     /// <summary>--hotkeycheck: 단축키 조합 글자·막는 키·옛 설정 옮기기·키 표·훅 처리(가짜 키 — 진짜 훅·입력 없음).</summary>
     private static int HotkeyCheck()
     {
