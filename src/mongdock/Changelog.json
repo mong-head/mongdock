@@ -28,8 +28,8 @@
         },
         {
           "kind": "improvement",
-          "text": "루틴에 폴더를 여러 개 넣으면 탐색기 창이 따로 열리고 각자 자리를 잡아요.",
-          "text_en": "Several folders in a routine open as separate File Explorer windows, each in its place."
+          "text": "루틴에 폴더를 여러 개 넣으면 탐색기 창이 따로 열려요.",
+          "text_en": "Several folders in a routine open as separate File Explorer windows."
         },
         {
           "kind": "improvement",
