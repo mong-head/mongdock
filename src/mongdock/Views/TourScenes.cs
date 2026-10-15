@@ -26,7 +26,7 @@ internal static partial class TourScenes
     public static int Count(string? key) => key switch
     {
         "allapps" => 5,
-        "dock" or "topbar" or "routines" or "stacks" => 3,
+        "dock" or "topbar" or "routines" or "stacks" or "hotkeys" => 3,
         "settings" or "bounce" or "spotlight" => 2,
         _ => 0,
     };
@@ -62,7 +62,7 @@ internal static partial class TourScenes
     public static List<string> Check(AppServices services, UiPalette p, IEnumerable<string>? keys = null)
     {
         var problems = new List<string>();
-        foreach (var key in keys ?? new[] { "dock", "topbar", "spotlight", "allapps", "routines", "stacks", "settings", "bounce" })
+        foreach (var key in keys ?? new[] { "dock", "topbar", "spotlight", "allapps", "routines", "stacks", "settings", "bounce", "hotkeys" })
             for (int i = 0; i < Count(key); i++)
             {
                 var local = new List<string>();
@@ -179,6 +179,7 @@ internal static partial class TourScenes
                 case "stacks": Stacks(g, top, i); break;
                 case "settings": Settings(g, top, i); break;
                 case "bounce": Bounce(g, top, i); break;
+                case "hotkeys": Hotkeys(g, top, i); break;
                 default: return null;
             }
             return Render(g);
@@ -1000,6 +1001,63 @@ internal static partial class TourScenes
             Layout(g);
             Need(toggle, "자동 숨기기 스위치");
             Cursor(top, Center(toggle, g, 0.7, 0.5), pressed: true);
+        }
+
+        // ── 단축키 직접 정하기 (0.6.0 업데이트 새 기능) ──
+
+        /// <summary>
+        /// ① 설정 → 단축키: 앱 모음 판 키 칸을 누름 → "키를 누르세요…" ② Ctrl + Alt + A 가 들어감 (키캡) ③ 그 키로 앱 모음 판이 열림.
+        /// 설정 창과 같은 줄 모양(키 칸·스위치)을 크게.
+        /// </summary>
+        private void Hotkeys(Grid g, Canvas top, int f)
+        {
+            var chord = HotkeyChord.Parse("Ctrl+Alt+A")!.Value;
+            if (f == 2)
+            {
+                AllApps(g, top, 1); // 단축키로 열린 앱 모음 판
+                return;
+            }
+            var card = new Border { CornerRadius = new CornerRadius(12), Background = _p.CardBackground, BorderBrush = _p.CardBorder, BorderThickness = new Thickness(0.5), Padding = new Thickness(4, 10, 4, 4) };
+            var rows = new StackPanel { Width = 400 };
+            rows.Children.Add(new TextBlock { Text = Loc.T("단축키"), FontSize = 15, FontWeight = FontWeights.Bold, Foreground = _p.Text, Margin = new Thickness(14, 0, 0, 4) });
+            Button KeyBox(string text, bool recording) => new()
+            {
+                Style = (Style)Application.Current.FindResource("CardButton"),
+                Background = recording ? _p.SoftAccent : _p.Tile,
+                Foreground = recording ? _p.SoftAccentText : _p.Text,
+                BorderBrush = recording ? _p.SoftAccentLine : Brushes.Transparent,
+                BorderThickness = new Thickness(recording ? 1 : 0),
+                MinWidth = 120,
+                Content = text,
+            };
+            FrameworkElement Controls(Button box, bool on)
+            {
+                var sp = new StackPanel { Orientation = Orientation.Horizontal };
+                sp.Children.Add(box);
+                sp.Children.Add(new System.Windows.Controls.Primitives.ToggleButton { Style = (Style)Application.Current.FindResource("MacSwitch"), Background = _p.AccentFill, BorderBrush = _p.CircleOff, IsChecked = on, Margin = new Thickness(10, 0, 0, 0) });
+                return sp;
+            }
+            var search = KeyBox(Loc.F($"자동 ({HotkeyController.AutoSearchChord().Display})"), false);
+            var allApps = KeyBox(f == 0 ? Loc.T("키를 누르세요…") : chord.Display, f == 0);
+            rows.Children.Add(SettingsRow(Loc.T("검색"), Loc.T("몽독 검색창 열기·닫기"), Controls(search, true)));
+            rows.Children.Add(new Border { Height = 1, Background = _p.Divider, Margin = new Thickness(14, 0, 14, 0) });
+            rows.Children.Add(SettingsRow(Loc.T("앱 모음 판"), Loc.T("모든 앱 판 열기·닫기"), Controls(allApps, true)));
+            card.Child = rows;
+            var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            card.LayoutTransform = new ScaleTransform(1.3, 1.3);
+            stack.Children.Add(card);
+            if (f == 1)
+            {
+                // 누른 키 (키캡) — 카드 아래
+                var plate = KeyPlate(chord.Labels.ToArray());
+                plate.LayoutTransform = new ScaleTransform(0.72, 0.72);
+                plate.Margin = new Thickness(0, 18, 0, 0);
+                stack.Children.Add(plate);
+            }
+            g.Children.Add(stack);
+            Layout(g);
+            Need(allApps, "단축키 키 칸");
+            if (f == 0) Cursor(top, Center(allApps, g, 0.9, 0.75), pressed: true); // 글자를 가리지 않게 칸 오른쪽 아래
         }
 
         private Grid SettingsRow(string title, string? sub, FrameworkElement control)
