@@ -1473,5 +1473,12 @@
  "주소를 여러 줄로 붙여 넣으면 탭이 한꺼번에 들어가요": "Füge mehrere Adressen zeilenweise ein, um sie alle als Tabs hinzuzufügen",
  "앱이 받는 실행 옵션을 그대로 넘겨요.": "Gibt die Startoptionen unverändert an die App weiter.",
  "이 브라우저 계정의 창으로 열어요.": "Öffnet im Fenster dieses Browserprofils.",
- "자세히 보기 →": "Mehr erfahren →"
+ "자세히 보기 →": "Mehr erfahren →",
+ "업데이트 후 다시 시작…": "Aktualisieren und neu starten…",
+ "업데이트를 설치하고 다시 시작할까요?": "Updates installieren und neu starten?",
+ "업데이트를 설치하는 동안 몇 분 걸릴 수 있어요. 저장하지 않은 작업은 사라질 수 있어요.": "Das Installieren der Updates kann einige Minuten dauern. Nicht gespeicherte Arbeit kann verloren gehen.",
+ "업데이트 후 다시 시작": "Aktualisieren und neu starten",
+ "업데이트 후 시스템 종료…": "Aktualisieren und herunterfahren…",
+ "업데이트를 설치하고 시스템을 종료할까요?": "Updates installieren und herunterfahren?",
+ "업데이트 후 종료": "Aktualisieren und herunterfahren"
 }

@@ -1473,5 +1473,12 @@
  "주소를 여러 줄로 붙여 넣으면 탭이 한꺼번에 들어가요": "Pega varias direcciones en líneas separadas para añadirlas todas como pestañas",
  "앱이 받는 실행 옵션을 그대로 넘겨요.": "Pasa las opciones de inicio tal cual a la aplicación.",
  "이 브라우저 계정의 창으로 열어요.": "Se abre en la ventana de este perfil del navegador.",
- "자세히 보기 →": "Más información →"
+ "자세히 보기 →": "Más información →",
+ "업데이트 후 다시 시작…": "Actualizar y reiniciar…",
+ "업데이트를 설치하고 다시 시작할까요?": "¿Instalar actualizaciones y reiniciar?",
+ "업데이트를 설치하는 동안 몇 분 걸릴 수 있어요. 저장하지 않은 작업은 사라질 수 있어요.": "Instalar las actualizaciones puede tardar unos minutos. El trabajo sin guardar podría perderse.",
+ "업데이트 후 다시 시작": "Actualizar y reiniciar",
+ "업데이트 후 시스템 종료…": "Actualizar y apagar…",
+ "업데이트를 설치하고 시스템을 종료할까요?": "¿Instalar actualizaciones y apagar?",
+ "업데이트 후 종료": "Actualizar y apagar"
 }
