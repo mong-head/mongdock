@@ -210,6 +210,7 @@ internal static class Program
         if (Array.IndexOf(args, "--clipdemo") >= 0) { ClipDemo(); return 0; }
         if (Array.IndexOf(args, "--suggest") >= 0) return SuggestTable();
         if (Array.IndexOf(args, "--tourmem") >= 0) return TourMemory(); // 둘러보기 장면 그림 메모리: 다 그린 뒤 / 정리 뒤 (화면 없음)
+        if (Array.IndexOf(args, "--appbarcheck") >= 0) return AppBarCheck(); // 0.6.2 모니터 여러 대 작업 표시줄 깜빡임 — 자리 같으면 안 알림·고리 끊김 (실제 AppBar 등록 없음)
         if (Array.IndexOf(args, "--profilecheck") >= 0) return ProfileCheck(); // 0.6.1 루틴 브라우저 계정·탐색기 창 (화면·실제 실행 없음)
         if (Array.IndexOf(args, "--hotkeycheck") >= 0) return HotkeyCheck(); // 0.6 단축키 규칙·저장·키 처리 점검 (화면·실제 입력 없음)
         if (Array.IndexOf(args, "--reviewcheck") >= 0) return ReviewCheck(); // 0.5.0 검토 수정 점검 (화면 없음)
@@ -1590,6 +1591,66 @@ internal static class Program
         private readonly System.Collections.IList _list;
         public ExampleProfiles(System.Collections.IList list) => _list = list;
         public IReadOnlyList<TP> Get<TP>(string exe) => _list.Cast<TP>().ToList();
+    }
+
+    /// <summary>
+    /// --appbarcheck: DesktopWindowService.ShouldSendSetPos (자리 알림을 보낼지) + 가짜 탐색기 흉내로 상단바 3개 고리:
+    /// 탐색기는 SETPOS 를 받을 때마다 다른 AppBar 들에 자리 바뀜 알림을 보내고 작업 표시줄을 다시 띄움. 예전 규칙(늘 보냄)이면 끝없이 돌고,
+    /// 새 규칙이면 처음 한 바퀴 뒤 멈추는지. 실제 AppBar 를 등록하지 않음(화면 예약 없음).
+    /// </summary>
+    private static int AppBarCheck()
+    {
+        var asm = typeof(Mongdock.App).Assembly;
+        int bad = 0;
+        void Check(string what, bool ok) { Console.WriteLine($"  {(ok ? "통과" : "실패")}  {what}"); if (!ok) bad++; }
+        var dws = asm.GetType("Mongdock.Services.DesktopWindowService")!;
+        var rectT = asm.GetType("Mongdock.Native.RECT")!;
+        object R(int l, int t, int r, int b2)
+        {
+            var o = Activator.CreateInstance(rectT)!;
+            foreach (var (n, v) in new[] { ("Left", l), ("Top", t), ("Right", r), ("Bottom", b2) })
+            {
+                var f = rectT.GetField(n);
+                if (f is not null) f.SetValue(o, v); else rectT.GetProperty(n)!.SetValue(o, v);
+            }
+            return o;
+        }
+        var should = dws.GetMethod("ShouldSendSetPos", Any)!;
+        bool Send(bool sent, object prop, object last) => (bool)should.Invoke(null, new object[] { sent, prop, last })!;
+        var bar = R(0, 0, 1920, 32);
+        Check("등록 뒤 처음 → 보냄", Send(false, bar, R(0, 0, 0, 0)));
+        Check("처음이면 자리가 같아 보여도 보냄", Send(false, bar, bar));
+        Check("보낸 뒤 자리 그대로 → 안 보냄", !Send(true, bar, bar));
+        Check("자리 바뀜(두께) → 보냄", Send(true, R(0, 0, 1920, 36), bar));
+        Check("자리 바뀜(다른 모니터) → 보냄", Send(true, R(1920, 0, 3840, 32), bar));
+
+        // 가짜 탐색기: 상단바 3개(모니터 3대). 알림 큐가 빌 때까지 돌리고 SETPOS·작업 표시줄 다시 띄움 횟수를 셈
+        (int setPos, int reshow, bool endless) Simulate(bool newRule)
+        {
+            var rects = new[] { R(0, 0, 1920, 32), R(1920, 0, 3840, 32), R(3840, 0, 5760, 32) };
+            var last = new object[] { R(0, 0, 0, 0), R(0, 0, 0, 0), R(0, 0, 0, 0) };
+            var sent = new bool[3];
+            var queue = new Queue<int>(new[] { 0, 1, 2 }); // 처음 배치
+            int setPos = 0, reshow = 0, steps = 0;
+            while (queue.Count > 0 && steps++ < 1000)
+            {
+                int i = queue.Dequeue();
+                bool go = newRule ? Send(sent[i], rects[i], last[i]) : true;
+                if (!go) continue;
+                setPos++;
+                sent[i] = true;
+                last[i] = rects[i];
+                reshow++; // 탐색기가 작업 표시줄 배치를 다시 계산 → 숨겨 둔 작업 표시줄을 다시 띄움
+                for (int j = 0; j < 3; j++) if (j != i && !queue.Contains(j)) queue.Enqueue(j); // 다른 AppBar 에 자리 바뀜 알림
+            }
+            return (setPos, reshow, steps >= 1000);
+        }
+        var oldRule = Simulate(false);
+        var newRuleRun = Simulate(true);
+        Check($"예전 규칙(늘 보냄): 끝없이 돎 {oldRule.endless} (자리 알림 {oldRule.setPos}번 — 1000단계에서 끊음)", oldRule.endless);
+        Check($"새 규칙: 멈춤 (자리 알림 {newRuleRun.setPos}번, 작업 표시줄 다시 띄움 {newRuleRun.reshow}번 — 상단바마다 한 번)", !newRuleRun.endless && newRuleRun.setPos == 3);
+        Console.WriteLine(bad == 0 ? "AppBar 점검: 모두 통과" : $"AppBar 점검: 실패 {bad}개");
+        return bad == 0 ? 0 : 1;
     }
 
     /// <summary>--profilecheck: 루틴 항목 계정 인자(있음·없어짐·안 고름·크로미움 아님), 저장 형식(없으면 안 씀·옛 판 무시), 창 명령줄에서 계정 읽기.</summary>

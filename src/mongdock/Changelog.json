@@ -16,6 +16,11 @@
           "kind": "improvement",
           "text": "루틴 탐색기 창이 각자 정한 자리로 열려요.",
           "text_en": "Routine File Explorer windows open in their own places."
+        },
+        {
+          "kind": "improvement",
+          "text": "모니터가 여러 대일 때 작업 표시줄이 계속 다시 보이던 문제를 고쳤어요.",
+          "text_en": "Fixed the taskbar reappearing again and again on multi-monitor setups."
         }
       ]
     },
