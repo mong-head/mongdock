@@ -26,8 +26,9 @@ public sealed record LicenseInfo(LicenseState State, int DaysLeft, DateTimeOffse
 /// 스토어 체험판·구매 (#5). 스토어판(패키지)만 Windows.Services.Store 로 확인하고, 일반판은 늘 정식(테스터·기존 사용자).
 /// - 확인: 시작 5초 뒤, OfflineLicensesChanged(구매·환불 직후 스토어가 알림), 6시간마다, 체험 만료 시각 1분 뒤.
 ///   남은 날은 1시간마다 저장된 만료 시각으로 다시 셈 (스토어 호출 없이).
-/// - 확인 실패(오프라인·스토어 오류): 마지막으로 확인한 상태(license.json)를 씀. 단 그 캐시로는 절대 '만료' 로 잠그지 않음 —
-///   캐시가 만료였거나 체험 만료 시각이 지났는데 확인을 못 하면 정식 취급, 로그만 (만료 오판으로 잠그는 것보다 낫다).
+/// - 확인 실패(오프라인·스토어 오류): 마지막으로 확인한 상태(license.json)를 씀. 체험이 끝났는데(캐시가 만료이거나 체험 만료 시각이 지남)
+///   확인을 못 하면 7일(<see cref="OfflineGrace"/>) 동안은 정식 취급, 만료 뒤로 확인이 한 번도 안 된 채 7일이 지나면 그때 잠금
+///   (사용자 결정 2026-10-16 — 그 사이 한 번이라도 확인되면 그 결과대로). 확인한 적이 없는 PC(캐시 없음)는 잠그지 않음.
 /// - 시험: MONGDOCK_FAKE_LICENSE=trial:N | expired | full (패키지 밖에서도 흐름 시험. 구매하면 바로 정식으로 바뀜 — 스토어 창 없음).
 /// - 스토어 창(구매)은 창 핸들이 있어야 뜸 → IInitializeWithWindow (WinRT.Interop.InitializeWithWindow).
 /// </summary>
@@ -37,6 +38,9 @@ public sealed class LicenseService : IDisposable
     public const string StoreId = "9NQ3NKW93F3M";
 
     private static readonly TimeSpan RecheckInterval = TimeSpan.FromHours(6);
+
+    /// <summary>체험이 끝난 뒤 스토어 확인이 계속 실패해도 잠그지 않는 기간.</summary>
+    internal static readonly TimeSpan OfflineGrace = TimeSpan.FromDays(7);
     private readonly string _cachePath = Path.Combine(AppInfo.DataDirectory, "license.json");
     private readonly Func<IntPtr> _ownerWindow;
     private readonly Dispatcher _dispatcher;
@@ -252,11 +256,13 @@ public sealed class LicenseService : IDisposable
     private static bool StoreSigned => SignatureKindText is "Store" or "System";
 
     /// <summary>체험이면 남은 날(올림). 체험인데 만료 시각을 모르면 -1 (화면은 "체험판" 만).</summary>
-    private static LicenseInfo Make(LicenseState state, DateTimeOffset? expiration, string source)
+    private static LicenseInfo Make(LicenseState state, DateTimeOffset? expiration, string source) => MakeAt(state, expiration, source, DateTimeOffset.Now);
+
+    internal static LicenseInfo MakeAt(LicenseState state, DateTimeOffset? expiration, string source, DateTimeOffset now)
     {
         int days = 0;
         if (state == LicenseState.Trial)
-            days = expiration is { } exp ? Math.Max(0, (int)Math.Ceiling((exp - DateTimeOffset.Now).TotalDays)) : -1;
+            days = expiration is { } exp ? Math.Max(0, (int)Math.Ceiling((exp - now).TotalDays)) : -1;
         return new LicenseInfo(state, days, expiration, source);
     }
 
@@ -277,7 +283,7 @@ public sealed class LicenseService : IDisposable
         if (v == "expired") return (LicenseState.Expired, null);
         if (v.StartsWith("trial", StringComparison.Ordinal))
         {
-            string n = v.Length > 5 ? v[5..].TrimStart(':', '=') : "14";
+            string n = v.Length > 5 ? v[5..].TrimStart(':', '=') : "15";
             if (double.TryParse(n, NumberStyles.Float, CultureInfo.InvariantCulture, out double d) && d >= 0)
                 return (LicenseState.Trial, DateTimeOffset.Now.AddDays(d).AddMinutes(-1)); // "3" → 3일 남음으로 보이게
         }
@@ -301,23 +307,41 @@ public sealed class LicenseService : IDisposable
         Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
     };
 
-    /// <summary>캐시로 정할 수 있는 상태 — 만료로 잠그지는 않음(정식 취급).</summary>
+    /// <summary>캐시로 정할 수 있는 상태 (규칙은 <see cref="FromCacheAt"/>).</summary>
     private LicenseInfo? FromCache()
     {
         try
         {
             if (!File.Exists(_cachePath)) return null;
             var c = JsonSerializer.Deserialize<Cache>(File.ReadAllText(_cachePath), CacheJson);
-            if (c is null) return null;
-            if (c.State == LicenseState.Trial && c.Expiration is { } exp && exp > DateTimeOffset.Now)
-                return Make(LicenseState.Trial, exp, "cache");
-            return new LicenseInfo(LicenseState.Full, 0, null, "cache"); // 정식 · 또는 확인 못 한 만료 → 잠그지 않음
+            return c is null ? null : FromCacheAt(c.State, c.Expiration, c.CheckedAt, DateTimeOffset.Now);
         }
         catch (Exception ex)
         {
             Log.Warn($"license.json 읽기 실패: {ex.Message}");
             return null;
         }
+    }
+
+    /// <summary>
+    /// 스토어 확인을 못 할 때 마지막 확인(state·expiration·checkedAt)으로 정하는 지금 상태.
+    /// 체험 중(만료 시각 전) → 체험 · 정식 → 정식 · 체험이 끝남 → 끝난 때(체험 만료 시각, 만료로 확인된 시각 중 늦은 것) + 7일까지는 정식(유예), 그 뒤 만료(잠금).
+    /// </summary>
+    internal static LicenseInfo FromCacheAt(LicenseState state, DateTimeOffset? expiration, DateTimeOffset checkedAt, DateTimeOffset now)
+    {
+        DateTimeOffset? endedAt = state switch
+        {
+            LicenseState.Expired => checkedAt,
+            LicenseState.Trial when expiration is { } exp && exp <= now => exp > checkedAt ? exp : checkedAt,
+            _ => null,
+        };
+        if (state == LicenseState.Trial && endedAt is null)
+            return expiration is { } e ? MakeAt(LicenseState.Trial, e, "cache", now) : new LicenseInfo(LicenseState.Trial, -1, null, "cache");
+        if (endedAt is { } ended)
+            return now - ended >= OfflineGrace
+                ? new LicenseInfo(LicenseState.Expired, 0, null, "cache-grace-over")
+                : new LicenseInfo(LicenseState.Full, 0, null, "cache-grace");
+        return new LicenseInfo(LicenseState.Full, 0, null, "cache");
     }
 
     private void SaveCache(LicenseState state, DateTimeOffset? expiration)

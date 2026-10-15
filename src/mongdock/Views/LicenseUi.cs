@@ -11,7 +11,7 @@ namespace Mongdock.Views;
 /// 체험판·구매 화면 (#5). LicenseService 상태에 맞춰:
 /// - 체험 중: 남은 날이 3일·1일이면 하루 한 번 카드 "체험이 N일 남았어요 [구매하기] [나중에]". 설정 → 정보에 "체험판 · N일 남음 [구매하기]".
 /// - 체험 끝: AppState.Locked → 일시 정지와 같은 효과(작업 표시줄·자동 숨김·알림 팝업 원래대로, 독·상단바 숨김)이면서 풀 수 없음.
-///   "체험이 끝났어요 [구매하기] [종료]" 카드 하나. 트레이 아이콘은 남아서 누르면 이 카드를 다시 띄움(다시 켜는 길).
+///   "체험이 끝났어요 [구매하기] [나중에]" 카드 하나 ([나중에] = 카드만 닫음, 몽독 끄기는 트레이 메뉴 — 사용자 결정 2026-10-16). 트레이 아이콘은 남아서 누르면 이 카드를 다시 띄움(다시 켜는 길).
 ///   구매하면 스토어가 OfflineLicensesChanged 를 보내 → 정식 → 잠금 풀림 (앱을 다시 켤 필요 없음).
 /// 일반판(깃허브)은 늘 정식이라 아무것도 보이지 않음.
 /// </summary>
@@ -23,6 +23,7 @@ public static class LicenseUi
     private static bool _trialCardOpen;
     private static LicenseState _lastState;
     private const string TrialCardTag = "license-trial";
+    private const string ExpiredCardTag = "license-expired";
 
     public static LicenseService? Service => _license;
 
@@ -55,9 +56,10 @@ public static class LicenseUi
             // 시작 때는 조금 뒤에 (다른 창이 뜨며 활성화가 바뀌면 카드가 바로 닫히므로)
             Later(initial ? TimeSpan.FromSeconds(3) : TimeSpan.Zero, ShowExpiredCard);
         }
-        else if (info.State == LicenseState.Full && _lastState != LicenseState.Full && !initial)
+        else if (info.State != LicenseState.Expired && _lastState == LicenseState.Expired && !initial)
         {
-            Log.Info("정식으로 바뀜 → 다시 켜짐");
+            Log.Info("잠금 풀림 → 다시 켜짐");
+            ConfirmCardWindow.CloseTagged(ExpiredCardTag); // 다른 곳(스토어 앱·다시 확인)에서 풀리면 남은 카드를 치움
         }
         _lastState = info.State;
         if (info.State == LicenseState.Trial) Later(initial ? TimeSpan.FromSeconds(8) : TimeSpan.Zero, () => MaybeShowTrialCard());
@@ -119,13 +121,9 @@ public static class LicenseUi
             bool? choice = await ConfirmCardWindow.AskChoiceAsync(_services,
                 Loc.T("체험이 끝났어요"),
                 Loc.T("몽독을 계속 쓰려면 구매해 주세요. 작업 표시줄과 알림은 원래대로 돌려 두었어요. 트레이 아이콘을 누르면 이 창을 다시 열 수 있어요."),
-                Loc.T("구매하기"), Loc.T("몽독 종료")); // "종료" 는 영어 사전에서 Shut Down — PC 끄기로 읽혀서 따로 (QA)
+                Loc.T("구매하기"), Loc.T("나중에"), ExpiredCardTag);
             if (choice == true) await PurchaseAsync();
-            else if (choice == false)
-            {
-                Log.Info("체험 끝남 카드: 종료");
-                Application.Current.Shutdown();
-            }
+            else if (choice == false) Log.Info("체험 끝남 카드: 나중에 (트레이 아이콘은 남음)");
         }
         finally
         {
