@@ -1466,5 +1466,12 @@
  "앱 메뉴 단축키(Alt+글자)와 겹칠 수 있어요.": "Kann mit App-Menü-Tasten (Alt+Buchstabe) kollidieren.",
  "key:Ctrl": "Strg",
  "기본 (마지막에 쓴 계정)": "Standard (zuletzt verwendetes Konto)",
- "one:계정": "Konto"
+ "one:계정": "Konto",
+ "site:개인": "Privat",
+ "site:회사": "Arbeit",
+ "탭 {0}개를 넣었어요": "{0} Tabs hinzugefügt",
+ "주소를 여러 줄로 붙여 넣으면 탭이 한꺼번에 들어가요": "Füge mehrere Adressen zeilenweise ein, um sie alle als Tabs hinzuzufügen",
+ "앱이 받는 실행 옵션을 그대로 넘겨요.": "Gibt die Startoptionen unverändert an die App weiter.",
+ "이 브라우저 계정의 창으로 열어요.": "Öffnet im Fenster dieses Browserprofils.",
+ "자세히 보기 →": "Mehr erfahren →"
 }

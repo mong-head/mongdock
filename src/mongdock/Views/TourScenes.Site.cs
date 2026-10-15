@@ -564,6 +564,27 @@ internal static partial class TourScenes
             return Render(g);
         }
 
+        /// <summary>루틴 계정 장면 ③: 루틴이 「회사」 계정의 브라우저 창으로 엶 — 창 오른쪽 위에 계정 사진·이름.</summary>
+        public BitmapSource? BuildTourProfileWindow(List<string>? problems)
+        {
+            _problems = problems;
+            var (g, _) = NewScene(null);
+            var bar = ShotBar(false);
+            if (Descendants(bar).OfType<TextBlock>().FirstOrDefault(t => t.Uid == "app") is { } appName) appName.Text = "Chrome";
+            g.Children.Add(bar);
+            ShotDock(g, running: new[] { "browser" });
+            var win = Window("browser", 640, 360);
+            Put(g, win, 80, 52);
+            // 계정 표시 (크롬 도구 막대의 프로필 사진 자리처럼)
+            string work = ProfileName(true);
+            var badge = new StackPanel { Orientation = Orientation.Horizontal };
+            badge.Children.Add(ProfileAvatar(work, 22, true));
+            badge.Children.Add(new TextBlock { Text = work, FontSize = 12.5, FontWeight = FontWeights.SemiBold, Foreground = _p.Text, Margin = new Thickness(6, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center });
+            var pill = new Border { CornerRadius = new CornerRadius(14), Background = _p.PanelTint, Padding = new Thickness(4, 3, 8, 3), Child = badge };
+            Put(g, pill, 80 + 640 - 120 - 110, 55);
+            return Render(g);
+        }
+
         /// <summary>지금 Spotlight 단축키를 누르는 키 이름 (Win·Space 등). 단축키 없음이면 null (상단바 검색 버튼을 누르는 그림).</summary>
         private static string[]? Hotkey(AppServices services)
         {

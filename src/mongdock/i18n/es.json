@@ -1466,5 +1466,12 @@
  "앱 메뉴 단축키(Alt+글자)와 겹칠 수 있어요.": "Puede coincidir con atajos de menú de aplicaciones (Alt+letra).",
  "key:Ctrl": "Ctrl",
  "기본 (마지막에 쓴 계정)": "Predeterminada (última cuenta usada)",
- "one:계정": "Cuenta"
+ "one:계정": "Cuenta",
+ "site:개인": "Personal",
+ "site:회사": "Trabajo",
+ "탭 {0}개를 넣었어요": "Se añadieron {0} pestañas",
+ "주소를 여러 줄로 붙여 넣으면 탭이 한꺼번에 들어가요": "Pega varias direcciones en líneas separadas para añadirlas todas como pestañas",
+ "앱이 받는 실행 옵션을 그대로 넘겨요.": "Pasa las opciones de inicio tal cual a la aplicación.",
+ "이 브라우저 계정의 창으로 열어요.": "Se abre en la ventana de este perfil del navegador.",
+ "자세히 보기 →": "Más información →"
 }

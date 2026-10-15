@@ -2,6 +2,53 @@
   "_comment": "mongdock 변경 내역 단일 원본. 앱(설정 → 변경 내역, 새로운 기능 코치마크)과 build-release.ps1(GitHub 릴리스 노트)이 함께 읽는다. 최신 버전을 맨 위에. kind = feature | improvement | fix. coach 가 있는 feature 는 업데이트 후 상단바·독 위 말풍선으로 소개(anchor = Center|Dock|Logo|AppName|Desktops|Tray|Search|Clock, condition = topBar|trayIcons|spotlight|banners|dock|appMenus, 없으면 항상). major = 그 버전의 주요 업데이트(버전당 1~4개, 오랜만에 업데이트한 사람·변경 내역 맨 위·릴리스 노트 \"이번 버전 핵심\"에 씀), headline = 그 버전 한 줄 요약. body 의 {hotkey} 는 실제 검색 단축키 문구로 바뀜.",
   "versions": [
     {
+      "version": "0.6.1",
+      "date": "2026-10-16",
+      "headline": "루틴 브라우저 계정",
+      "headline_en": "Browser profiles in routines",
+      "entries": [
+        {
+          "kind": "feature",
+          "major": true,
+          "text": "루틴에서 크롬·엣지·웨일 계정을 고를 수 있어요 (지금 화면 저장도 계정까지 기억).",
+          "text_en": "Routines can open a chosen Chrome, Edge or Whale profile (Save current screen remembers it too).",
+          "coach": {
+            "key": "profiles",
+            "anchor": "Center",
+            "title": "루틴에서 브라우저 계정을 골라요",
+            "title_en": "Pick a browser profile in routines",
+            "body": "루틴 편집에서 크롬·엣지·웨일 항목의 「계정」을 고르면 그 계정 창으로 열려요. 지금 화면 저장도 창마다 계정을 기억해요.",
+            "body_en": "In the routine editor, choose an Account for a Chrome, Edge or Whale item and it opens in that profile. Save current screen remembers each window's profile too."
+          }
+        },
+        {
+          "kind": "improvement",
+          "text": "루틴의 브라우저는 늘 새 창으로, 링크 항목은 그 탭들만 담긴 창으로 열려요.",
+          "text_en": "Routine browsers always open a new window; a link item opens a window with just its tabs."
+        },
+        {
+          "kind": "improvement",
+          "text": "루틴에 폴더를 여러 개 넣으면 탐색기 창이 따로 열리고 각자 자리를 잡아요.",
+          "text_en": "Several folders in a routine open as separate File Explorer windows, each in its place."
+        },
+        {
+          "kind": "improvement",
+          "text": "둘러보기를 본 뒤 메모리를 돌려줘요.",
+          "text_en": "Memory is released after the tour."
+        },
+        {
+          "kind": "improvement",
+          "text": "실행 옵션 도움말.",
+          "text_en": "Help for launch options."
+        },
+        {
+          "kind": "improvement",
+          "text": "링크 항목에 주소를 여러 줄로 붙여 넣으면 탭이 한꺼번에 들어가요.",
+          "text_en": "Paste several addresses into a link item to add them all as tabs."
+        }
+      ]
+    },
+    {
       "version": "0.6.0",
       "date": "2026-10-15",
       "headline": "단축키 직접 정하기",

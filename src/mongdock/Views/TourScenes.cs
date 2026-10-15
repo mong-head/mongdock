@@ -26,7 +26,7 @@ internal static partial class TourScenes
     public static int Count(string? key) => key switch
     {
         "allapps" => 5,
-        "dock" or "topbar" or "routines" or "stacks" or "hotkeys" => 3,
+        "dock" or "topbar" or "routines" or "stacks" or "hotkeys" or "profiles" => 3,
         "settings" or "bounce" or "spotlight" => 2,
         _ => 0,
     };
@@ -80,7 +80,7 @@ internal static partial class TourScenes
     public static List<string> Check(AppServices services, UiPalette p, IEnumerable<string>? keys = null)
     {
         var problems = new List<string>();
-        foreach (var key in keys ?? new[] { "dock", "topbar", "spotlight", "allapps", "routines", "stacks", "settings", "bounce", "hotkeys" })
+        foreach (var key in keys ?? new[] { "dock", "topbar", "spotlight", "allapps", "routines", "stacks", "settings", "bounce", "hotkeys", "profiles" })
             for (int i = 0; i < Count(key); i++)
             {
                 var local = new List<string>();
@@ -186,6 +186,7 @@ internal static partial class TourScenes
         {
             _problems = problems;
             // 검색은 홈페이지 검색 장면을 800×500 화면으로 그려 둘러보기 크기(960×600 픽셀)로 — 검색창이 다른 단계처럼 크게 보이게
+            if (key == "profiles" && i == 2) return new Scene(_services, _p, 800, 500, Scale * W / 800).BuildTourProfileWindow(problems); // 그 계정의 브라우저 창
             if (key == "spotlight") return new Scene(_services, _p, 800, 500, Scale * W / 800).BuildTourSearch(i, problems, Hotkey(_services));
             var (g, top) = NewScene(key is "allapps" && i > 1 || key == "settings" && i == 1 ? PanelBg() : null);
             switch (key)
@@ -198,6 +199,7 @@ internal static partial class TourScenes
                 case "settings": Settings(g, top, i); break;
                 case "bounce": Bounce(g, top, i); break;
                 case "hotkeys": Hotkeys(g, top, i); break;
+                case "profiles": Profiles(g, top, i); break;
                 default: return null;
             }
             return Render(g);
@@ -1076,6 +1078,65 @@ internal static partial class TourScenes
             Layout(g);
             Need(allApps, "단축키 키 칸");
             if (f == 0) Cursor(top, Center(allApps, g, 0.9, 0.75), pressed: true); // 글자를 가리지 않게 칸 오른쪽 아래
+        }
+
+        // ── 루틴 브라우저 계정 (0.6.1 업데이트 새 기능) ──
+
+        /// <summary>장면 속 예시 계정 이름 (사용자 실제 계정 아님).</summary>
+        private static string ProfileName(bool work) => work ? K("회사", "Work") : K("개인", "Personal");
+
+        /// <summary>계정 첫 글자 동그라미 (크롬 프로필 사진 자리).</summary>
+        private Border ProfileAvatar(string name, double size, bool work) => new()
+        {
+            Width = size,
+            Height = size,
+            CornerRadius = new CornerRadius(size / 2),
+            Background = new SolidColorBrush(work ? Color.FromRgb(0x6F, 0x66, 0xC9) : Color.FromRgb(0x3E, 0xA8, 0x6B)),
+            Child = new TextBlock { Text = name[..1].ToUpperInvariant(), FontSize = size * 0.5, FontWeight = FontWeights.SemiBold, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+        };
+
+        /// <summary>
+        /// ① 루틴 편집 — Chrome 항목의 「계정」 칸을 눌러 목록에서 「회사」 ② 고른 계정(사진·이름)이 칸에 ③ (BuildTourProfileWindow) 루틴이 그 계정 창으로 엶.
+        /// </summary>
+        private void Profiles(Grid g, Canvas top, int f)
+        {
+            var card = new Border { CornerRadius = new CornerRadius(12), Background = _p.CardBackground, BorderBrush = _p.CardBorder, BorderThickness = new Thickness(0.5), Padding = new Thickness(4, 10, 4, 8) };
+            var rows = new StackPanel { Width = 400 };
+            rows.Children.Add(new TextBlock { Text = Loc.T("루틴 편집"), FontSize = 15, FontWeight = FontWeights.Bold, Foreground = _p.Text, Margin = new Thickness(14, 0, 0, 6) });
+            var itemRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(14, 2, 14, 8) };
+            itemRow.Children.Add(IconImage(Icon("browser"), 20));
+            itemRow.Children.Add(new TextBlock { Text = "Chrome", FontSize = 13.5, FontWeight = FontWeights.SemiBold, Foreground = _p.Text, Margin = new Thickness(8, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center });
+            itemRow.Children.Add(new TextBlock { Text = "https://mail.company.com", FontSize = 12, Foreground = _p.SubText, VerticalAlignment = VerticalAlignment.Center });
+            rows.Children.Add(itemRow);
+            rows.Children.Add(new Border { Height = 1, Background = _p.Divider, Margin = new Thickness(14, 0, 14, 0) });
+            var label = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            if (f == 1) label.Children.Add(ProfileAvatar(ProfileName(true), 18, true));
+            label.Children.Add(new TextBlock { Text = f == 1 ? ProfileName(true) : Loc.T("기본 (마지막에 쓴 계정)"), FontSize = 12, Foreground = _p.Text, Margin = new Thickness(f == 1 ? 8 : 0, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center });
+            var chevron = new TextBlock { Text = "\uE70D", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 9, Foreground = _p.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 1, 0, 0) };
+            var pickRow = new DockPanel();
+            DockPanel.SetDock(chevron, System.Windows.Controls.Dock.Right);
+            pickRow.Children.Add(chevron);
+            pickRow.Children.Add(label);
+            var picker = new Border { Width = 260, Height = 28, CornerRadius = new CornerRadius(7), Background = _p.Tile, Padding = new Thickness(10, 0, 8, 0), Child = pickRow, HorizontalAlignment = HorizontalAlignment.Left };
+            rows.Children.Add(SettingsRow(Loc.TC("one", "계정"), null, picker));
+            card.Child = rows;
+            card.LayoutTransform = new ScaleTransform(1.3, 1.3);
+            card.HorizontalAlignment = HorizontalAlignment.Center;
+            card.VerticalAlignment = f == 0 ? VerticalAlignment.Top : VerticalAlignment.Center;
+            if (f == 0) card.Margin = new Thickness(0, 40, 0, 0);
+            g.Children.Add(card);
+            Layout(g);
+            Need(picker, "계정 칸");
+            if (f == 0)
+            {
+                // 계정 목록 (기본 + 예시 계정 둘), 커서는 「회사」
+                var menu = Menu(new[] { Loc.T("기본 (마지막에 쓴 계정)"), "-", ProfileName(false), ProfileName(true) }, ProfileName(true));
+                var at = picker.TranslatePoint(new Point(0, picker.ActualHeight), g);
+                Place(top, menu, at.X, at.Y + 4);
+                Layout(g);
+                var pick = Need(MenuRow(menu, ProfileName(true)), "계정 목록 회사 줄")!;
+                Cursor(top, Center(pick, g, 0.4, 0.6));
+            }
         }
 
         private Grid SettingsRow(string title, string? sub, FrameworkElement control)

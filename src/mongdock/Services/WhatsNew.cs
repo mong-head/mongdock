@@ -128,7 +128,7 @@ public static class WhatsNew
     ];
 
     /// <summary>둘러보기 그림이 있는 단계 키.</summary>
-    public static readonly IReadOnlySet<string> TourPictures = new HashSet<string> { "dock", "topbar", TourSearchKey, "hotkeys", "allapps", "routines", "stacks", "settings", "bounce" };
+    public static readonly IReadOnlySet<string> TourPictures = new HashSet<string> { "dock", "topbar", TourSearchKey, "hotkeys", "profiles", "allapps", "routines", "stacks", "settings", "bounce" };
 
     /// <summary>
     /// 둘러보기에서 뺀 기능 — 처음 그 요소를 쓰고(패널·메뉴를 닫은 뒤) 한 번만 짧은 카드 (Views/FirstUseHints).
