@@ -130,8 +130,23 @@ public readonly record struct HotkeyChord(bool Ctrl, bool Alt, bool Shift, bool 
         return string.Join("+", parts);
     }
 
-    /// <summary>화면용 "Ctrl + Alt + K".</summary>
-    public string Display => ToString().Replace("+", " + ").Replace("Num + ", "Num+");
+    /// <summary>화면용 "Ctrl + Alt + K". 키 이름만 언어별 (독일어 Ctrl → "Strg", 번역 키 "key:Ctrl") — 저장 글자는 늘 "Ctrl".</summary>
+    public string Display => string.Join(" + ", Labels);
+
+    /// <summary>화면용 키 이름들 (수정자 순서대로 + 키). 둘러보기 키캡도 씀.</summary>
+    public IReadOnlyList<string> Labels
+    {
+        get
+        {
+            var parts = new List<string>(5);
+            if (Ctrl) parts.Add(Loc.TC("key", "Ctrl"));
+            if (Alt) parts.Add("Alt");
+            if (Shift) parts.Add("Shift");
+            if (Win) parts.Add("Win");
+            parts.Add(Names.TryGetValue(Vk, out var n) ? n : $"0x{Vk:X2}");
+            return parts;
+        }
+    }
 
     /// <summary>"Ctrl+Alt+K" → 조합. "auto"·빈 글자·모르는 키 → null. 순서·대소문자 무관.</summary>
     public static HotkeyChord? Parse(string? text)

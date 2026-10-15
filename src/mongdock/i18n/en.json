@@ -1463,5 +1463,6 @@
  "윈도우가 쓰는 키예요 (입력 언어 전환·창 메뉴). 검색에만 쓸 수 있어요.": "Windows uses this key (input language switch, window menu). It can only be used for Search.",
  "윈도우가 쓰는 키예요.": "Windows uses this key.",
  "다른 앱이 흔히 쓰는 키예요 (복사·붙여넣기·저장 같은).": "Other apps often use this key (like copy, paste or save).",
- "앱 메뉴 단축키(Alt+글자)와 겹칠 수 있어요.": "It may clash with app menu shortcuts (Alt+letter)."
+ "앱 메뉴 단축키(Alt+글자)와 겹칠 수 있어요.": "It may clash with app menu shortcuts (Alt+letter).",
+ "key:Ctrl": "Ctrl"
 }

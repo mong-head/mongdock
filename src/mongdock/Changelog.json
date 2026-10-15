@@ -2,6 +2,48 @@
   "_comment": "mongdock 변경 내역 단일 원본. 앱(설정 → 변경 내역, 새로운 기능 코치마크)과 build-release.ps1(GitHub 릴리스 노트)이 함께 읽는다. 최신 버전을 맨 위에. kind = feature | improvement | fix. coach 가 있는 feature 는 업데이트 후 상단바·독 위 말풍선으로 소개(anchor = Center|Dock|Logo|AppName|Desktops|Tray|Search|Clock, condition = topBar|trayIcons|spotlight|banners|dock|appMenus, 없으면 항상). major = 그 버전의 주요 업데이트(버전당 1~4개, 오랜만에 업데이트한 사람·변경 내역 맨 위·릴리스 노트 \"이번 버전 핵심\"에 씀), headline = 그 버전 한 줄 요약. body 의 {hotkey} 는 실제 검색 단축키 문구로 바뀜.",
   "versions": [
     {
+      "version": "0.6.0",
+      "date": "2026-10-16",
+      "headline": "단축키 직접 정하기",
+      "headline_en": "Your own shortcuts",
+      "entries": [
+        {
+          "kind": "feature",
+          "major": true,
+          "text": "단축키를 직접 정할 수 있어요: 설정 → 단축키에서 앱 모음 판·제어 센터·알림·루틴마다 키를 정해요. 처음엔 검색만 켜져 있어요.",
+          "text_en": "Set your own shortcuts: in Settings → Shortcuts, give the All Apps panel, Control Center, notifications or any routine its own key. Only Search is on at first.",
+          "coach": {
+            "key": "hotkeys",
+            "anchor": "Center",
+            "title": "단축키를 직접 정할 수 있어요",
+            "title_en": "Set your own shortcuts",
+            "body": "설정 → 단축키에서 앱 모음 판·제어 센터·알림·루틴마다 키를 정해 보세요. 처음엔 검색만 켜져 있어요.",
+            "body_en": "In Settings → Shortcuts, give the All Apps panel, Control Center, notifications or any routine its own key. Only Search is on at first."
+          }
+        },
+        {
+          "kind": "improvement",
+          "text": "몽독 창의 닫기·최소화·최대화 버튼이 오른쪽 위로 옮겨졌어요 (윈도우 순서).",
+          "text_en": "Window buttons moved to the top right, in Windows order."
+        },
+        {
+          "kind": "improvement",
+          "text": "둘러보기에 검색 단계가 생겼어요 — 앱과 폴더를 한 번에 찾기.",
+          "text_en": "The tour now shows Search — find apps and folders in one go."
+        },
+        {
+          "kind": "improvement",
+          "text": "둘러보기 카드가 깜빡이던 것을 고쳤어요.",
+          "text_en": "Fixed tour card flicker."
+        },
+        {
+          "kind": "improvement",
+          "text": "전체 화면 게임·영상 중에는 단축키가 쉬어요 (검색 포함).",
+          "text_en": "Shortcuts pause during full-screen games and videos (Search too)."
+        }
+      ]
+    },
+    {
       "version": "0.5.0",
       "date": "2026-10-15",
       "headline": "루틴 · 새 앱 모음 판 · 독 폴더",

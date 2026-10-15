@@ -570,7 +570,7 @@ internal static partial class TourScenes
             HotkeyChord? key;
             try { key = HotkeyController.SearchChord(services.Settings.Current); }
             catch { key = null; }
-            return key?.ToString().Split('+');
+            return key?.Labels.ToArray();
         }
 
         /// <summary>키캡 판 (Win + Space 등, 글자 하나가 아이콘 글꼴 영역이면 돋보기 같은 기호 키).</summary>

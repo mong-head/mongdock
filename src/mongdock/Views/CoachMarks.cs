@@ -514,7 +514,7 @@ internal static class CoachMarks
         HotkeyChord? key;
         try { key = HotkeyController.SearchChord(s); }
         catch { key = null; }
-        return key is { } k ? Loc.F($"{k.ToString()}(또는 검색 버튼)로") : Loc.T("검색 버튼을 눌러");
+        return key is { } k ? Loc.F($"{string.Join("+", k.Labels)}(또는 검색 버튼)로") : Loc.T("검색 버튼을 눌러");
     }
 
     /// <summary>

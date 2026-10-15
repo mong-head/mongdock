@@ -1442,7 +1442,7 @@
  "루틴이 아직 없어요": "Noch keine Routinen",
  "독이나 앱 모음 판에서 루틴을 만들면 여기서 루틴마다 키를 정할 수 있어요.": "Erstelle eine Routine im Dock oder unter „Alle Apps“, dann kannst du hier für jede Routine eine Tastenkombination festlegen.",
  "이 루틴 열기": "Diese Routine öffnen",
- "Ctrl·Alt·Win 중 하나와 함께 누르세요 (예: Ctrl + Alt + K). 윈도우나 다른 앱이 쓰는 키는 고를 수 없어요. 키 칸에서 Esc 는 취소, Backspace 는 지우기예요.": "Zusammen mit Strg, Alt oder Win drücken (z. B. Ctrl + Alt + K). Tasten, die Windows oder andere Apps nutzen, sind nicht wählbar. Im Tastenfeld bricht Esc ab, Rücktaste löscht.",
+ "Ctrl·Alt·Win 중 하나와 함께 누르세요 (예: Ctrl + Alt + K). 윈도우나 다른 앱이 쓰는 키는 고를 수 없어요. 키 칸에서 Esc 는 취소, Backspace 는 지우기예요.": "Zusammen mit Strg, Alt oder Win drücken (z. B. Strg + Alt + K). Tasten, die Windows oder andere Apps nutzen, sind nicht wählbar. Im Tastenfeld bricht Esc ab, Rücktaste löscht.",
  "기본값으로 되돌리기": "Auf Standard zurücksetzen",
  "키를 누르세요…": "Tasten drücken…",
  "자동 ({0})": "Automatisch ({0})",
@@ -1463,5 +1463,6 @@
  "윈도우가 쓰는 키예요 (입력 언어 전환·창 메뉴). 검색에만 쓸 수 있어요.": "Windows nutzt diese Taste (Eingabesprache wechseln, Fenstermenü). Nur für die Suche möglich.",
  "윈도우가 쓰는 키예요.": "Windows nutzt diese Taste.",
  "다른 앱이 흔히 쓰는 키예요 (복사·붙여넣기·저장 같은).": "Andere Apps nutzen diese Taste oft (z. B. Kopieren, Einfügen, Speichern).",
- "앱 메뉴 단축키(Alt+글자)와 겹칠 수 있어요.": "Kann mit App-Menü-Tasten (Alt+Buchstabe) kollidieren."
+ "앱 메뉴 단축키(Alt+글자)와 겹칠 수 있어요.": "Kann mit App-Menü-Tasten (Alt+Buchstabe) kollidieren.",
+ "key:Ctrl": "Strg"
 }
