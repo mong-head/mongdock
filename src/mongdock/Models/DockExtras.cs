@@ -107,6 +107,9 @@ public sealed class RoutineItem
     /// <summary>다음 항목까지 기다리기 (0~10000ms).</summary>
     public int DelayMs { get; set; }
     public RoutineIfRunning IfRunning { get; set; } = RoutineIfRunning.Focus;
+    /// <summary>브라우저 계정 (크로미움 프로필 디렉터리 이름, 예 "Profile 1") — 0.6.1. 없으면 기본(마지막에 쓴 계정). 옛 판은 무시.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Profile { get; set; }
     /// <summary>나중(항목마다 다른 데스크톱) 여지 — 지금은 쓰지 않음.</summary>
     public RoutineDesktop? Desktop { get; set; }
 }

@@ -217,6 +217,8 @@ internal static class Program
         if (Array.IndexOf(args, "--dockfit") >= 0) { DockFitReport(); return 0; }
         if (Array.IndexOf(args, "--clipdemo") >= 0) { ClipDemo(); return 0; }
         if (Array.IndexOf(args, "--suggest") >= 0) return SuggestTable();
+        if (Array.IndexOf(args, "--tourmem") >= 0) return TourMemory(); // 둘러보기 장면 그림 메모리: 다 그린 뒤 / 정리 뒤 (화면 없음)
+        if (Array.IndexOf(args, "--profilecheck") >= 0) return ProfileCheck(); // 0.6.1 루틴 브라우저 계정·탐색기 창 (화면·실제 실행 없음)
         if (Array.IndexOf(args, "--hotkeycheck") >= 0) return HotkeyCheck(); // 0.6 단축키 규칙·저장·키 처리 점검 (화면·실제 입력 없음)
         if (Array.IndexOf(args, "--reviewcheck") >= 0) return ReviewCheck(); // 0.5.0 검토 수정 점검 (화면 없음)
         int unin = Array.FindIndex(args, a => a == "--uninstall");
@@ -1320,13 +1322,13 @@ internal static class Program
         var stepType = asm.GetType("Mongdock.Views.TourStep")!;
         coach.GetMethod("Init", any)!.Invoke(null, new object?[] { services, (Func<Mongdock.Services.CoachAnchor, (Rect, MonitorInfo)?>)(_ => null), null });
         var problems = new List<string>();
-        foreach (var flow in new[] { "tour", "update", "update06" }) // update = 0.4.2→0.5.0, update06 = 0.5.0→0.6.0 (장면 카드여야 함)
+        foreach (var flow in new[] { "tour", "update", "update06", "update061", "update062" }) // update = 0.4.2→0.5.0, update06 = 0.5.0→0.6.0 (장면 카드여야 함)
         {
             var pages = (flow == "tour"
                 ? (System.Collections.IEnumerable)coach.GetMethod("BuildTourPages", any)!.Invoke(null, null)!
-                : (System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
-            if (flow == "update06" && !pages.Any(x => x.GetType().GetProperty("Pictures")!.GetValue(x) is string))
-                problems.Add("0.5→0.6 새 기능 안내에 장면 카드가 없음 (예전 말풍선으로 뜸)");
+                : (System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "update062" ? new object[] { new Version(0, 6, 1), new Version(0, 6, 2) } : flow == "update061" ? new object[] { new Version(0, 6, 0), new Version(0, 6, 1) } : flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
+            if (flow is "update06" or "update061" && !pages.Any(x => x.GetType().GetProperty("Pictures")!.GetValue(x) is string))
+                problems.Add($"{flow} 새 기능 안내에 장면 카드가 없음 (예전 말풍선으로 뜸)");
             var steps = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(stepType))!;
             var titles = new List<string>();
             foreach (var pg in pages)
@@ -1539,6 +1541,126 @@ internal static class Program
     }
 
     /// <summary>0.5.0 검토 수정 점검: 제거 항목 폴더 연결(넓은 폴더 빼기), 이름 비교, 따옴표 없는 제거 명령, 스팀 링크, 빠른 경로 확인.</summary>
+    /// <summary>
+    /// --tourmem: 둘러보기 장면을 앱처럼 그려 캐시에 담은 뒤(첫 설치 둘러보기 + 0.6.0 업데이트, 라이트·다크) 전용 메모리·작업 집합,
+    /// 그다음 TourScenes.ReleaseCache(둘러보기가 끝날 때 앱이 부르는 것) 뒤 값. 각 값은 GC 3번 뒤.
+    /// </summary>
+    private static int TourMemory()
+    {
+        var app = new Mongdock.App();
+        Mongdock.Loc.Init(_lang);
+        app.InitializeComponent();
+        app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        var settings = new SettingsService();
+        Mongdock.ViewModels.UiFonts.Apply(settings.Current);
+        var tracker = new WindowTracker();
+        var launcher = new AppLauncher(tracker);
+        var services = new AppServices(settings, tracker, launcher, new IconService(), new DesktopWindowService(), new VirtualDesktopService(),
+            new ShellActions(), new ImeService(), new StatusService(), new MediaService(), new AppMenuService(settings), new StartupService(),
+            new NotificationService(tracker, launcher), new TrayIconService(), new CalendarFeedService(settings));
+        var scenes = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.TourScenes")!;
+        int Count(string key) => (int)scenes.GetMethod("Count", Any)!.Invoke(null, new object?[] { key })!;
+        string Mem()
+        {
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+            var proc = System.Diagnostics.Process.GetCurrentProcess();
+            proc.Refresh();
+            return $"전용 {proc.PrivateMemorySize64 / 1048576}MB, 작업 집합 {proc.WorkingSet64 / 1048576}MB, GC 힙 {GC.GetTotalMemory(false) / 1048576}MB";
+        }
+        // 앱처럼 처음 한 장을 한 번 그려 WPF 준비(글꼴·자원)를 끝낸 뒤를 기준으로
+        settings.Current.Dock.Theme = DockTheme.Light;
+        Mongdock.ViewModels.UiTheme.Apply(settings.Current);
+        scenes.GetMethod("Frame", Any)!.Invoke(null, new object[] { services, "settings", 0, Mongdock.ViewModels.UiTheme.Palette(settings.Current) });
+        scenes.GetMethod("ReleaseCache", Any)!.Invoke(null, null);
+        string baseline = Mem();
+        Console.WriteLine($"  기준 (장면 0장): {baseline}");
+        var keys = new[] { "dock", "topbar", "spotlight", "allapps", "routines", "stacks", "settings", "hotkeys" };
+        foreach (var theme in new[] { DockTheme.Light, DockTheme.Dark })
+        {
+            settings.Current.Dock.Theme = theme;
+            Mongdock.ViewModels.UiTheme.Apply(settings.Current);
+            var palette = Mongdock.ViewModels.UiTheme.Palette(settings.Current);
+            foreach (var key in keys)
+                for (int i = 0; i < Count(key); i++)
+                    scenes.GetMethod("Frame", Any)!.Invoke(null, new object[] { services, key, i, palette });
+            int cached = (int)scenes.GetProperty("CachedCount", Any)!.GetValue(null)!;
+            Console.WriteLine($"  {theme} 까지 그린 뒤 (캐시 {cached}장): {Mem()}");
+        }
+        int released = (int)scenes.GetMethod("ReleaseCache", Any)!.Invoke(null, null)!;
+        Console.WriteLine($"  정리 뒤 ({released}장 놓음, 캐시 {(int)scenes.GetProperty("CachedCount", Any)!.GetValue(null)!}장): {Mem()}");
+        GC.KeepAlive(app);
+        return 0;
+    }
+
+    /// <summary>시험 그림용 예시 계정 목록 (리플렉션으로 Func&lt;string, IReadOnlyList&lt;Profile&gt;&gt; 를 만들려고).</summary>
+    private sealed class ExampleProfiles
+    {
+        private readonly System.Collections.IList _list;
+        public ExampleProfiles(System.Collections.IList list) => _list = list;
+        public IReadOnlyList<TP> Get<TP>(string exe) => _list.Cast<TP>().ToList();
+    }
+
+    /// <summary>--profilecheck: 루틴 항목 계정 인자(있음·없어짐·안 고름·크로미움 아님), 저장 형식(없으면 안 씀·옛 판 무시), 창 명령줄에서 계정 읽기.</summary>
+    private static int ProfileCheck()
+    {
+        var asm = typeof(Mongdock.App).Assembly;
+        int bad = 0;
+        void Check(string what, bool ok) { Console.WriteLine($"  {(ok ? "통과" : "실패")}  {what}"); if (!ok) bad++; }
+        var rp = asm.GetType("Mongdock.Services.RoutineProfiles")!;
+        var profType = asm.GetType("Mongdock.Services.ChromiumProfiles+Profile")!;
+        var listT = typeof(List<>).MakeGenericType(profType);
+        var example = (System.Collections.IList)Activator.CreateInstance(listT)!;
+        example.Add(Activator.CreateInstance(profType, "Default", "개인", null));
+        example.Add(Activator.CreateInstance(profType, "Profile 1", "회사", null));
+        var funcT = typeof(Func<,>).MakeGenericType(typeof(string), typeof(IReadOnlyList<>).MakeGenericType(profType));
+        var del = Delegate.CreateDelegate(funcT, new ExampleProfiles(example), typeof(ExampleProfiles).GetMethod("Get")!.MakeGenericMethod(profType));
+        rp.GetProperty("ProfilesForTest", Any)!.SetValue(null, del);
+        try
+        {
+            string? Arg(RoutineItem i) => (string?)rp.GetMethod("Arg", Any)!.Invoke(null, new object[] { i });
+            var chrome = new RoutineItem { Kind = RoutineItemKind.App, Target = @"C:\Program Files\Google\Chrome\Application\chrome.exe", Profile = "Profile 1" };
+            Check($"고른 계정 → {Arg(chrome)}", Arg(chrome) == "--profile-directory=\"Profile 1\"");
+            chrome.Profile = "Profile 9";
+            Check($"없어진 계정 → 기본 ({Arg(chrome) ?? "인자 없음"})", Arg(chrome) is null);
+            chrome.Profile = null;
+            Check("안 고름 → 인자 없음", Arg(chrome) is null);
+            var store = new RoutineItem { Kind = RoutineItemKind.App, Aumid = "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App", Profile = "Profile 1" };
+            Check("스토어 앱(AUMID) → 계정 없음", Arg(store) is null);
+            // 새 창 (0.6.1 제보: 다른 데스크톱·다른 계정 창이 있어도 크롬 탭으로 들어감) — 브라우저는 켜져 있든 말든 늘 새 창
+            var rs = asm.GetType("Mongdock.Services.RoutineService")!;
+            string Args(RoutineItem i, bool running) => (string)rs.GetMethod("AppArgs", Any)!.Invoke(null, new object[] { i, running })!;
+            var web = new RoutineItem { Kind = RoutineItemKind.App, Target = @"C:\Program Files\Google\Chrome\Application\chrome.exe", Open = "https://mail.company.com", Profile = "Profile 1" };
+            Check($"크롬 (안 켜진 줄 앎) → {Args(web, false)}", Args(web, false) == "--profile-directory=\"Profile 1\" --new-window https://mail.company.com");
+            web.Args = "--new-window";
+            Check($"실행 옵션에 이미 --new-window → 한 번만 ({Args(web, true)})", Args(web, true) == "--profile-directory=\"Profile 1\" --new-window https://mail.company.com");
+            var code = new RoutineItem { Kind = RoutineItemKind.App, Target = @"C:\x\Code.exe", Open = @"C:\dev\mongdock" };
+            Check($"VS Code 안 켜짐 → -n 없음 ({Args(code, false)})", Args(code, false) == @"C:\dev\mongdock");
+            Check($"VS Code 켜짐 → -n ({Args(code, true)})", Args(code, true) == @"-n C:\dev\mongdock");
+        }
+        finally { rp.GetProperty("ProfilesForTest", Any)!.SetValue(null, null); }
+        // 저장 형식: 없으면 안 씀, 있으면 "profile", 옛 판(모르는 키 무시)과 같은 방식
+        var opts = new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase };
+        string none = System.Text.Json.JsonSerializer.Serialize(new RoutineItem { Kind = RoutineItemKind.App, Target = "a.exe" }, opts);
+        string with = System.Text.Json.JsonSerializer.Serialize(new RoutineItem { Kind = RoutineItemKind.App, Target = "a.exe", Profile = "Profile 1" }, opts);
+        Check($"계정 없으면 저장 안 함 ({!none.Contains("profile")})", !none.Contains("profile"));
+        Check($"계정 저장 ({with.Contains("\"profile\":\"Profile 1\"")})", with.Contains("\"profile\":\"Profile 1\""));
+        var back = System.Text.Json.JsonSerializer.Deserialize<RoutineItem>(with, opts)!;
+        Check($"다시 읽기 ({back.Profile})", back.Profile == "Profile 1");
+        // 창 명령줄에서 계정
+        var cp = asm.GetType("Mongdock.Services.ChromiumProfiles")!;
+        string? Parse(string c) => (string?)cp.GetMethod("ParseProfileDir", Any)!.Invoke(null, new object[] { c });
+        Check("명령줄 따옴표 계정", Parse("\"C:\\x\\chrome.exe\" --profile-directory=\"Profile 3\"") == "Profile 3");
+        Check("명령줄 따옴표 없는 계정", Parse("chrome.exe --profile-directory=Default") == "Default");
+        // 링크 칸에 여러 주소 붙여 넣기 (0.6.1): 줄·공백·쉼표로 나눔, 빈 줄·중복·주소 아닌 글은 뺌
+        var ed = asm.GetType("Mongdock.Views.RoutineEditorWindow")!;
+        List<string> Split(string t) => (List<string>)ed.GetMethod("SplitLinks", Any)!.Invoke(null, new object[] { t })!;
+        var sp = Split("https://a.com/x\r\n\r\nhttps://b.com, notion.so/team  안녕하세요\nhttps://a.com/x\nwww.c.org");
+        Check($"여러 주소 나누기: {string.Join(" | ", sp)}", sp.SequenceEqual(new[] { "https://a.com/x", "https://b.com", "notion.so/team", "www.c.org" }));
+        Check("주소 하나는 하나", Split("https://a.com").Count == 1);
+        Console.WriteLine(bad == 0 ? "계정 점검: 모두 통과" : $"계정 점검: 실패 {bad}개");
+        return bad == 0 ? 0 : 1;
+    }
+
     /// <summary>--hotkeycheck: 단축키 조합 글자·막는 키·옛 설정 옮기기·키 표·훅 처리(가짜 키 — 진짜 훅·입력 없음).</summary>
     private static int HotkeyCheck()
     {
@@ -1767,8 +1889,8 @@ internal static class Program
             coach.GetMethod("Init", any)!.Invoke(null, new object?[] { services, (Func<Mongdock.Services.CoachAnchor, (Rect, MonitorInfo)?>)(_ => null), null });
             List<object> Pages(string flow) => flow == "tour"
                 ? ((System.Collections.IEnumerable)coach.GetMethod("BuildTourPages", any)!.Invoke(null, null)!).Cast<object>().ToList()
-                : ((System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
-            foreach (var flow in new[] { "tour", "update", "update06" })
+                : ((System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "update062" ? new object[] { new Version(0, 6, 1), new Version(0, 6, 2) } : flow == "update061" ? new object[] { new Version(0, 6, 0), new Version(0, 6, 1) } : flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
+            foreach (var flow in new[] { "tour", "update", "update06", "update061", "update062" })
             {
                 var pages = Pages(flow);
                 var rows = new List<BitmapSource>();
@@ -1798,7 +1920,7 @@ internal static class Program
                 }
                 // 시트
                 var sheet = new System.Windows.Controls.StackPanel { Background = Brushes.White };
-                sheet.Children.Add(new System.Windows.Controls.TextBlock { Text = (flow == "tour" ? "첫 설치 둘러보기" : flow == "update06" ? "0.5.x → 0.6.0 새 기능" : "0.4.x → 0.5.0 새 기능") + $" · {_lang} · {theme}", FontSize = 22, FontWeight = FontWeights.Bold, Margin = new Thickness(16, 12, 0, 8) });
+                sheet.Children.Add(new System.Windows.Controls.TextBlock { Text = (flow == "tour" ? "첫 설치 둘러보기" : flow == "update06" ? "0.5.x → 0.6.0 새 기능" : flow == "update061" ? "0.6.0 → 0.6.1 새 기능" : flow == "update062" ? "0.6.1 → 0.6.2 새 기능" : "0.4.x → 0.5.0 새 기능") + $" · {_lang} · {theme}", FontSize = 22, FontWeight = FontWeights.Bold, Margin = new Thickness(16, 12, 0, 8) });
                 foreach (var r in rows) sheet.Children.Add(new System.Windows.Controls.Image { Source = r, Width = r.PixelWidth, Height = r.PixelHeight, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 10) });
                 Save(Snap(sheet, 0.6), $"sheet-{flow}-{_lang}-{theme}.png");
                 Console.WriteLine($"  저장  sheet-{flow}-{_lang}-{theme}.png ({pages.Count}장)");
@@ -2344,8 +2466,22 @@ internal static class Program
                 ov.Close();
             }
 
+            // 0.6.1 브라우저 계정: 이 PC 의 실제 계정(이름·사진) 대신 예시 둘 — Chrome 항목은 "회사" 계정, 링크 항목은 기본
+            {
+                var profType = T("Mongdock.Services.ChromiumProfiles+Profile");
+                var listT = typeof(List<>).MakeGenericType(profType);
+                (string a, string b) names = _lang switch { "ko" => ("개인", "회사"), "de" => ("Privat", "Arbeit"), _ => ("Personal", "Work") };
+                var example = (System.Collections.IList)Activator.CreateInstance(listT)!;
+                example.Add(Activator.CreateInstance(profType, "Default", names.a, null));
+                example.Add(Activator.CreateInstance(profType, "Profile 1", names.b, null));
+                var funcT = typeof(Func<,>).MakeGenericType(typeof(string), typeof(IReadOnlyList<>).MakeGenericType(profType));
+                var holder = new ExampleProfiles(example);
+                var del = Delegate.CreateDelegate(funcT, holder, typeof(ExampleProfiles).GetMethod("Get")!.MakeGenericMethod(profType));
+                T("Mongdock.Services.RoutineProfiles").GetProperty("ProfilesForTest", Any)!.SetValue(null, del);
+            }
             // 2) 편집 창: 크게 / Chrome 세부 펼침(+ 고급)
             var work = new RoutineDef { Id = "r-test1", Name = "업무 시작", Items = Work() };
+            if (work.Items.Count > 1 && work.Items[1].Kind == RoutineItemKind.App) work.Items[1].Profile = "Profile 1";
             foreach (var expand in new[] { -1, 1 })
             {
                 var editor = New("Mongdock.Views.RoutineEditorWindow", services, work, work, false);
@@ -2539,6 +2675,38 @@ internal static class Program
             var elsewhere = Card(Mongdock.Loc.F($"이미 켜져 있는 앱 {3}개는 원래 데스크톱에 있어요"), "Chrome · 카카오톡 · Notion", Mongdock.Loc.T("그 데스크톱으로 가기"), Mongdock.Loc.T("닫기"), null);
             Save((FrameworkElement)elsewhere.Content, "elsewhere");
             elsewhere.Close();
+
+            // 7) 0.6.2 로고 메뉴 전원 줄 (업데이트가 다시 시작을 기다릴 때 / 아닐 때) + 「업데이트 후 다시 시작」 확인 카드
+            {
+                var tb = T("Mongdock.Views.TopBarWindow");
+                var dm = T("Mongdock.Views.DockMenus");
+                foreach (bool pending in new[] { true, false })
+                {
+                    var power = ((System.Collections.IEnumerable)tb.GetMethod("PowerItems", Any)!.Invoke(null, new object[] { pending })!).Cast<object>().ToList();
+                    string P(object o, string n) => (string)o.GetType().GetProperty(n)!.GetValue(o)!;
+                    var stack = new System.Windows.Controls.StackPanel { Margin = new Thickness(5) };
+                    System.Windows.Controls.MenuItem Mi(string label) => (System.Windows.Controls.MenuItem)dm.GetMethod("Item", Any)!.Invoke(null, new object?[] { label, (Action)(() => { }), true, null })!;
+                    stack.Children.Add(Mi(Mongdock.Loc.T("작업 관리자")));
+                    stack.Children.Add(new System.Windows.Controls.Separator());
+                    stack.Children.Add(Mi(Mongdock.Loc.T("절전")));
+                    foreach (var pw in power) stack.Children.Add(Mi(P(pw, "Label")));
+                    stack.Children.Add(new System.Windows.Controls.Separator());
+                    stack.Children.Add(Mi(Mongdock.Loc.T("화면 잠금")));
+                    var box = new System.Windows.Controls.Border { Child = stack, CornerRadius = new CornerRadius(10), Width = 280 };
+                    box.SetResourceReference(System.Windows.Controls.Border.BackgroundProperty, "Menu.Background");
+                    var host = new System.Windows.Controls.Border { Padding = new Thickness(12), Child = box, Background = (Brush)palette.GetType().GetProperty("WindowBackground")!.GetValue(palette)! };
+                    host.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                    host.Arrange(new Rect(host.DesiredSize));
+                    host.UpdateLayout();
+                    Save(host, pending ? "logomenu-update" : "logomenu-normal");
+                    if (pending)
+                    {
+                        var c = Card(P(power[0], "Title"), P(power[0], "Body"), P(power[0], "Button"), null, null);
+                        Save((FrameworkElement)c.Content, "confirm-update-restart");
+                        c.Close();
+                    }
+                }
+            }
             settings.Dispose();
         }
         GC.KeepAlive(app);

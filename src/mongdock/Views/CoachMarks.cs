@@ -693,7 +693,8 @@ internal static class CoachMarks
         if (pages.Count == 0 || _services is null || _resolve is null) return null;
         // 첫 설치 둘러보기·다시 보기 = 새 방식 카드(그림 + 강조), 새 기능·힌트 = 말풍선 (spec-coach-tour.md)
         // 장면 그림이 있는 안내(업데이트 "새 기능" 포함)도 새 카드 — 처음 쓰기 힌트처럼 그림 없는 한 장은 말풍선
-        ICoachRun session = isTour || pages.Any(p => p.Pictures is not null) ? new TourSession(_services, _resolve, pages) : new CoachSession(_services, _resolve, _popupOpen, pages);
+        // 장면 없이 "바뀐 것" 목록 카드만 있는 업데이트(0.6.2 처럼 작은 기능)도 새 카드 — 옛 말풍선으로 빠지지 않게
+        ICoachRun session = isTour || pages.Any(p => p.Pictures is not null || p.Groups is not null) ? new TourSession(_services, _resolve, pages) : new CoachSession(_services, _resolve, _popupOpen, pages);
         session.Ended += reason =>
         {
             if (_session == session) _session = null;

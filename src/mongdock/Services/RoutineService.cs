@@ -490,6 +490,18 @@ internal static class RoutineService
         };
     }
 
+    /// <summary>앱 항목 실행 인자: 계정 + 새 창(브라우저는 늘, VS Code 류는 켜져 있을 때만, 실행 옵션에 이미 있으면 안 붙임) + 실행 옵션 + 함께 열 것.</summary>
+    internal static string AppArgs(RoutineItem item, bool running)
+    {
+        string? newWindow = NewWindowArg(item) is { Length: > 0 } nw
+            && (IsBrowserNewWindow(nw) || running)
+            && !(item.Args ?? "").Contains(nw, StringComparison.OrdinalIgnoreCase) ? nw : null;
+        return string.Join(" ", new[] { RoutineProfiles.Arg(item), newWindow, item.Args, Quote(item.Open) }.Where(s => !string.IsNullOrWhiteSpace(s)));
+    }
+
+    /// <summary>브라우저의 새 창 인자인지 (크로미움 --new-window, 파이어폭스 -new-window).</summary>
+    private static bool IsBrowserNewWindow(string arg) => arg is "--new-window" or "-new-window";
+
     /// <summary>이미 다른 데스크톱에 켜져 있어 열지 않은 앱들 (이름, 첫 창) — 안내 카드를 띄움. UI 스레드.</summary>
     public static event Action<List<(string Name, IntPtr Hwnd)>>? ElsewhereShown;
     /// <summary>열 것이 없고 루틴 앱이 전부 이 데스크톱에 있어 앞으로만 가져옴 (짧은 "이미 열려 있어요"). UI 스레드.</summary>
@@ -577,10 +589,10 @@ internal static class RoutineService
         {
             case RoutineItemKind.App:
             {
-                // 새 창을 열 수 있는 앱이 이미 켜져 있으면 새 창 인자를 붙임 (안 붙이면 원래 데스크톱의 창이 앞으로 옴)
-                string? newWindow = NewWindowArg(item) is { Length: > 0 } nw && services.Windows.Windows.Any(w => IsItemWindow(item, w))
-                    && !(item.Args ?? "").Contains(nw, StringComparison.OrdinalIgnoreCase) ? nw : null;
-                string args = string.Join(" ", new[] { newWindow, item.Args, Quote(item.Open) }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                // 새 창 인자 (안 붙이면 이미 열린 창이 앞으로 오거나 그 창에 탭으로 들어감):
+                // 브라우저는 늘 (0.6.1 사용자 제보 — 다른 데스크톱·다른 계정 창이 있으면 창 목록으로 못 알아채 탭으로 들어갔음),
+                // VS Code 류는 켜져 있을 때만 (안 켜져 있을 때 -n 이면 지난 작업 창을 되살리지 않고 빈 창이 됨)
+                string args = AppArgs(item, running: services.Windows.Windows.Any(w => IsItemWindow(item, w)));
                 if (!string.IsNullOrWhiteSpace(item.Aumid))
                     services.Launcher.Launch(new PinItem { Kind = PinKind.Aumid, Target = item.Aumid, Arguments = args.Length > 0 ? args : null, Name = item.Name ?? "" });
                 else if (File.Exists(Environment.ExpandEnvironmentVariables(item.Target)))
@@ -607,9 +619,11 @@ internal static class RoutineService
                 var web = links.Where(RoutineLinks.IsWeb).ToList();
                 if (web.Count > 0)
                 {
-                    var placement = item.Placement?.Mode ?? RoutinePlacementMode.Keep;
-                    bool newWindow = web.Count > 1 || placement != RoutinePlacementMode.Keep;
-                    if (newWindow && DefaultBrowser() is { } browser && RoutineLinks.Kind(browser) is var kind && kind != RoutineLinks.Browser.Unknown)
+                    // 아는 브라우저면 늘 새 창 (0.6.1 사용자 제보: 주소 하나·자리 "그대로"면 이미 열린 창 — 다른 데스크톱일 수도 — 에 탭으로 들어갔음).
+                    // 브라우저 계정을 골랐으면 그 계정 창으로
+                    if (RoutineProfiles.Arg(item) is { } profileArg && RoutineProfiles.BrowserExe(item) is { } chromium)
+                        Start(chromium, profileArg + " " + RoutineLinks.TabArgs(RoutineLinks.Browser.Chromium, web));
+                    else if (DefaultBrowser() is { } browser && RoutineLinks.Kind(browser) is var kind && kind != RoutineLinks.Browser.Unknown)
                         Start(browser, RoutineLinks.TabArgs(kind, web));
                     else
                         foreach (var u in web) Start(u.AbsoluteUri, null); // 모르는 브라우저는 하나씩
@@ -625,7 +639,9 @@ internal static class RoutineService
                     Log.Warn("루틴 항목: 파일·폴더가 없어 건너뜀");
                     return false;
                 }
-                Start(path, null);
+                // 폴더는 explorer.exe 에 넘겨 새 창으로 (0.6.1 — 경로를 그대로 열면 윈도우 11 의 "바깥 폴더를 새 탭으로" 설정에서 한 창의 탭이 됨, 화면 확인 필요)
+                if (Directory.Exists(path)) Start(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"), Quote(path) ?? path);
+                else Start(path, null);
                 return true;
             }
         }
@@ -669,6 +685,8 @@ internal static class RoutineService
             lock (Runs) fresh = services.Windows.Windows.Where(w => !before.Contains(w.Hwnd) && !state.Claimed.Contains(w.Hwnd)).ToList();
             fresh = fresh.Where(OnRunDesktop).ToList();
             found = fresh.FirstOrDefault(w => Matches(item, w));
+            if (found is null && exe == "explorer" && item.Kind == RoutineItemKind.Path && fresh.Any(w => ExeName(w.ProcessPath) == "explorer"))
+                found = FolderWindow(fresh, item.Target); // 폴더 여럿을 같이 열어도 창마다 제 폴더로 (0.6.1)
             if (found is null && exe is not null)
             {
                 var byExe = fresh.Where(w => ExeName(w.ProcessPath) == exe).ToList();
@@ -910,6 +928,7 @@ internal static class RoutineService
                     Aumid = packaged ? pin.Target : null,
                     Name = AppNames.Get(w),
                     Open = packaged ? null : OpenTargetFromCommandLine(w.Hwnd, w.ProcessPath),
+                    Profile = packaged ? null : RoutineProfiles.OfWindow(w.Hwnd, w.ProcessPath), // 크롬 창마다 계정 (같은 브라우저라도 계정별로 따로 항목)
                 };
                 if (item.Open is null && !packaged && !IsBrowserExe(exe)) item.Open = OpenFromRecent(w.Title, exe, recent ??= RecentDocuments());
             }
@@ -949,6 +968,15 @@ internal static class RoutineService
     }
 
     /// <summary>탐색기 폴더 창 → 그 폴더 경로 (Shell.Application.Windows).</summary>
+    /// <summary>새로 뜬 탐색기 창 중 그 폴더를 보여 주는 창 (경로 비교: 대소문자·끝 \ 무시). 없으면 null.</summary>
+    private static AppWindowInfo? FolderWindow(List<AppWindowInfo> fresh, string folder)
+    {
+        string want = Norm(Environment.ExpandEnvironmentVariables(folder));
+        var map = ExplorerFolders();
+        return fresh.FirstOrDefault(w => ExeName(w.ProcessPath) == "explorer" && map.TryGetValue(w.Hwnd, out var path) && Norm(path) == want);
+        static string Norm(string p) => p.TrimEnd('\\', '/').ToLowerInvariant();
+    }
+
     private static Dictionary<IntPtr, string> ExplorerFolders()
     {
         var map = new Dictionary<IntPtr, string>();
@@ -1170,7 +1198,8 @@ internal static class RoutineService
         {
             if (item.Kind != RoutineItemKind.App || used.Contains(hwnd)) continue; // 탐색기 폴더 창은 새 항목 후보로 넣지 않음
             // 같은 앱 창이 하나 더 떠 있는 것(이미 항목이 있는 앱)은 새 앱이 아님
-            if (items.Any(i => i.Kind == RoutineItemKind.App && (i.Aumid is { Length: > 0 } a ? a == item.Aumid : string.Equals(i.Target, item.Target, StringComparison.OrdinalIgnoreCase)))) continue;
+            if (items.Any(i => i.Kind == RoutineItemKind.App && (i.Aumid is { Length: > 0 } a ? a == item.Aumid : string.Equals(i.Target, item.Target, StringComparison.OrdinalIgnoreCase))
+                && string.Equals(i.Profile ?? "", item.Profile ?? "", StringComparison.OrdinalIgnoreCase))) continue; // 계정이 다르면 다른 창
             if (added.Any(x => x.Item1.Aumid is { Length: > 0 } a ? a == item.Aumid : string.Equals(x.Item1.Target, item.Target, StringComparison.OrdinalIgnoreCase))) continue;
             added.Add((item, hwnd));
         }

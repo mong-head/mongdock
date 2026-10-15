@@ -446,6 +446,8 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         warn.Foreground = Brushes.IndianRed;
         warn.Visibility = Visibility.Collapsed;
         var rows = new StackPanel();
+        var pasted = Muted("", 11.5); // "탭 n개를 넣었어요"
+        pasted.Visibility = Visibility.Collapsed;
         void Save()
         {
             var clean = links.Select(l => l.Trim()).ToList();
@@ -480,6 +482,25 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
                 line.Children.Add(remove);
                 var field = Field(links[at]);
                 field.TextChanged += (_, _) => { links[at] = field.Text; Save(); };
+                // 주소 여러 개(여러 줄·공백·쉼표)를 붙여 넣으면 탭 줄로 나눠 넣음 (0.6.1) — 한 줄 칸이라 그냥 두면 첫 줄만 남음
+                DataObject.AddPastingHandler(field, (_, e) =>
+                {
+                    if (e.SourceDataObject.GetData(DataFormats.UnicodeText) is not string text) return;
+                    var found = SplitLinks(text);
+                    if (found.Count < 2) return; // 하나면 보통 붙여 넣기
+                    e.CancelCommand();
+                    var have = new HashSet<string>(links.Where((l, i) => i != at && l.Trim().Length > 0).Select(l => l.Trim()), StringComparer.OrdinalIgnoreCase);
+                    var add = found.Where(have.Add).ToList(); // 이미 있는 주소·중복은 건너뜀
+                    if (add.Count == 0) return;
+                    bool empty = links[at].Trim().Length == 0;
+                    if (empty) links[at] = add[0];
+                    links.InsertRange(at + 1, empty ? add.Skip(1) : add);
+                    Save();
+                    Fill();
+                    pasted.Text = Loc.F($"탭 {add.Count}개를 넣었어요");
+                    pasted.Visibility = Visibility.Visible;
+                    Log.Info($"루틴 링크: 붙여 넣은 주소 {add.Count}개를 탭으로");
+                });
                 line.Children.Add(Hinted(field, at == 0 ? "https://… " + Loc.T("또는") + " spotify:…" : Loc.T("탭으로 같이 열 주소")));
                 // ≡ 끌어서 순서 (놓은 줄 위치로)
                 handle.MouseLeftButtonDown += (_, e) => { e.Handled = true; handle.CaptureMouse(); };
@@ -506,6 +527,8 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         var linkBox = new StackPanel();
         linkBox.Children.Add(rows);
         linkBox.Children.Add(warn);
+        linkBox.Children.Add(pasted);
+        linkBox.Children.Add(Muted(Loc.T("주소를 여러 줄로 붙여 넣으면 탭이 한꺼번에 들어가요"), 11));
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 0) };
         var addTab = new TextBlock { Text = "+ " + Loc.T("탭 추가"), FontSize = 12, Foreground = P.SoftAccentText, Cursor = Cursors.Hand, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 14, 0), ToolTip = Loc.T("웹 주소는 브라우저 창 하나에 탭으로 같이 열려요") };
         addTab.MouseLeftButtonUp += (_, _) => { links.Add(""); Fill(); };
@@ -578,14 +601,21 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
                     argsField.Visibility = _advancedOpen ? Visibility.Visible : Visibility.Collapsed;
                     advanced.Text = Loc.T("고급: 실행 옵션") + (_advancedOpen ? " ▾" : " ▸");
                 };
-                open.Children.Add(advanced);
+                var advancedLine = new StackPanel { Orientation = Orientation.Horizontal };
+                advancedLine.Children.Add(advanced);
+                var argsHelp = HelpBubble(Loc.T("앱이 받는 실행 옵션을 그대로 넘겨요."), new[] { "--new-window", "--profile-directory=\"Profile 1\"" }, HelpUrl("routine-options"));
+                argsHelp.Margin = new Thickness(6, 0, 0, 4);
+                advancedLine.Children.Add(argsHelp);
+                open.Children.Add(advancedLine);
                 open.Children.Add(argsField);
                 box.Children.Add(LabeledRow(Loc.T("함께 열 것"), open, lw, 6));
+                if (ProfileRow(item, lw) is { } accountRow) box.Children.Add(accountRow);
                 break;
             }
             case RoutineItemKind.Url:
             {
                 box.Children.Add(LinkDetail(item, Changed, lw));
+                if (ProfileRow(item, lw) is { } accountRow) box.Children.Add(accountRow); // 기본 브라우저가 크로미움 계열일 때만
                 break;
             }
             default:
@@ -650,6 +680,137 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
             box.Children.Add(LabeledRow(Loc.T("켜져 있으면"), Segments(new[] { Loc.T("앞으로 가져오기"), Loc.T("하나 더 열기") }, item.IfRunning == RoutineIfRunning.New ? 1 : 0,
                 i => item.IfRunning = i == 1 ? RoutineIfRunning.New : RoutineIfRunning.Focus), lw, 0));
         return frame;
+    }
+
+    /// <summary>
+    /// 브라우저 계정 고르기 (0.6.1): 크로미움 계열(크롬·엣지·웨일) 앱 항목, 또는 기본 브라우저가 크로미움인 링크 항목.
+    /// 기본(마지막에 쓴 계정) + 계정 목록(사진·이름 — 독 오른쪽 클릭 "새 창"과 같은 목록). 계정이 1개 이하면 줄 없음.
+    /// </summary>
+    private UIElement? ProfileRow(RoutineItem item, double lw)
+    {
+        IReadOnlyList<ChromiumProfiles.Profile> profiles;
+        try { profiles = RoutineProfiles.Profiles(item); }
+        catch (Exception ex) { Log.Warn($"루틴 계정 목록 실패: {ex.GetType().Name}"); return null; }
+        if (profiles.Count <= 1) return null;
+
+        ImageSource? Picture(ChromiumProfiles.Profile p) { try { return ChromiumProfiles.LoadPicture(p.PicturePath); } catch { return null; } }
+        FrameworkElement Avatar(ImageSource? img, string name) => new Border
+        {
+            Width = 18,
+            Height = 18,
+            CornerRadius = new CornerRadius(9),
+            Margin = new Thickness(0, 0, 8, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = img is not null ? new ImageBrush(img) { Stretch = Stretch.UniformToFill } : P.PanelTint,
+            Child = img is not null ? null : new TextBlock { Text = name.Length > 0 ? name[..1].ToUpperInvariant() : "?", FontSize = 10, FontWeight = FontWeights.SemiBold, Foreground = P.PanelTintText, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+        };
+        var pictures = profiles.ToDictionary(p => p.Dir, Picture, StringComparer.OrdinalIgnoreCase);
+        // 고른 계정이 없어졌으면 "기본"으로 보임 (실행도 기본 — RoutineProfiles.Arg)
+        ChromiumProfiles.Profile? Current() => profiles.FirstOrDefault(p => string.Equals(p.Dir, item.Profile, StringComparison.OrdinalIgnoreCase));
+        string defaultLabel = Loc.T("기본 (마지막에 쓴 계정)");
+
+        var label = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        void Paint()
+        {
+            label.Children.Clear();
+            if (Current() is { } cur) label.Children.Add(Avatar(pictures[cur.Dir], cur.Name));
+            label.Children.Add(new TextBlock { Text = Current()?.Name ?? defaultLabel, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
+        }
+        Paint();
+        var chevron = new TextBlock { Text = "\uE70D", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 9, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 1, 0, 0) };
+        var row = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(chevron, Dock.Right);
+        row.Children.Add(chevron);
+        row.Children.Add(label);
+        var pickerBox = new Border { MinWidth = 180, MaxWidth = 280, Height = 28, CornerRadius = new CornerRadius(7), Background = P.Tile, Padding = new Thickness(10, 0, 8, 0), Cursor = Cursors.Hand, Focusable = true, Child = row, HorizontalAlignment = HorizontalAlignment.Left };
+        void Open()
+        {
+            var menu = new ContextMenu { PlacementTarget = pickerBox, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+            menu.Items.Add(DockMenus.Item(defaultLabel, () => { item.Profile = null; Paint(); }, isChecked: Current() is null));
+            menu.Items.Add(new Separator());
+            foreach (var p in profiles)
+            {
+                var header = new StackPanel { Orientation = Orientation.Horizontal };
+                header.Children.Add(Avatar(pictures[p.Dir], p.Name));
+                header.Children.Add(new TextBlock { Text = p.Name, VerticalAlignment = VerticalAlignment.Center });
+                var at = p;
+                var mi = new MenuItem { Header = header, IsChecked = Current()?.Dir == p.Dir };
+                mi.Click += (_, _) => { item.Profile = at.Dir; Paint(); };
+                menu.Items.Add(mi);
+            }
+            menu.IsOpen = true;
+        }
+        pickerBox.MouseLeftButtonUp += (_, e) => { e.Handled = true; Open(); };
+        pickerBox.KeyDown += (_, e) => { if (e.Key is Key.Enter or Key.Space or Key.Down) { e.Handled = true; Open(); } };
+        var line = new StackPanel { Orientation = Orientation.Horizontal };
+        line.Children.Add(pickerBox);
+        var help = HelpBubble(Loc.T("이 브라우저 계정의 창으로 열어요."), null, null);
+        help.Margin = new Thickness(8, 0, 0, 0);
+        line.Children.Add(help);
+        return LabeledRow(Loc.TC("one", "계정"), line, lw, 6); // 단수 (독일어 Konten → Konto)
+    }
+
+    /// <summary>홈페이지 도움말 (한국어가 아니면 영어 페이지) — 페이지는 PM 이 씀.</summary>
+    private static string HelpUrl(string anchor) => "https://mong-head.github.io/mongdock-site/" + (Loc.IsKorean ? "" : "en/") + "help/#" + anchor;
+
+    /// <summary>
+    /// 작은 (?) — 누르면 짧은 설명(+ 예시 줄, + 「자세히 보기 →」)이 그 아래 말풍선으로. 바깥을 누르면 닫힘.
+    /// </summary>
+    private Border HelpBubble(string text, IEnumerable<string>? examples, string? url)
+    {
+        var dot = new Border { Width = 16, Height = 16, CornerRadius = new CornerRadius(8), BorderBrush = P.SubText, BorderThickness = new Thickness(1), VerticalAlignment = VerticalAlignment.Center, Cursor = Cursors.Hand, Background = Brushes.Transparent,
+            Child = new TextBlock { Text = "?", FontSize = 10, Foreground = P.SubText, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } };
+        var body = new StackPanel { MaxWidth = 300 };
+        body.Children.Add(new TextBlock { Text = text, FontSize = 12, Foreground = P.Text, TextWrapping = TextWrapping.Wrap });
+        if (examples is not null)
+            foreach (var ex in examples)
+                body.Children.Add(new TextBlock { Text = ex, FontSize = 11.5, FontFamily = new FontFamily("Consolas"), Foreground = P.SubText, Margin = new Thickness(0, 4, 0, 0) });
+        var popup = new System.Windows.Controls.Primitives.Popup
+        {
+            PlacementTarget = dot,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+            StaysOpen = false,
+            AllowsTransparency = true,
+            Child = new Border
+            {
+                Background = P.CardBackground,
+                BorderBrush = P.CardBorder,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(12, 10, 12, 10),
+                Margin = new Thickness(6),
+                Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 14, ShadowDepth = 3, Direction = 270, Opacity = 0.18 },
+                Child = body,
+            },
+        };
+        if (url is not null)
+        {
+            var more = new TextBlock { Text = Loc.T("자세히 보기 →"), FontSize = 12, Foreground = P.SoftAccentText, Cursor = Cursors.Hand, Margin = new Thickness(0, 8, 0, 0) };
+            more.MouseLeftButtonUp += (_, _) =>
+            {
+                popup.IsOpen = false;
+                try { Services.Launcher.OpenFile(url); }
+                catch (Exception ex) { Log.Warn($"도움말 열기 실패: {ex.GetType().Name}"); }
+            };
+            body.Children.Add(more);
+        }
+        dot.MouseLeftButtonUp += (_, e) => { e.Handled = true; popup.IsOpen = !popup.IsOpen; };
+        return dot;
+    }
+
+    /// <summary>붙여 넣은 글 → 주소 목록 (줄·공백·쉼표로 나눔, 빈 것·주소 아닌 글·중복은 뺌). 순서는 그대로.</summary>
+    internal static List<string> SplitLinks(string text)
+    {
+        var list = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in text.Split(new[] { '\r', '\n', ' ', '\t', ',' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            string t = raw.Trim().Trim('<', '>', '"', '\'');
+            bool looksLike = t.Contains("://") || t.StartsWith("www.", StringComparison.OrdinalIgnoreCase) || t.Contains('.') && !t.EndsWith('.');
+            if (!looksLike || RoutineLinks.Parse(t) is not { } u || !RoutineLinks.Allowed(u)) continue;
+            if (seen.Add(t)) list.Add(t);
+        }
+        return list;
     }
 
     /// <summary>함께 열 것의 종류 (0 없음, 1 파일, 2 폴더, 3 웹 주소).</summary>

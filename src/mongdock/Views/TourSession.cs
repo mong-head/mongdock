@@ -82,6 +82,8 @@ internal sealed class TourSession : ICoachRun
         _keepOnTop.Tick += (_, _) => BringToFront();
         _keepOnTop.Start();
         _index = 0;
+        _open++;
+        _release?.Stop();
         // 카드 높이는 둘러보기 내내 같게 (가장 긴 단계 기준) — 넘길 때 카드 크기·자리가 안 바뀜
         _card.Card.FixHeight(MeasureSteps().ToList());
         Log.Info($"둘러보기 시작: {_pages.Count}장");
@@ -282,6 +284,27 @@ internal sealed class TourSession : ICoachRun
         });
     }
 
+    /// <summary>열린 둘러보기 수 — 마지막 것이 닫히고 3초 뒤 장면 그림을 놓아줌 (바로 다른 둘러보기를 열면 그대로 씀).</summary>
+    private static int _open;
+    private static DispatcherTimer? _release;
+
+    private static void ScheduleRelease()
+    {
+        _open = Math.Max(0, _open - 1);
+        if (_open > 0) return;
+        _release?.Stop();
+        _release = new DispatcherTimer(DispatcherPriority.ApplicationIdle) { Interval = TimeSpan.FromSeconds(3) };
+        _release.Tick += (_, _) =>
+        {
+            _release?.Stop();
+            if (_open > 0) return;
+            long before = Environment.WorkingSet;
+            int n = TourScenes.ReleaseCache();
+            if (n > 0) Log.Info($"둘러보기 그림 정리: {n}장 (작업 집합 {before / 1048576}MB → {Environment.WorkingSet / 1048576}MB)");
+        };
+        _release.Start();
+    }
+
     private double Radius(CoachAnchor a, Rect? r) => a switch
     {
         CoachAnchor.Dock => Math.Max(8, _services.Settings.Current.Dock.CornerRadius + 4),
@@ -451,6 +474,7 @@ internal sealed class TourSession : ICoachRun
         _dim = null;
         _card = null;
         Log.Info($"둘러보기 끝: {reason} ({_index + 1}/{_pages.Count})");
+        ScheduleRelease();
         if (markSeen)
         {
             try { CoachMarks.MarkSeen(); }
@@ -512,25 +536,50 @@ internal sealed class TourCardWindow : Window
 {
     public TourCard Card { get; }
     public event Action<Key>? KeyPressed;
-    /// <summary>카드 둘레 그림자 여백.</summary>
-    public double ShadowPad { get; } = 28;
+    /// <summary>카드 둘레 그림자 여백 (일반 창 카드면 0 — 그림자는 DWM 이 창 밖에 그림).</summary>
+    public double ShadowPad { get; }
+
+    /// <summary>
+    /// 둘러보기 카드를 투명 창(레이어드)이 아닌 일반 창으로 (윈도우 11 만): QA 측정에서 투명 카드 창이 그림이 바뀌는 순간 가끔 한 프레임
+    /// 통째로 비는 것이 잡힘(2026-10-15) — 일반 창 + DWM 둥근 모서리·그림자로 바꾸면 없어질 것으로 봄. 화면 시험 전이라 아직 기본 꺼짐,
+    /// 시험할 때 MONGDOCK_TOUR_CARD=plain 으로 켬.
+    /// </summary>
+    internal static bool PlainWindow { get; set; } =
+        Environment.GetEnvironmentVariable("MONGDOCK_TOUR_CARD") == "plain" && Environment.OSVersion.Version.Build >= 22000;
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct Margins { public int Left, Right, Top, Bottom; }
+
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    private static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref Margins margins);
 
     public TourCardWindow(AppServices services, UiPalette palette)
     {
+        bool plain = PlainWindow;
+        ShadowPad = plain ? 0 : 28;
         WindowStyle = WindowStyle.None;
-        AllowsTransparency = true;
-        Background = Brushes.Transparent;
+        AllowsTransparency = !plain;
+        Background = plain ? palette.CardBackground : Brushes.Transparent;
         ShowInTaskbar = false;
         Topmost = true;
         ResizeMode = ResizeMode.NoResize;
         SizeToContent = SizeToContent.WidthAndHeight;
         Title = "mongdock Tour";
         Card = new TourCard(palette);
+        if (plain) Card.UsePlainWindow();
         Content = new Border { Padding = new Thickness(ShadowPad), Child = Card };
         UiFonts.Apply(services.Settings.Current);
         SourceInitialized += (_, _) =>
         {
             services.DesktopWindows.MakeOverlay(this);
+            if (plain)
+            {
+                // 일반 창: DWM 둥근 모서리 + 그림자(테두리 없는 팝업은 프레임을 1px 넓혀야 그림자가 생김)
+                var h = new WindowInteropHelper(this).Handle;
+                Native.DesktopApi.SetDwmInt(h, Native.DesktopApi.DWMWA_WINDOW_CORNER_PREFERENCE, Native.DesktopApi.DWMWCP_ROUND);
+                var m = new Margins { Bottom = 1 };
+                DwmExtendFrameIntoClientArea(h, ref m);
+            }
             // 가로 스크롤(WM_MOUSEHWHEEL)은 WPF 이벤트가 없어 창 메시지로 받음
             System.Windows.Interop.HwndSource.FromHwnd(new System.Windows.Interop.WindowInteropHelper(this).Handle)?.AddHook((IntPtr h, int msg, IntPtr w, IntPtr l, ref bool handled) =>
             {
