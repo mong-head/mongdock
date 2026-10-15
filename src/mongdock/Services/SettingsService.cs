@@ -279,6 +279,13 @@ public sealed class SettingsService : ISettingsService, IDisposable
                     notes.Add("topBar.showTrayIcons → true (작업 표시줄 숨김 사용 중)");
                 }
             }
+
+            // 0.6 단축키: hotkeys 가 없는 파일 = 예전 검색 단축키(topBar.spotlightHotkey)를 검색 칸으로
+            if (!TryGetProp(root, "hotkeys", out _))
+            {
+                s.Hotkeys.Search = HotkeySettings.FromLegacy(s.TopBar.SpotlightHotkey);
+                notes.Add($"hotkeys.search ← topBar.spotlightHotkey {s.TopBar.SpotlightHotkey}");
+            }
         }
         catch (Exception ex)
         {

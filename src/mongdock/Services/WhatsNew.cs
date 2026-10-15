@@ -89,10 +89,10 @@ public static class WhatsNew
     /// <summary>몽독 검색을 열 길이 있는지: 단축키가 있거나 상단바 검색 버튼(Spotlight 방식)이 보임.</summary>
     private static bool SearchReachable(Settings s)
     {
-        SpotlightHotkey key;
-        try { key = Views.SpotlightHotkeyController.Resolve(s.TopBar.SpotlightHotkey); }
-        catch { key = s.TopBar.SpotlightHotkey; }
-        return key != SpotlightHotkey.None || TopBarOn(s) && s.TopBar.ShowQuickButtons && s.TopBar.SearchMode == SearchMode.Spotlight;
+        HotkeyChord? key;
+        try { key = Views.HotkeyController.SearchChord(s); }
+        catch { key = null; }
+        return key is not null || TopBarOn(s) && s.TopBar.ShowQuickButtons && s.TopBar.SearchMode == SearchMode.Spotlight;
     }
 
     /// <summary>

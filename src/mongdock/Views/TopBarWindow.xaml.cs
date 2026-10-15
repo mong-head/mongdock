@@ -855,6 +855,19 @@ public partial class TopBarWindow : Window
 
     private FrameworkElement? _panelAnchor;
 
+    /// <summary>
+    /// 단축키(0.6)로 제어 센터·알림/달력 판 열기·닫기 — 그 아이콘을 누른 것과 같음.
+    /// 상단바가 안 보이거나(전체 화면·일시 정지) 아이콘이 숨겨져 있으면 시계 자리에서 엶. 상단바를 쓸 수 없으면 false.
+    /// </summary>
+    internal bool TogglePanelFromHotkey(StatusPanelKind kind)
+    {
+        if (!IsVisible || ActualWidth < 1) return false;
+        FrameworkElement anchor = kind == StatusPanelKind.ControlCenter && QuickSettingsButton.IsVisible ? QuickSettingsButton : ClockButton;
+        if (!anchor.IsVisible) return false;
+        TogglePanel(kind, anchor);
+        return true;
+    }
+
     private void TogglePanel(StatusPanelKind kind, FrameworkElement anchor)
     {
         // 닫히는 중(페이드 아웃)인 패널은 열린 것으로 치지 않음 — 그 사이 같은 아이콘을 다시 누르면 새로 연다

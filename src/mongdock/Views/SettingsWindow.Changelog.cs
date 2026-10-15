@@ -392,6 +392,7 @@ internal sealed partial class SettingsWindow
     {
         if (_page == page) return;
         FlushSlider();
+        StopRecording(rebuild: false); // 단축키 칸이 키를 받는 중이었으면 그만
         _page = page;
         _scroll = null;
         QueueRebuild();

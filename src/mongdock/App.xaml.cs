@@ -20,7 +20,7 @@ public partial class App : Application
     /// <summary>지난 실행의 비정상 종료·오류 (다음 실행 때 물어봄, Views/CrashPrompt).</summary>
     private CrashReporter.Pending? _crashPending;
     private TrayController? _tray;
-    private SpotlightHotkeyController? _spotlightHotkey;
+    private HotkeyController? _hotkeys;
     private IDisposable? _banners;
     private UpdateService? _updates;
     private UsageStatsService? _stats;
@@ -185,7 +185,7 @@ public partial class App : Application
         if (!AppInfo.IsPackaged) _updates = new UpdateService(settings, () => AppState.Paused);
         SyncTopBars();
         _tray = new TrayController(_services);
-        _spotlightHotkey = new SpotlightHotkeyController(_services);
+        _hotkeys = new HotkeyController(_services, RunHotkey);
         _banners = NotificationBannerWindow.Attach(_services);
         if (_updates is not null) _updateUi = UpdateUi.Attach(_services, _updates);
         _lowBattery = LowBatteryBanner.Attach(_services); // 배터리 20·10·5% 알림 (배너 호스트 다음)
@@ -227,6 +227,34 @@ public partial class App : Application
     }
 
     private void OnDisplayChanged(object? sender, EventArgs e) => SyncTopBars();
+    /// <summary>단축키가 눌림 (설정 → 단축키, 0.6): 검색·앱 모음 판·제어 센터·알림 판·루틴.</summary>
+    private void RunHotkey(string action)
+    {
+        if (_services is null || _exiting) return;
+        try
+        {
+            switch (action)
+            {
+                case HotkeyController.Search:
+                    SpotlightWindow.Toggle(_services);
+                    break;
+                case HotkeyController.AllApps:
+                    if (_dock is null || !_dock.ToggleAllAppsFromHotkey()) Log.Info("단축키: 앱 모음 판을 열 독이 없음 (독 꺼짐)");
+                    break;
+                case HotkeyController.ControlCenter or HotkeyController.Notifications:
+                    if (!_topBars.TryGetValue("", out var bar) || !bar.TogglePanelFromHotkey(action == HotkeyController.ControlCenter ? StatusPanelKind.ControlCenter : StatusPanelKind.Calendar))
+                        Log.Info("단축키: 상단바가 꺼져 있어 판을 열 수 없음");
+                    break;
+                default:
+                    if (action.StartsWith(HotkeyController.RoutinePrefix, StringComparison.Ordinal)
+                        && RoutineUi.Find(_services, action[HotkeyController.RoutinePrefix.Length..]) is { } routine)
+                        RoutineUi.Run(_services, routine);
+                    break;
+            }
+        }
+        catch (Exception ex) { Log.Error($"단축키 실행 실패 ({action})", ex); }
+    }
+
     private void OnSettingsChanged(object? sender, EventArgs e)
     {
         SyncTopBars();
@@ -405,7 +433,7 @@ public partial class App : Application
         // 트레이 아이콘을 내리고, 숨겨 둔 작업 표시줄을 복원한다.
         _tray?.Dispose();
         // 전역 키보드 훅 해제
-        _spotlightHotkey?.Dispose();
+        _hotkeys?.Dispose();
         // 트레이 가로채기 창을 먼저 없앤다 → 이후 AppBar 해제(SHAppBarMessage)·트레이 아이콘 삭제는 explorer 로 바로 감
         if (_services?.TrayIcons is IDisposable trayIcons)
         {

@@ -29,14 +29,29 @@ public partial class DockWindow
         timer.Start();
     }
 
-    private async void ToggleAllAppsPanel(DockItemView? view, PinItem pin)
+    /// <summary>
+    /// 단축키(0.6)로 앱 모음 판 열기·닫기: 독의 앱 모음 아이콘에서 열리는 것처럼. 아이콘이 독에 없으면 화면 아래 가운데에서.
+    /// 독이 꺼져 있으면 false.
+    /// </summary>
+    public bool ToggleAllAppsFromHotkey()
+    {
+        if (_closed || !DockActive) return false;
+        var view = ItemsHost.Children.OfType<DockItemView>().FirstOrDefault(v => v.Item.Pin is { Kind: PinKind.Special, Target: "launchpad" } && v.ActualWidth >= 1);
+        if (view?.Item.Pin is { } pin) { ToggleAllAppsPanel(view, pin); return true; }
+        var work = _monitor.WorkArea;
+        ToggleAllAppsPanel(null, null, new Rect(work.Left + work.Width / 2 - 26, work.Bottom - 60, 52, 52));
+        return true;
+    }
+
+    private async void ToggleAllAppsPanel(DockItemView? view, PinItem? pin, Rect? fallback = null)
     {
         // 판이 열린 채 독 버튼을 누르면, 누르는 순간 판이 먼저 닫힘(비활성화·바깥 클릭) → 떼는 순간 이 클릭이 다시 여는 일이 없게
         bool same = _folderPanel is AllAppsPanel || Environment.TickCount64 - _allAppsClosedAt < 400;
-        if (same || view == null || _allAppsOpening)
-            Log.Info($"앱 모음 클릭: {(same ? "열린 판 닫기" : view == null ? "아이콘 없음" : "여는 중")}");
+        bool noAnchor = view == null && fallback == null;
+        if (same || noAnchor || _allAppsOpening)
+            Log.Info($"앱 모음 클릭: {(same ? "열린 판 닫기" : noAnchor ? "아이콘 없음" : "여는 중")}");
         _folderPanel?.CloseAnimated();
-        if (same || view == null || _allAppsOpening) return;
+        if (same || noAnchor || _allAppsOpening) return;
 
         // 목록이 아직이면 준비될 때까지(최대 300ms) 기다렸다 다 그린 판을 한 번에 — 검색 칸만 있는 빈 판을 보이지 않게
         var clock = System.Diagnostics.Stopwatch.StartNew();
@@ -57,13 +72,17 @@ public partial class DockWindow
             if (_closed) return;
         }
 
-        var source = PresentationSource.FromVisual(this);
-        if (source?.CompositionTarget == null) return;
-        var toDip = source.CompositionTarget.TransformFromDevice;
-        var a = toDip.Transform(view.PointToScreen(new Point(0, 0)));
-        var b = toDip.Transform(view.PointToScreen(new Point(view.ActualWidth, view.ActualHeight)));
+        Rect anchor;
+        if (view is not null)
+        {
+            var source = PresentationSource.FromVisual(this);
+            if (source?.CompositionTarget == null) return;
+            var toDip = source.CompositionTarget.TransformFromDevice;
+            anchor = new Rect(toDip.Transform(view.PointToScreen(new Point(0, 0))), toDip.Transform(view.PointToScreen(new Point(view.ActualWidth, view.ActualHeight))));
+        }
+        else anchor = fallback!.Value;
         long beforeCtor = clock.ElapsedMilliseconds;
-        var panel = new AllAppsPanel(_services, UiTheme.Palette(_services.Settings.Current), new Rect(a, b), _layout.Edge, _monitor);
+        var panel = new AllAppsPanel(_services, UiTheme.Palette(_services.Settings.Current), anchor, _layout.Edge, _monitor);
         Log.Info($"앱 모음 판 만들기 {clock.ElapsedMilliseconds - beforeCtor}ms");
         panel.Launched += app => AppUsage.Record(AllAppsCatalog.Identity(app), _services.Settings.Current.AllApps);
         panel.PinToDockRequested += PinAppToDock;

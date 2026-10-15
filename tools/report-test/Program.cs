@@ -209,6 +209,7 @@ internal static class Program
         if (Array.IndexOf(args, "--dockfit") >= 0) { DockFitReport(); return 0; }
         if (Array.IndexOf(args, "--clipdemo") >= 0) { ClipDemo(); return 0; }
         if (Array.IndexOf(args, "--suggest") >= 0) return SuggestTable();
+        if (Array.IndexOf(args, "--hotkeycheck") >= 0) return HotkeyCheck(); // 0.6 단축키 규칙·저장·키 처리 점검 (화면·실제 입력 없음)
         if (Array.IndexOf(args, "--reviewcheck") >= 0) return ReviewCheck(); // 0.5.0 검토 수정 점검 (화면 없음)
         int unin = Array.FindIndex(args, a => a == "--uninstall");
         if (unin >= 0) return UninstallTest(unin + 1 < args.Length ? args[unin + 1] : null);
@@ -664,6 +665,32 @@ internal static class Program
     /// 설정 창 페이지마다 PNG (#23 — 언어별 글자 잘림 확인). 앱과 같은 서비스를 만들되 Start 하지 않음(훅·폴링 없음),
     /// 데이터 폴더는 임시(MONGDOCK_DATA_DIR, Main 맨 앞에서). 페이지 본문(스크롤 안 내용)을 끝까지 그림.
     /// </summary>
+    /// <summary>설정 → 단축키 그림용 상태 (시험 데이터 폴더 설정): 앱 모음 판 Ctrl+Alt+A, 제어 센터 Alt+C(경고), 알림 받는 중,
+    /// 루틴 하나 Ctrl+Alt+1 + 막힘 안내, 검색 겹침 안내([바꾸기]).</summary>
+    private static void HotkeyPageStates(Window w, SettingsService settings)
+    {
+        var s = settings.Current;
+        s.Hotkeys.AllApps = new HotkeyBinding { On = true, Key = "Ctrl+Alt+A" };
+        s.Hotkeys.ControlCenter = new HotkeyBinding { On = true, Key = "Alt+C" };
+        s.Hotkeys.Notifications = new HotkeyBinding { On = true, Key = null };
+        if (s.Routines.Count == 0)
+        {
+            s.Routines.Add(new RoutineDef { Id = "shot-r1", Name = Mongdock.Loc.T("업무 시작"), Hotkey = new HotkeyBinding { On = true, Key = "Ctrl+Alt+1" } });
+            s.Routines.Add(new RoutineDef { Id = "shot-r2", Name = Mongdock.Loc.T("공부") });
+        }
+        var t = w.GetType();
+        t.GetField("_recordingSlot", Any)!.SetValue(w, "notifications");
+        var notes = (System.Collections.IDictionary)t.GetField("_hotkeyNotes", Any)!.GetValue(w)!;
+        var noteType = t.GetNestedType("HotkeyNote", Any)!;
+        object Note(string text, bool error, string? from = null, HotkeyChord? chord = null) => Activator.CreateInstance(noteType, text, error, from, chord)!;
+        notes.Clear();
+        notes["controlCenter"] = Note(Mongdock.Loc.T("앱 메뉴 단축키(Alt+글자)와 겹칠 수 있어요."), false);
+        var cc = HotkeyChord.Parse("Ctrl+C")!.Value;
+        notes["routine:shot-r2"] = Note(Mongdock.Loc.F($"{cc.Display} — {Mongdock.Loc.T("다른 앱이 흔히 쓰는 키예요 (복사·붙여넣기·저장 같은).")}"), true);
+        var ca = HotkeyChord.Parse("Ctrl+Alt+A")!.Value;
+        notes["search"] = Note(Mongdock.Loc.F($"{ca.Display} — 이미 「{Mongdock.Loc.T("앱 모음 판")}」에 쓰고 있어요."), true, "allApps", ca);
+    }
+
     private static void RenderSettingsPages(string dir)
     {
         Directory.CreateDirectory(dir);
@@ -692,6 +719,7 @@ internal static class Program
         foreach (var page in Enum.GetValues(pageType))
         {
             go.Invoke(w, new[] { page });
+            if (page.ToString() == "Hotkeys") HotkeyPageStates(w, settings); // 0.6: 켠 키·경고·막힘·겹침·키 받는 중을 한 장에
             // GoToPage 는 한 박자 늦게 다시 그림 → 바로 다시 그리게
             rebuild.Invoke(w, null);
             w.UpdateLayout(); // 디스패처를 돌리지 않음 — 돌리면 App.OnStartup 이 실행돼 (실행 중인 몽독이 있으면) 앱이 종료됨
@@ -1501,6 +1529,132 @@ internal static class Program
     }
 
     /// <summary>0.5.0 검토 수정 점검: 제거 항목 폴더 연결(넓은 폴더 빼기), 이름 비교, 따옴표 없는 제거 명령, 스팀 링크, 빠른 경로 확인.</summary>
+    /// <summary>--hotkeycheck: 단축키 조합 글자·막는 키·옛 설정 옮기기·키 표·훅 처리(가짜 키 — 진짜 훅·입력 없음).</summary>
+    private static int HotkeyCheck()
+    {
+        var asm = typeof(Mongdock.App).Assembly;
+        int bad = 0;
+        void Check(string what, bool ok) { Console.WriteLine($"  {(ok ? "통과" : "실패")}  {what}"); if (!ok) bad++; }
+        // 글자 ↔ 조합
+        foreach (var t in new[] { "Ctrl+Alt+K", "Win+Space", "Ctrl+Shift+F5", "Alt+Win+0", "F13", "Ctrl+Alt+Num+", "Ctrl+Alt+;" })
+        {
+            var c = HotkeyChord.Parse(t);
+            Check($"글자 {t} → {c?.ToString() ?? "없음"} → 다시 읽기 같음", c is { } cc && HotkeyChord.Parse(cc.ToString()) == cc);
+        }
+        Check("순서·대소문자 무관: alt+ctrl+k = Ctrl+Alt+K", HotkeyChord.Parse("alt+ctrl+k") == HotkeyChord.Parse("Ctrl+Alt+K"));
+        Check("auto·빈 글자·모르는 키 → 없음", HotkeyChord.Parse("auto") is null && HotkeyChord.Parse("") is null && HotkeyChord.Parse("Ctrl+Alt+Nope") is null);
+        Check("화면 글자: Ctrl + Alt + K", HotkeyChord.Parse("Ctrl+Alt+K")!.Value.Display == "Ctrl + Alt + K");
+        // 규칙
+        HotkeyRules.Verdict V(string t, bool search = false) => HotkeyRules.Check(HotkeyChord.Parse(t)!.Value, search).Verdict;
+        var ok = HotkeyRules.Verdict.Ok;
+        var warn = HotkeyRules.Verdict.Warn;
+        var block = HotkeyRules.Verdict.Block;
+        foreach (var (t, want, search) in new (string, HotkeyRules.Verdict, bool)[]
+        {
+            ("Ctrl+Alt+K", ok, false), ("Win+Alt+J", ok, false), ("Ctrl+Shift+Alt+M", ok, false), ("F13", ok, false), ("Ctrl+F5", ok, false),
+            ("Alt+K", warn, false), ("Alt+1", warn, false),
+            ("Ctrl+C", block, false), ("Ctrl+V", block, false), ("Ctrl+S", block, false), ("Ctrl+Shift+T", block, false), ("Ctrl+Tab", block, false),
+            ("Win+E", block, false), ("Win+D", block, false), ("Win+1", block, false), ("Win+Shift+S", block, false), ("Win+Ctrl+D", block, false),
+            ("Win+Alt+R", block, false), ("Alt+Tab", block, false), ("Alt+F4", block, false), ("Ctrl+Shift+Esc", block, false), ("Ctrl+Alt+Delete", block, false),
+            ("K", block, false), ("Shift+K", block, false), ("F5", block, false), ("F1", block, false),
+            ("Win+Space", block, false), ("Win+Space", ok, true), ("Alt+Space", ok, true), ("Ctrl+Space", ok, true), ("Alt+Space", block, false),
+        })
+            Check($"규칙 {t}{(search ? " (검색 칸)" : "")}: {V(t, search)} ({want} 기대)", V(t, search) == want);
+        // 옛 설정 옮기기 (topBar.spotlightHotkey → hotkeys.search) + 되돌림 값
+        var migrate = typeof(SettingsService).GetMethod("Migrate", Any)!;
+        HotkeyBinding Migrated(string json, SpotlightHotkey old)
+        {
+            var s = new Settings();
+            s.TopBar.SpotlightHotkey = old;
+            migrate.Invoke(null, new object[] { json, s });
+            return s.Hotkeys.Search;
+        }
+        var m1 = Migrated("{\"settingsVersion\":5,\"topBar\":{\"spotlightHotkey\":\"altSpace\"}}", SpotlightHotkey.AltSpace);
+        Check($"옮기기: Alt+Space → 검색 켬 {m1.Key}", m1.On && m1.Key == "Alt+Space");
+        var m2 = Migrated("{\"settingsVersion\":5,\"topBar\":{\"spotlightHotkey\":\"none\"}}", SpotlightHotkey.None);
+        Check($"옮기기: 사용 안 함 → 검색 꺼짐 ({m2.On})", !m2.On);
+        var m3 = Migrated("{\"settingsVersion\":5}", SpotlightHotkey.Auto);
+        Check($"옮기기: 자동 → 검색 켬 auto ({m3.Key})", m3.On && m3.Key == HotkeyBinding.Auto);
+        var kept = new Settings();
+        kept.Hotkeys.Search = new HotkeyBinding { On = true, Key = "Ctrl+Alt+S" };
+        migrate.Invoke(null, new object[] { "{\"settingsVersion\":5,\"hotkeys\":{}}", kept });
+        Check("이미 hotkeys 가 있으면 그대로", kept.Hotkeys.Search.Key == "Ctrl+Alt+S");
+        Check("되돌림 값: Win+Space → WinSpace, 직접 키 → Auto, 꺼짐 → None",
+            HotkeySettings.ToLegacy(new() { On = true, Key = "Win+Space" }) == SpotlightHotkey.WinSpace
+            && HotkeySettings.ToLegacy(new() { On = true, Key = "Ctrl+Alt+S" }) == SpotlightHotkey.Auto
+            && HotkeySettings.ToLegacy(new() { On = false, Key = "auto" }) == SpotlightHotkey.None);
+        var d = new Settings();
+        Check("기본값: 검색만 켬, 나머지 꺼짐·키 없음", d.Hotkeys.Search.On && !d.Hotkeys.AllApps.On && d.Hotkeys.AllApps.Key is null && !d.Hotkeys.ControlCenter.On && !d.Hotkeys.Notifications.On);
+        // 키 표 (켜고 키 있는 것만, 루틴 포함)
+        var ctl = asm.GetType("Mongdock.Views.HotkeyController")!;
+        var st = new Settings();
+        st.Hotkeys.AllApps = new HotkeyBinding { On = true, Key = "Ctrl+Alt+A" };
+        st.Hotkeys.ControlCenter = new HotkeyBinding { On = false, Key = "Ctrl+Alt+C" };
+        st.Hotkeys.Notifications = new HotkeyBinding { On = true, Key = null };
+        st.Routines.Add(new RoutineDef { Id = "r1", Name = "업무", Hotkey = new HotkeyBinding { On = true, Key = "Ctrl+Alt+1" } });
+        var table = (Dictionary<HotkeyChord, string>)ctl.GetMethod("Table", Any)!.Invoke(null, new object[] { st })!;
+        Check($"키 표: {string.Join(", ", table.Select(kv => $"{kv.Key}→{kv.Value}"))}",
+            table.Count == 3 && table[HotkeyChord.Parse("Ctrl+Alt+A")!.Value] == "allApps" && table[HotkeyChord.Parse("Ctrl+Alt+1")!.Value] == "routine:r1"
+            && table.ContainsValue("search") && !table.ContainsValue("controlCenter") && !table.ContainsValue("notifications"));
+        // 훅 처리 (가짜 키, 진짜 훅 없음)
+        var keyState = typeof(HotkeyService).GetProperty("KeyStateForTest", Any)!;
+        var down = new HashSet<int>();
+        keyState.SetValue(null, (Func<int, bool>)(vk => down.Contains(vk)));
+        try
+        {
+            using var svc = new HotkeyService();
+            var sim = typeof(HotkeyService).GetMethod("SimulateForTest", Any)!;
+            bool Sim(int vk, bool isDown) => (bool)sim.Invoke(svc, new object[] { vk, isDown })!;
+            var pressed = new List<string>();
+            svc.Pressed += a => pressed.Add(a);
+            svc.Apply(new Dictionary<HotkeyChord, string> { [HotkeyChord.Parse("Ctrl+Alt+K")!.Value] = "allApps" });
+            down.UnionWith(new[] { 0x11, 0x12 }); // Ctrl, Alt
+            bool s1 = Sim('K', true), s2 = Sim('K', true), s3 = Sim('K', false);
+            PumpFor(200);
+            Check($"Ctrl+Alt+K: 삼킴 {s1}, 반복 삼킴 {s2}, 뗌 삼킴 {s3}, 한 번만 실행 ({string.Join(",", pressed)})", s1 && s2 && s3 && pressed.Count == 1 && pressed[0] == "allApps");
+            down.Add(0x10); // + Shift
+            bool s4 = Sim('K', true);
+            Sim('K', false);
+            Check($"Ctrl+Alt+Shift+K 는 통과 (삼킴 {s4})", !s4);
+            down.Clear();
+            bool s5 = Sim('K', true);
+            Sim('K', false);
+            Check($"K 만 누름은 통과 (삼킴 {s5})", !s5);
+            (HotkeyService.RecordKind Kind, HotkeyChord Chord)? got = null;
+            svc.Record((k, c) => got = (k, c));
+            down.UnionWith(new[] { 0x11, 0x12 });
+            bool r1 = Sim('K', true);
+            Sim('K', false);
+            PumpFor(200);
+            Check($"키 받기: Ctrl+Alt+K 받음 {got?.Chord} (삼킴 {r1}), 실행 안 함 ({pressed.Count}번)", r1 && got is { Kind: HotkeyService.RecordKind.Chord } g && g.Chord == HotkeyChord.Parse("Ctrl+Alt+K") && pressed.Count == 1);
+            down.Clear();
+            got = null;
+            svc.Record((k, c) => got = (k, c));
+            Sim(0x1B, true);
+            Sim(0x1B, false);
+            PumpFor(200);
+            Check($"키 받기: Esc = 취소 ({got?.Kind})", got?.Kind == HotkeyService.RecordKind.Cancel);
+            got = null;
+            svc.Record((k, c) => got = (k, c));
+            Sim(0x08, true);
+            Sim(0x08, false);
+            PumpFor(200);
+            Check($"키 받기: Backspace = 지우기 ({got?.Kind})", got?.Kind == HotkeyService.RecordKind.Clear);
+        }
+        finally { keyState.SetValue(null, null); }
+        Console.WriteLine(bad == 0 ? "단축키 점검: 모두 통과" : $"단축키 점검: 실패 {bad}개");
+        return bad == 0 ? 0 : 1;
+    }
+
+    private static void PumpFor(int ms)
+    {
+        var frame = new System.Windows.Threading.DispatcherFrame();
+        var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(ms) };
+        t.Tick += (_, _) => { t.Stop(); frame.Continue = false; };
+        t.Start();
+        System.Windows.Threading.Dispatcher.PushFrame(frame);
+    }
+
     private static int ReviewCheck()
     {
         var asm = typeof(Mongdock.App).Assembly;

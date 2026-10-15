@@ -25,7 +25,7 @@ namespace Mongdock.Views;
 /// </summary>
 internal sealed partial class SettingsWindow : Window
 {
-    private enum Page { General, Dock, TopBar, Notifications, Calendar, Search, About, Changelog }
+    private enum Page { General, Dock, TopBar, Notifications, Calendar, Search, Hotkeys, About, Changelog }
 
     /// <summary>홈페이지 (출시 때 공개 — 저장소는 비공개가 되므로 GitHub 주소는 화면에 쓰지 않음). 한국어가 아니면 영어 페이지.</summary>
     private static string SiteUrl => "https://mong-head.github.io/mongdock-site/" + (Loc.IsKorean ? "" : "en/");
@@ -141,6 +141,7 @@ internal sealed partial class SettingsWindow : Window
         Closed += (_, _) =>
         {
             FlushSlider();
+            StopRecording(rebuild: false); // 단축키 칸이 키를 받는 중이었으면 그만
             _closed = true;
             _sliderTimer.Stop();
             _services.Settings.SettingsChanged -= OnSettingsChanged;
@@ -250,6 +251,7 @@ internal sealed partial class SettingsWindow : Window
             case Page.Notifications: BuildNotifications(body); break;
             case Page.Calendar: BuildCalendar(body); break;
             case Page.Search: BuildSearch(body); break;
+            case Page.Hotkeys: BuildHotkeys(body); break; // SettingsWindow.Hotkeys.cs
             case Page.Changelog: BuildChangelog(body); break; // SettingsWindow.Changelog.cs
             default: BuildAbout(body); break;
         }
@@ -282,6 +284,7 @@ internal sealed partial class SettingsWindow : Window
         Page.Notifications => Loc.T("알림"),
         Page.Calendar => Loc.T("캘린더"),
         Page.Search => Loc.T("검색"),
+        Page.Hotkeys => Loc.T("단축키"),
         Page.Changelog => Loc.T("변경 내역"),
         _ => Loc.T("정보"),
     };
@@ -303,6 +306,7 @@ internal sealed partial class SettingsWindow : Window
         panel.Children.Add(SidebarItem(Page.Notifications, "\uEA8F"));
         panel.Children.Add(SidebarItem(Page.Calendar, "\uE787"));
         panel.Children.Add(SidebarItem(Page.Search, "\uE721"));
+        panel.Children.Add(SidebarItem(Page.Hotkeys, "\uE765"));
         panel.Children.Add(SidebarItem(Page.About, "\uE946"));
         panel.Children.Add(SidebarItem(Page.Changelog, "\uE81C"));
         return panel;
@@ -389,6 +393,7 @@ internal sealed partial class SettingsWindow : Window
         {
             if (_page == page) return;
             FlushSlider();
+            StopRecording(rebuild: false); // 단축키 칸이 키를 받는 중이었으면 그만
             _page = page;
             _scroll = null; // 페이지가 바뀌면 맨 위부터
             Rebuild();
@@ -1050,8 +1055,7 @@ internal sealed partial class SettingsWindow : Window
             Row(Loc.T("검색 버튼"), null, Segmented(t.SearchMode,
                 new[] { (SearchMode.Spotlight, Loc.T("몽독 검색 (화면 가운데)")), (SearchMode.Windows, Loc.T("윈도우 검색")) },
                 v => Commit(() => T().SearchMode = v))),
-            Row(Loc.T("검색 단축키"), Loc.T("기본값 '자동': 입력 언어가 1개면 Win+Space, 여러 개면 언어 전환과 겹치지 않게 Alt+Space 를 씁니다."),
-                SpotlightHotkeyDropdown(t.SpotlightHotkey))));
+            Row(Loc.T("검색 단축키"), SearchHotkeyText(), LinkButton(Loc.T("단축키에서 바꾸기 ›"), () => GoToPage(Page.Hotkeys), HorizontalAlignment.Right))));
 
         body.Children.Add(SectionTitle(Loc.T("검색 결과에 표시할 항목")));
         body.Children.Add(Group(
@@ -1259,23 +1263,14 @@ internal sealed partial class SettingsWindow : Window
         });
     }
 
-    private UIElement SpotlightHotkeyDropdown(SpotlightHotkey current)
+    /// <summary>검색 페이지의 지금 검색 단축키 한 줄 (바꾸기는 설정 → 단축키).</summary>
+    private string SearchHotkeyText()
     {
-        var options = new[]
-        {
-            (SpotlightHotkey.Auto, Loc.T("자동 (언어 1개면 Win+Space, 여러 개면 Alt+Space)")),
-            (SpotlightHotkey.WinSpace, "Win + Space"),
-            (SpotlightHotkey.AltSpace, "Alt + Space"),
-            (SpotlightHotkey.CtrlSpace, "Ctrl + Space"),
-            (SpotlightHotkey.None, Loc.T("사용 안 함")),
-        };
-        string label = options.FirstOrDefault(o => o.Item1 == current).Item2 ?? options[0].Item2;
-        return Dropdown(label, () =>
-        {
-            var cur = _services.Settings.Current.TopBar.SpotlightHotkey;
-            return options.Select(o => (o.Item2, o.Item1 == cur,
-                (Action)(() => Commit(() => _services.Settings.Current.TopBar.SpotlightHotkey = o.Item1, rebuild: true))));
-        });
+        var b = _services.Settings.Current.Hotkeys.Search;
+        if (!b.On) return Loc.T("꺼짐");
+        return b.Key is null || b.Key == HotkeyBinding.Auto
+            ? Loc.F($"자동 ({HotkeyController.AutoSearchChord().Display})")
+            : HotkeyChord.Parse(b.Key)?.Display ?? Loc.T("꺼짐");
     }
 
     private UIElement ColorModeDropdown(TopBarColorMode current)

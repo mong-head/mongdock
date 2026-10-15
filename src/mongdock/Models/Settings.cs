@@ -434,6 +434,8 @@ public sealed class Settings
     public bool FirstUseHintsPending { get; set; }
     /// <summary>이미 본 처음 쓰기 힌트 키 (appmenu·desktops·calendar·tray).</summary>
     public List<string> SeenHints { get; set; } = new();
+    /// <summary>단축키 (0.6, 설정 → 단축키). 루틴 키는 각 루틴에.</summary>
+    public HotkeySettings Hotkeys { get; set; } = new();
     /// <summary>앱 모음 판 (#24): 즐겨찾기·묶음·숨김.</summary>
     public AllAppsSettings AllApps { get; set; } = new();
     /// <summary>루틴 (#24-A). 독에는 PinKind.Routine 핀(Target = 루틴 Id)으로 고정한 것만.</summary>

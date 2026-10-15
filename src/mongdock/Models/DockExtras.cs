@@ -141,6 +141,9 @@ public sealed class RoutineDef
     /// <summary>마지막으로 연 시각 — 같은 사건에 루틴이 여럿일 때 묶음 배너 순서 (§14-1, 최근 연 것 먼저).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public DateTime? LastRunAt { get; set; }
+    /// <summary>이 루틴을 여는 단축키 (설정 → 단축키, 0.6). 없으면 키 없음.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public HotkeyBinding? Hotkey { get; set; }
 }
 
 [JsonConverter(typeof(CamelEnumConverter<RoutineStartKind>))]

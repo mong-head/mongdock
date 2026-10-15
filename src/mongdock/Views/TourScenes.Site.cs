@@ -567,16 +567,10 @@ internal static partial class TourScenes
         /// <summary>지금 Spotlight 단축키를 누르는 키 이름 (Win·Space 등). 단축키 없음이면 null (상단바 검색 버튼을 누르는 그림).</summary>
         private static string[]? Hotkey(AppServices services)
         {
-            SpotlightHotkey key;
-            try { key = SpotlightHotkeyController.Resolve(services.Settings.Current.TopBar.SpotlightHotkey); }
-            catch { key = services.Settings.Current.TopBar.SpotlightHotkey; }
-            return key switch
-            {
-                SpotlightHotkey.WinSpace => new[] { "Win", "Space" },
-                SpotlightHotkey.AltSpace => new[] { "Alt", "Space" },
-                SpotlightHotkey.CtrlSpace => new[] { "Ctrl", "Space" },
-                _ => null,
-            };
+            HotkeyChord? key;
+            try { key = HotkeyController.SearchChord(services.Settings.Current); }
+            catch { key = null; }
+            return key?.ToString().Split('+');
         }
 
         /// <summary>키캡 판 (Win + Space 등, 글자 하나가 아이콘 글꼴 영역이면 돋보기 같은 기호 키).</summary>
@@ -589,7 +583,7 @@ internal static partial class TourScenes
             {
                 if (i > 0) keys.Children.Add(new TextBlock { Text = "+", FontSize = 26, Foreground = Brushes.White, Margin = new Thickness(14, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center });
                 bool glyph = parts[i].Length == 1 && parts[i][0] >= '';
-                bool wide = i == parts.Length - 1 && parts.Length > 1; // Space 키는 넓게
+                bool wide = parts[i] == "Space"; // Space 키는 넓게
                 var label = new TextBlock { Text = parts[i], FontSize = 22, FontWeight = FontWeights.SemiBold, Foreground = keyInk };
                 if (glyph) label.FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets");
                 keys.Children.Add(new Border { CornerRadius = new CornerRadius(10), Background = new SolidColorBrush(Color.FromArgb(0xF0, 0xFF, 0xFF, 0xFF)), Padding = new Thickness(wide ? 54 : 22, 12, wide ? 54 : 22, 12), BorderBrush = new SolidColorBrush(Color.FromArgb(0x30, 0, 0, 0)), BorderThickness = new Thickness(1, 1, 1, 3), Child = label });

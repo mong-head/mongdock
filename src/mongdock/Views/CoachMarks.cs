@@ -511,17 +511,10 @@ internal static class CoachMarks
     /// <summary>"Win+Space(또는 검색 버튼)로" — 실제 Spotlight 단축키 설정에 맞춤.</summary>
     private static string HotkeyPhrase(Settings s)
     {
-        SpotlightHotkey key;
-        try { key = SpotlightHotkeyController.Resolve(s.TopBar.SpotlightHotkey); }
-        catch { key = s.TopBar.SpotlightHotkey; }
-        string? text = key switch
-        {
-            SpotlightHotkey.WinSpace => "Win+Space",
-            SpotlightHotkey.AltSpace => "Alt+Space",
-            SpotlightHotkey.CtrlSpace => "Ctrl+Space",
-            _ => null,
-        };
-        return text is null ? Loc.T("검색 버튼을 눌러") : Loc.F($"{text}(또는 검색 버튼)로");
+        HotkeyChord? key;
+        try { key = HotkeyController.SearchChord(s); }
+        catch { key = null; }
+        return key is { } k ? Loc.F($"{k.ToString()}(또는 검색 버튼)로") : Loc.T("검색 버튼을 눌러");
     }
 
     /// <summary>
