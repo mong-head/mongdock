@@ -210,6 +210,7 @@ internal static class Program
         if (Array.IndexOf(args, "--clipdemo") >= 0) { ClipDemo(); return 0; }
         if (Array.IndexOf(args, "--suggest") >= 0) return SuggestTable();
         if (Array.IndexOf(args, "--tourmem") >= 0) return TourMemory(); // 둘러보기 장면 그림 메모리: 다 그린 뒤 / 정리 뒤 (화면 없음)
+        if (Array.IndexOf(args, "--profilecheck") >= 0) return ProfileCheck(); // 0.6.1 루틴 브라우저 계정·탐색기 창 (화면·실제 실행 없음)
         if (Array.IndexOf(args, "--hotkeycheck") >= 0) return HotkeyCheck(); // 0.6 단축키 규칙·저장·키 처리 점검 (화면·실제 입력 없음)
         if (Array.IndexOf(args, "--reviewcheck") >= 0) return ReviewCheck(); // 0.5.0 검토 수정 점검 (화면 없음)
         int unin = Array.FindIndex(args, a => a == "--uninstall");
@@ -1583,6 +1584,59 @@ internal static class Program
         return 0;
     }
 
+    /// <summary>시험 그림용 예시 계정 목록 (리플렉션으로 Func&lt;string, IReadOnlyList&lt;Profile&gt;&gt; 를 만들려고).</summary>
+    private sealed class ExampleProfiles
+    {
+        private readonly System.Collections.IList _list;
+        public ExampleProfiles(System.Collections.IList list) => _list = list;
+        public IReadOnlyList<TP> Get<TP>(string exe) => _list.Cast<TP>().ToList();
+    }
+
+    /// <summary>--profilecheck: 루틴 항목 계정 인자(있음·없어짐·안 고름·크로미움 아님), 저장 형식(없으면 안 씀·옛 판 무시), 창 명령줄에서 계정 읽기.</summary>
+    private static int ProfileCheck()
+    {
+        var asm = typeof(Mongdock.App).Assembly;
+        int bad = 0;
+        void Check(string what, bool ok) { Console.WriteLine($"  {(ok ? "통과" : "실패")}  {what}"); if (!ok) bad++; }
+        var rp = asm.GetType("Mongdock.Services.RoutineProfiles")!;
+        var profType = asm.GetType("Mongdock.Services.ChromiumProfiles+Profile")!;
+        var listT = typeof(List<>).MakeGenericType(profType);
+        var example = (System.Collections.IList)Activator.CreateInstance(listT)!;
+        example.Add(Activator.CreateInstance(profType, "Default", "개인", null));
+        example.Add(Activator.CreateInstance(profType, "Profile 1", "회사", null));
+        var funcT = typeof(Func<,>).MakeGenericType(typeof(string), typeof(IReadOnlyList<>).MakeGenericType(profType));
+        var del = Delegate.CreateDelegate(funcT, new ExampleProfiles(example), typeof(ExampleProfiles).GetMethod("Get")!.MakeGenericMethod(profType));
+        rp.GetProperty("ProfilesForTest", Any)!.SetValue(null, del);
+        try
+        {
+            string? Arg(RoutineItem i) => (string?)rp.GetMethod("Arg", Any)!.Invoke(null, new object[] { i });
+            var chrome = new RoutineItem { Kind = RoutineItemKind.App, Target = @"C:\Program Files\Google\Chrome\Application\chrome.exe", Profile = "Profile 1" };
+            Check($"고른 계정 → {Arg(chrome)}", Arg(chrome) == "--profile-directory=\"Profile 1\"");
+            chrome.Profile = "Profile 9";
+            Check($"없어진 계정 → 기본 ({Arg(chrome) ?? "인자 없음"})", Arg(chrome) is null);
+            chrome.Profile = null;
+            Check("안 고름 → 인자 없음", Arg(chrome) is null);
+            var store = new RoutineItem { Kind = RoutineItemKind.App, Aumid = "Microsoft.WindowsNotepad_8wekyb3d8bbwe!App", Profile = "Profile 1" };
+            Check("스토어 앱(AUMID) → 계정 없음", Arg(store) is null);
+        }
+        finally { rp.GetProperty("ProfilesForTest", Any)!.SetValue(null, null); }
+        // 저장 형식: 없으면 안 씀, 있으면 "profile", 옛 판(모르는 키 무시)과 같은 방식
+        var opts = new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase };
+        string none = System.Text.Json.JsonSerializer.Serialize(new RoutineItem { Kind = RoutineItemKind.App, Target = "a.exe" }, opts);
+        string with = System.Text.Json.JsonSerializer.Serialize(new RoutineItem { Kind = RoutineItemKind.App, Target = "a.exe", Profile = "Profile 1" }, opts);
+        Check($"계정 없으면 저장 안 함 ({!none.Contains("profile")})", !none.Contains("profile"));
+        Check($"계정 저장 ({with.Contains("\"profile\":\"Profile 1\"")})", with.Contains("\"profile\":\"Profile 1\""));
+        var back = System.Text.Json.JsonSerializer.Deserialize<RoutineItem>(with, opts)!;
+        Check($"다시 읽기 ({back.Profile})", back.Profile == "Profile 1");
+        // 창 명령줄에서 계정
+        var cp = asm.GetType("Mongdock.Services.ChromiumProfiles")!;
+        string? Parse(string c) => (string?)cp.GetMethod("ParseProfileDir", Any)!.Invoke(null, new object[] { c });
+        Check("명령줄 따옴표 계정", Parse("\"C:\\x\\chrome.exe\" --profile-directory=\"Profile 3\"") == "Profile 3");
+        Check("명령줄 따옴표 없는 계정", Parse("chrome.exe --profile-directory=Default") == "Default");
+        Console.WriteLine(bad == 0 ? "계정 점검: 모두 통과" : $"계정 점검: 실패 {bad}개");
+        return bad == 0 ? 0 : 1;
+    }
+
     /// <summary>--hotkeycheck: 단축키 조합 글자·막는 키·옛 설정 옮기기·키 표·훅 처리(가짜 키 — 진짜 훅·입력 없음).</summary>
     private static int HotkeyCheck()
     {
@@ -2388,8 +2442,22 @@ internal static class Program
                 ov.Close();
             }
 
+            // 0.6.1 브라우저 계정: 이 PC 의 실제 계정(이름·사진) 대신 예시 둘 — Chrome 항목은 "회사" 계정, 링크 항목은 기본
+            {
+                var profType = T("Mongdock.Services.ChromiumProfiles+Profile");
+                var listT = typeof(List<>).MakeGenericType(profType);
+                (string a, string b) names = _lang switch { "ko" => ("개인", "회사"), "de" => ("Privat", "Arbeit"), _ => ("Personal", "Work") };
+                var example = (System.Collections.IList)Activator.CreateInstance(listT)!;
+                example.Add(Activator.CreateInstance(profType, "Default", names.a, null));
+                example.Add(Activator.CreateInstance(profType, "Profile 1", names.b, null));
+                var funcT = typeof(Func<,>).MakeGenericType(typeof(string), typeof(IReadOnlyList<>).MakeGenericType(profType));
+                var holder = new ExampleProfiles(example);
+                var del = Delegate.CreateDelegate(funcT, holder, typeof(ExampleProfiles).GetMethod("Get")!.MakeGenericMethod(profType));
+                T("Mongdock.Services.RoutineProfiles").GetProperty("ProfilesForTest", Any)!.SetValue(null, del);
+            }
             // 2) 편집 창: 크게 / Chrome 세부 펼침(+ 고급)
             var work = new RoutineDef { Id = "r-test1", Name = "업무 시작", Items = Work() };
+            if (work.Items.Count > 1 && work.Items[1].Kind == RoutineItemKind.App) work.Items[1].Profile = "Profile 1";
             foreach (var expand in new[] { -1, 1 })
             {
                 var editor = New("Mongdock.Views.RoutineEditorWindow", services, work, work, false);

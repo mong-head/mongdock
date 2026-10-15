@@ -1464,5 +1464,7 @@
  "윈도우가 쓰는 키예요.": "Windows nutzt diese Taste.",
  "다른 앱이 흔히 쓰는 키예요 (복사·붙여넣기·저장 같은).": "Andere Apps nutzen diese Taste oft (z. B. Kopieren, Einfügen, Speichern).",
  "앱 메뉴 단축키(Alt+글자)와 겹칠 수 있어요.": "Kann mit App-Menü-Tasten (Alt+Buchstabe) kollidieren.",
- "key:Ctrl": "Strg"
+ "key:Ctrl": "Strg",
+ "기본 (마지막에 쓴 계정)": "Standard (zuletzt verwendetes Konto)",
+ "one:계정": "Konto"
 }

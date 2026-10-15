@@ -581,11 +581,13 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
                 open.Children.Add(advanced);
                 open.Children.Add(argsField);
                 box.Children.Add(LabeledRow(Loc.T("함께 열 것"), open, lw, 6));
+                if (ProfileRow(item, lw) is { } accountRow) box.Children.Add(accountRow);
                 break;
             }
             case RoutineItemKind.Url:
             {
                 box.Children.Add(LinkDetail(item, Changed, lw));
+                if (ProfileRow(item, lw) is { } accountRow) box.Children.Add(accountRow); // 기본 브라우저가 크로미움 계열일 때만
                 break;
             }
             default:
@@ -650,6 +652,69 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
             box.Children.Add(LabeledRow(Loc.T("켜져 있으면"), Segments(new[] { Loc.T("앞으로 가져오기"), Loc.T("하나 더 열기") }, item.IfRunning == RoutineIfRunning.New ? 1 : 0,
                 i => item.IfRunning = i == 1 ? RoutineIfRunning.New : RoutineIfRunning.Focus), lw, 0));
         return frame;
+    }
+
+    /// <summary>
+    /// 브라우저 계정 고르기 (0.6.1): 크로미움 계열(크롬·엣지·웨일) 앱 항목, 또는 기본 브라우저가 크로미움인 링크 항목.
+    /// 기본(마지막에 쓴 계정) + 계정 목록(사진·이름 — 독 오른쪽 클릭 "새 창"과 같은 목록). 계정이 1개 이하면 줄 없음.
+    /// </summary>
+    private UIElement? ProfileRow(RoutineItem item, double lw)
+    {
+        IReadOnlyList<ChromiumProfiles.Profile> profiles;
+        try { profiles = RoutineProfiles.Profiles(item); }
+        catch (Exception ex) { Log.Warn($"루틴 계정 목록 실패: {ex.GetType().Name}"); return null; }
+        if (profiles.Count <= 1) return null;
+
+        ImageSource? Picture(ChromiumProfiles.Profile p) { try { return ChromiumProfiles.LoadPicture(p.PicturePath); } catch { return null; } }
+        FrameworkElement Avatar(ImageSource? img, string name) => new Border
+        {
+            Width = 18,
+            Height = 18,
+            CornerRadius = new CornerRadius(9),
+            Margin = new Thickness(0, 0, 8, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = img is not null ? new ImageBrush(img) { Stretch = Stretch.UniformToFill } : P.PanelTint,
+            Child = img is not null ? null : new TextBlock { Text = name.Length > 0 ? name[..1].ToUpperInvariant() : "?", FontSize = 10, FontWeight = FontWeights.SemiBold, Foreground = P.PanelTintText, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+        };
+        var pictures = profiles.ToDictionary(p => p.Dir, Picture, StringComparer.OrdinalIgnoreCase);
+        // 고른 계정이 없어졌으면 "기본"으로 보임 (실행도 기본 — RoutineProfiles.Arg)
+        ChromiumProfiles.Profile? Current() => profiles.FirstOrDefault(p => string.Equals(p.Dir, item.Profile, StringComparison.OrdinalIgnoreCase));
+        string defaultLabel = Loc.T("기본 (마지막에 쓴 계정)");
+
+        var label = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        void Paint()
+        {
+            label.Children.Clear();
+            if (Current() is { } cur) label.Children.Add(Avatar(pictures[cur.Dir], cur.Name));
+            label.Children.Add(new TextBlock { Text = Current()?.Name ?? defaultLabel, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
+        }
+        Paint();
+        var chevron = new TextBlock { Text = "\uE70D", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 9, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 1, 0, 0) };
+        var row = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(chevron, Dock.Right);
+        row.Children.Add(chevron);
+        row.Children.Add(label);
+        var pickerBox = new Border { MinWidth = 180, MaxWidth = 280, Height = 28, CornerRadius = new CornerRadius(7), Background = P.Tile, Padding = new Thickness(10, 0, 8, 0), Cursor = Cursors.Hand, Focusable = true, Child = row, HorizontalAlignment = HorizontalAlignment.Left };
+        void Open()
+        {
+            var menu = new ContextMenu { PlacementTarget = pickerBox, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+            menu.Items.Add(DockMenus.Item(defaultLabel, () => { item.Profile = null; Paint(); }, isChecked: Current() is null));
+            menu.Items.Add(new Separator());
+            foreach (var p in profiles)
+            {
+                var header = new StackPanel { Orientation = Orientation.Horizontal };
+                header.Children.Add(Avatar(pictures[p.Dir], p.Name));
+                header.Children.Add(new TextBlock { Text = p.Name, VerticalAlignment = VerticalAlignment.Center });
+                var at = p;
+                var mi = new MenuItem { Header = header, IsChecked = Current()?.Dir == p.Dir };
+                mi.Click += (_, _) => { item.Profile = at.Dir; Paint(); };
+                menu.Items.Add(mi);
+            }
+            menu.IsOpen = true;
+        }
+        pickerBox.MouseLeftButtonUp += (_, e) => { e.Handled = true; Open(); };
+        pickerBox.KeyDown += (_, e) => { if (e.Key is Key.Enter or Key.Space or Key.Down) { e.Handled = true; Open(); } };
+        return LabeledRow(Loc.TC("one", "계정"), pickerBox, lw, 6); // 단수 (독일어 Konten → Konto)
     }
 
     /// <summary>함께 열 것의 종류 (0 없음, 1 파일, 2 폴더, 3 웹 주소).</summary>

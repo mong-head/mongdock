@@ -1464,5 +1464,7 @@
  "윈도우가 쓰는 키예요.": "Windows uses this key.",
  "다른 앱이 흔히 쓰는 키예요 (복사·붙여넣기·저장 같은).": "Other apps often use this key (like copy, paste or save).",
  "앱 메뉴 단축키(Alt+글자)와 겹칠 수 있어요.": "It may clash with app menu shortcuts (Alt+letter).",
- "key:Ctrl": "Ctrl"
+ "key:Ctrl": "Ctrl",
+ "기본 (마지막에 쓴 계정)": "Default (last used account)",
+ "one:계정": "Account"
 }
