@@ -1464,5 +1464,15 @@
  "윈도우가 쓰는 키예요.": "Windows utilise cette touche.",
  "다른 앱이 흔히 쓰는 키예요 (복사·붙여넣기·저장 같은).": "D'autres applications utilisent souvent cette touche (copier, coller, enregistrer…).",
  "앱 메뉴 단축키(Alt+글자)와 겹칠 수 있어요.": "Peut entrer en conflit avec les raccourcis de menu des applications (Alt+lettre).",
- "key:Ctrl": "Ctrl"
+ "key:Ctrl": "Ctrl",
+ "업데이트하는 중…": "Mise à jour…",
+ "Microsoft Store 에서 업데이트돼요": "Mis à jour par le Microsoft Store",
+ "스토어에서 업데이트 확인": "Rechercher des mises à jour dans le Store",
+ "새 버전 v{0}": "Nouvelle version v{0}",
+ "Microsoft Store 가 내려받아 설치해요. 설치하는 동안 몽독이 잠깐 꺼졌다가 다시 켜져요.": "Le Microsoft Store la télécharge et l'installe. mongdock se ferme un instant pendant l'installation, puis redémarre.",
+ "Microsoft Store": "Microsoft Store",
+ "스토어 앱의 몽독 페이지에서 직접 업데이트할 수도 있어요.": "Vous pouvez aussi mettre à jour depuis la page de mongdock dans l'app Store.",
+ "스토어 열기": "Ouvrir le Store",
+ "자동 업데이트": "Mises à jour automatiques",
+ "Microsoft Store 가 알아서 업데이트해요. 몽독도 켜고 1분 뒤와 하루 한 번 새 버전을 확인해요.": "Le Microsoft Store met mongdock à jour tout seul. mongdock vérifie aussi s'il y a une nouvelle version 1 minute après le démarrage, puis une fois par jour."
 }
