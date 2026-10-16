@@ -18,6 +18,21 @@ public partial class DockWindow
     /// <summary>아이콘을 최소까지 줄여도 넘쳐서 줄인 간격 (-1 = 설정값).</summary>
     private double _fitSpacing = -1;
     private bool _fitPending;
+    // 흔들림 막기 (#18): 줄이기는 바로(넘치면 안 됨), 키우기(설정값으로 되돌리기 포함)는 줄인 지 10초 지나고 2초 동안 계속 들어갈 때만.
+    // 앱 아이콘이 몇 초마다 생겼다 없어지면 50↔47↔52 로 몇 초마다 바뀌던 것 (1080p 125%, 독 오른쪽)
+    internal const int FitGrowHoldMs = 10_000, FitGrowSteadyMs = 2_000;
+    private long _fitShrunkAt;
+    private long _fitGrowSince;
+    private double _fitLastAvailable;
+    private DispatcherTimer? _fitGrowTimer;
+
+    /// <summary>새 크기·간격이 지금보다 커지는지 (0 = 설정값 = 가장 큼, -1 간격 = 설정값).</summary>
+    internal static bool FitGrows(double oldFit, double oldSpacing, double newFit, double newSpacing) =>
+        (oldFit > 0 && (newFit == 0 || newFit > oldFit + 0.5)) || (oldSpacing >= 0 && (newSpacing < 0 || newSpacing > oldSpacing + 0.5));
+
+    /// <summary>키우기를 지금 해도 되는지 (흔들림 막기 규칙). now·shrunkAt·growSince 는 TickCount64.</summary>
+    internal static bool FitGrowAllowed(long now, long shrunkAt, long growSince) =>
+        now - shrunkAt >= FitGrowHoldMs && growSince > 0 && now - growSince >= FitGrowSteadyMs;
 
     private DockLayout BuildLayout()
     {
@@ -52,7 +67,21 @@ public partial class DockWindow
         double newFit = want < setting ? want : 0;
         double newSpacing = spacing < settingSpacing ? spacing : -1;
         int newCapacity = DockFit.Capacity(want, spacing, icons, seps, available); // 하한·간격 1 로도 넘치면 "⋯ +n"
-        if (Math.Abs(newFit - _fitIcon) < 0.5 && Math.Abs(newSpacing - _fitSpacing) < 0.5 && newCapacity == _overflowCapacity) return;
+        if (Math.Abs(newFit - _fitIcon) < 0.5 && Math.Abs(newSpacing - _fitSpacing) < 0.5 && newCapacity == _overflowCapacity) { _fitGrowSince = 0; return; }
+        _fitLastAvailable = available;
+        long now = Environment.TickCount64;
+        if (FitGrows(_fitIcon, _fitSpacing, newFit, newSpacing))
+        {
+            if (_fitGrowSince == 0) _fitGrowSince = now;
+            if (!FitGrowAllowed(now, _fitShrunkAt, _fitGrowSince))
+            {
+                // 조금 뒤 다시 재 봄 (그때도 들어가면 키움)
+                _fitGrowTimer ??= new DispatcherTimer(TimeSpan.FromMilliseconds(500), DispatcherPriority.Background, (_, _) => { _fitGrowTimer!.Stop(); if (!_closed) CheckFit(_fitLastAvailable); }, Dispatcher);
+                if (!_fitGrowTimer.IsEnabled) _fitGrowTimer.Start();
+                return;
+            }
+        }
+        else _fitGrowSince = 0;
         _fitPending = true;
         Dispatcher.BeginInvoke(() =>
         {
@@ -64,6 +93,8 @@ public partial class DockWindow
             Log.Info(newFit > 0
                 ? Loc.F($"독이 화면보다 길어 아이콘을 {newFit:0} 으로 줄임 (설정 {setting:0}{(newSpacing >= 0 ? Loc.F($", 간격 {newSpacing:0}") : "")})")
                 : Loc.T("독 아이콘 크기를 설정값으로 되돌림"));
+            if (FitGrows(_fitIcon, _fitSpacing, newFit, newSpacing)) _fitGrowSince = 0;
+            else if (newFit > 0 || newSpacing >= 0) _fitShrunkAt = Environment.TickCount64;
             _fitIcon = newFit;
             _fitSpacing = newSpacing;
             ApplyAll();

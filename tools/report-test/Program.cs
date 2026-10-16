@@ -1673,6 +1673,31 @@ internal static class Program
         if (!double.IsNaN(crash)) Check($"카드가 화면보다 클 때(신고 값 h 1013, 작업 영역 25.6~864) → 가운데 {crash:0.#}", Math.Abs(crash - (25.6 + (864 - 25.6 - 1013) / 2)) < 0.01);
         Check("들어가면 그대로", Fit(200, 600, 25.6, 864) == 200);
         Check("아래로 넘치면 끌어올림", Math.Abs(Fit(500, 600, 25.6, 864) - (864 - 600 + 28 - 8)) < 0.01);
+        // 독 아이콘 크기 흔들림 막기 (#18): 줄이기는 바로, 키우기는 줄인 지 10초 + 2초 계속일 때만
+        var dw = asm.GetType("Mongdock.Views.DockWindow")!;
+        bool Grows(double of, double os, double nf, double ns) => (bool)dw.GetMethod("FitGrows", Any)!.Invoke(null, new object[] { of, os, nf, ns })!;
+        bool Allowed(long now, long shrunk, long since) => (bool)dw.GetMethod("FitGrowAllowed", Any)!.Invoke(null, new object[] { now, shrunk, since })!;
+        Check("50 → 설정값(0)은 키우기", Grows(50, -1, 0, -1));
+        Check("47 → 50 은 키우기", Grows(47, -1, 50, -1));
+        Check("50 → 47 은 줄이기", !Grows(50, -1, 47, -1));
+        Check("설정값 → 50 은 줄이기", !Grows(0, -1, 50, -1));
+        Check("줄인 지 3초 → 키우기 미룸", !Allowed(13_000, 10_000, 10_500));
+        Check("줄인 지 12초, 들어간 지 1초 → 미룸", !Allowed(22_000, 10_000, 21_000));
+        Check("줄인 지 12초, 2초 계속 들어감 → 키움", Allowed(22_000, 10_000, 20_000));
+        // 23:02 로그처럼 아이콘이 몇 초마다 생겼다 없어지는 흉내: 25초 동안 몇 번 바뀌나 (예전 6번)
+        {
+            double fit = 0; long shrunk = 0, since = 0; int changes = 0;
+            for (long t = 0; t <= 25_000; t += 500)
+            {
+                double want = (t / 3000) % 2 == 0 ? 50 : 0; // 3초마다 넘침 ↔ 들어감
+                bool grows = Grows(fit, -1, want, -1);
+                if (Math.Abs(want - fit) < 0.5) { since = 0; continue; }
+                if (grows) { if (since == 0) since = t + 1; if (!Allowed(t + 1, shrunk, since)) continue; since = 0; }
+                else shrunk = t + 1;
+                fit = want; changes++;
+            }
+            Check($"3초마다 넘침↔들어감 25초: 크기 바뀜 {changes}번 (예전 규칙 9번, 키우기는 10초에 한 번까지)", changes <= 5);
+        }
         Console.WriteLine(bad == 0 ? "AppBar 점검: 모두 통과" : $"AppBar 점검: 실패 {bad}개");
         return bad == 0 ? 0 : 1;
     }
