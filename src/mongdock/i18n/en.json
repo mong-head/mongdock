@@ -1480,5 +1480,11 @@
  "업데이트 후 다시 시작": "Update and restart",
  "업데이트 후 시스템 종료…": "Update and shut down…",
  "업데이트를 설치하고 시스템을 종료할까요?": "Install updates and shut down?",
- "업데이트 후 종료": "Update and shut down"
+ "업데이트 후 종료": "Update and shut down",
+ "영역 캡처": "Capture Area",
+ "{0}+V로 그림이나 파일을 붙여 넣을 수도 있어요.": "You can also paste a picture or file with {0}+V.",
+ "캡처 도구에서 영역을 고르면 여기에 붙어요.": "Select an area in the Snipping Tool and it will be attached here.",
+ "클립보드 그림을 읽지 못했어요.": "Couldn't read the picture on the clipboard.",
+ "캡처 도구를 열지 못했어요.": "Couldn't open the Snipping Tool.",
+ "캡처한 그림이 들어오지 않았어요. 캡처 도구에서 복사한 뒤 {0}+V로 붙여 넣어도 돼요.": "No capture came in. You can copy it in the Snipping Tool and paste it here with {0}+V."
 }

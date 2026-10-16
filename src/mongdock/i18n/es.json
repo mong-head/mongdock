@@ -1480,5 +1480,11 @@
  "업데이트 후 다시 시작": "Actualizar y reiniciar",
  "업데이트 후 시스템 종료…": "Actualizar y apagar…",
  "업데이트를 설치하고 시스템을 종료할까요?": "¿Instalar actualizaciones y apagar?",
- "업데이트 후 종료": "Actualizar y apagar"
+ "업데이트 후 종료": "Actualizar y apagar",
+ "영역 캡처": "Capturar área",
+ "{0}+V로 그림이나 파일을 붙여 넣을 수도 있어요.": "También puedes pegar una imagen o un archivo con {0}+V.",
+ "캡처 도구에서 영역을 고르면 여기에 붙어요.": "Selecciona un área en Recortes y se adjuntará aquí.",
+ "클립보드 그림을 읽지 못했어요.": "No se pudo leer la imagen del portapapeles.",
+ "캡처 도구를 열지 못했어요.": "No se pudo abrir Recortes.",
+ "캡처한 그림이 들어오지 않았어요. 캡처 도구에서 복사한 뒤 {0}+V로 붙여 넣어도 돼요.": "No llegó ninguna captura. Puedes copiarla en Recortes y pegarla aquí con {0}+V."
 }

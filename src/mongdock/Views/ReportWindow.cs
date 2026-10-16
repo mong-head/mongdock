@@ -52,6 +52,9 @@ public sealed class ReportWindow : Window
     private readonly StackPanel _attachRows = new();
     private readonly TextBlock _attachNote;
     private readonly TextBlock _attachError;
+    /// <summary>영역 캡처 기다리는 중 줄 ("캡처 도구에서 영역을 고르면 … · 취소") (#13).</summary>
+    private readonly TextBlock _clipWaiting;
+    private CancellationTokenSource? _clipStop;
     private readonly Button _sendWithout;
     private AppServices? _services;
     private ReportRedactor.Context _ctx = ReportRedactor.Context.Current(Array.Empty<string>());
@@ -121,9 +124,15 @@ public sealed class ReportWindow : Window
         MongTitleBar.Install(this, _p); // 몽독 제목 줄 (#25 §8) — 크기 고정 창이라 최대화 동그라미는 흐리게
         // "함께 보낼 정보"를 펼치면 창이 아래로 길어짐 → 화면 아래를 넘으면 위로 올리고, 화면보다 길면 높이를 막아 안에서 스크롤
         SizeChanged += (_, e) => { if (e.HeightChanged) KeepOnScreen(); };
+        // Ctrl+V: 클립보드의 그림·파일은 첨부로 (글자는 그대로 입력 칸에 붙음) (#13)
+        PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == Key.V && Keyboard.Modifiers == ModifierKeys.Control && PasteAttachments(ScreenClip.SafeClipboard())) e.Handled = true;
+        };
         Closed += (_, _) =>
         {
             _closed = true;
+            _clipStop?.Cancel();
             if (_instance == this) _instance = null;
         };
 
@@ -194,7 +203,27 @@ public sealed class ReportWindow : Window
         var capture = Button("+ " + Loc.T("지금 화면 캡처"), primary: false, () => _ = CaptureAsync());
         attachButtons.Children.Add(addFile);
         attachButtons.Children.Add(capture);
+        if (ScreenClip.Available())
+        {
+            // 영역 캡처 (#13): 윈도우 캡처 도구로 고른 부분 → 클립보드 그림 자동 첨부. 도구가 없는 윈도우 10 이면 버튼 없음
+            capture.Margin = new Thickness(0, 0, 8, 0);
+            attachButtons.Children.Add(Button("+ " + Loc.T("영역 캡처"), primary: false, () => _ = ClipAsync()));
+        }
         body.Children.Add(attachButtons);
+        body.Children.Add(new TextBlock
+        {
+            Text = Loc.F($"{Loc.TC("key", "Ctrl")}+V로 그림이나 파일을 붙여 넣을 수도 있어요."),
+            FontSize = 11.5,
+            Foreground = _p.SubText,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(2, 6, 0, 0),
+        });
+        _clipWaiting = new TextBlock { FontSize = 11.5, Foreground = _p.SubText, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(2, 4, 0, 0), Visibility = Visibility.Collapsed };
+        var stopLink = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run(Loc.T("취소"))) { Foreground = _p.AccentInk, TextDecorations = null, Cursor = Cursors.Hand };
+        stopLink.Click += (_, _) => _clipStop?.Cancel();
+        _clipWaiting.Inlines.Add(new System.Windows.Documents.Run(Loc.T("캡처 도구에서 영역을 고르면 여기에 붙어요.") + " "));
+        _clipWaiting.Inlines.Add(stopLink);
+        body.Children.Add(_clipWaiting);
         _attachRows.Margin = new Thickness(0, 6, 0, 0);
         body.Children.Add(_attachRows);
         _attachError = new TextBlock { FontSize = 11.5, Foreground = _p.HolidayText, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(2, 4, 0, 0), Visibility = Visibility.Collapsed };
@@ -415,13 +444,86 @@ public sealed class ReportWindow : Window
     {
         var dlg = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Filter = ReportAttachments.DialogFilter, Title = Loc.T("첨부할 파일") };
         if (dlg.ShowDialog(this) != true) return;
-        foreach (var path in dlg.FileNames)
+        AddPaths(dlg.FileNames);
+    }
+
+    private void AddPaths(IEnumerable<string> paths)
+    {
+        foreach (var path in paths)
         {
             if (!ReportAttachments.Allowed(path)) { ShowAttachError(Loc.T("그림(png·jpg·gif·webp)·동영상(mp4)·텍스트(txt·log)만 붙일 수 있어요.")); continue; }
             var a = ReportAttachments.FromFile(path, _ctx, out bool tooBig);
             if (tooBig) { ShowAttachError(Loc.T("파일이 너무 커요(최대 10MB)")); continue; }
             if (a is null) { ShowAttachError(Loc.T("파일을 읽지 못했어요.")); continue; }
             if (!TryAdd(a)) break;
+        }
+    }
+
+    /// <summary>
+    /// 붙여넣기 (#13): 파일(탐색기에서 복사)이면 파일 추가와 같은 규칙으로, 그림이면 그림 첨부로. 둘 다 아니면(글자) false — 입력 칸이 그대로 붙여 넣음.
+    /// 시험에서는 클립보드 대신 만든 데이터를 넘김.
+    /// </summary>
+    internal bool PasteAttachments(IDataObject? data)
+    {
+        if (data is null) return false;
+        try
+        {
+            if (data.GetDataPresent(DataFormats.FileDrop) && data.GetData(DataFormats.FileDrop) is string[] { Length: > 0 } files)
+            {
+                AddPaths(files);
+                return true;
+            }
+        }
+        catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or System.Runtime.InteropServices.ExternalException)
+        {
+            Log.Warn($"붙여넣기 파일 읽기 실패: {ex.GetType().Name}");
+            return false;
+        }
+        if (!data.GetDataPresent("PNG") && !data.GetDataPresent(DataFormats.Bitmap)) return false;
+        if (ScreenClip.FromDataObject(data) is { } shot) TryAdd(shot);
+        else ShowAttachError(Loc.T("클립보드 그림을 읽지 못했어요."));
+        return true;
+    }
+
+    /// <summary>
+    /// [+ 영역 캡처] (#13): 신고 창을 숨기고 윈도우 캡처 도구를 띄움 → 클립보드에 새 그림이 들어오면 첨부. 도구를 그림 없이 닫으면 그냥 돌아옴.
+    /// 도구 화면을 못 찾으면 신고 창을 다시 띄우고 "고르면 여기에 붙어요 · 취소" 를 보이며 2분까지 기다림.
+    /// </summary>
+    private async Task ClipAsync()
+    {
+        if (_clipStop is not null) return;
+        if (_attachments.Count >= ReportAttachments.MaxCount) { ShowAttachError(Loc.F($"첨부는 {ReportAttachments.MaxCount}개까지예요.")); return; }
+        _attachError.Visibility = Visibility.Collapsed;
+        var stop = _clipStop = new CancellationTokenSource();
+        Hide();
+        await Task.Delay(250); // 신고 창이 화면에서 사라진 뒤 (캡처 도구는 띄운 순간의 화면을 얼림)
+        bool shown = false;
+        void ShowBack()
+        {
+            if (shown || _closed) return;
+            shown = true;
+            Show();
+            Activate();
+            if (!stop.IsCancellationRequested) _clipWaiting.Visibility = Visibility.Visible;
+        }
+        ReportAttachment? shot;
+        ScreenClipOutcome outcome;
+        try
+        {
+            (shot, outcome) = await ScreenClip.CaptureAsync(ShowBack, stop.Token);
+        }
+        finally
+        {
+            _clipStop = null;
+            stop.Dispose();
+            if (!_closed) { _clipWaiting.Visibility = Visibility.Collapsed; ShowBack(); }
+        }
+        if (_closed) return;
+        switch (outcome)
+        {
+            case ScreenClipOutcome.Captured when shot is not null: TryAdd(shot); break;
+            case ScreenClipOutcome.LaunchFailed: ShowAttachError(Loc.T("캡처 도구를 열지 못했어요.")); break;
+            case ScreenClipOutcome.NoTool or ScreenClipOutcome.TimedOut: ShowAttachError(Loc.F($"캡처한 그림이 들어오지 않았어요. 캡처 도구에서 복사한 뒤 {Loc.TC("key", "Ctrl")}+V로 붙여 넣어도 돼요.")); break;
         }
     }
 

@@ -63,6 +63,13 @@ public static class ReportAttachments
         }
     }
 
+    /// <summary>PNG 바이트(영역 캡처·붙여넣기) → 첨부: 긴 변 2000px 넘으면 줄인 JPEG, 아니면 PNG 그대로. 이름은 "{prefix}-날짜시각".</summary>
+    public static ReportAttachment FromImageBytes(byte[] png, string prefix)
+    {
+        string name = $"{prefix}-{DateTime.Now:yyyyMMdd-HHmmss}";
+        return Shrink(png) is { } small ? new ReportAttachment(name + ".jpg", "image/jpeg", small) : new ReportAttachment(name + ".png", "image/png", png);
+    }
+
     /// <summary>긴 변이 2000px 를 넘는 그림 → 줄인 JPEG 85 (안 넘거나 읽을 수 없으면 null = 그대로).</summary>
     internal static byte[]? Shrink(byte[] data)
     {

@@ -211,6 +211,7 @@ internal static class Program
         if (Array.IndexOf(args, "--suggest") >= 0) return SuggestTable();
         if (Array.IndexOf(args, "--tourmem") >= 0) return TourMemory(); // 둘러보기 장면 그림 메모리: 다 그린 뒤 / 정리 뒤 (화면 없음)
         if (Array.IndexOf(args, "--appbarcheck") >= 0) return AppBarCheck(); // 0.6.2 모니터 여러 대 작업 표시줄 깜빡임 — 자리 같으면 안 알림·고리 끊김 (실제 AppBar 등록 없음)
+        if (Array.IndexOf(args, "--clipcheck") >= 0) return ClipCheck(); // 0.6.3 문제 신고 영역 캡처·붙여넣기 (#13) — 실제 캡처 도구·클립보드는 안 건드림
         if (Array.IndexOf(args, "--profilecheck") >= 0) return ProfileCheck(); // 0.6.1 루틴 브라우저 계정·탐색기 창 (화면·실제 실행 없음)
         if (Array.IndexOf(args, "--hotkeycheck") >= 0) return HotkeyCheck(); // 0.6 단축키 규칙·저장·키 처리 점검 (화면·실제 입력 없음)
         if (Array.IndexOf(args, "--reviewcheck") >= 0) return ReviewCheck(); // 0.5.0 검토 수정 점검 (화면 없음)
@@ -412,6 +413,8 @@ internal static class Program
                     enc.Save(ms);
                     w.AddPreviewAttachment(new Mongdock.Services.ReportAttachment("screen-20261013-131500.jpg", "image/jpeg", ms.ToArray()));
                     w.AddPreviewAttachment(new Mongdock.Services.ReportAttachment("kakao.log", "text/plain", new byte[48_000]));
+                    // 영역 캡처 기다리는 중 줄 (#13)
+                    ((FrameworkElement)typeof(ReportWindow).GetField("_clipWaiting", Any)!.GetValue(w)!).Visibility = Visibility.Visible;
                 }
                 w.UpdateLayout();
                 string name = $"report-{(Mongdock.Loc.IsKorean ? "" : Mongdock.Loc.Code + "-")}{theme.ToString().ToLowerInvariant()}{(open ? "-details" : "")}.png";
@@ -1675,6 +1678,128 @@ internal static class Program
     }
 
     /// <summary>--profilecheck: 루틴 항목 계정 인자(있음·없어짐·안 고름·크로미움 아님), 저장 형식(없으면 안 씀·옛 판 무시), 창 명령줄에서 계정 읽기.</summary>
+    /// <summary>
+    /// --clipcheck (#13): 클립보드 데이터 → 첨부(PNG·비트맵·글자·큰 그림 줄이기), 신고 창 붙여넣기(파일·그림·글자·개수 제한),
+    /// 영역 캡처 흐름(가짜 캡처 도구·가짜 클립보드: 받음·취소·도구 화면 못 찾음·열기 실패·멈춤·시간 제한). 실제 클립보드·캡처 도구는 쓰지 않음.
+    /// </summary>
+    private static int ClipCheck()
+    {
+        int bad = 0;
+        void Check(string what, bool ok) { Console.WriteLine($"  {(ok ? "통과" : "실패")}  {what}"); if (!ok) bad++; }
+        var app = new Mongdock.App();
+        Mongdock.Loc.Init(_lang);
+        app.InitializeComponent();
+        byte[] Png(int w, int h)
+        {
+            var rtb = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen()) dc.DrawRectangle(Brushes.SteelBlue, null, new Rect(0, 0, w, h));
+            rtb.Render(dv);
+            var enc = new PngBitmapEncoder();
+            enc.Frames.Add(BitmapFrame.Create(rtb));
+            using var ms = new MemoryStream();
+            enc.Save(ms);
+            return ms.ToArray();
+        }
+        DataObject PngData(int w, int h) { var d = new DataObject(); d.SetData("PNG", new MemoryStream(Png(w, h))); return d; }
+
+        // 1) 클립보드 데이터 → 첨부
+        var small = ScreenClip.FromDataObject(PngData(400, 300));
+        Check($"PNG 그림 → {small?.Name} ({small?.Mime})", small is { Mime: "image/png" } && small.Name.StartsWith("clip-") && small.Name.EndsWith(".png"));
+        var big = ScreenClip.FromDataObject(PngData(3000, 1800));
+        var bigFrame = big is null ? null : BitmapFrame.Create(new MemoryStream(big.Data));
+        Check($"큰 그림 3000×1800 → {big?.Mime} {bigFrame?.PixelWidth}×{bigFrame?.PixelHeight} (긴 변 2000)", big is { Mime: "image/jpeg" } && bigFrame?.PixelWidth == 2000);
+        var bmpData = new DataObject();
+        bmpData.SetData(DataFormats.Bitmap, BitmapFrame.Create(new MemoryStream(Png(200, 100))));
+        var fromBmp = ScreenClip.FromDataObject(bmpData);
+        Check($"비트맵 형식만 → {fromBmp?.Mime}", fromBmp is { Mime: "image/png" });
+        Check("글자만 → 그림 아님", ScreenClip.FromDataObject(new DataObject(DataFormats.UnicodeText, "hello")) is null);
+
+        // 2) 신고 창 붙여넣기
+        var w = new ReportWindow(new Settings()) { Left = -20000, Top = -20000, ShowActivated = false };
+        w.Show();
+        var paste = typeof(ReportWindow).GetMethod("PasteAttachments", Any)!;
+        var list = (System.Collections.IList)typeof(ReportWindow).GetField("_attachments", Any)!.GetValue(w)!;
+        var err = (System.Windows.Controls.TextBlock)typeof(ReportWindow).GetField("_attachError", Any)!.GetValue(w)!;
+        bool Paste(IDataObject d) => (bool)paste.Invoke(w, new object[] { d })!;
+        Check("글자 붙여넣기 → 입력 칸에 맡김 (첨부 안 함)", !Paste(new DataObject(DataFormats.UnicodeText, "hello")) && list.Count == 0);
+        Check($"그림 붙여넣기 → 첨부 {list.Count + 1}개", Paste(PngData(640, 480)) && list.Count == 1);
+        string tmp = Path.Combine(Path.GetTempPath(), "mongdock-clipcheck");
+        Directory.CreateDirectory(tmp);
+        string png = Path.Combine(tmp, "shot.png"), txt = Path.Combine(tmp, "note.txt"), exe = Path.Combine(tmp, "tool.exe");
+        File.WriteAllBytes(png, Png(300, 200));
+        File.WriteAllText(txt, @"C:\Users\melon\Desktop\연봉.xlsx");
+        File.WriteAllBytes(exe, new byte[10]);
+        var files = new DataObject();
+        files.SetData(DataFormats.FileDrop, new[] { png, txt });
+        bool pastedFiles = Paste(files);
+        Check($"파일 2개 붙여넣기 → 첨부 {list.Count}개 (3 기대)", pastedFiles && list.Count == 3);
+        var noteText = System.Text.Encoding.UTF8.GetString(((ReportAttachment)list[2]!).Data);
+        Check($"붙여 넣은 텍스트도 가림 ({noteText})", !noteText.Contains("melon"));
+        bool fourth = Paste(PngData(100, 100));
+        Check($"넷째 그림 → 개수 제한 안내 ({err.Text})", fourth && list.Count == 3 && err.Visibility == Visibility.Visible);
+        list.Clear();
+        var exeDrop = new DataObject();
+        exeDrop.SetData(DataFormats.FileDrop, new[] { exe });
+        err.Visibility = Visibility.Collapsed;
+        bool exeHandled = Paste(exeDrop);
+        Check($"허용 안 되는 파일 → 안내 ({err.Text})", exeHandled && list.Count == 0 && err.Visibility == Visibility.Visible && err.Text.Contains("mp4"));
+        w.Close();
+        Directory.Delete(tmp, true);
+
+        // 3) 영역 캡처 흐름 (가짜 도구·클립보드)
+        var sc = typeof(ScreenClip);
+        object? Get(string f) => sc.GetField(f, Any)!.GetValue(null);
+        var saved = new[] { "Launch", "Sequence", "OverlayVisible", "ReadClipboard" }.ToDictionary(f => f, Get);
+        void Set(string f, object v) => sc.GetField(f, Any)!.SetValue(null, v);
+        var shot = new ReportAttachment("clip-test.png", "image/png", Png(50, 50));
+        (ReportAttachment?, ScreenClipOutcome, int gone, long ms) Run(Func<long, bool> overlay, long imageAt, bool launchOk = true, int timeout = 8000, int stopAt = -1)
+        {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            Set("Launch", new Func<bool>(() => launchOk));
+            Set("Sequence", new Func<uint>(() => imageAt >= 0 && clock.ElapsedMilliseconds >= imageAt ? 2u : 1u));
+            Set("OverlayVisible", new Func<bool>(() => overlay(clock.ElapsedMilliseconds)));
+            Set("ReadClipboard", new Func<ReportAttachment?>(() => shot));
+            int gone = 0;
+            using var cts = new CancellationTokenSource();
+            if (stopAt >= 0) cts.CancelAfter(stopAt);
+            var t = ScreenClip.CaptureAsync(() => gone++, cts.Token, timeout);
+            while (!t.IsCompleted) Thread.Sleep(20);
+            var (a, o) = t.Result;
+            return (a, o, gone, clock.ElapsedMilliseconds);
+        }
+        try
+        {
+            var r = Run(ms => ms > 300 && ms < 1500, 1400);
+            Check($"도구 화면 → 그림 들어옴: {r.Item2}, 신고 창 다시 띄움 {r.gone}번, {r.ms}ms", r.Item2 == ScreenClipOutcome.Captured && r.Item1 == shot && r.gone == 1);
+            r = Run(ms => ms > 300 && ms < 1200, -1);
+            Check($"그림 없이 도구 닫음 → {r.Item2} ({r.ms}ms, 1.2초 + 1.5초쯤)", r.Item2 == ScreenClipOutcome.Cancelled && r.gone == 1 && r.ms is > 2500 and < 3600);
+            r = Run(_ => false, 4500);
+            Check($"도구 화면 못 찾음 → 3초에 신고 창 다시, 그 뒤 그림 받음: {r.Item2} ({r.ms}ms, 다시 띄움 {r.gone}번)", r.Item2 == ScreenClipOutcome.Captured && r.gone == 1 && r.ms > 4400);
+            r = Run(_ => false, -1, timeout: 4000);
+            Check($"도구 화면도 그림도 없음 → {r.Item2} ({r.ms}ms)", r.Item2 == ScreenClipOutcome.NoTool && r.gone == 1);
+            r = Run(_ => true, -1, launchOk: false);
+            Check($"도구 열기 실패 → {r.Item2}", r.Item2 == ScreenClipOutcome.LaunchFailed && r.gone == 1);
+            r = Run(_ => true, -1, stopAt: 800);
+            Check($"[취소] → {r.Item2} ({r.ms}ms)", r.Item2 == ScreenClipOutcome.Stopped && r.gone == 1 && r.ms < 1500);
+            Set("ReadClipboard", new Func<ReportAttachment?>(() => null));
+            var clock2 = System.Diagnostics.Stopwatch.StartNew();
+            Set("Launch", new Func<bool>(() => true));
+            Set("Sequence", new Func<uint>(() => clock2.ElapsedMilliseconds > 500 ? 2u : 1u));
+            Set("OverlayVisible", new Func<bool>(() => clock2.ElapsedMilliseconds < 1000));
+            var t2 = ScreenClip.CaptureAsync(null, CancellationToken.None, 8000);
+            while (!t2.IsCompleted) Thread.Sleep(20);
+            Check($"글자가 복사됨(그림 아님) → 계속 기다리다 도구 닫힘으로 끝: {t2.Result.Outcome}", t2.Result.Outcome == ScreenClipOutcome.Cancelled);
+        }
+        finally
+        {
+            foreach (var (f, v) in saved) Set(f, v!);
+        }
+        Console.WriteLine($"  정보  이 PC 캡처 도구 있음(버튼 보임): {ScreenClip.Available()}");
+        Console.WriteLine(bad == 0 ? "영역 캡처·붙여넣기 점검: 모두 통과" : $"영역 캡처·붙여넣기 점검: 실패 {bad}개");
+        return bad == 0 ? 0 : 1;
+    }
+
     private static int ProfileCheck()
     {
         var asm = typeof(Mongdock.App).Assembly;

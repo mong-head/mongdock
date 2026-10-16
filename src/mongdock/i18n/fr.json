@@ -1480,5 +1480,11 @@
  "업데이트 후 다시 시작": "Mettre à jour et redémarrer",
  "업데이트 후 시스템 종료…": "Mettre à jour et arrêter…",
  "업데이트를 설치하고 시스템을 종료할까요?": "Installer les mises à jour et arrêter ?",
- "업데이트 후 종료": "Mettre à jour et arrêter"
+ "업데이트 후 종료": "Mettre à jour et arrêter",
+ "영역 캡처": "Capturer une zone",
+ "{0}+V로 그림이나 파일을 붙여 넣을 수도 있어요.": "Vous pouvez aussi coller une image ou un fichier avec {0}+V.",
+ "캡처 도구에서 영역을 고르면 여기에 붙어요.": "Sélectionnez une zone dans l’Outil Capture : elle sera jointe ici.",
+ "클립보드 그림을 읽지 못했어요.": "Impossible de lire l’image du presse-papiers.",
+ "캡처 도구를 열지 못했어요.": "Impossible d’ouvrir l’Outil Capture.",
+ "캡처한 그림이 들어오지 않았어요. 캡처 도구에서 복사한 뒤 {0}+V로 붙여 넣어도 돼요.": "Aucune capture reçue. Vous pouvez la copier dans l’Outil Capture puis la coller ici avec {0}+V."
 }
