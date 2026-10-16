@@ -66,6 +66,8 @@ internal sealed class TourCard : Border
     private readonly TextBlock _footnote;
     private readonly TextBlock _skip;
     private readonly StackPanel _list = new() { Margin = new Thickness(0, 10, 0, 0) };
+    /// <summary>목록이 카드에 다 안 들어가면(아주 오래된 버전에서 업데이트 — "그동안 바뀐 것") 안에서 스크롤 (0.6.2).</summary>
+    private ScrollViewer? _listScroll;
     private readonly TextBlock _link;
     private readonly Grid _picture;
     private readonly StackPanel _content = new();
@@ -207,7 +209,9 @@ internal sealed class TourCard : Border
         var content = _content;
         content.Children.Add(_title);
         content.Children.Add(_body);
-        content.Children.Add(_list);
+        _listScroll = new ScrollViewer { Content = _list, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Focusable = false };
+        MongScroll.Apply(_listScroll, p);
+        content.Children.Add(_listScroll);
         content.Children.Add(_link);
         content.Children.Add(_inline);
         content.Children.Add(_resultRow);
@@ -281,6 +285,7 @@ internal sealed class TourCard : Border
             }
         if (step.More > 0) _list.Children.Add(new TextBlock { Text = Loc.F($"외 {step.More}개"), Foreground = _p.SubText, Margin = new Thickness(0, 4, 0, 0) });
         _list.Visibility = _list.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (_listScroll is not null) { _listScroll.Visibility = _list.Visibility; _listScroll.ScrollToTop(); }
         _inline.Visibility = step.InlineText is null ? Visibility.Collapsed : Visibility.Visible;
         if (_inline.Content is TextBlock it) it.Text = step.InlineText ?? "";
         _result.Text = step.ResultText ?? "";
@@ -387,14 +392,30 @@ internal sealed class TourCard : Border
     /// 카드 높이를 모든 단계 중 가장 긴 것에 맞춰 고정 (단계를 넘겨도 카드 크기가 안 바뀜 — 2026-10-14 PM).
     /// 각 단계를 잠깐 채워 재 보고, 다 재면 높이를 정함 (그다음 Show 가 진짜 단계를 채움).
     /// </summary>
-    public void FixHeight(IReadOnlyList<TourStep> steps)
+    public void FixHeight(IReadOnlyList<TourStep> steps, double maxHeight = double.PositiveInfinity)
     {
         Height = double.NaN;
-        double max = 0;
+        if (_listScroll is not null) _listScroll.MaxHeight = double.PositiveInfinity;
+        double max = 0, listRoom = double.PositiveInfinity;
         for (int i = 0; i < steps.Count; i++)
         {
             Show(steps[i], i, steps.Count);
-            max = Math.Max(max, NaturalHeight());
+            double h = NaturalHeight();
+            max = Math.Max(max, h);
+            // 목록 단계: 카드가 화면(maxHeight)에 들어가려면 목록이 얼마까지 될 수 있나
+            if (_list.Visibility == Visibility.Visible) listRoom = Math.Min(listRoom, maxHeight - (h - _list.DesiredSize.Height)); // DesiredSize 에 위 여백 포함
+        }
+        if (max > maxHeight && _listScroll is not null && !double.IsInfinity(listRoom))
+        {
+            // 0.6.2 (오류 신고 uid 29): v0.2 → v0.5 처럼 오래된 버전에서 올라오면 "그동안 바뀐 것" 목록이 길어 카드가 화면보다 커졌음 → 목록만 스크롤
+            _listScroll.MaxHeight = Math.Max(120, Math.Floor(listRoom) - 2);
+            Services.Log.Info($"둘러보기 카드가 화면보다 큼 ({max:0} > {maxHeight:0}) → 목록을 {_listScroll.MaxHeight:0} 높이로 스크롤");
+            max = 0;
+            for (int i = 0; i < steps.Count; i++)
+            {
+                Show(steps[i], i, steps.Count);
+                max = Math.Max(max, NaturalHeight());
+            }
         }
         _slide.Stop();
         if (max > 0) Height = Math.Ceiling(max);

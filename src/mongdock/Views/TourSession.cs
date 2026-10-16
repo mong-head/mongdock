@@ -85,7 +85,9 @@ internal sealed class TourSession : ICoachRun
         _open++;
         _release?.Stop();
         // 카드 높이는 둘러보기 내내 같게 (가장 긴 단계 기준) — 넘길 때 카드 크기·자리가 안 바뀜
-        _card.Card.FixHeight(MeasureSteps().ToList());
+        // 화면에 들어가는 높이까지 (그림자 여백 + 위아래 8) — 넘으면 목록이 안에서 스크롤
+        var work = _services.DesktopWindows.ResolveMonitor("").WorkArea;
+        _card.Card.FixHeight(MeasureSteps().ToList(), work.Height - 16);
         Log.Info($"둘러보기 시작: {_pages.Count}장");
         ShowCurrent(animate: false);
     }
@@ -612,10 +614,20 @@ internal sealed class TourCardWindow : Window
             // 가운데 카드가 이미 자리를 안 가리면 가운데 그대로, 가리면 비켜 놓음
             var card = new Rect(left + ShadowPad, top + ShadowPad, w - ShadowPad * 2, h - ShadowPad * 2);
             if (card.IntersectsWith(r)) top = wanted;
-            top = Math.Clamp(top, work.Top - ShadowPad + 8, work.Bottom - h + ShadowPad - 8);
+            top = FitTop(top, h, work.Top, work.Bottom, ShadowPad);
         }
         Left = Math.Round(left);
         Top = Math.Round(top);
         if (SizeToContent == SizeToContent.Manual) { Width = w; Height = h; }
+    }
+
+    /// <summary>
+    /// 카드 위치를 화면 안으로 (그림자 여백은 넘어도 됨). 카드가 화면보다 크면 범위가 뒤집혀 Math.Clamp 가 예외였음
+    /// (오류 신고 uid 29 — '5.6' cannot be greater than -129) → 그땐 화면 가운데.
+    /// </summary>
+    internal static double FitTop(double top, double h, double workTop, double workBottom, double pad)
+    {
+        double min = workTop - pad + 8, max = workBottom - h + pad - 8;
+        return max < min ? workTop + (workBottom - workTop - h) / 2 : Math.Clamp(top, min, max);
     }
 }

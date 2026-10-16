@@ -1315,11 +1315,11 @@ internal static class Program
         var stepType = asm.GetType("Mongdock.Views.TourStep")!;
         coach.GetMethod("Init", any)!.Invoke(null, new object?[] { services, (Func<Mongdock.Services.CoachAnchor, (Rect, MonitorInfo)?>)(_ => null), null });
         var problems = new List<string>();
-        foreach (var flow in new[] { "tour", "update", "update06", "update061", "update062" }) // update = 0.4.2→0.5.0, update06 = 0.5.0→0.6.0 (장면 카드여야 함)
+        foreach (var flow in new[] { "tour", "update", "update06", "update061", "update062", "catchup" }) // update = 0.4.2→0.5.0, update06 = 0.5.0→0.6.0 (장면 카드여야 함), catchup = 0.2.0→지금 (오래된 버전 — 카드가 화면에 들어가야 함)
         {
             var pages = (flow == "tour"
                 ? (System.Collections.IEnumerable)coach.GetMethod("BuildTourPages", any)!.Invoke(null, null)!
-                : (System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "update062" ? new object[] { new Version(0, 6, 1), new Version(0, 6, 2) } : flow == "update061" ? new object[] { new Version(0, 6, 0), new Version(0, 6, 1) } : flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
+                : (System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "catchup" ? new object[] { new Version(0, 2, 0), Mongdock.Services.WhatsNew.Current } : flow == "update062" ? new object[] { new Version(0, 6, 1), new Version(0, 6, 2) } : flow == "update061" ? new object[] { new Version(0, 6, 0), new Version(0, 6, 1) } : flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
             if (flow is "update06" or "update061" && !pages.Any(x => x.GetType().GetProperty("Pictures")!.GetValue(x) is string))
                 problems.Add($"{flow} 새 기능 안내에 장면 카드가 없음 (예전 말풍선으로 뜸)");
             var steps = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(stepType))!;
@@ -1356,8 +1356,21 @@ internal static class Program
             }
             var card = (FrameworkElement)Activator.CreateInstance(cardType, any, null, new object[] { palette }, null)!;
             var host = new System.Windows.Controls.Border { Child = card }; // 앱처럼 부모 아래 (상속 글꼴)
-            cardType.GetMethod("FixHeight", any)!.Invoke(card, new object[] { steps });
+            // 화면 높이 한도: 1920×1080 125% · 위 상단바(작업 영역 838 DIP, 오류 신고 uid 29 때 PC) - 위아래 8
+            const double maxCard = 838 - 16;
+            cardType.GetMethod("FixHeight", any)!.Invoke(card, new object[] { steps, maxCard });
             double fixedHeight = card.Height;
+            if (fixedHeight > maxCard + 0.5)
+            {
+                var nat = cardType.GetMethod("NaturalHeight", any)!;
+                var tall = new List<string>();
+                for (int i = 0; i < steps.Count; i++)
+                {
+                    cardType.GetMethod("Show", any)!.Invoke(card, new object[] { steps[i]!, i, steps.Count });
+                    tall.Add($"{i + 1}:{(double)nat.Invoke(card, null)!:0}");
+                }
+                problems.Add($"{flow}: 카드가 화면보다 큼 ({fixedHeight:0} > {maxCard:0}) — 장별 {string.Join(" ", tall)}");
+            }
             for (int i = 0; i < steps.Count; i++)
             {
                 cardType.GetMethod("Show", any)!.Invoke(card, new object[] { steps[i]!, i, steps.Count });
@@ -1649,6 +1662,14 @@ internal static class Program
         var newRuleRun = Simulate(true);
         Check($"예전 규칙(늘 보냄): 끝없이 돎 {oldRule.endless} (자리 알림 {oldRule.setPos}번 — 1000단계에서 끊음)", oldRule.endless);
         Check($"새 규칙: 멈춤 (자리 알림 {newRuleRun.setPos}번, 작업 표시줄 다시 띄움 {newRuleRun.reshow}번 — 상단바마다 한 번)", !newRuleRun.endless && newRuleRun.setPos == 3);
+        // 둘러보기 카드 위치 (오류 신고 uid 29): 카드가 화면보다 크면 범위가 뒤집혀 예외 → 이제 가운데
+        var tcw = asm.GetType("Mongdock.Views.TourCardWindow")!;
+        double Fit(double top, double h, double wt, double wb) => (double)tcw.GetMethod("FitTop", Any)!.Invoke(null, new object[] { top, h, wt, wb, 28.0 })!;
+        double crash = double.NaN;
+        try { crash = Fit(300, 1013, 25.6, 864); } catch (Exception ex) { Check($"카드가 화면보다 클 때 예외 없음 ({ex.InnerException?.Message})", false); }
+        if (!double.IsNaN(crash)) Check($"카드가 화면보다 클 때(신고 값 h 1013, 작업 영역 25.6~864) → 가운데 {crash:0.#}", Math.Abs(crash - (25.6 + (864 - 25.6 - 1013) / 2)) < 0.01);
+        Check("들어가면 그대로", Fit(200, 600, 25.6, 864) == 200);
+        Check("아래로 넘치면 끌어올림", Math.Abs(Fit(500, 600, 25.6, 864) - (864 - 600 + 28 - 8)) < 0.01);
         Console.WriteLine(bad == 0 ? "AppBar 점검: 모두 통과" : $"AppBar 점검: 실패 {bad}개");
         return bad == 0 ? 0 : 1;
     }
@@ -1942,8 +1963,8 @@ internal static class Program
             coach.GetMethod("Init", any)!.Invoke(null, new object?[] { services, (Func<Mongdock.Services.CoachAnchor, (Rect, MonitorInfo)?>)(_ => null), null });
             List<object> Pages(string flow) => flow == "tour"
                 ? ((System.Collections.IEnumerable)coach.GetMethod("BuildTourPages", any)!.Invoke(null, null)!).Cast<object>().ToList()
-                : ((System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "update062" ? new object[] { new Version(0, 6, 1), new Version(0, 6, 2) } : flow == "update061" ? new object[] { new Version(0, 6, 0), new Version(0, 6, 1) } : flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
-            foreach (var flow in new[] { "tour", "update", "update06", "update061", "update062" })
+                : ((System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "catchup" ? new object[] { new Version(0, 2, 0), Mongdock.Services.WhatsNew.Current } : flow == "update062" ? new object[] { new Version(0, 6, 1), new Version(0, 6, 2) } : flow == "update061" ? new object[] { new Version(0, 6, 0), new Version(0, 6, 1) } : flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
+            foreach (var flow in new[] { "tour", "update", "update06", "update061", "update062", "catchup" })
             {
                 var pages = Pages(flow);
                 var rows = new List<BitmapSource>();
@@ -1973,7 +1994,7 @@ internal static class Program
                 }
                 // 시트
                 var sheet = new System.Windows.Controls.StackPanel { Background = Brushes.White };
-                sheet.Children.Add(new System.Windows.Controls.TextBlock { Text = (flow == "tour" ? "첫 설치 둘러보기" : flow == "update06" ? "0.5.x → 0.6.0 새 기능" : flow == "update061" ? "0.6.0 → 0.6.1 새 기능" : flow == "update062" ? "0.6.1 → 0.6.2 새 기능" : "0.4.x → 0.5.0 새 기능") + $" · {_lang} · {theme}", FontSize = 22, FontWeight = FontWeights.Bold, Margin = new Thickness(16, 12, 0, 8) });
+                sheet.Children.Add(new System.Windows.Controls.TextBlock { Text = (flow == "tour" ? "첫 설치 둘러보기" : flow == "update06" ? "0.5.x → 0.6.0 새 기능" : flow == "update061" ? "0.6.0 → 0.6.1 새 기능" : flow == "update062" ? "0.6.1 → 0.6.2 새 기능" : flow == "catchup" ? "0.2.0 → 지금 (오래된 버전)" : "0.4.x → 0.5.0 새 기능") + $" · {_lang} · {theme}", FontSize = 22, FontWeight = FontWeights.Bold, Margin = new Thickness(16, 12, 0, 8) });
                 foreach (var r in rows) sheet.Children.Add(new System.Windows.Controls.Image { Source = r, Width = r.PixelWidth, Height = r.PixelHeight, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 10) });
                 Save(Snap(sheet, 0.6), $"sheet-{flow}-{_lang}-{theme}.png");
                 Console.WriteLine($"  저장  sheet-{flow}-{_lang}-{theme}.png ({pages.Count}장)");
