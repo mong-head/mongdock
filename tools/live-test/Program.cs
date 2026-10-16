@@ -422,6 +422,7 @@ internal static class Program
             var card = (Window)st.GetField("_card", Any)!.GetValue(session)!;
             var hole = (Rect?)st.GetField("_hole", Any)!.GetValue(session);
             double pad = (double)card.GetType().GetProperty("ShadowPad")!.GetValue(card)!;
+            CardPad = pad;
             var cardRect = new Rect(card.Left + pad, card.Top + pad, card.ActualWidth - pad * 2, card.ActualHeight - pad * 2);
             var tourCard = card.GetType().GetProperty("Card")!.GetValue(card)!;
             var frames = (System.Collections.ICollection)tourCard.GetType().GetField("_frames", Any)!.GetValue(tourCard)!;
@@ -526,6 +527,13 @@ internal static class Program
         Rect? Hole() => (Rect?)st.GetField("_hole", Any)!.GetValue(session);
         FlickerDir = outDir;
         Check($"깜빡임 측정: 독 단계 그림 {((System.Collections.ICollection)Frames()).Count}장", ((System.Collections.ICollection)Frames()).Count >= 2);
+        // 카드 창 방식 (#9): 일반 창(MONGDOCK_TOUR_CARD=plain)이면 그림자 여백 0
+        CardPad = (double)card.GetType().GetProperty("ShadowPad")!.GetValue(card)!;
+        Console.WriteLine($"  카드 창: {(CardPad == 0 ? "일반 창 (plain)" : "투명 창 (layered)")}, 그림자 여백 {CardPad}");
+        {
+            var shot = new Rect(card.Left - 24, card.Top - 24, card.ActualWidth + 48, card.ActualHeight + 48);
+            SaveStrip(Path.Combine(outDir, $"tourcard-{(CardPad == 0 ? "plain" : "layered")}.png"), new List<(long, byte[])> { (0, Grab(shot)) }, (int)shot.Width, (int)shot.Height);
+        }
 
         // A) 가만히 25초 (자동 장 넘김 1.4초) — 카드 창이 한 프레임 비는지
         var r = CardBlank(card, 25000, "가만히 25초");
@@ -580,6 +588,7 @@ internal static class Program
     /// 그림 가운데(60px 상자)는 교차 흐림이라 전·후 사이 값은 정상, 범위에서 3 넘게 벗어나면 "튐".
     /// </summary>
     private static string FlickerDir = Path.GetTempPath();
+    private static double CardPad = 28;
     private static bool FlickerDump;
 
     private static string Flicker(Window card, string label, Action act)
@@ -593,9 +602,9 @@ internal static class Program
         {
             Box(new Point(-160, card.ActualHeight / 2), 40),
             Box(new Point(card.ActualWidth + 160, card.ActualHeight / 2), 40),
-            Box(new Point(card.ActualWidth / 2, 28 + 90), 60), // 그림 영역 위·가운데·아래 (그림자 여백 28)
-            Box(new Point(card.ActualWidth / 2, 28 + 175), 60),
-            Box(new Point(card.ActualWidth * 0.4, 28 + 290), 60),
+            Box(new Point(card.ActualWidth / 2, CardPad + 90), 60), // 그림 영역 위·가운데·아래 (그림자 여백 CardPad)
+            Box(new Point(card.ActualWidth / 2, CardPad + 175), 60),
+            Box(new Point(card.ActualWidth * 0.4, CardPad + 290), 60),
         };
         var frames = new List<(long T, double[] V)>();
         string? error = null;
@@ -636,12 +645,20 @@ internal static class Program
         return $"깜빡임 {label}: 프레임 {during.Count}개, 어두운 곳 벗어남 {dim:0.0} (전후 차 {dimShift:0.0}), 그림 벗어남 {pic:0.0} (전후 차 {picShift:0.0}){(bad ? " — 튐" : "")}";
     }
 
-    /// <summary>카드 창이 한 프레임 비는(투명하게 그려지는) 횟수: 카드 아래쪽 글자 영역 빈 곳(흰 바탕)이 중앙값에서 15 넘게 벗어난 프레임.</summary>
+    /// <summary>
+    /// 카드 창이 한 프레임 비는(투명하게 그려지는) 횟수: 카드 안 빈 여백 세 곳(오른쪽 가장자리 안쪽, 아래 가장자리 안쪽, 왼쪽 아래)이
+    /// 같은 프레임에 모두 중앙값에서 15 넘게 벗어나면 빈 프레임. (예전엔 한 곳만 봤는데 장마다 바뀌는 글자에 걸려 장 넘김마다 튐으로 잡힘 — #9)
+    /// </summary>
     private static string CardBlank(Window card, int ms, string label, Action? during = null)
     {
-        var px = card.PointToScreen(new Point(card.ActualWidth - 28 - 60, card.ActualHeight - 28 - 70)); // 카드 오른쪽 아래 [다음] 위 빈 곳
-        var boxes = new[] { ((int)px.X - 10, (int)px.Y - 10, 20, 20) };
-        var frames = new List<(long T, double V)>();
+        if (PresentationSource.FromVisual(card) is null) return $"카드 빔 {label}: 카드 창이 닫혀 다시 만들어짐 — 측정 못 함 튐?";
+        // 창이 아니라 카드 요소 기준 (창 크기·그림자 여백과 상관없이 카드 안 여백)
+        var inner = (FrameworkElement)card.GetType().GetProperty("Card")!.GetValue(card)!;
+        (int, int, int, int) Box(double x, double y) { var px = inner.PointToScreen(new Point(x, y)); return ((int)px.X - 3, (int)px.Y - 3, 6, 6); }
+        double w = inner.ActualWidth, h = inner.ActualHeight;
+        var boxes = new[] { Box(w - 8, h / 2 + 40), Box(w / 2 + 40, h - 7), Box(48, h - 7) };
+        Console.WriteLine($"    카드 요소 {w:0}x{h:0}, 창 {card.ActualWidth:0}x{card.ActualHeight:0}, 상자 {string.Join(" ", boxes.Select(b => $"({b.Item1},{b.Item2})"))}");
+        var frames = new List<(long T, double[] V)>();
         bool stop = false;
         string? error = null;
         var sw = Stopwatch.StartNew();
@@ -651,7 +668,7 @@ internal static class Program
             {
                 using var dup = new DesktopDup();
                 while (!System.Threading.Volatile.Read(ref stop))
-                    if (dup.Next(50, boxes) is { } v) lock (frames) frames.Add((sw.ElapsedMilliseconds, v[0]));
+                    if (dup.Next(50, boxes) is { } v) lock (frames) frames.Add((sw.ElapsedMilliseconds, v));
             }
             catch (Exception ex) { error = ex.Message; }
         }) { IsBackground = true };
@@ -660,11 +677,12 @@ internal static class Program
         System.Threading.Volatile.Write(ref stop, true);
         th.Join();
         if (error is not null) return $"카드 빔 {label}: 화면 받기 실패 ({error}) 튐?";
-        var sorted = frames.Select(x => x.V).OrderBy(x => x).ToList();
-        double median = sorted.Count > 0 ? sorted[sorted.Count / 2] : 0;
-        var bad = frames.Where(x => Math.Abs(x.V - median) > 15).ToList();
-        File.WriteAllLines(Path.Combine(FlickerDir, $"cardblank-{string.Concat(label.Where(char.IsLetterOrDigit))}.csv"), frames.Select(x => $"{x.T},{x.V:0.0}"));
-        return $"카드 빔 {label}: 프레임 {frames.Count}개, 바탕 {median:0}, 빈 프레임 {bad.Count}개 ({string.Join(" ", bad.Select(x => $"{x.T}ms={x.V:0}"))}){(bad.Count > 0 ? " — 튐" : "")}";
+        double Median(int k) { var o = frames.Select(x => x.V[k]).OrderBy(x => x).ToList(); return o.Count > 0 ? o[o.Count / 2] : 0; }
+        var med = Enumerable.Range(0, boxes.Length).Select(Median).ToArray();
+        var bad = frames.Where(x => Enumerable.Range(0, boxes.Length).All(k => Math.Abs(x.V[k] - med[k]) > 15)).ToList();
+        int some = frames.Count(x => Enumerable.Range(0, boxes.Length).Any(k => Math.Abs(x.V[k] - med[k]) > 15));
+        File.WriteAllLines(Path.Combine(FlickerDir, $"cardblank-{string.Concat(label.Where(char.IsLetterOrDigit))}.csv"), frames.Select(x => $"{x.T},{string.Join(",", x.V.Select(v => v.ToString("0.0")))}"));
+        return $"카드 빔 {label}: 프레임 {frames.Count}개, 바탕 {string.Join("/", med.Select(m => m.ToString("0")))}, 빈 프레임 {bad.Count}개 ({string.Join(" ", bad.Select(x => $"{x.T}ms={string.Join("/", x.V.Select(v => v.ToString("0")))}"))}), 한 곳만 벗어남 {some - bad.Count}개{(bad.Count > 0 ? " — 튐" : "")}";
     }
 
     private sealed class EndBox
