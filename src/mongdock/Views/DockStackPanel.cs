@@ -313,30 +313,46 @@ internal abstract class DockStackPanel : Window
         Log.Info($"앱 모음 판: 창 생성→제자리 {_showClock.ElapsedMilliseconds}ms (첫 프레임 {FirstFrameMs}ms)");
     }
 
-    /// <summary>판 전체를 그림으로 (모니터 배율 그대로).</summary>
+    /// <summary>
+    /// 나타나기 그림 해상도 (모니터 배율 대비, #14): 1 = 원래. 반 해상도(0.5)는 그림 메모리가 1/4 이지만 가운데에서 커지는 움직임은
+    /// 절반 시간에 이미 판 99% 크기라 흐린 글자가 보여(live-test --introzoom, 특히 100% 배율) 쓰지 않음. MONGDOCK_INTRO_SCALE 로 바꿔 비교.
+    /// </summary>
+    internal static double IntroPictureScale { get; set; } =
+        double.TryParse(Environment.GetEnvironmentVariable("MONGDOCK_INTRO_SCALE"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) && v is > 0.1 and <= 1 ? v : 1.0;
+
+    /// <summary>판 전체를 그림으로 (모니터 배율 × IntroPictureScale).</summary>
     private System.Windows.Media.Imaging.BitmapSource? Snapshot()
     {
         try
         {
             if (Content is not FrameworkElement root || root.ActualWidth <= 0) return null;
             var dpi = VisualTreeHelper.GetDpi(root);
+            return SnapshotOf(root, Background, dpi.DpiScaleX * IntroPictureScale, dpi.DpiScaleY * IntroPictureScale);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"판 그림 뜨기 실패: {ex.GetType().Name}");
+            return null;
+        }
+    }
+
+    /// <summary>root 를 배율 sx·sy 의 그림으로 (창 배경 포함). 시험 그림에서도 씀.</summary>
+    internal static System.Windows.Media.Imaging.BitmapSource SnapshotOf(FrameworkElement root, Brush? background, double sx, double sy)
+    {
+        {
+            var dpi = new DpiScale(sx, sy);
             var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(root.ActualWidth * dpi.DpiScaleX), (int)Math.Ceiling(root.ActualHeight * dpi.DpiScaleY),
                 96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, PixelFormats.Pbgra32);
             var dv = new DrawingVisual();
             using (var dc = dv.RenderOpen())
             {
                 var size = new Size(root.ActualWidth, root.ActualHeight);
-                dc.DrawRectangle(Background, null, new Rect(size)); // 창 배경(카드 색)도
+                dc.DrawRectangle(background, null, new Rect(size)); // 창 배경(카드 색)도
                 dc.DrawRectangle(new VisualBrush(root) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top }, null, new Rect(size));
             }
             bmp.Render(dv);
             bmp.Freeze();
             return bmp;
-        }
-        catch (Exception ex)
-        {
-            Log.Warn($"판 그림 뜨기 실패: {ex.GetType().Name}");
-            return null;
         }
     }
 

@@ -94,6 +94,12 @@ internal static class Program
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
             return _fail == 0 ? 0 : 1;
         }
+        if (Array.IndexOf(args, "--introzoom") >= 0)
+        {
+            IntroZoom(services, panelType, settings, work, outDir);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            return _fail == 0 ? 0 : 1;
+        }
         if (Array.IndexOf(args, "--memscenario") >= 0)
         {
             MemScenario(services, panelType, Open, Close, work, outDir);
@@ -501,6 +507,75 @@ internal static class Program
     /// 독 확대·아이콘 수 변화는 가짜 자리(resolve)의 사각형을 바꿔 흉내 (진짜 마우스·독 없음).
     /// 다시 만듦 = TourCard._frames 목록이 새 것으로 바뀜 (ShowCurrent → Card.Show).
     /// </summary>
+    /// <summary>
+    /// --introzoom (#14 반 해상도 나타나기 그림 확인): 진짜 앱 모음 판(라이트·다크)을 띄워 그림을 원래·반 해상도로 뜨고, 가운데에서 커지는
+    /// 움직임의 55%·85% 크기로 그린 장면을 배율 125%(이 PC)·100%(흉내)로 만들어 왼쪽 위(검색 칸·첫 줄 아이콘)를 2배 확대해 나란히.
+    /// 화면 배율은 바꾸지 않음(100% 는 그림 배율로 흉내). intro-{theme}-{dpi}.png.
+    /// </summary>
+    private static void IntroZoom(AppServices services, Type panelType, SettingsService settings, Rect work, string outDir)
+    {
+        var asm = typeof(Mongdock.App).Assembly;
+        var dsp = asm.GetType("Mongdock.Views.DockStackPanel")!;
+        var snap = dsp.GetMethod("SnapshotOf", Any)!;
+        var sample = asm.GetType("Mongdock.Views.PanelIntro")!.GetMethod("Sample")!;
+        var monitor = Monitors.GetPrimary();
+        var icon = new Rect(work.Left + work.Width / 2 - 26, work.Bottom - 62, 52, 52);
+        foreach (var theme in new[] { DockTheme.Light, DockTheme.Dark })
+        {
+            settings.Current.Dock.Theme = theme;
+            Mongdock.ViewModels.UiTheme.Apply(settings.Current);
+            var palette = Mongdock.ViewModels.UiTheme.Palette(settings.Current);
+            var w = (Window)Activator.CreateInstance(panelType, Any, null, new object[] { services, palette, icon, DockEdge.Bottom, monitor }, null)!;
+            w.Show();
+            Pump(1500);
+            var root = (FrameworkElement)w.Content;
+            var final = new Rect(w.Left, w.Top, w.ActualWidth, w.ActualHeight);
+            foreach (double dpi in new[] { 1.25, 1.0 })
+            {
+                var full = (BitmapSource)snap.Invoke(null, new object?[] { root, w.Background, dpi, dpi })!;
+                var half = (BitmapSource)snap.Invoke(null, new object?[] { root, w.Background, dpi * 0.5, dpi * 0.5 })!;
+                const int cropW = 340, cropH = 200, zoom = 2;
+                var dv = new DrawingVisual();
+                using (var dc = dv.RenderOpen())
+                {
+                    dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, 2 * cropW * zoom + 30, 3 * (cropH * zoom + 26)));
+                    var ts = new[] { 0.5, 0.85, 1.0 };
+                    for (int row = 0; row < ts.Length; row++)
+                    {
+                        var (r, _) = ((Rect, double))sample.Invoke(null, new object[] { "center", ts[row], final, icon })!;
+                        for (int col = 0; col < 2; col++)
+                        {
+                            var pic = col == 0 ? full : half;
+                            // 그림 창이 하는 대로: 그림을 r 크기로 늘려 그림 → 장치 픽셀로
+                            int pw = (int)Math.Ceiling(r.Width * dpi), ph = (int)Math.Ceiling(r.Height * dpi);
+                            var frame = new DrawingVisual();
+                            using (var fdc = frame.RenderOpen())
+                                fdc.DrawRectangle(new ImageBrush(pic) { Stretch = Stretch.Fill }, null, new Rect(0, 0, r.Width, r.Height));
+                            var rtb = new RenderTargetBitmap(pw, ph, 96 * dpi, 96 * dpi, PixelFormats.Pbgra32);
+                            rtb.Render(frame);
+                            var crop = new CroppedBitmap(rtb, new Int32Rect(0, 0, Math.Min(cropW, pw), Math.Min(cropH, ph)));
+                            double x = col * (cropW * zoom + 30), y = row * (cropH * zoom + 26);
+                            dc.DrawText(new FormattedText($"{(col == 0 ? "원래 해상도" : "반 해상도")} · 움직임 {ts[row] * 100:0}% (판 {r.Width / final.Width * 100:0}% 크기) · 배율 {dpi * 100:0}%",
+                                System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 13, Brushes.Black, 1.0), new Point(x, y + 2));
+                            var brush = new ImageBrush(crop) { Stretch = Stretch.Fill };
+                            RenderOptions.SetBitmapScalingMode(brush, BitmapScalingMode.NearestNeighbor);
+                            dc.DrawRectangle(brush, null, new Rect(x, y + 20, crop.PixelWidth * zoom, crop.PixelHeight * zoom));
+                        }
+                    }
+                }
+                var outBmp = new RenderTargetBitmap(2 * cropW * zoom + 30, 3 * (cropH * zoom + 26), 96, 96, PixelFormats.Pbgra32);
+                outBmp.Render(dv);
+                var enc = new PngBitmapEncoder();
+                enc.Frames.Add(BitmapFrame.Create(outBmp));
+                string name = $"intro-{theme.ToString().ToLowerInvariant()}-{dpi * 100:0}.png";
+                using (var fs = File.Create(Path.Combine(outDir, name))) enc.Save(fs);
+                Check($"나타나기 그림 비교 {name}: 원래 {full.PixelWidth}×{full.PixelHeight} ({full.PixelWidth * full.PixelHeight * 4 / 1048576.0:0.0}MB) / 반 {half.PixelWidth}×{half.PixelHeight} ({half.PixelWidth * half.PixelHeight * 4 / 1048576.0:0.0}MB)", true);
+            }
+            w.Close();
+            Pump(500);
+        }
+    }
+
     /// <summary>
     /// --memscenario (#14 메모리 C 전후 비교): 늘 같은 순서로 투명 창들을 띄우고 닫으며 단계마다 전용·그래픽 드라이버 MB 를 적음.
     /// 앱 모음 판 열고 닫기 5번 → 검색 창에 글자 하나씩(세 낱말) → 상단바 판 5가지 → 둘러보기 끝까지 → 20초 쉼.
