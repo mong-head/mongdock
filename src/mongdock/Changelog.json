@@ -23,6 +23,11 @@
           "text_en": "Problem report captures also hide other mongdock windows, like Settings."
         },
         {
+          "kind": "improvement",
+          "text": "앱 모음 판이 두 번째부터 더 빨리 열려요.",
+          "text_en": "The All Apps panel opens faster after the first time."
+        },
+        {
           "kind": "fix",
           "text": "독 아이콘 크기가 몇 초마다 커졌다 작아졌다 하던 문제를 고쳤어요.",
           "text_en": "Fixed dock icons resizing back and forth every few seconds."
