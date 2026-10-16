@@ -207,7 +207,8 @@ public partial class App : Application
         CrashReporter.ScheduleTestCrash(Dispatcher); // MONGDOCK_TEST_CRASH 가 있을 때만 (개발 시험)
         // 메모리 진단 로그 (2분 뒤, 30분마다)
         var icons = _services.Icons as IconService;
-        MemoryReport.Start(() => $"{icons?.CacheStats()}, 검색 아이콘 {SpotlightWindow.CachedIconCount}개");
+        LayeredWindowStats.Install(); // 투명 창 크기 바뀜 셈 (#14 — 그래픽 드라이버 메모리 원인 찾기)
+        MemoryReport.Start(() => $"{icons?.CacheStats()}, 검색 아이콘 {SpotlightWindow.CachedIconCount}개 | 그래픽 드라이버 {LayeredWindowStats.DriverMemoryBytes() / (1024 * 1024)}MB | {LayeredWindowStats.Summary()}");
         // --tour: 첫 설치 둘러보기를 지금 설정 그대로 다시 보기 (확인·시연용)
         bool tour = Environment.GetCommandLineArgs().Any(a => string.Equals(a, "--tour", StringComparison.OrdinalIgnoreCase));
         CoachMarks.ScheduleStartup(settings.CreatedThisRun, forceTour: tour);

@@ -94,6 +94,12 @@ internal static class Program
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
             return _fail == 0 ? 0 : 1;
         }
+        if (Array.IndexOf(args, "--memscenario") >= 0)
+        {
+            MemScenario(services, panelType, Open, Close, work, outDir);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            return _fail == 0 ? 0 : 1;
+        }
         if (Array.IndexOf(args, "--tourflicker") >= 0)
         {
             TourFlicker(services, work, outDir);
@@ -495,6 +501,119 @@ internal static class Program
     /// 독 확대·아이콘 수 변화는 가짜 자리(resolve)의 사각형을 바꿔 흉내 (진짜 마우스·독 없음).
     /// 다시 만듦 = TourCard._frames 목록이 새 것으로 바뀜 (ShowCurrent → Card.Show).
     /// </summary>
+    /// <summary>
+    /// --memscenario (#14 메모리 C 전후 비교): 늘 같은 순서로 투명 창들을 띄우고 닫으며 단계마다 전용·그래픽 드라이버 MB 를 적음.
+    /// 앱 모음 판 열고 닫기 5번 → 검색 창에 글자 하나씩(세 낱말) → 상단바 판 5가지 → 둘러보기 끝까지 → 20초 쉼.
+    /// 실제 입력 없음(반사·코드로 조작). 결과는 memscenario.txt (고치기 전·후 같은 PC 에서 비교).
+    /// </summary>
+    private static void MemScenario(AppServices services, Type panelType, Func<Window> open, Action<Window> close, Rect work, string outDir)
+    {
+        var asm = typeof(Mongdock.App).Assembly;
+        Mongdock.Views.LayeredWindowStats.Install();
+        var lines = new List<string>();
+        long startPriv = 0;
+        void M(string what)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            Pump(600);
+            using var p = Process.GetCurrentProcess();
+            long mb = 1024 * 1024, priv = p.PrivateMemorySize64;
+            if (startPriv == 0) startPriv = priv;
+            string line = $"{what,-34} 전용 {priv / mb,4}MB (시작 +{(priv - startPriv) / mb,3}) | 그래픽 드라이버 {Mongdock.Views.LayeredWindowStats.DriverMemoryBytes() / mb,4}MB | 작업 집합 {p.WorkingSet64 / mb,4}MB";
+            lines.Add(line);
+            Console.WriteLine("  " + line);
+        }
+        M("준비 끝 (판 미리 준비 뒤)");
+
+        // 1) 앱 모음 판 열고 닫기 5번
+        for (int i = 0; i < 5; i++)
+        {
+            var w = open();
+            w.Show();
+            Pump(1200);
+            close(w);
+            Pump(800);
+        }
+        M("앱 모음 판 열고 닫기 5번");
+
+        // 2) 검색 창: 글자를 하나씩 (결과 수가 바뀌며 창 높이가 바뀜)
+        var spot = asm.GetType("Mongdock.Views.SpotlightWindow")!;
+        spot.GetMethod("Toggle")!.Invoke(null, new object[] { services });
+        Pump(800);
+        var cur = spot.GetField("_current", Any)!.GetValue(null);
+        if (cur is not null)
+        {
+            var box = (System.Windows.Controls.TextBox)spot.GetField("_box", Any)!.GetValue(cur)!;
+            foreach (var word in new[] { "chrome", "note", "set" })
+            {
+                for (int k = 1; k <= word.Length; k++) { box.Text = word[..k]; Pump(350); }
+                box.Text = "";
+                Pump(300);
+            }
+            spot.GetMethod("CloseIfOpen")!.Invoke(null, null);
+            Pump(800);
+        }
+        else Check("메모리 시나리오: 검색 창이 안 열림", false);
+        M("검색 창 글자 입력 3낱말");
+
+        // 3) 상단바 판 (제어 센터·달력·소리·Wi-Fi·블루투스)
+        var monitor = Monitors.GetPrimary();
+        var palette = Mongdock.ViewModels.UiTheme.Palette(services.Settings.Current);
+        var sp = asm.GetType("Mongdock.Views.StatusPanelWindow")!;
+        var kindT = asm.GetType("Mongdock.Views.StatusPanelKind")!;
+        double barBottom = monitor.WorkArea.Top;
+        foreach (var name in new[] { "ControlCenter", "Calendar", "Volume", "Wifi", "Bluetooth" })
+        {
+            var panel = (Window)Activator.CreateInstance(sp, Any, null, new object[] { services, Enum.Parse(kindT, name), palette, 0 }, null)!;
+            var anchor = new Rect(monitor.WorkArea.Right - 200, monitor.WorkArea.Top - 28, 28, 24);
+            sp.GetMethod("ShowBelow")!.Invoke(panel, new object[] { anchor, barBottom, monitor, true });
+            Pump(1200);
+            sp.GetMethod("CloseImmediately")!.Invoke(panel, null);
+            Pump(400);
+        }
+        M("상단바 판 5가지");
+
+        // 4) 둘러보기 끝까지
+        var coach = asm.GetType("Mongdock.Views.CoachMarks")!;
+        var dockRect = new Rect(work.Left + work.Width / 2 - 220, work.Bottom - 78, 440, 70);
+        var bar = new Rect(monitor.Bounds.Left, monitor.Bounds.Top, monitor.Bounds.Width, 32);
+        Func<CoachAnchor, (Rect Rect, MonitorInfo Monitor)?> resolve = a => a switch
+        {
+            CoachAnchor.Dock => (dockRect, monitor),
+            CoachAnchor.TopBar => (bar, monitor),
+            CoachAnchor.AllApps => (new Rect(dockRect.Left + 70, dockRect.Top + 9, 52, 52), monitor),
+            _ => null,
+        };
+        coach.GetMethod("Init")!.Invoke(null, new object?[] { services, resolve, null });
+        var listType = typeof(List<>).MakeGenericType(asm.GetType("Mongdock.Views.CoachPage")!);
+        var buildDel = Delegate.CreateDelegate(typeof(Func<>).MakeGenericType(listType), coach.GetMethod("BuildTourPages")!);
+        if ((bool)coach.GetMethod("Play")!.Invoke(null, new object?[] { buildDel, null, true })!)
+        {
+            Pump(2500);
+            var session = coach.GetField("_session", Any)!.GetValue(null)!;
+            var st = session.GetType();
+            for (int i = 0; i < 12 && coach.GetField("_session", Any)!.GetValue(null) is not null; i++)
+            {
+                st.GetMethod("Next", Any)!.Invoke(session, null);
+                Pump(1500);
+            }
+            if (coach.GetField("_session", Any)!.GetValue(null) is not null)
+                st.GetMethod("Close", Any)!.Invoke(session, new object[] { false, Enum.Parse(asm.GetType("Mongdock.Views.CoachEndReason")!, "Completed") });
+            Pump(4000); // 둘러보기 그림 정리(3초 뒤)
+        }
+        else Check("메모리 시나리오: 둘러보기 시작 안 됨", false);
+        M("둘러보기 끝까지 (+그림 정리)");
+
+        Pump(20000);
+        M("20초 쉼");
+        lines.Add(Mongdock.Views.LayeredWindowStats.Summary());
+        Console.WriteLine("  " + Mongdock.Views.LayeredWindowStats.Summary());
+        File.WriteAllLines(Path.Combine(outDir, "memscenario.txt"), lines);
+        Check("메모리 시나리오: 끝까지 돎", true);
+    }
+
     private static void TourFlicker(AppServices services, Rect work, string outDir)
     {
         var asm = typeof(Mongdock.App).Assembly;
