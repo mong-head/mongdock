@@ -495,13 +495,14 @@ public sealed class ReportWindow : Window
         if (_attachments.Count >= ReportAttachments.MaxCount) { ShowAttachError(Loc.F($"첨부는 {ReportAttachments.MaxCount}개까지예요.")); return; }
         _attachError.Visibility = Visibility.Collapsed;
         var stop = _clipStop = new CancellationTokenSource();
-        Hide();
+        var hidden = HideForCapture();
         await Task.Delay(250); // 신고 창이 화면에서 사라진 뒤 (캡처 도구는 띄운 순간의 화면을 얼림)
         bool shown = false;
         void ShowBack()
         {
             if (shown || _closed) return;
             shown = true;
+            RestoreAfterCapture(hidden);
             Show();
             Activate();
             if (!stop.IsCancellationRequested) _clipWaiting.Visibility = Visibility.Visible;
@@ -547,7 +548,7 @@ public sealed class ReportWindow : Window
     private async Task CaptureAsync()
     {
         if (_attachments.Count >= ReportAttachments.MaxCount) { ShowAttachError(Loc.F($"첨부는 {ReportAttachments.MaxCount}개까지예요.")); return; }
-        Hide();
+        var hidden = HideForCapture();
         ReportAttachment? shot;
         try
         {
@@ -556,11 +557,47 @@ public sealed class ReportWindow : Window
         }
         finally
         {
+            RestoreAfterCapture(hidden);
             if (!_closed) { Show(); Activate(); }
         }
         if (_closed) return;
         if (shot is null) { ShowAttachError(Loc.T("화면을 찍지 못했어요.")); return; }
         TryAdd(shot);
+    }
+
+    /// <summary>
+    /// 캡처 동안 신고 창과 함께 다른 몽독 창(설정·루틴 편집·변경 내역 등 작업 표시줄에 뜨는 일반 창)도 잠깐 숨김 (#17).
+    /// 독·상단바와 그 딸린 창은 사용자 화면의 일부라 그대로. 숨긴 창 목록을 돌려줌.
+    /// </summary>
+    internal List<Window> HideForCapture()
+    {
+        var hidden = new List<Window>();
+        foreach (Window w in Application.Current.Windows)
+        {
+            if (ReferenceEquals(w, this) || !w.IsVisible || !w.ShowInTaskbar || w.WindowState == WindowState.Minimized) continue;
+            w.Hide();
+            hidden.Add(w);
+        }
+        Hide();
+        if (hidden.Count > 0) Log.Info($"신고 캡처: 몽독 창 {hidden.Count}개도 잠깐 숨김");
+        return hidden;
+    }
+
+    /// <summary>숨겼던 다른 몽독 창을 다시 보임 (활성화하지 않음 — 신고 창이 앞에 옴).</summary>
+    internal static void RestoreAfterCapture(List<Window> hidden)
+    {
+        foreach (var w in hidden)
+        {
+            try
+            {
+                bool activated = w.ShowActivated;
+                w.ShowActivated = false;
+                w.Show();
+                w.ShowActivated = activated;
+            }
+            catch (InvalidOperationException) { } // 그사이 닫힌 창
+        }
+        hidden.Clear();
     }
 
     private void RebuildAttachments()

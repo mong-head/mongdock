@@ -1744,6 +1744,18 @@ internal static class Program
         err.Visibility = Visibility.Collapsed;
         bool exeHandled = Paste(exeDrop);
         Check($"허용 안 되는 파일 → 안내 ({err.Text})", exeHandled && list.Count == 0 && err.Visibility == Visibility.Visible && err.Text.Contains("mp4"));
+        // 캡처 때 다른 몽독 창도 숨김 (#17): 작업 표시줄에 뜨는 일반 창만, 독·상단바 같은 창(ShowInTaskbar=false)은 그대로
+        var other = new Window { Left = -20000, Top = -20000, Width = 200, Height = 100, ShowInTaskbar = true, ShowActivated = false, Title = "설정 흉내" };
+        var bar = new Window { Left = -20000, Top = -19000, Width = 200, Height = 30, ShowInTaskbar = false, ShowActivated = false, Title = "상단바 흉내" };
+        other.Show();
+        bar.Show();
+        var hidden = (List<Window>)typeof(ReportWindow).GetMethod("HideForCapture", Any)!.Invoke(w, null)!;
+        Check($"캡처 때 숨김: 신고 창 {!w.IsVisible}, 일반 창 {!other.IsVisible}, 상단바 같은 창은 그대로 {bar.IsVisible}", !w.IsVisible && !other.IsVisible && bar.IsVisible && hidden.Count == 1);
+        typeof(ReportWindow).GetMethod("RestoreAfterCapture", Any)!.Invoke(null, new object[] { hidden });
+        w.Show();
+        Check($"캡처 뒤 되돌림: 일반 창 {other.IsVisible}, 신고 창 {w.IsVisible}", other.IsVisible && w.IsVisible);
+        other.Close();
+        bar.Close();
         w.Close();
         Directory.Delete(tmp, true);
 
