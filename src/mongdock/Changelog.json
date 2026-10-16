@@ -2,6 +2,19 @@
   "_comment": "mongdock 변경 내역 단일 원본. 앱(설정 → 변경 내역, 새로운 기능 코치마크)과 build-release.ps1(GitHub 릴리스 노트)이 함께 읽는다. 최신 버전을 맨 위에. kind = feature | improvement | fix. coach 가 있는 feature 는 업데이트 후 상단바·독 위 말풍선으로 소개(anchor = Center|Dock|Logo|AppName|Desktops|Tray|Search|Clock, condition = topBar|trayIcons|spotlight|banners|dock|appMenus, 없으면 항상). major = 그 버전의 주요 업데이트(버전당 1~4개, 오랜만에 업데이트한 사람·변경 내역 맨 위·릴리스 노트 \"이번 버전 핵심\"에 씀), headline = 그 버전 한 줄 요약. body 의 {hotkey} 는 실제 검색 단축키 문구로 바뀜.",
   "versions": [
     {
+      "version": "0.6.3",
+      "date": "2026-10-17",
+      "headline": "문제 신고 영역 캡처",
+      "headline_en": "Capture part of the screen in reports",
+      "entries": [
+        {
+          "kind": "improvement",
+          "text": "문제 신고에서 화면 일부만 골라 캡처해 붙일 수 있어요. 복사한 그림은 Ctrl+V로 붙여요.",
+          "text_en": "Report a problem: capture just part of the screen, or paste a copied picture with Ctrl+V."
+        }
+      ]
+    },
+    {
       "version": "0.6.2",
       "date": "2026-10-16",
       "headline": "업데이트 후 다시 시작",
