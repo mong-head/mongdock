@@ -322,7 +322,6 @@ internal sealed class SpotlightWindow : Window
             : _services.DesktopWindows.GetPrimaryScreenBounds().Width;
         if (monitorWidthDip > 0)
             Width = Math.Min(CardWidth, Math.Max(280, monitorWidthDip - 24)) + ShadowMargin * 2;
-        FixHeightToMax();
 
         // 열기: 페이드 + 아주 약한 확대(0.97→1, 150ms, ease-out)
         Anim.Appear(_root, 150, fromScale: 0.97, origin: new Point(0.5, 0.3));
@@ -349,30 +348,6 @@ internal sealed class SpotlightWindow : Window
         ForceForeground();
         OnQueryChanged();
         LoadAppsAsync();
-    }
-
-    /// <summary>
-    /// 창 높이를 결과 목록이 가장 길 때 높이로 고정하고 카드는 위에 붙임 (#14): 예전엔 글자를 칠 때마다 창 높이가 결과만큼 바뀌어
-    /// 큰 투명 창 면을 그래픽 드라이버가 크기마다 새로 잡았음(검색 한 번에 수십 MB). 카드 아래는 투명 — 클릭은 뒤 창으로 지나감.
-    /// </summary>
-    private void FixHeightToMax()
-    {
-        double old = _scroll.Height;
-        var oldScroll = _scroll.Visibility;
-        var oldDivider = _divider.Visibility;
-        _scroll.Height = _scroll.MaxHeight;
-        _scroll.Visibility = Visibility.Visible; // 결과가 아직 없어도 목록이 가장 길 때로 잼
-        _divider.Visibility = Visibility.Visible;
-        _root.VerticalAlignment = VerticalAlignment.Top;
-        _root.InvalidateMeasure();
-        _root.Measure(new Size(Width, double.PositiveInfinity));
-        double full = _root.DesiredSize.Height;
-        _scroll.Height = old;
-        _scroll.Visibility = oldScroll;
-        _divider.Visibility = oldDivider;
-        if (full <= 0 || double.IsInfinity(full)) return;
-        SizeToContent = SizeToContent.Manual;
-        Height = Math.Ceiling(full);
     }
 
     private void PlaceOn(RECT bounds, double scale)
