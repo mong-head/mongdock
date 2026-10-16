@@ -82,11 +82,12 @@ public partial class DockWindow
         }
         else anchor = fallback!.Value;
         long beforeCtor = clock.ElapsedMilliseconds;
-        var panel = new AllAppsPanel(_services, UiTheme.Palette(_services.Settings.Current), anchor, _layout.Edge, _monitor);
-        Log.Info($"앱 모음 판 만들기 {clock.ElapsedMilliseconds - beforeCtor}ms");
+        // 숨겨 둔 판이 있으면 다시 씀 (#14 — 그래픽 메모리), 아니면 새로 만듦. 다시 쓴 판은 이미 보이는 중
+        var panel = AllAppsPanel.Acquire(_services, UiTheme.Palette(_services.Settings.Current), anchor, _layout.Edge, _monitor, out bool reused);
+        Log.Info($"앱 모음 판 {(reused ? "다시 씀" : "만들기")} {clock.ElapsedMilliseconds - beforeCtor}ms");
         panel.Launched += app => AppUsage.Record(AllAppsCatalog.Identity(app), _services.Settings.Current.AllApps);
         panel.PinToDockRequested += PinAppToDock;
-        panel.Closed += (_, _) =>
+        panel.Dismissed += () =>
         {
             _allAppsClosedAt = Environment.TickCount64;
             if (_folderPanel != panel) return;
@@ -100,10 +101,10 @@ public partial class DockWindow
         Interlocked.Increment(ref AllAppsCatalog.OpenedSinceSignal);
         int nth = ++_allAppsOpens;
         long requested = 0;
-        panel.ContentRendered += (_, _) => Log.Info($"앱 모음 판 열기 {nth}번째: 클릭→첫 프레임 {sinceClick + clock.ElapsedMilliseconds}ms (클릭 처리까지 {sinceClick}ms) (목록 기다림 {waited}ms, 보이기 요청→첫 프레임 {clock.ElapsedMilliseconds - requested}ms, 창 생성→첫 프레임 {panel.FirstFrameMs}ms, 앱 {AllAppsCatalog.Cached?.Count ?? 0}개)");
-        panel.Closed += (_, _) => { if (!_closed && AllAppsCatalog.IsStale) AllAppsPanel.Warm(_services); }; // 앱 설치·삭제 반영 (다음 열기)
+        panel.FirstFrame += () => Log.Info($"앱 모음 판 열기 {nth}번째{(reused ? " (다시 씀)" : "")}: 클릭→첫 프레임 {sinceClick + clock.ElapsedMilliseconds}ms (클릭 처리까지 {sinceClick}ms) (목록 기다림 {waited}ms, 보이기 요청→첫 프레임 {clock.ElapsedMilliseconds - requested}ms, 창 생성→첫 프레임 {panel.FirstFrameMs}ms, 앱 {AllAppsCatalog.Cached?.Count ?? 0}개)");
+        panel.Dismissed += () => { if (!_closed && AllAppsCatalog.IsStale) AllAppsPanel.Warm(_services); }; // 앱 설치·삭제 반영 (다음 열기)
         requested = clock.ElapsedMilliseconds;
-        panel.Show();
+        if (!reused) panel.Show();
     }
 
     /// <summary>판의 "독에 고정": 시작 메뉴 바로 가기가 있으면 그것으로(창과 짝이 맞게), 없으면 AppsFolder 항목으로. 이미 있으면 그대로.</summary>

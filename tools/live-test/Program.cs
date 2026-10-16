@@ -527,16 +527,50 @@ internal static class Program
         }
         M("준비 끝 (판 미리 준비 뒤)");
 
-        // 1) 앱 모음 판 열고 닫기 5번
-        for (int i = 0; i < 5; i++)
+        // 1) 앱 모음 판 열고 닫기 5번 (--panelreuse: 한 판을 숨겼다 다시 보이기 5번 — 다시 쓰기의 효과 미리 보기, #14)
+        if (Environment.GetCommandLineArgs().Contains("--panelreuse"))
         {
             var w = open();
             w.Show();
             Pump(1200);
+            for (int i = 0; i < 5; i++)
+            {
+                w.Hide();
+                Pump(800);
+                w.Show();
+                Pump(1200);
+            }
             close(w);
             Pump(800);
+            M("앱 모음 판 한 창 숨김·보임 5번");
         }
-        M("앱 모음 판 열고 닫기 5번");
+        else
+        {
+            // 실제 열기 길(Acquire — 숨겨 둔 판이 있으면 다시 씀, #14). 첫/두 번째 열기 시간도 적음
+            var acquire = panelType.GetMethod("Acquire", Any);
+            for (int i = 0; i < 5; i++)
+            {
+                var clock = Stopwatch.StartNew();
+                Window w;
+                bool reused = false;
+                if (acquire is not null)
+                {
+                    var args = new object?[] { services, Mongdock.ViewModels.UiTheme.Palette(services.Settings.Current), new Rect(work.Left + work.Width / 2 - 26 - 3 * 62, work.Bottom - 62, 52, 52), DockEdge.Bottom, Monitors.GetPrimary(), null };
+                    w = (Window)acquire.Invoke(null, args)!;
+                    reused = (bool)args[5]!;
+                }
+                else w = open();
+                long frame = -1;
+                if (w.GetType().GetEvent("FirstFrame") is { } ev) ev.AddEventHandler(w, new Action(() => frame = clock.ElapsedMilliseconds));
+                if (!reused) w.Show();
+                for (int k = 0; k < 60 && frame < 0; k++) Pump(25);
+                lines.Add($"  앱 모음 판 {i + 1}번째 열기{(reused ? " (다시 씀)" : "")}: 첫 프레임 {frame}ms");
+                Pump(1200);
+                close(w);
+                Pump(800);
+            }
+            M("앱 모음 판 열고 닫기 5번");
+        }
 
         // 2) 검색 창: 글자를 하나씩 (결과 수가 바뀌며 창 높이가 바뀜)
         var spot = asm.GetType("Mongdock.Views.SpotlightWindow")!;

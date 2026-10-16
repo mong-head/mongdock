@@ -140,6 +140,7 @@ internal sealed partial class AllAppsPanel : DockStackPanel
         {
             RoutineService.Changed -= OnRoutines;
             if (Current == this) Current = null;
+            if (_spare == this) _spare = null;
             CancelDragOnClose(); // 끄는 중에 닫히면(DPI 바뀜 등) 끄는 아이콘을 남기지 않음
             _body.Content = null; // 닫힌 판의 시각 트리를 바로 놓아줌
             ScheduleTrim();
