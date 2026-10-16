@@ -549,6 +549,13 @@ internal static class Program
             foreach (var word in new[] { "chrome", "note", "set" })
             {
                 for (int k = 1; k <= word.Length; k++) { box.Text = word[..k]; Pump(350); }
+                if (word == "chrome" && cur is Window sw)
+                {
+                    // 검색 창 모양 확인 (#14 높이 고정): 창 높이·결과가 잘리지 않는지 그림으로
+                    var r = new Rect(sw.Left, sw.Top, sw.ActualWidth, sw.ActualHeight);
+                    lines.Add($"  검색 창 {sw.ActualWidth:0}×{sw.ActualHeight:0} DIP, 크기 고정 {sw.SizeToContent == SizeToContent.Manual}");
+                    SaveStrip(Path.Combine(outDir, "search-chrome.png"), new List<(long, byte[])> { (0, Grab(r)) }, (int)r.Width, (int)r.Height);
+                }
                 box.Text = "";
                 Pump(300);
             }
@@ -570,6 +577,12 @@ internal static class Program
             var anchor = new Rect(monitor.WorkArea.Right - 200, monitor.WorkArea.Top - 28, 28, 24);
             sp.GetMethod("ShowBelow")!.Invoke(panel, new object[] { anchor, barBottom, monitor, true });
             Pump(1200);
+            if (name == "ControlCenter")
+            {
+                var r = new Rect(panel.Left, panel.Top, panel.ActualWidth, panel.ActualHeight);
+                lines.Add($"  제어 센터 창 {panel.ActualWidth:0}×{panel.ActualHeight:0} DIP");
+                SaveStrip(Path.Combine(outDir, "controlcenter.png"), new List<(long, byte[])> { (0, Grab(r)) }, (int)r.Width, (int)r.Height);
+            }
             sp.GetMethod("CloseImmediately")!.Invoke(panel, null);
             Pump(400);
         }

@@ -64,6 +64,11 @@ internal static class PanelIntro
     private static int _play; // 지금 움직이는 차례 (먼저 시작한 것은 멈춤)
 
     private static AppServices? _services;
+    /// <summary>
+    /// 그림 창이 가졌던 가장 큰 크기 (#14): 미리 그리기·움직이기 모두 이 크기 하나로 — 열 때마다 자리 크기로 바꿨다 되돌리면
+    /// 큰 투명 창 면을 그래픽 드라이버가 크기마다 새로 잡음. 남는 곳은 투명.
+    /// </summary>
+    private static double _maxW, _maxH;
     private static bool _warmLogged;
 
     private static Window Ghost(AppServices services)
@@ -117,6 +122,10 @@ internal static class PanelIntro
             g.Height = AllAppsPanel.PanelHeight(work) + 56;
             // 아이콘에서 방식은 그림 창이 독 아이콘까지 덮어 더 큼 (판 + 아래 독까지) — 그 크기로 미리 그려 둬야 첫 열기에 큰 표면을 새로 만들지 않음 (QA: 첫 프레임 389ms)
             if (Mode(services.Settings.Current) == Icon) { g.Width = Math.Max(g.Width, Math.Min(work.Width, 1400)); g.Height = work.Height + 56; }
+            _maxW = Math.Max(_maxW, g.Width);
+            _maxH = Math.Max(_maxH, g.Height);
+            g.Width = _maxW;
+            g.Height = _maxH;
             _canvas!.Width = g.Width;
             _canvas.Height = g.Height;
             _shape!.Width = g.Width - 56;
@@ -182,10 +191,12 @@ internal static class PanelIntro
         area.Inflate(28, 28); // 그림자 자리
         ghost.Left = area.Left;
         ghost.Top = area.Top;
-        ghost.Width = area.Width;
-        ghost.Height = area.Height;
-        _canvas!.Width = area.Width;
-        _canvas.Height = area.Height;
+        _maxW = Math.Max(_maxW, area.Width);
+        _maxH = Math.Max(_maxH, area.Height);
+        ghost.Width = _maxW; // 크기는 늘 가장 큰 것 하나 (#14) — 그림은 area 기준 자리에, 남는 오른쪽·아래는 투명
+        ghost.Height = _maxH;
+        _canvas!.Width = _maxW;
+        _canvas.Height = _maxH;
         shape.Fill = new ImageBrush(picture) { Stretch = Stretch.Fill };
         var content = _content!;
         content.Fill = contentPicture is not null ? new ImageBrush(contentPicture) { Stretch = Stretch.Fill } : null;

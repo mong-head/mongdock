@@ -118,7 +118,19 @@ internal sealed partial class StatusPanelWindow : Window
             Effect = new DropShadowEffect { BlurRadius = 18, ShadowDepth = 4, Direction = 270, Opacity = _p.ShadowOpacity },
         });
         root.Children.Add(_card);
-        Content = root;
+        // 창 높이를 64 DIP 단위로 맞춤 (#14): 판마다·내용이 바뀔 때마다 창 크기가 달라 큰 투명 창 면을 그래픽 드라이버가 크기마다
+        // 새로 잡았음(판 5가지 열기에 크기 10가지). 바깥 투명 칸만 커지고 카드·그림자는 그대로 위에 붙음.
+        root.VerticalAlignment = VerticalAlignment.Top;
+        var outer = new Grid(); // 배경 없음 — 남는 칸은 클릭이 뒤로 지나감
+        outer.Children.Add(root);
+        root.SizeChanged += (_, e) =>
+        {
+            if (!e.HeightChanged) return;
+            double h = root.ActualHeight + root.Margin.Top + root.Margin.Bottom;
+            double bucket = Math.Ceiling(h / SizeStep) * SizeStep;
+            if (Math.Abs(outer.MinHeight - bucket) > 0.5) outer.MinHeight = bucket;
+        };
+        Content = outer;
         _root = root;
 
         _watch = new OutsideClickWatcher(services, InsideAreas, Close)
@@ -262,6 +274,8 @@ internal sealed partial class StatusPanelWindow : Window
     }
 
     private const double ShadowMargin = 18;
+    /// <summary>창 높이 단계 (#14 — 크기가 덜 자주 바뀌게).</summary>
+    private const double SizeStep = 64;
     private readonly Grid _root;
     /// <summary>닫기 페이드 중 (Close 를 한 번 미뤘음).</summary>
     private bool _fadingOut;
