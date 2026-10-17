@@ -1870,6 +1870,72 @@ internal static class Program
                 SaveVisual(host, host.DesiredSize, theme, Path.Combine(dir, $"dock-progress-{theme}-{size:0}.png"));
             }
         }
+        // 창 최소화 효과 (#20): 윈도우 최소화 애니메이션 끄기·되돌리기 (가짜 시스템 설정 — 실제 설정은 안 건드림)
+        {
+            var was = typeof(Mongdock.App).Assembly.GetType("Mongdock.Services.WindowAnimationSetting")!;
+            var sysProp = was.GetProperty("SystemForTest", Any)!;
+            bool sysOn = true;
+            sysProp.SetValue(null, ((Func<bool?>)(() => sysOn), (Action<bool>)(v => sysOn = v)));
+            string statePath = (string)was.GetProperty("StatePath", Any)!.GetValue(null)!;
+            if (File.Exists(statePath)) File.Delete(statePath);
+            bool TurnOff() => (bool)was.GetMethod("TurnOff", Any)!.Invoke(null, null)!;
+            void Restore(string why) => was.GetMethod("Restore", Any)!.Invoke(null, new object[] { why });
+            bool ByMong() => (bool)was.GetProperty("TurnedOffByMongdock", Any)!.GetValue(null)!;
+            Check($"켜기 → 윈도우 효과 끔 {TurnOff()}, 기록 {File.Exists(statePath)}, 몽독이 끈 상태 {ByMong()}", !sysOn && File.Exists(statePath) && ByMong());
+            Check("다시 켜기 → 그대로(이미 꺼짐), 기록 유지", !TurnOff() && !sysOn && File.Exists(statePath));
+            // 갑자기 꺼짐 흉내: 기록이 남은 채로 다음 실행 → 효과 끔이면 되돌림
+            Restore("이전 실행 복구");
+            Check($"끄기·다음 실행 복구 → 윈도우 효과 되돌림 {sysOn}, 기록 지움 {!File.Exists(statePath)}", sysOn && !File.Exists(statePath));
+            // 원래 꺼져 있던 PC: 끄고 되돌려도 꺼진 채
+            sysOn = false;
+            TurnOff();
+            Restore("끔");
+            Check("원래 꺼져 있었으면 되돌려도 꺼진 채", !sysOn && !File.Exists(statePath));
+            sysProp.SetValue(null, null);
+        }
+        // 모양 계산
+        {
+            var mec = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.MinimizeEffectController")!;
+            Rect Scale(Rect f, Rect t, double x) => (Rect)mec.GetMethod("ScaleRect", Any)!.Invoke(null, new object[] { f, t, x })!;
+            Rect Genie(Rect f, Rect t, double v0, double v1, double x) => (Rect)mec.GetMethod("GenieStrip", Any)!.Invoke(null, new object[] { f, t, v0, v1, x })!;
+            var from = new Rect(300, 150, 1200, 760);
+            var icon = new Rect(880, 1000, 64, 64);
+            Check("크기 줄이기 t=0 → 창 자리, t=1 → 아이콘", Scale(from, icon, 0) == from && Scale(from, icon, 1) == icon);
+            var top0 = Genie(from, icon, 0, 1.0 / 24, 0);
+            Check($"지니 t=0 → 띠가 창과 같은 폭·자리 ({top0.Left:0}~{top0.Right:0}, 위 {top0.Top:0})", Math.Abs(top0.Left - from.Left) < 0.5 && Math.Abs(top0.Right - from.Right) < 0.5 && Math.Abs(top0.Top - from.Top) < 0.5);
+            var midTop = Genie(from, icon, 0, 1.0 / 24, 0.4);
+            var midBottom = Genie(from, icon, 23.0 / 24, 1, 0.4);
+            Check($"지니 t=0.4 → 아래 띠가 위 띠보다 좁음 ({midBottom.Width:0} < {midTop.Width:0})", midBottom.Width < midTop.Width);
+            var endTop = Genie(from, icon, 0, 1.0 / 24, 1);
+            var endBottom = Genie(from, icon, 23.0 / 24, 1, 1);
+            Check($"지니 t=1 → 아이콘 안 ({endTop.Left:0}~{endTop.Right:0}, {endTop.Top:0}~{endBottom.Bottom:0})", endTop.Left >= icon.Left - 0.5 && endTop.Right <= icon.Right + 0.5 && endTop.Top >= icon.Top - 0.5 && endBottom.Bottom <= icon.Bottom + 0.5);
+            if (dir is not null)
+            {
+                // 지니 모양 그림: 1920×1080 화면을 1/3 로, 5 시점 겹쳐 그림 (띠 24장)
+                var ts = new[] { 0.0, 0.25, 0.5, 0.75, 0.95 };
+                var colors = new[] { Colors.SteelBlue, Colors.MediumPurple, Colors.Orchid, Colors.Coral, Colors.Gold };
+                var dv = new DrawingVisual();
+                using (var dc = dv.RenderOpen())
+                {
+                    dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, 640, 360));
+                    dc.PushTransform(new ScaleTransform(1 / 3.0, 1 / 3.0));
+                    dc.DrawRectangle(null, new Pen(Brushes.Gray, 3), icon);
+                    for (int k = 0; k < ts.Length; k++)
+                        for (int i = 0; i < 24; i++)
+                        {
+                            var r = Genie(from, icon, i / 24.0, (i + 1) / 24.0, ts[k]);
+                            dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(70, colors[k].R, colors[k].G, colors[k].B)), new Pen(new SolidColorBrush(colors[k]), 1.5), r);
+                        }
+                    dc.Pop();
+                }
+                var rtb = new RenderTargetBitmap(640, 360, 96, 96, PixelFormats.Pbgra32);
+                rtb.Render(dv);
+                var enc = new PngBitmapEncoder();
+                enc.Frames.Add(BitmapFrame.Create(rtb));
+                using (var fs = File.Create(Path.Combine(dir, "minimize-genie-shape.png"))) enc.Save(fs);
+                Console.WriteLine($"  저장  {Path.Combine(dir, "minimize-genie-shape.png")}");
+            }
+        }
         Console.WriteLine(bad == 0 ? "볼륨 점검: 모두 통과" : $"볼륨 점검: 실패 {bad}개");
         return bad == 0 ? 0 : 1;
     }

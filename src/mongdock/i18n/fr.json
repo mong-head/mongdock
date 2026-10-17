@@ -1494,5 +1494,10 @@
  "소리 켜기": "Réactiver le son",
  "음소거": "Couper le son",
  "재생 진행 막대": "Barre de progression de lecture",
- "음악·영상을 재생 중인 앱의 독 아이콘 아래에 재생 위치가 보여요.": "Affiche la position de lecture sous l’icône du dock de l’app qui lit de la musique ou une vidéo."
+ "음악·영상을 재생 중인 앱의 독 아이콘 아래에 재생 위치가 보여요.": "Affiche la position de lecture sous l’icône du dock de l’app qui lit de la musique ou une vidéo.",
+ "창 최소화 효과": "Effet de réduction",
+ "최소화한 창이 독 아이콘으로 들어가요. 켜 두는 동안 윈도우 최소화·최대화 애니메이션은 꺼져요(끄면 되돌려요).": "Les fenêtres réduites rentrent dans leur icône du dock. Tant qu’il est actif, l’animation de réduction/agrandissement de Windows est désactivée (rétablie quand vous le désactivez).",
+ "크기 줄이기": "Échelle",
+ "지니": "Génie",
+ "윈도우 최소화·최대화 효과를 껐어요": "Animation de réduction/agrandissement de Windows désactivée"
 }

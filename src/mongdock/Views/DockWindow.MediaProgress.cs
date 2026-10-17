@@ -1,3 +1,4 @@
+using System.Windows;
 using System.IO;
 using System.Windows.Threading;
 using Mongdock.Models;
@@ -85,4 +86,23 @@ public partial class DockWindow
         if (pin is { Kind: PinKind.Exe } e && Same(e.Target)) return true;
         return windows.Any(w => Same(w.ProcessPath));
     }
+}
+
+public partial class DockWindow
+{
+    /// <summary>
+    /// 창 최소화 효과(#20)의 도착 자리: 이 창이 속한 독 아이콘의 화면 사각형(물리 픽셀). 독에 없으면(또는 숨은 독) null.
+    /// </summary>
+    internal Rect? IconScreenRectFor(IntPtr hwnd)
+    {
+        if (_closed || !IsVisible) return null;
+        var item = _items.FirstOrDefault(i => !i.IsSeparator && i.Windows.Any(w => w.Hwnd == hwnd));
+        if (item is null || !_views.TryGetValue(item.Id, out var view) || view.ActualWidth < 1 || PresentationSource.FromVisual(view) is null) return null;
+        var a = view.PointToScreen(new Point(0, 0));
+        var b = view.PointToScreen(new Point(view.ActualWidth, view.ActualHeight));
+        return new Rect(a, b);
+    }
+
+    /// <summary>독이 놓인 가장자리 (최소화 효과 방향).</summary>
+    internal DockEdge EdgeForEffects => _layout.Edge;
 }

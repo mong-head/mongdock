@@ -1284,8 +1284,8 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
             if (_exitHooksInstalled) return;
             _exitHooksInstalled = true;
         }
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => { RemoveAll("ProcessExit"); RestoreTaskbar("ProcessExit"); };
-        AppDomain.CurrentDomain.UnhandledException += (_, _) => { RemoveAll("UnhandledException"); RestoreTaskbar("UnhandledException"); };
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => { RemoveAll("ProcessExit"); RestoreTaskbar("ProcessExit"); RestoreWindowAnimation("ProcessExit"); };
+        AppDomain.CurrentDomain.UnhandledException += (_, _) => { RemoveAll("UnhandledException"); RestoreTaskbar("UnhandledException"); RestoreWindowAnimation("UnhandledException"); };
     }
 
     /// <summary>등록된 모든 AppBar 를 해제 (어느 스레드에서나 호출 가능).</summary>
@@ -1507,6 +1507,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     /// </summary>
     public static void RestoreTaskbarFromRecord()
     {
+        RestoreWindowAnimation("--restore-taskbar"); // 제거 때 창 최소화 효과(#20)가 꺼 둔 윈도우 애니메이션도
         if (!TaskbarAutoHide.HasRecord)
         {
             Log.Info("--restore-taskbar: 작업 표시줄 상태 기록 없음");
@@ -1545,6 +1546,13 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         return list;
     }
 
+    /// <summary>몽독 창 최소화 효과(#20)가 꺼 둔 윈도우 최소화 애니메이션을 되돌림 (어느 스레드에서나).</summary>
+    private static void RestoreWindowAnimation(string reason)
+    {
+        try { WindowAnimationSetting.Restore(reason); }
+        catch (Exception e) { Log.Error("윈도우 최소화 애니메이션 되돌리기 실패", e); }
+    }
+
     /// <summary>숨겨 둔 상태면 복원 (어느 스레드에서나).</summary>
     private static void RestoreTaskbar(string reason)
     {
@@ -1561,6 +1569,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         if (_disposed) return;
         _disposed = true;
         RestoreTaskbar("Dispose");
+        RestoreWindowAnimation("Dispose");
         UnhookTaskbarShow();
         _mouseHook?.Dispose();
         _mouseHook = null;

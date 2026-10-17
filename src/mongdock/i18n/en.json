@@ -1494,5 +1494,10 @@
  "소리 켜기": "Unmute",
  "음소거": "Mute",
  "재생 진행 막대": "Playback progress bar",
- "음악·영상을 재생 중인 앱의 독 아이콘 아래에 재생 위치가 보여요.": "Shows the playback position under the dock icon of the app playing music or video."
+ "음악·영상을 재생 중인 앱의 독 아이콘 아래에 재생 위치가 보여요.": "Shows the playback position under the dock icon of the app playing music or video.",
+ "창 최소화 효과": "Minimize effect",
+ "최소화한 창이 독 아이콘으로 들어가요. 켜 두는 동안 윈도우 최소화·최대화 애니메이션은 꺼져요(끄면 되돌려요).": "Minimized windows go into their dock icon. While on, the Windows minimize/maximize animation is turned off (restored when you turn this off).",
+ "크기 줄이기": "Scale",
+ "지니": "Genie",
+ "윈도우 최소화·최대화 효과를 껐어요": "Turned off the Windows minimize/maximize animation"
 }

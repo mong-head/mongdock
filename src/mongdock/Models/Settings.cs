@@ -26,6 +26,10 @@ public enum MultiWindowClick { Picker, MostRecent }
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum LaunchAnimation { Bounce, Blink }
 
+/// <summary>창 최소화 효과 (#20, 0.8): Off = 윈도우 그대로, Scale = 작아지며 독 아이콘으로, Genie = 깔때기처럼 휘며 빨려 들어감.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum MinimizeEffect { Off, Scale, Genie }
+
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum DockTheme { System, Light, Dark }
 
@@ -140,6 +144,8 @@ public sealed class DockSettings
     public MultiWindowClick MultiWindowClick { get; set; } = MultiWindowClick.Picker;
     /// <summary>독에서 앱을 켤 때(창이 뜰 때까지, 최대 10초) 보여 줄 반응. 알림은 어느 쪽이든 튀지 않는다.</summary>
     public LaunchAnimation LaunchAnimation { get; set; } = LaunchAnimation.Bounce;
+    /// <summary>창을 최소화할 때 독 아이콘으로 들어가는 효과 (#20). 켜 두는 동안 윈도우 최소화·최대화 애니메이션은 몽독이 끔(되돌림 보장).</summary>
+    public MinimizeEffect MinimizeEffect { get; set; } = MinimizeEffect.Off;
     /// <summary>다른 가상 데스크톱의 창도 독에 표시(실행 중 점, 창 선택에 "데스크톱 N").</summary>
     public bool ShowWindowsFromAllDesktops { get; set; } = true;
     public DockEdge Edge { get; set; } = DockEdge.Bottom;

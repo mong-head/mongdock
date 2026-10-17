@@ -160,6 +160,9 @@ internal sealed partial class SettingsWindow : Window
     // ───────────────────────── 변경 반영 ─────────────────────────
 
     /// <summary>설정 변경 → 저장(SettingsChanged 로 독·상단바 즉시 반영). rebuild 면 현재 페이지를 다시 그림(의존 항목 활성/비활성 등).</summary>
+    /// <summary>이 설정 창에서 방금 창 최소화 효과를 켰음 → 결과 줄 [되돌리기] 를 보임 (#20).</summary>
+    private bool _minimizeJustOn;
+
     private void Commit(Action change, bool rebuild = false)
     {
         try { change(); }
@@ -591,6 +594,21 @@ internal sealed partial class SettingsWindow : Window
         more.Add(Row(Loc.T("앱 켤 때"), Loc.T("창이 뜰 때까지 아이콘이 튀거나 실행 점이 깜빡여요."), Segmented(d.LaunchAnimation,
             new[] { (LaunchAnimation.Bounce, Loc.T("통통 튀기")), (LaunchAnimation.Blink, Loc.T("점 깜빡이기")) },
             v => Commit(() => D().LaunchAnimation = v))));
+        // 창 최소화 효과 (#20): 켜는 순간 윈도우 효과를 껐다는 결과 줄 + [되돌리기](= 몽독 효과 끄기 → 윈도우 효과 되돌림)
+        more.Add(Row(Loc.T("창 최소화 효과"), Loc.T("최소화한 창이 독 아이콘으로 들어가요. 켜 두는 동안 윈도우 최소화·최대화 애니메이션은 꺼져요(끄면 되돌려요)."),
+            Segmented(d.MinimizeEffect, new[] { (MinimizeEffect.Off, Loc.T("끔")), (MinimizeEffect.Scale, Loc.T("크기 줄이기")), (MinimizeEffect.Genie, Loc.T("지니")) },
+                v =>
+                {
+                    bool wasOff = D().MinimizeEffect == MinimizeEffect.Off;
+                    _minimizeJustOn = wasOff && v != MinimizeEffect.Off;
+                    Commit(() => D().MinimizeEffect = v, rebuild: true);
+                })));
+        if (_minimizeJustOn && d.MinimizeEffect != MinimizeEffect.Off && WindowAnimationSetting.TurnedOffByMongdock)
+            more.Add(Row(Loc.T("윈도우 최소화·최대화 효과를 껐어요"), null, ActionButton(Loc.T("되돌리기"), () =>
+            {
+                _minimizeJustOn = false;
+                Commit(() => D().MinimizeEffect = MinimizeEffect.Off, rebuild: true);
+            })));
         more.Add(Row(Loc.T("작업 표시줄 고정 앱 가져오기"),
             _taskbarImportResult ?? Loc.T("윈도우 작업 표시줄에 고정한 앱 중 독에 없는 것을 끝에 더해요."),
             ActionButton(Loc.T("가져오기"), () => Commit(() =>

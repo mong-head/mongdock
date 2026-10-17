@@ -21,6 +21,11 @@
           "kind": "feature",
           "text": "음악·영상을 재생 중인 앱의 독 아이콘 아래에 재생 위치가 보여요.",
           "text_en": "The dock icon of the app playing music or video shows the playback position."
+        },
+        {
+          "kind": "feature",
+          "text": "창을 최소화하면 독 아이콘으로 쏙 들어가는 효과(지니·크기 줄이기)를 켤 수 있어요(설정 → 독).",
+          "text_en": "Turn on a minimize effect (Genie or Scale) that sends windows into their dock icon (Settings → Dock)."
         }
       ]
     },

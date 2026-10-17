@@ -1494,5 +1494,10 @@
  "소리 켜기": "Activar sonido",
  "음소거": "Silenciar",
  "재생 진행 막대": "Barra de progreso de reproducción",
- "음악·영상을 재생 중인 앱의 독 아이콘 아래에 재생 위치가 보여요.": "Muestra la posición de reproducción bajo el icono del dock de la app que reproduce música o vídeo."
+ "음악·영상을 재생 중인 앱의 독 아이콘 아래에 재생 위치가 보여요.": "Muestra la posición de reproducción bajo el icono del dock de la app que reproduce música o vídeo.",
+ "창 최소화 효과": "Efecto al minimizar",
+ "최소화한 창이 독 아이콘으로 들어가요. 켜 두는 동안 윈도우 최소화·최대화 애니메이션은 꺼져요(끄면 되돌려요).": "Las ventanas minimizadas entran en su icono del dock. Mientras esté activo, la animación de minimizar/maximizar de Windows se desactiva (se restaura al desactivarlo).",
+ "크기 줄이기": "Escalar",
+ "지니": "Genio",
+ "윈도우 최소화·최대화 효과를 껐어요": "Se desactivó la animación de minimizar/maximizar de Windows"
 }
