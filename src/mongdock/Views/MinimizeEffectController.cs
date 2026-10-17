@@ -43,6 +43,9 @@ internal sealed class MinimizeEffectController : IDisposable
     /// <summary>시험용: 「애니메이션 줄이기·절전」 판단을 바꿔 끼움.</summary>
     internal static Func<bool>? ReducedForTest { get; set; }
 
+    /// <summary>시험용(실제 창 프레임 사진): 값이 있으면 그 시간 비율(0~1)에 멈춰 있음, null 로 돌리면 이어서 끝남.</summary>
+    internal static double? FreezeAtForTest { get; set; }
+
     public MinimizeEffectController(AppServices services, Func<IntPtr, Rect?> iconRect, Func<DockEdge> edge)
     {
         _services = services;
@@ -249,7 +252,7 @@ internal sealed class MinimizeEffectController : IDisposable
             var clock = Stopwatch.StartNew();
             _frame = (_, _) =>
             {
-                double t = Math.Min(1, clock.ElapsedMilliseconds / (double)duration);
+                double t = FreezeAtForTest ?? Math.Min(1, clock.ElapsedMilliseconds / (double)duration);
                 double p = MinimizeMotion.Path(t, restore);
                 bool genie = shape == MinimizeEffect.Genie;
                 for (int i = 0; i < _thumbs.Count; i++)
@@ -466,9 +469,10 @@ internal static class MinimizeMotion
         return B(y1, y2, u);
     }
 
-    /// <summary>길 위치 p 의 불투명도: 끝 30% 안에서만 옅어짐 (아이콘으로·지니는 아이콘에 닿을 때 조금 남김).</summary>
+    /// <summary>길 위치 p 의 불투명도: 끝 30% 안에서만 옅어짐 (아이콘으로·지니는 아이콘에 닿을 때 조금 남김). 흐려짐만(Off)은 처음부터 끝까지 옅어짐.</summary>
     public static double Opacity(MinimizeEffect shape, double p)
     {
+        if (shape == MinimizeEffect.Off) return 1 - p;
         double f = p <= FadeFrom ? 0 : (p - FadeFrom) / (1 - FadeFrom);
         double end = shape is MinimizeEffect.Scale or MinimizeEffect.Genie ? 0.1 : 0;
         return 1 - (1 - end) * f;

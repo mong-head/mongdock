@@ -1950,8 +1950,8 @@ internal static class Program
             Check("차분하게 (독 왼쪽) → 왼쪽으로", settleLeft.R.Left < from.Left && Math.Abs(settleLeft.R.Height - from.Height * 0.82) < 0.5);
             var scaleEnd = Frame(MinimizeEffect.Scale, DockEdge.Bottom, from, icon, 1);
             Check($"아이콘으로 p=1 → 아이콘 자리, 옅게 ({scaleEnd.O:0.00})", Near(scaleEnd.R, icon) && scaleEnd.O < 0.2 && scaleEnd.O > 0);
-            var fade = Frame(MinimizeEffect.Off, DockEdge.Bottom, from, icon, 0.85);
-            Check("흐려짐만 → 자리 그대로 반투명", Near(fade.R, from) && Math.Abs(fade.O - 0.5) < 1e-9);
+            var fade = Frame(MinimizeEffect.Off, DockEdge.Bottom, from, icon, 0.5);
+            Check("흐려짐만 → 자리 그대로, 처음부터 옅어짐 (p=0.5 → 0.5)", Near(fade.R, from) && Math.Abs(fade.O - 0.5) < 1e-9);
             Check("지니는 독이 아래일 때만 (옆이면 아이콘으로), 애니메이션 줄이기·절전 → 흐려짐만",
                 Resolve(MinimizeEffect.Genie, DockEdge.Bottom, false) == MinimizeEffect.Genie && Resolve(MinimizeEffect.Genie, DockEdge.Left, false) == MinimizeEffect.Scale
                 && Resolve(MinimizeEffect.Settle, DockEdge.Left, false) == MinimizeEffect.Settle && Resolve(MinimizeEffect.Settle, DockEdge.Bottom, true) == MinimizeEffect.Off);

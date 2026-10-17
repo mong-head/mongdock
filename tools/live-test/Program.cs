@@ -18,7 +18,7 @@ namespace LiveTest;
 /// 시나리오: 열기·닫기 5번(가운데·아이콘) / 열려 있는 동안 다른 창 활성화 / 연타 10번 / 나타나는 도중 닫기(Esc) / (--idle) 오래 쉰 뒤 열기.
 /// 열 때마다 판 자리를 16ms 간격으로 찍어 "판이 보이는 정도"가 0→1 로 한 번만 오르는지(사라졌다 다시 뜨지 않는지) 보고, 프레임 그림을 OUT 에 남김.
 /// </summary>
-internal static class Program
+internal static partial class Program
 {
     private const BindingFlags Any = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;
     private static readonly List<string> Results = new();
@@ -28,6 +28,7 @@ internal static class Program
     private static int Main(string[] args)
     {
         if (args.Length == 0) { Console.WriteLine("live-test OUT [--idle 초] [--new] | live-test --demo [횟수] [간격초]"); return 2; }
+        if (args[0] == "--testwindow") return TestWindowMain(); // --minimize 의 시험 창 (다른 프로세스)
         if (args[0] == "--demo") return Demo(args.Length > 1 ? int.Parse(args[1]) : 3, args.Length > 2 ? int.Parse(args[2]) : 12);
         string outDir = Path.GetFullPath(args[0]);
         Directory.CreateDirectory(outDir);
@@ -85,6 +86,12 @@ internal static class Program
         {
             panelType.GetProperty("EdgeScrollEnabled", Any)!.SetValue(null, false);
             DragPicture(panelType, Open, Close, outDir);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            return _fail == 0 ? 0 : 1;
+        }
+        if (Array.IndexOf(args, "--minimize") >= 0)
+        {
+            MinimizeRun(services, settings, work, outDir);
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
             return _fail == 0 ? 0 : 1;
         }
