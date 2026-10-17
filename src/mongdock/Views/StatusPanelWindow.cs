@@ -130,13 +130,18 @@ internal sealed partial class StatusPanelWindow : Window
         _mediaTimer.Tick += (_, _) => RefreshAll();
 
         // Esc 로 닫기: 포커스를 받지 않는 창이라 키 이벤트가 오지 않음 → 열려 있는 동안만 Esc 가 새로 눌렸는지 확인 (QA)
+        // 소리 판 세부 화면(#21 0.8.2)이면 Esc·← 는 뒤로 (닫지 않음)
         bool escHeld = true; // 열 때 이미 눌려 있던 Esc 는 무시 (뗐다가 다시 눌러야)
+        bool leftHeld = true;
         var escTimer = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(50) };
         escTimer.Tick += (_, _) =>
         {
             bool down = Native.MenuApi.IsKeyDown(0x1B /* VK_ESCAPE */);
-            if (down && !escHeld && !_closed) { escTimer.Stop(); Close(); }
+            bool left = Native.MenuApi.IsKeyDown(0x25 /* VK_LEFT */);
+            if (down && !escHeld && !_closed && _back?.Invoke() != true) { escTimer.Stop(); Close(); }
+            if (left && !leftHeld && !_closed) _back?.Invoke();
             escHeld = down;
+            leftHeld = left;
         };
         Closed += (_, _) => escTimer.Stop();
         SourceInitialized += (_, _) => _services.DesktopWindows.MakeOverlay(this);
@@ -637,61 +642,6 @@ internal sealed partial class StatusPanelWindow : Window
     }
 
     // ───────────────────────── 사운드 ─────────────────────────
-
-    private UIElement BuildVolume()
-    {
-        var st = _services.Status;
-        var root = new StackPanel();
-        // 머리글 스위치 = 소리 켜기/끄기(음소거). 와이파이·블루투스 패널과 같은 모양 — 노트북에서 자주 쓰는 "소리 끄기"를 한 번에
-        var soundSwitch = Switch(on =>
-        {
-            st.SetMuted(!on);
-            if (on && st.Volume <= 0) st.SetVolume(0.3); // 볼륨 0 인 채로 켜면 들리지 않으니 조금 올림
-            return Task.FromResult(true);
-        }, null);
-        soundSwitch.ToolTip = Loc.T("소리 켜기/끄기");
-        root.Children.Add(HeaderRow(Loc.T("사운드"), soundSwitch));
-        var slider = new PillSlider(_p) { Margin = new Thickness(0, 6, 0, 2) };
-        slider.UserChanged += (_, v) => SetVolume(v);
-        root.Children.Add(slider);
-        root.Children.Add(BuildAppVolumeSection()); // 앱별 볼륨 (#21) — StatusPanelWindow.AppVolume.cs
-        root.Children.Add(Divider());
-
-        var devTitle = Sub(Loc.T("출력 장치"));
-        devTitle.Margin = new Thickness(0, 0, 0, 4);
-        root.Children.Add(devTitle);
-        var devices = new StackPanel();
-        root.Children.Add(devices);
-
-        // 입력(마이크) — StatusPanelWindow.Input.cs. 입력 장치가 없으면 숨김
-        root.Children.Add(BuildInputSection());
-
-        var media = BuildMediaSection();
-        root.Children.Add(media);
-
-        root.Children.Add(Divider());
-        root.Children.Add(LinkRow(Loc.T("사운드 설정…"), () => st.OpenSoundSettings()));
-
-        string signature = "";
-        _refreshers.Add(() =>
-        {
-            if (!slider.IsDragging) slider.Value = st.Muted ? 0 : st.Volume;
-            soundSwitch.IsChecked = !st.Muted;
-            var list = st.OutputDevices ?? Array.Empty<AudioDevice>();
-            string sig = string.Join("|", list.Select(d => $"{d.Id}:{d.IsDefault}:{d.Name}"));
-            if (sig == signature) return;
-            signature = sig;
-            devices.Children.Clear();
-            foreach (var d in list)
-            {
-                var id = d.Id;
-                devices.Children.Add(DeviceRow(DeviceGlyph(d.Kind), d.IsDefault, d.Name, null,
-                    d.IsDefault ? null : () => st.SetDefaultOutput(id)));
-            }
-            if (list.Count == 0) devices.Children.Add(Sub(Loc.T("재생 장치 없음")));
-        });
-        return root;
-    }
 
     private void SetVolume(double v)
     {

@@ -24,6 +24,11 @@
           "kind": "improvement",
           "text": "음악·영상을 재생 중인 앱은 독의 점이 작은 소리 표시로 바뀌어요. 마우스를 올리면 재생 시간이 보여요.",
           "text_en": "Apps playing media show a small sound mark instead of the dot; hover to see the time."
+        },
+        {
+          "kind": "improvement",
+          "text": "상단바 소리 판을 정리했어요. 출력과 입력이 같은 모양(켜기 스위치·막대)이고, 지금 소리 내는 앱 막대가 바로 보여요. 장치 목록과 모든 앱 볼륨은 › 를 눌러 봐요.",
+          "text_en": "The sound panel is tidier: output and input look the same (switch and slider), the apps making sound right now have their sliders right there, and devices and all app volumes are one › away."
         }
       ]
     },

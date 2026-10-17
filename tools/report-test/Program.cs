@@ -1816,16 +1816,65 @@ internal static class Program
                     new ShellActions(), new ImeService(), new StatusService(), new MediaService(), new AppMenuService(settings), new StartupService(),
                     new NotificationService(tracker, launcher), new TrayIconService(), new CalendarFeedService(settings));
                 var palette = Mongdock.ViewModels.UiTheme.Palette(settings.Current);
-                var w = (Window)panelType.GetConstructors(Any)[0].Invoke(new object[] { services, Enum.Parse(kindType, "Volume"), palette, 0 });
-                ((Delegate)panelType.GetField("_applyAppVolumeForTest", Any)!.GetValue(w)!).DynamicInvoke(AppVolumeService.List());
-                var content = (FrameworkElement)w.Content;
-                content.Opacity = 1;
-                content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-                var size = content.DesiredSize;
-                content.Arrange(new Rect(size));
-                content.UpdateLayout();
-                SaveVisual(content, size, theme, Path.Combine(dir, $"panel-{theme}-volume-apps.png"));
-                w.Close();
+                // 소리 판 (0.8.2 정리): 가짜 장치·볼륨으로 첫 화면 / 둘 다 음소거 / 앱별 볼륨 / 출력 장치 / 입력 장치 — 한 장에 나란히
+                IStatusService FakeSound(bool muted) => FakeStatus.Create(v =>
+                {
+                    v["Volume"] = 0.62; v["Muted"] = muted;
+                    v["OutputDevices"] = new List<AudioDevice>
+                    {
+                        new("o1", "DX245 (NVIDIA High Definition Audio)", true, AudioDeviceKind.Display),
+                        new("o2", Mongdock.Loc.T("스피커") + " (Realtek(R) Audio)", false, AudioDeviceKind.Speakers),
+                        new("o3", "WH-1000XM4", false, AudioDeviceKind.Headphones),
+                    };
+                    v["HasInput"] = true; v["InputVolume"] = 0.7; v["InputMuted"] = muted;
+                    v["InputDevices"] = new List<AudioDevice>
+                    {
+                        new("i1", Mongdock.Loc.T("마이크") + " (Realtek(R) Audio)", true, AudioDeviceKind.Microphone),
+                        new("i2", "WH-1000XM4 Hands-Free", false, AudioDeviceKind.Headphones),
+                    };
+                });
+                var shots = new List<(FrameworkElement El, Size Size)>();
+                var opened = new List<Window>();
+                foreach (var (muted, pageName) in new[] { (false, "None"), (true, "None"), (false, "Apps"), (false, "Output"), (false, "Input") })
+                {
+                    var sv = services with { Status = FakeSound(muted) };
+                    var w = (Window)panelType.GetConstructors(Any)[0].Invoke(new object[] { sv, Enum.Parse(kindType, "Volume"), palette, 0 });
+                    panelType.GetMethod("RefreshForScene", Any)!.Invoke(w, null);
+                    ((Delegate)panelType.GetField("_applyAppVolumeForTest", Any)!.GetValue(w)!).DynamicInvoke(AppVolumeService.List());
+                    var content = (FrameworkElement)w.Content;
+                    content.Opacity = 1;
+                    content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                    content.Arrange(new Rect(content.DesiredSize));
+                    content.UpdateLayout();
+                    if (pageName != "None")
+                    {
+                        panelType.GetMethod("OpenSoundPageForTest", Any)!.Invoke(w, new object[] { pageName });
+                        content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                        content.Arrange(new Rect(content.DesiredSize));
+                        content.UpdateLayout();
+                    }
+                    shots.Add((content, content.DesiredSize));
+                    opened.Add(w);
+                }
+                var sheet = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
+                double sheetH = shots.Max(x => x.Size.Height);
+                foreach (var (el, sz) in shots)
+                {
+                    var rtbShot = new RenderTargetBitmap((int)Math.Ceiling(sz.Width), (int)Math.Ceiling(sz.Height), 96, 96, PixelFormats.Pbgra32);
+                    var dvShot = new DrawingVisual();
+                    using (var dc = dvShot.RenderOpen())
+                        dc.DrawRectangle(new VisualBrush(el) { ViewboxUnits = BrushMappingMode.Absolute, Viewbox = new Rect(sz), Stretch = Stretch.None }, null, new Rect(sz));
+                    rtbShot.Render(dvShot);
+                    rtbShot.Freeze();
+                    sheet.Children.Add(new System.Windows.Controls.Image { Source = rtbShot, Width = sz.Width, Height = sz.Height, VerticalAlignment = VerticalAlignment.Top });
+                }
+                sheet.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                sheet.Arrange(new Rect(sheet.DesiredSize));
+                sheet.UpdateLayout();
+                SaveVisual(sheet, new Size(sheet.DesiredSize.Width, sheetH), theme, Path.Combine(dir, $"sound-panel-{_lang}-{theme}.png"));
+                Check($"소리 판 {_lang} {theme}: 첫 화면 높이 {shots[0].Size.Height:0} — 세부 화면도 같은 높이 ({string.Join("/", shots.Skip(2).Select(x => x.Size.Height.ToString("0")))})",
+                    shots.Skip(2).All(x => Math.Abs(x.Size.Height - shots[0].Size.Height) < 1));
+                foreach (var w in opened) w.Close();
                 // 테마마다 표시 창을 새로 (같은 창을 그림으로 뜨면 앞 장면이 남음 — 색 바뀜 자체는 위 정보 줄로 확인)
                 if (osdType.GetField("_instance", Any)!.GetValue(null) is Window old) { old.Close(); osdType.GetField("_instance", Any)!.SetValue(null, null); }
                 foreach (var (vol, muted, tag) in new[] { (0.45, false, "45"), (0.0, true, "mute") })

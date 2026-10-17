@@ -1516,5 +1516,14 @@
  "스토어 앱의 몽독 페이지에서 직접 업데이트할 수도 있어요.": "You can also update from mongdock's page in the Store app.",
  "스토어 열기": "Open Store",
  "자동 업데이트": "Automatic updates",
- "Microsoft Store 가 알아서 업데이트해요. 몽독도 켜고 1분 뒤와 하루 한 번 새 버전을 확인해요.": "Microsoft Store updates mongdock on its own. mongdock also checks for a new version 1 minute after it starts and once a day."
+ "Microsoft Store 가 알아서 업데이트해요. 몽독도 켜고 1분 뒤와 하루 한 번 새 버전을 확인해요.": "Microsoft Store updates mongdock on its own. mongdock also checks for a new version 1 minute after it starts and once a day.",
+ "소리 출력": "Output",
+ "마이크 켜기/끄기": "Turn microphone on/off",
+ "앱별 볼륨": "App volumes",
+ "입력 장치": "Input device",
+ "입력 장치 없음": "No input devices",
+ "앱별 볼륨 {0}개": "App volumes ({0})",
+ "출력 장치: {0}": "Output: {0}",
+ "입력 장치: {0}": "Input: {0}",
+ "음소거됨": "Muted"
 }

@@ -9,6 +9,7 @@ namespace Mongdock.Views;
 /// <summary>
 /// 소리 판의 앱별 볼륨 (#21, 0.8): 지금 출력 장치에 소리 세션이 있는 앱마다 아이콘·이름·볼륨 막대·음소거.
 /// 판이 열려 있는 동안 1초마다(판의 갱신 타이머) 스레드 풀에서 세션을 읽어 바뀐 것만 고침 — 판이 닫혀 있으면 아무 일도 안 함.
+/// 0.8.2: 첫 화면엔 지금 소리 내는 앱 1~2줄, 모든 앱은 「앱별 볼륨 n개 ›」 세부 화면 (StatusPanelWindow.Sound.cs).
 /// </summary>
 internal sealed partial class StatusPanelWindow
 {
@@ -32,55 +33,6 @@ internal sealed partial class StatusPanelWindow
 
     /// <summary>둘러보기 장면: 예시 앱 아이콘 (실제 실행 파일 대신). null 이면 보통처럼.</summary>
     internal static Func<AppVolume, ImageSource?>? SceneIconForApp { get; set; }
-
-    private UIElement BuildAppVolumeSection()
-    {
-        var section = new StackPanel { Visibility = Visibility.Collapsed };
-        var title = Sub(Loc.T("앱 볼륨"));
-        title.Margin = new Thickness(0, 10, 0, 4);
-        section.Children.Add(title);
-        var rows = new StackPanel();
-        section.Children.Add(rows);
-        var byKey = new Dictionary<string, AppVolumeRow>();
-        string signature = "";
-        bool reading = false;
-
-        void Apply(IReadOnlyList<AppVolume> all)
-        {
-            var list = all.Take(AppVolumeService.MaxRows).ToList();
-            section.Visibility = list.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-            string sig = string.Join("|", list.Select(a => a.Key));
-            if (sig != signature)
-            {
-                signature = sig;
-                rows.Children.Clear();
-                byKey.Clear();
-                foreach (var a in list) rows.Children.Add(AppVolumeLine(a, byKey));
-            }
-            foreach (var a in list)
-            {
-                if (!byKey.TryGetValue(a.Key, out var r)) continue;
-                if (!r.Slider.IsDragging) r.Slider.Value = a.Muted ? 0 : a.Volume;
-                SetAppMuted(r, a.Muted);
-            }
-        }
-
-        async void Refresh()
-        {
-            if (reading || _closed) return;
-            reading = true;
-            try
-            {
-                var list = await Task.Run(AppVolumeService.List);
-                if (!_closed) Apply(list);
-            }
-            catch (Exception ex) { Log.Warn($"앱 볼륨 읽기 실패: {ex.GetType().Name}"); }
-            finally { reading = false; }
-        }
-        _refreshers.Add(Refresh);
-        _applyAppVolumeForTest = Apply;
-        return section;
-    }
 
     private UIElement AppVolumeLine(AppVolume a, Dictionary<string, AppVolumeRow> byKey)
     {
