@@ -21,6 +21,7 @@ public partial class App : Application
     private CrashReporter.Pending? _crashPending;
     private TrayController? _tray;
     private HotkeyController? _hotkeys;
+    private MinimizeEffectController? _minimize;
     private IDisposable? _banners;
     private UpdateService? _updates;
     private StoreUpdateService? _storeUpdates;
@@ -188,6 +189,8 @@ public partial class App : Application
         SyncTopBars();
         _tray = new TrayController(_services);
         _hotkeys = new HotkeyController(_services, RunHotkey);
+        // 창 최소화 효과 (#20): 켜 두면 윈도우 최소화 애니메이션을 끄고 몽독 효과, 끄면(또는 이전 실행이 갑자기 꺼졌으면) 되돌림
+        _minimize = new MinimizeEffectController(_services, h => _dock?.IconScreenRectFor(h), () => _dock?.EdgeForEffects ?? Models.DockEdge.Bottom);
         _banners = NotificationBannerWindow.Attach(_services);
         if (_updates is not null) _updateUi = UpdateUi.Attach(_services, _updates);
         else if (_storeUpdates is not null) _updateUi = UpdateUi.Attach(_services, _storeUpdates);
@@ -245,6 +248,9 @@ public partial class App : Application
                     break;
                 case HotkeyController.AllApps:
                     if (_dock is null || !_dock.ToggleAllAppsFromHotkey()) Log.Info("단축키: 앱 모음 판을 열 독이 없음 (독 꺼짐)");
+                    break;
+                case HotkeyController.VolumeUp or HotkeyController.VolumeDown or HotkeyController.VolumeMute:
+                    VolumeOsdWindow.Handle(_services, action); // 볼륨 키 → 몽독 표시 (#21)
                     break;
                 case HotkeyController.ControlCenter or HotkeyController.Notifications:
                     if (!_topBars.TryGetValue("", out var bar) || !bar.TogglePanelFromHotkey(action == HotkeyController.ControlCenter ? StatusPanelKind.ControlCenter : StatusPanelKind.Calendar))
@@ -439,6 +445,7 @@ public partial class App : Application
         _tray?.Dispose();
         // 전역 키보드 훅 해제
         _hotkeys?.Dispose();
+        _minimize?.Dispose();
         // 트레이 가로채기 창을 먼저 없앤다 → 이후 AppBar 해제(SHAppBarMessage)·트레이 아이콘 삭제는 explorer 로 바로 감
         if (_services?.TrayIcons is IDisposable trayIcons)
         {

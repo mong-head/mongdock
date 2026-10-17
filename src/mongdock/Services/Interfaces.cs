@@ -218,6 +218,8 @@ public sealed record BatteryInfo(int Percent, bool PowerConnected, BatteryCharge
 public interface IMediaService
 {
     bool HasSession { get; }
+    /// <summary>재생 중인 앱 (세션의 SourceAppUserModelId — "Spotify.exe", "Chrome", 스토어 앱 AUMID 등). 없으면 null (#22).</summary>
+    string? SourceApp { get; }
     string? Title { get; }
     string? Artist { get; }
     /// <summary>앨범 아트/썸네일. 없으면 null. Frozen.</summary>

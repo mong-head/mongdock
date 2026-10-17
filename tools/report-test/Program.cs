@@ -219,6 +219,8 @@ internal static class Program
         if (Array.IndexOf(args, "--suggest") >= 0) return SuggestTable();
         if (Array.IndexOf(args, "--tourmem") >= 0) return TourMemory(); // 둘러보기 장면 그림 메모리: 다 그린 뒤 / 정리 뒤 (화면 없음)
         if (Array.IndexOf(args, "--appbarcheck") >= 0) return AppBarCheck(); // 0.6.2 모니터 여러 대 작업 표시줄 깜빡임 — 자리 같으면 안 알림·고리 끊김 (실제 AppBar 등록 없음)
+        int volAt = Array.FindIndex(args, a => a == "--volumecheck");
+        if (volAt >= 0) return VolumeCheck(volAt + 1 < args.Length ? args[volAt + 1] : null); // 0.8 앱별 볼륨·볼륨 표시 (#21) — 실제 볼륨은 안 바꿈
         if (Array.IndexOf(args, "--clipcheck") >= 0) return ClipCheck(); // 0.6.3 문제 신고 영역 캡처·붙여넣기 (#13) — 실제 캡처 도구·클립보드는 안 건드림
         if (Array.IndexOf(args, "--profilecheck") >= 0) return ProfileCheck(); // 0.6.1 루틴 브라우저 계정·탐색기 창 (화면·실제 실행 없음)
         if (Array.IndexOf(args, "--hotkeycheck") >= 0) return HotkeyCheck(); // 0.6 단축키 규칙·저장·키 처리 점검 (화면·실제 입력 없음)
@@ -1326,12 +1328,12 @@ internal static class Program
         var stepType = asm.GetType("Mongdock.Views.TourStep")!;
         coach.GetMethod("Init", any)!.Invoke(null, new object?[] { services, (Func<Mongdock.Services.CoachAnchor, (Rect, MonitorInfo)?>)(_ => null), null });
         var problems = new List<string>();
-        foreach (var flow in new[] { "tour", "update", "update06", "update061", "update062", "catchup" }) // update = 0.4.2→0.5.0, update06 = 0.5.0→0.6.0 (장면 카드여야 함), catchup = 0.2.0→지금 (오래된 버전 — 카드가 화면에 들어가야 함)
+        foreach (var flow in new[] { "tour", "update", "update06", "update061", "update062", "update08", "catchup" }) // update = 0.4.2→0.5.0, update06 = 0.5.0→0.6.0 (장면 카드여야 함), catchup = 0.2.0→지금 (오래된 버전 — 카드가 화면에 들어가야 함)
         {
             var pages = (flow == "tour"
                 ? (System.Collections.IEnumerable)coach.GetMethod("BuildTourPages", any)!.Invoke(null, null)!
-                : (System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "catchup" ? new object[] { new Version(0, 2, 0), Mongdock.Services.WhatsNew.Current } : flow == "update062" ? new object[] { new Version(0, 6, 1), new Version(0, 6, 2) } : flow == "update061" ? new object[] { new Version(0, 6, 0), new Version(0, 6, 1) } : flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
-            if (flow is "update06" or "update061" && !pages.Any(x => x.GetType().GetProperty("Pictures")!.GetValue(x) is string))
+                : (System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "catchup" ? new object[] { new Version(0, 2, 0), Mongdock.Services.WhatsNew.Current } : flow == "update08" ? new object[] { new Version(0, 6, 5), new Version(0, 8, 0) } : flow == "update062" ? new object[] { new Version(0, 6, 1), new Version(0, 6, 2) } : flow == "update061" ? new object[] { new Version(0, 6, 0), new Version(0, 6, 1) } : flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
+            if (flow is "update06" or "update061" or "update08" && !pages.Any(x => x.GetType().GetProperty("Pictures")!.GetValue(x) is string))
                 problems.Add($"{flow} 새 기능 안내에 장면 카드가 없음 (예전 말풍선으로 뜸)");
             var steps = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(stepType))!;
             var titles = new List<string>();
@@ -1715,6 +1717,347 @@ internal static class Program
     /// --clipcheck (#13): 클립보드 데이터 → 첨부(PNG·비트맵·글자·큰 그림 줄이기), 신고 창 붙여넣기(파일·그림·글자·개수 제한),
     /// 영역 캡처 흐름(가짜 캡처 도구·가짜 클립보드: 받음·취소·도구 화면 못 찾음·열기 실패·멈춤·시간 제한). 실제 클립보드·캡처 도구는 쓰지 않음.
     /// </summary>
+    /// <summary>
+    /// --volumecheck [DIR] (#21): 볼륨 한 칸 계산, 단축키 표의 볼륨 키(설정 켬/끔), 볼륨 키를 누르고 있을 때 반복(다른 단축키는 한 번),
+    /// 그림 — 소리 판 앱별 볼륨(예시 목록)·볼륨 표시(45%·음소거) 라이트/다크. 실제 볼륨·키보드 훅은 쓰지 않음(가짜 상태·훅 흉내).
+    /// </summary>
+    private static int VolumeCheck(string? dir)
+    {
+        int bad = 0;
+        void Check(string what, bool ok) { Console.WriteLine($"  {(ok ? "통과" : "실패")}  {what}"); if (!ok) bad++; }
+        var asm = typeof(Mongdock.App).Assembly;
+        var osdType = asm.GetType("Mongdock.Views.VolumeOsdWindow")!;
+        double Next(double v, bool up) => (double)osdType.GetMethod("Next", Any)!.Invoke(null, new object[] { v, up })!;
+        Check($"0.50 → 올림 {Next(0.5, true):0.00}", Math.Abs(Next(0.5, true) - 0.52) < 1e-9);
+        Check($"0.51(칸 사이) → 올림 {Next(0.51, true):0.00}", Math.Abs(Next(0.51, true) - 0.52) < 1e-9);
+        Check($"0.01 → 내림 {Next(0.01, false):0.00}", Next(0.01, false) == 0);
+        Check($"0.51 → 내림 {Next(0.51, false):0.00}", Math.Abs(Next(0.51, false) - 0.50) < 1e-9);
+        Check($"1.00 → 올림 그대로 {Next(1, true):0.00}", Next(1, true) == 1);
+        // 단축키 표
+        var hc = asm.GetType("Mongdock.Views.HotkeyController")!;
+        var table = hc.GetMethod("Table", Any)!;
+        var s = new Settings();
+        var t = (Dictionary<HotkeyChord, string>)table.Invoke(null, new object[] { s })!;
+        Check($"설정 켬(기본) → 볼륨 키 3개 ({t.Values.Count(v => v.StartsWith("volume:"))})", t[new HotkeyChord(false, false, false, false, 0xAF)] == "volume:up" && t[new HotkeyChord(false, false, false, false, 0xAE)] == "volume:down" && t[new HotkeyChord(false, false, false, false, 0xAD)] == "volume:mute");
+        s.TopBar.VolumeIndicator = false;
+        t = (Dictionary<HotkeyChord, string>)table.Invoke(null, new object[] { s })!;
+        Check("설정 끔 → 볼륨 키 없음 (윈도우가 처리)", !t.Values.Any(v => v.StartsWith("volume:")));
+        Check("Shift+볼륨 올림은 몽독이 안 받음", !((Dictionary<HotkeyChord, string>)table.Invoke(null, new object[] { new Settings() })!).ContainsKey(new HotkeyChord(false, false, true, false, 0xAF)));
+        var app = new Mongdock.App();
+        Mongdock.Loc.Init(_lang);
+        app.InitializeComponent();
+        // 비용 (#21): 소리 판이 열린 동안 1초마다 하는 앱 목록 읽기 시간 (실제 장치, 읽기만) + 볼륨 표시 창을 처음 띄울 때 메모리
+        {
+            AppVolumeService.List(); // 처음(이름 캐시 채움)
+            var swList = System.Diagnostics.Stopwatch.StartNew();
+            var cpu0 = System.Diagnostics.Process.GetCurrentProcess().TotalProcessorTime;
+            int rows = 0;
+            for (int k = 0; k < 20; k++) rows = AppVolumeService.List().Count;
+            var cpu = System.Diagnostics.Process.GetCurrentProcess().TotalProcessorTime - cpu0;
+            Console.WriteLine($"  정보  앱 목록 읽기: 한 번 {swList.Elapsed.TotalMilliseconds / 20:0.0}ms (CPU {cpu.TotalMilliseconds / 20:0.0}ms), 이 PC 앱 {rows}개 — 판이 열린 동안 1초에 한 번");
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+            long before = System.Diagnostics.Process.GetCurrentProcess().PrivateMemorySize64;
+            var s0 = new SettingsService();
+            var tr = new WindowTracker();
+            var la = new AppLauncher(tr);
+            var sv = new AppServices(s0, tr, la, new IconService(), new DesktopWindowService(), new VirtualDesktopService(),
+                new ShellActions(), new ImeService(), new StatusService(), new MediaService(), new AppMenuService(s0), new StartupService(),
+                new NotificationService(tr, la), new TrayIconService(), new CalendarFeedService(s0));
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+            long mid = System.Diagnostics.Process.GetCurrentProcess().PrivateMemorySize64;
+            osdType.GetMethod("Show", Any, new[] { typeof(AppServices), typeof(double), typeof(bool) })!.Invoke(null, new object[] { sv, 0.5, false });
+            var ow = (Window)osdType.GetField("_instance", Any)!.GetValue(null)!;
+            ow.UpdateLayout();
+            System.Threading.Thread.Sleep(300);
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+            long after = System.Diagnostics.Process.GetCurrentProcess().PrivateMemorySize64;
+            Console.WriteLine($"  정보  볼륨 표시 창 처음 띄우기: 전용 +{(after - mid) / 1048576.0:0.0}MB (창 {ow.Width:0}×{ow.Height:0} DIP 하나를 계속 다시 씀)");
+            ow.Close();
+            osdType.GetField("_instance", Any)!.SetValue(null, null);
+            s0.Dispose();
+            _ = before;
+        }
+        if (dir is not null)
+        {
+            Directory.CreateDirectory(dir);
+            var listProp = typeof(AppVolumeService).GetProperty("ListForTest", Any)!;
+            listProp.SetValue(null, (Func<IReadOnlyList<AppVolume>>)(() => new List<AppVolume>
+            {
+                new("chrome", "Google Chrome", @"C:\Program Files\Google\Chrome\Application\chrome.exe", null, new uint[] { 1 }, 0.8, false, true, false),
+                new("notepad", "Spotify", @"C:\Windows\System32\notepad.exe", null, new uint[] { 2 }, 0.45, false, true, false),
+                new("explorer", "Discord — 아주 긴 앱 이름 예시", @"C:\Windows\explorer.exe", null, new uint[] { 3 }, 0.6, true, false, false),
+                new(AppVolumeService.SystemKey, Mongdock.Loc.T("시스템 소리"), null, null, new uint[] { 0 }, 1.0, false, false, true),
+            }));
+            var kindType = asm.GetType("Mongdock.Views.StatusPanelKind")!;
+            var panelType = asm.GetType("Mongdock.Views.StatusPanelWindow")!;
+            Console.WriteLine($"  정보  앱 {Application.Current is not null}, MacSwitch {Application.Current?.TryFindResource("MacSwitch") is not null}");
+            foreach (var theme in new[] { "light", "dark" })
+            {
+                var settings = new SettingsService();
+                settings.Current.Dock.Theme = theme == "dark" ? DockTheme.Dark : DockTheme.Light;
+                Mongdock.ViewModels.UiTheme.Apply(settings.Current);
+                Mongdock.ViewModels.UiFonts.Apply(settings.Current);
+                var tracker = new WindowTracker();
+                var launcher = new AppLauncher(tracker);
+                var services = new AppServices(settings, tracker, launcher, new IconService(), new DesktopWindowService(), new VirtualDesktopService(),
+                    new ShellActions(), new ImeService(), new StatusService(), new MediaService(), new AppMenuService(settings), new StartupService(),
+                    new NotificationService(tracker, launcher), new TrayIconService(), new CalendarFeedService(settings));
+                var palette = Mongdock.ViewModels.UiTheme.Palette(settings.Current);
+                var w = (Window)panelType.GetConstructors(Any)[0].Invoke(new object[] { services, Enum.Parse(kindType, "Volume"), palette, 0 });
+                ((Delegate)panelType.GetField("_applyAppVolumeForTest", Any)!.GetValue(w)!).DynamicInvoke(AppVolumeService.List());
+                var content = (FrameworkElement)w.Content;
+                content.Opacity = 1;
+                content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                var size = content.DesiredSize;
+                content.Arrange(new Rect(size));
+                content.UpdateLayout();
+                SaveVisual(content, size, theme, Path.Combine(dir, $"panel-{theme}-volume-apps.png"));
+                w.Close();
+                // 테마마다 표시 창을 새로 (같은 창을 그림으로 뜨면 앞 장면이 남음 — 색 바뀜 자체는 위 정보 줄로 확인)
+                if (osdType.GetField("_instance", Any)!.GetValue(null) is Window old) { old.Close(); osdType.GetField("_instance", Any)!.SetValue(null, null); }
+                foreach (var (vol, muted, tag) in new[] { (0.45, false, "45"), (0.0, true, "mute") })
+                {
+                    osdType.GetMethod("Show", Any, new[] { typeof(AppServices), typeof(double), typeof(bool) })!.Invoke(null, new object[] { services, vol, muted });
+                    var osd = (Window)osdType.GetField("_instance", Any)!.GetValue(null)!;
+                    var card = (FrameworkElement)osd.Content;
+                    Console.WriteLine($"  정보  표시 {theme}: 팔레트 밝음 {palette.IsLight}, 카드 {((System.Windows.Controls.Border)card).Background}");
+                    card.BeginAnimation(UIElement.OpacityProperty, null);
+                    card.Opacity = 1;
+                    card.RenderTransform = Transform.Identity;
+                    SaveVisual(card, new Size(osd.Width, osd.Height), theme, Path.Combine(dir, $"volume-osd-{theme}-{tag}.png"));
+                    osdType.GetMethod("HideNow", Any)!.Invoke(null, null);
+                }
+                Check($"그림 {theme}: 소리 판·볼륨 표시 2장", true);
+                settings.Dispose();
+            }
+            listProp.SetValue(null, null);
+        }
+        // 훅 흉내: 볼륨 올림을 누르고 있으면(다운 3번) 3번, 음소거는 1번, 업은 삼킴
+        var keyState = typeof(HotkeyService).GetProperty("KeyStateForTest", Any)!;
+        keyState.SetValue(null, (Func<int, bool>)(_ => false));
+        var hs = new HotkeyService();
+        var sim = typeof(HotkeyService).GetMethod("SimulateForTest", Any)!;
+        bool Sim(int vk, bool down) => (bool)sim.Invoke(hs, new object[] { vk, down })!;
+        var pressed = new List<string>();
+        hs.Pressed += a => pressed.Add(a);
+        hs.Apply((Dictionary<HotkeyChord, string>)table.Invoke(null, new object[] { new Settings() })!);
+        bool sw1 = Sim(0xAF, true), sw2 = Sim(0xAF, true), sw3 = Sim(0xAF, true), up1 = Sim(0xAF, false);
+        bool m1 = Sim(0xAD, true), m2 = Sim(0xAD, true), mu = Sim(0xAD, false);
+        for (int i = 0; i < 5; i++) System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle); // 훅이 올린 Pressed 처리
+        Check($"볼륨 올림 누르고 있기(다운 3번) → {pressed.Count(a => a == "volume:up")}번, 다운·업 삼킴 {sw1 && sw2 && sw3 && up1}", pressed.Count(a => a == "volume:up") == 3 && sw1 && sw2 && sw3 && up1);
+        Check($"음소거 누르고 있기 → {pressed.Count(a => a == "volume:mute")}번 (한 번만), 삼킴 {m1 && m2 && mu}", pressed.Count(a => a == "volume:mute") == 1 && m1 && m2 && mu);
+        Check($"다른 키(A)는 그대로 통과", !Sim(0x41, true));
+        GC.KeepAlive(hs); // Dispose 하면 훅 스레드 정리가 시험 앱 Dispatcher 까지 끝내 그림을 못 그림 — 시험이 끝나면 프로세스째 정리
+        keyState.SetValue(null, null);
+
+        // 재생 진행 막대 (#22): 재생 앱 이름 ↔ 독 항목 짝
+        var dockType = asm.GetType("Mongdock.Views.DockWindow")!;
+        bool Match(string src, PinItem? pin, params AppWindowInfo[] wins) => (bool)dockType.GetMethod("MediaSourceMatches", Any)!.Invoke(null, new object?[] { src, pin, wins })!;
+        AppWindowInfo Win(string path, string? aumid = null) => new(IntPtr.Zero, "t", path, aumid, false);
+        var spotifyPin = new PinItem { Kind = PinKind.Exe, Target = @"C:\Users\a\AppData\Roaming\Spotify\Spotify.exe" };
+        Check("Spotify.exe ↔ Spotify 핀", Match("Spotify.exe", spotifyPin));
+        Check("Chrome ↔ chrome.exe 창", Match("Chrome", null, Win(@"C:\Program Files\Google\Chrome\Application\chrome.exe")));
+        Check("MSEdge ↔ msedge.exe 창", Match("MSEdge", null, Win(@"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe")));
+        Check("스토어 앱 AUMID ↔ 그 앱 핀", Match("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify", new PinItem { Kind = PinKind.Aumid, Target = "SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify" }));
+        Check("다른 앱은 아님 (Spotify ↔ chrome)", !Match("Spotify.exe", null, Win(@"C:\x\chrome.exe")));
+        Check("빈 이름은 아님", !Match("  ", spotifyPin));
+        if (dir is not null)
+        {
+            // 독 아이콘 그림: 재생 진행 40% (라이트·다크 독, 아이콘 52·72)
+            foreach (var (theme, size) in new[] { ("light", 52.0), ("dark", 52.0), ("light", 72.0) })
+            {
+                var ds = new DockSettings { Theme = theme == "dark" ? DockTheme.Dark : DockTheme.Light, IconSize = size };
+                var layout = Mongdock.ViewModels.DockLayout.From(ds, theme == "light");
+                var icon = new IconService().GetIcon(new PinItem { Kind = PinKind.Exe, Target = @"C:\Windows\System32\notepad.exe" }, IconStyle.Mac);
+                var vm = new Mongdock.ViewModels.DockItemViewModel("t", null, false, "Spotify", icon) { IsRunning = true, Progress = 0.4 };
+                var view = (FrameworkElement)Activator.CreateInstance(asm.GetType("Mongdock.Views.DockItemView")!, vm, layout)!;
+                var host = new System.Windows.Controls.Border { Padding = new Thickness(16), Background = new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x2A, 0x2A, 0x30) : Color.FromRgb(0xF0, 0xF0, 0xF5)), Child = view };
+                host.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                host.Arrange(new Rect(host.DesiredSize));
+                host.UpdateLayout();
+                SaveVisual(host, host.DesiredSize, theme, Path.Combine(dir, $"dock-progress-{theme}-{size:0}.png"));
+            }
+        }
+        // 창 최소화 효과 (#20): 윈도우 최소화 애니메이션 끄기·되돌리기 (가짜 시스템 설정 — 실제 설정은 안 건드림)
+        {
+            var was = typeof(Mongdock.App).Assembly.GetType("Mongdock.Services.WindowAnimationSetting")!;
+            var sysProp = was.GetProperty("SystemForTest", Any)!;
+            bool sysOn = true;
+            sysProp.SetValue(null, ((Func<bool?>)(() => sysOn), (Action<bool>)(v => sysOn = v)));
+            string statePath = (string)was.GetProperty("StatePath", Any)!.GetValue(null)!;
+            if (File.Exists(statePath)) File.Delete(statePath);
+            bool TurnOff() => (bool)was.GetMethod("TurnOff", Any)!.Invoke(null, null)!;
+            void Restore(string why) => was.GetMethod("Restore", Any)!.Invoke(null, new object[] { why });
+            bool ByMong() => (bool)was.GetProperty("TurnedOffByMongdock", Any)!.GetValue(null)!;
+            Check($"켜기 → 윈도우 효과 끔 {TurnOff()}, 기록 {File.Exists(statePath)}, 몽독이 끈 상태 {ByMong()}", !sysOn && File.Exists(statePath) && ByMong());
+            Check("다시 켜기 → 그대로(이미 꺼짐), 기록 유지", !TurnOff() && !sysOn && File.Exists(statePath));
+            // 갑자기 꺼짐 흉내: 기록이 남은 채로 다음 실행 → 효과 끔이면 되돌림
+            Restore("이전 실행 복구");
+            Check($"끄기·다음 실행 복구 → 윈도우 효과 되돌림 {sysOn}, 기록 지움 {!File.Exists(statePath)}", sysOn && !File.Exists(statePath));
+            // 원래 꺼져 있던 PC: 끄고 되돌려도 꺼진 채
+            sysOn = false;
+            TurnOff();
+            Restore("끔");
+            Check("원래 꺼져 있었으면 되돌려도 꺼진 채", !sysOn && !File.Exists(statePath));
+            sysProp.SetValue(null, null);
+        }
+        // 모양 계산 (차분하게·아이콘으로·지니 + 흐려짐만, 되살리기는 같은 길 거꾸로)
+        {
+            var mec = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.MinimizeEffectController")!;
+            var mm = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.MinimizeMotion")!;
+            Rect Genie(Rect f, Rect t, double v0, double v1, double x) => (Rect)mec.GetMethod("GenieStrip", Any, new[] { typeof(Rect), typeof(Rect), typeof(double), typeof(double), typeof(double) })!.Invoke(null, new object[] { f, t, v0, v1, x })!;
+            (Rect R, double O) Frame(MinimizeEffect e, DockEdge edge, Rect f, Rect t, double x) => ((Rect, double))mm.GetMethod("Frame", Any)!.Invoke(null, new object[] { e, edge, f, t, x })!;
+            int Dur(MinimizeEffect e, bool restore, MinimizeSpeed sp = MinimizeSpeed.Normal) => (int)mm.GetMethod("DurationMs", Any)!.Invoke(null, new object[] { e, restore, sp })!;
+            double PathAt(double t, bool restore) => (double)mm.GetMethod("Path", Any)!.Invoke(null, new object[] { t, restore })!;
+            double Op(MinimizeEffect e, double x) => (double)mm.GetMethod("Opacity", Any)!.Invoke(null, new object[] { e, x })!;
+            double BlurAt(MinimizeEffect e, double x) => (double)mm.GetMethod("Blur", Any)!.Invoke(null, new object[] { e, x })!;
+            MinimizeEffect Resolve(MinimizeEffect e, DockEdge edge, bool reduced) => (MinimizeEffect)mec.GetMethod("Resolve", Any)!.Invoke(null, new object[] { e, edge, reduced })!;
+            bool Near(Rect a, Rect b) => Math.Abs(a.X - b.X) < 0.5 && Math.Abs(a.Y - b.Y) < 0.5 && Math.Abs(a.Width - b.Width) < 0.5 && Math.Abs(a.Height - b.Height) < 0.5;
+            var from = new Rect(300, 150, 1200, 760);
+            var icon = new Rect(880, 1000, 64, 64);
+
+            Check($"시간(보통): 차분하게 {Dur(MinimizeEffect.Settle, false)} · 아이콘으로 {Dur(MinimizeEffect.Scale, false)} · 지니 {Dur(MinimizeEffect.Genie, false)} ms, 되살리기 0.8배",
+                Dur(MinimizeEffect.Settle, false) == 220 && Dur(MinimizeEffect.Scale, false) == 300 && Dur(MinimizeEffect.Genie, false) == 480
+                && Dur(MinimizeEffect.Settle, true) == 176 && Dur(MinimizeEffect.Genie, true) == 384);
+            Check($"속도: 지니 빠르게 {Dur(MinimizeEffect.Genie, false, MinimizeSpeed.Fast)} · 느리게 {Dur(MinimizeEffect.Genie, false, MinimizeSpeed.Slow)} ms, 흐려짐만은 속도와 상관없이 {Dur(MinimizeEffect.Off, false, MinimizeSpeed.Slow)}",
+                Dur(MinimizeEffect.Genie, false, MinimizeSpeed.Fast) == 336 && Dur(MinimizeEffect.Genie, false, MinimizeSpeed.Slow) == 672 && Dur(MinimizeEffect.Off, false, MinimizeSpeed.Slow) == 120);
+            // 들어갈 때: 천천히 시작(처음 몇 프레임에 다 움직이지 않음)·천천히 멈춤, 한 방향·0~1 안(탄성 없음)
+            bool Mono(bool restore)
+            {
+                double prev = PathAt(0, restore);
+                for (int i = 1; i <= 100; i++)
+                {
+                    double p = PathAt(i / 100.0, restore);
+                    if (p < 0 || p > 1 || (restore ? p > prev + 1e-9 : p < prev - 1e-9)) return false;
+                    prev = p;
+                }
+                return true;
+            }
+            double first = PathAt(0.1, false), mid = PathAt(0.55, false) - PathAt(0.45, false), last = 1 - PathAt(0.9, false);
+            double frame2 = PathAt(33.0 / Dur(MinimizeEffect.Settle, false), false);
+            Check($"들어갈 때: 처음 10% {first:0.000} < 가운데 10% {mid:0.000} > 끝 10% {last:0.000}, 둘째 프레임(33ms)까지 {frame2:P0}만 움직임, 탄성 없음",
+                Mono(false) && first < mid && last < mid && frame2 < 0.25);
+            double rFirst = 1 - PathAt(0.1, true), rLast = PathAt(0.9, true);
+            Check($"되살리기: 끝(1) → 창 자리(0), 창 자리에 닿을 때 천천히 (처음 10% {rFirst:0.000} > 끝 10% {rLast:0.000}), 탄성 없음",
+                PathAt(0, true) == 1 && PathAt(1, true) == 0 && Mono(true) && rFirst > rLast * 5);
+            Check($"흐려짐은 끝 30% 안에서만 (p=0.7 불투명도 {Op(MinimizeEffect.Settle, 0.7):0.00}, p=1 차분하게 {Op(MinimizeEffect.Settle, 1):0.00} · 아이콘으로 {Op(MinimizeEffect.Scale, 1):0.00})",
+                Op(MinimizeEffect.Settle, 0.7) == 1 && Op(MinimizeEffect.Genie, 0.5) == 1 && Op(MinimizeEffect.Settle, 1) == 0 && Math.Abs(Op(MinimizeEffect.Scale, 1) - 0.1) < 1e-9);
+            Check($"아이콘으로: 끝에서만 흐림 (p=0.6 {BlurAt(MinimizeEffect.Scale, 0.6):0}px, p=1 {BlurAt(MinimizeEffect.Scale, 1):0}px), 다른 모양은 흐림 없음",
+                BlurAt(MinimizeEffect.Scale, 0.6) == 0 && BlurAt(MinimizeEffect.Scale, 1) > 0 && BlurAt(MinimizeEffect.Settle, 1) == 0);
+
+            foreach (var e in new[] { MinimizeEffect.Settle, MinimizeEffect.Scale, MinimizeEffect.Off })
+            {
+                var (r0, o0) = Frame(e, DockEdge.Bottom, from, icon, 0);
+                Check($"{e} p=0 → 창 자리 그대로·불투명", Near(r0, from) && o0 == 1);
+            }
+            var settleEnd = Frame(MinimizeEffect.Settle, DockEdge.Bottom, from, icon, 1);
+            Check($"차분하게 p=1 → 0.82배 ({settleEnd.R.Width:0}×{settleEnd.R.Height:0}), 아래로 {settleEnd.R.Bottom - from.Bottom:0}px, 아이콘 쪽으로, 사라짐",
+                Math.Abs(settleEnd.R.Width - from.Width * 0.82) < 0.5 && Math.Abs(settleEnd.R.Bottom - (from.Bottom + from.Height * 0.18)) < 0.5
+                && Math.Abs(settleEnd.R.X + settleEnd.R.Width / 2 - (900 + (912 - 900) * 0.35)) < 0.5 && settleEnd.O == 0);
+            var settleLeft = Frame(MinimizeEffect.Settle, DockEdge.Left, from, icon, 1);
+            Check("차분하게 (독 왼쪽) → 왼쪽으로", settleLeft.R.Left < from.Left && Math.Abs(settleLeft.R.Height - from.Height * 0.82) < 0.5);
+            var scaleEnd = Frame(MinimizeEffect.Scale, DockEdge.Bottom, from, icon, 1);
+            Check($"아이콘으로 p=1 → 아이콘 자리, 옅게 ({scaleEnd.O:0.00})", Near(scaleEnd.R, icon) && scaleEnd.O < 0.2 && scaleEnd.O > 0);
+            var fade = Frame(MinimizeEffect.Off, DockEdge.Bottom, from, icon, 0.5);
+            Check("흐려짐만 → 자리 그대로, 처음부터 옅어짐 (p=0.5 → 0.5)", Near(fade.R, from) && Math.Abs(fade.O - 0.5) < 1e-9);
+            Check("지니는 독이 아래일 때만 (옆이면 아이콘으로), 애니메이션 줄이기·절전 → 흐려짐만",
+                Resolve(MinimizeEffect.Genie, DockEdge.Bottom, false) == MinimizeEffect.Genie && Resolve(MinimizeEffect.Genie, DockEdge.Left, false) == MinimizeEffect.Scale
+                && Resolve(MinimizeEffect.Settle, DockEdge.Left, false) == MinimizeEffect.Settle && Resolve(MinimizeEffect.Settle, DockEdge.Bottom, true) == MinimizeEffect.Off);
+
+            var top0 = Genie(from, icon, 0, 1.0 / 24, 0);
+            Check($"지니 p=0 → 띠가 창과 같은 폭·자리 ({top0.Left:0}~{top0.Right:0}, 위 {top0.Top:0})", Math.Abs(top0.Left - from.Left) < 0.5 && Math.Abs(top0.Right - from.Right) < 0.5 && Math.Abs(top0.Top - from.Top) < 0.5);
+            var bendTop = Genie(from, icon, 0, 1.0 / 24, 0.15);
+            var bendBottom = Genie(from, icon, 23.0 / 24, 1, 0.15);
+            Check($"지니 앞부분 p=0.15 → 위는 조금만 내려가고(위 {bendTop.Top - from.Top:0}px) 아래가 먼저 좁아져 휨 ({bendBottom.Width:0} < {bendTop.Width:0})",
+                bendTop.Top - from.Top < 0.1 * (icon.Top - from.Top) && bendBottom.Width < bendTop.Width * 0.95);
+            // 휘는 모양이 단계적으로 이어짐: 창 옆선의 기울기(띠 사이 각도)가 프레임마다(60fps) 급하게 바뀌지 않음 + 참고로 띠 폭 변화
+            double Angle(double p, int i)
+            {
+                var r0 = Genie(from, icon, i / 24.0, (i + 1) / 24.0, p);
+                var r1 = Genie(from, icon, (i + 1) / 24.0, (i + 2) / 24.0, p);
+                return Math.Atan2(r1.Left - r0.Left, Math.Max(1e-6, r1.Top - r0.Top)) * 180 / Math.PI;
+            }
+            double maxTurn = 0, maxJump = 0;
+            (int K, int Strip, double P) turnAt = default;
+            int frames = (int)Math.Ceiling(Dur(MinimizeEffect.Genie, false) / 16.7);
+            for (int k = 1; k <= frames; k++)
+            {
+                double p0 = PathAt((k - 1) / (double)frames, false), p1 = PathAt(k / (double)frames, false);
+                for (int i = 0; i < 23; i++)
+                {
+                    // 끝 20%(아이콘 목에 눌려 들어가며 띠 높이가 몇 px — 작고 옅어 각도가 보이지 않음)는 뺌
+                    double d = p1 > 0.8 || Genie(from, icon, i / 24.0, (i + 1) / 24.0, p1).Height < 4 ? 0 : Math.Abs(Angle(p1, i) - Angle(p0, i));
+                    if (d > maxTurn) { maxTurn = d; turnAt = (k, i, p1); }
+                    maxJump = Math.Max(maxJump, Math.Abs(Genie(from, icon, i / 24.0, (i + 1) / 24.0, p1).Width - Genie(from, icon, i / 24.0, (i + 1) / 24.0, p0).Width) / from.Width);
+                }
+            }
+            Check($"지니: 옆선 각도가 한 프레임(60fps)에 가장 많이 바뀌는 양 {maxTurn:0.0}° (길 80%까지·띠 높이 4px 이상, 10° 아래 — 급한 꺾임 없음, 기준은 개발 임시값; 프레임 {turnAt.K}/{frames}, 띠 {turnAt.Strip}, p={turnAt.P:0.00}), 참고: 띠 폭 변화 최대 창 폭의 {maxJump:P1}", maxTurn < 10);
+            var endTop = Genie(from, icon, 0, 1.0 / 24, 1);
+            var endBottom = Genie(from, icon, 23.0 / 24, 1, 1);
+            Check($"지니 p=1 → 아이콘 안 ({endTop.Left:0}~{endTop.Right:0}, {endTop.Top:0}~{endBottom.Bottom:0})", endTop.Left >= icon.Left - 0.5 && endTop.Right <= icon.Right + 0.5 && endTop.Top >= icon.Top - 0.5 && endBottom.Bottom <= icon.Bottom + 0.5);
+            if (dir is not null)
+            {
+                // 모양 그림: 1920×1080 화면을 1/4 로, 3가지 모양을 칸마다, 실제 시간 0·20·40·60·80·95% 의 자리를 겹쳐 그림 (테두리 굵기 = 불투명도)
+                var ts = new[] { 0.0, 0.2, 0.4, 0.6, 0.8, 0.95 };
+                var colors = new[] { Colors.SteelBlue, Colors.MediumPurple, Colors.Orchid, Colors.Coral, Colors.Goldenrod, Colors.Gold };
+                var shapes = new[] { (MinimizeEffect.Settle, "차분하게"), (MinimizeEffect.Scale, "아이콘으로"), (MinimizeEffect.Genie, "지니") };
+                var dv = new DrawingVisual();
+                using (var dc = dv.RenderOpen())
+                {
+                    dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, 1440, 270));
+                    for (int si = 0; si < shapes.Length; si++)
+                    {
+                        var (e, name) = shapes[si];
+                        dc.PushTransform(new TranslateTransform(si * 480, 0));
+                        dc.DrawRectangle(null, new Pen(Brushes.LightGray, 1), new Rect(0, 0, 480, 270));
+                        dc.DrawText(new FormattedText($"{name} ({Dur(e, false)}ms)", System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Malgun Gothic"), 13, Brushes.Black, 1), new Point(8, 6));
+                        dc.PushTransform(new ScaleTransform(0.25, 0.25));
+                        dc.DrawRectangle(null, new Pen(Brushes.Gray, 4), icon);
+                        for (int k = 0; k < ts.Length; k++)
+                        {
+                            var c = colors[k];
+                            double p = PathAt(ts[k], false);
+                            if (e == MinimizeEffect.Genie)
+                                for (int i = 0; i < 24; i++)
+                                    dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(50, c.R, c.G, c.B)), new Pen(new SolidColorBrush(c), 3), Genie(from, icon, i / 24.0, (i + 1) / 24.0, p));
+                            else
+                            {
+                                var (r, o) = Frame(e, DockEdge.Bottom, from, icon, p);
+                                dc.DrawRectangle(new SolidColorBrush(Color.FromArgb((byte)(70 * o), c.R, c.G, c.B)), new Pen(new SolidColorBrush(c), 2 + 6 * o), r);
+                            }
+                        }
+                        dc.Pop();
+                        dc.Pop();
+                    }
+                }
+                var rtb = new RenderTargetBitmap(1440, 270, 96, 96, PixelFormats.Pbgra32);
+                rtb.Render(dv);
+                var enc = new PngBitmapEncoder();
+                enc.Frames.Add(BitmapFrame.Create(rtb));
+                using (var fs = File.Create(Path.Combine(dir, "minimize-shapes.png"))) enc.Save(fs);
+                Console.WriteLine($"  저장  {Path.Combine(dir, "minimize-shapes.png")}");
+            }
+        }
+        Console.WriteLine(bad == 0 ? "볼륨 점검: 모두 통과" : $"볼륨 점검: 실패 {bad}개");
+        return bad == 0 ? 0 : 1;
+    }
+
+    private static void SaveVisual(FrameworkElement el, Size size, string theme, string path)
+    {
+        var dv = new DrawingVisual();
+        using (var dc = dv.RenderOpen())
+        {
+            dc.DrawRectangle(new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x14, 0x16, 0x1C) : Color.FromRgb(0xE9, 0xEC, 0xF4)), null, new Rect(size));
+            dc.DrawRectangle(new VisualBrush(el) { ViewboxUnits = BrushMappingMode.Absolute, Viewbox = new Rect(size), Stretch = Stretch.None }, null, new Rect(size));
+        }
+        var rtb = new RenderTargetBitmap((int)Math.Ceiling(size.Width), (int)Math.Ceiling(size.Height), 96, 96, PixelFormats.Pbgra32);
+        rtb.Render(dv);
+        var enc = new PngBitmapEncoder();
+        enc.Frames.Add(BitmapFrame.Create(rtb));
+        using (var fs = File.Create(path)) enc.Save(fs);
+        Console.WriteLine($"  저장  {path}");
+    }
+
     private static int ClipCheck()
     {
         int bad = 0;
@@ -1970,7 +2313,7 @@ internal static class Program
         st.Routines.Add(new RoutineDef { Id = "r1", Name = "업무", Hotkey = new HotkeyBinding { On = true, Key = "Ctrl+Alt+1" } });
         var table = (Dictionary<HotkeyChord, string>)ctl.GetMethod("Table", Any)!.Invoke(null, new object[] { st })!;
         Check($"키 표: {string.Join(", ", table.Select(kv => $"{kv.Key}→{kv.Value}"))}",
-            table.Count == 3 && table[HotkeyChord.Parse("Ctrl+Alt+A")!.Value] == "allApps" && table[HotkeyChord.Parse("Ctrl+Alt+1")!.Value] == "routine:r1"
+            table.Count(kv => !kv.Value.StartsWith("volume:")) == 3 && table[HotkeyChord.Parse("Ctrl+Alt+A")!.Value] == "allApps" // 볼륨 키 3개는 기본으로 따로 (#21) && table[HotkeyChord.Parse("Ctrl+Alt+1")!.Value] == "routine:r1"
             && table.ContainsValue("search") && !table.ContainsValue("controlCenter") && !table.ContainsValue("notifications"));
         // 훅 처리 (가짜 키, 진짜 훅 없음)
         var keyState = typeof(HotkeyService).GetProperty("KeyStateForTest", Any)!;
@@ -2133,8 +2476,8 @@ internal static class Program
             coach.GetMethod("Init", any)!.Invoke(null, new object?[] { services, (Func<Mongdock.Services.CoachAnchor, (Rect, MonitorInfo)?>)(_ => null), null });
             List<object> Pages(string flow) => flow == "tour"
                 ? ((System.Collections.IEnumerable)coach.GetMethod("BuildTourPages", any)!.Invoke(null, null)!).Cast<object>().ToList()
-                : ((System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "catchup" ? new object[] { new Version(0, 2, 0), Mongdock.Services.WhatsNew.Current } : flow == "update062" ? new object[] { new Version(0, 6, 1), new Version(0, 6, 2) } : flow == "update061" ? new object[] { new Version(0, 6, 0), new Version(0, 6, 1) } : flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
-            foreach (var flow in new[] { "tour", "update", "update06", "update061", "update062", "catchup" })
+                : ((System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "catchup" ? new object[] { new Version(0, 2, 0), Mongdock.Services.WhatsNew.Current } : flow == "update08" ? new object[] { new Version(0, 6, 5), new Version(0, 8, 0) } : flow == "update062" ? new object[] { new Version(0, 6, 1), new Version(0, 6, 2) } : flow == "update061" ? new object[] { new Version(0, 6, 0), new Version(0, 6, 1) } : flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
+            foreach (var flow in new[] { "tour", "update", "update06", "update061", "update062", "update08", "catchup" })
             {
                 var pages = Pages(flow);
                 var rows = new List<BitmapSource>();
@@ -2164,7 +2507,7 @@ internal static class Program
                 }
                 // 시트
                 var sheet = new System.Windows.Controls.StackPanel { Background = Brushes.White };
-                sheet.Children.Add(new System.Windows.Controls.TextBlock { Text = (flow == "tour" ? "첫 설치 둘러보기" : flow == "update06" ? "0.5.x → 0.6.0 새 기능" : flow == "update061" ? "0.6.0 → 0.6.1 새 기능" : flow == "update062" ? "0.6.1 → 0.6.2 새 기능" : flow == "catchup" ? "0.2.0 → 지금 (오래된 버전)" : "0.4.x → 0.5.0 새 기능") + $" · {_lang} · {theme}", FontSize = 22, FontWeight = FontWeights.Bold, Margin = new Thickness(16, 12, 0, 8) });
+                sheet.Children.Add(new System.Windows.Controls.TextBlock { Text = (flow == "tour" ? "첫 설치 둘러보기" : flow == "update06" ? "0.5.x → 0.6.0 새 기능" : flow == "update061" ? "0.6.0 → 0.6.1 새 기능" : flow == "update08" ? "0.6.5 → 0.8.0 새 기능" : flow == "update062" ? "0.6.1 → 0.6.2 새 기능" : flow == "catchup" ? "0.2.0 → 지금 (오래된 버전)" : "0.4.x → 0.5.0 새 기능") + $" · {_lang} · {theme}", FontSize = 22, FontWeight = FontWeights.Bold, Margin = new Thickness(16, 12, 0, 8) });
                 foreach (var r in rows) sheet.Children.Add(new System.Windows.Controls.Image { Source = r, Width = r.PixelWidth, Height = r.PixelHeight, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 10) });
                 Save(Snap(sheet, 0.6), $"sheet-{flow}-{_lang}-{theme}.png");
                 Console.WriteLine($"  저장  sheet-{flow}-{_lang}-{theme}.png ({pages.Count}장)");

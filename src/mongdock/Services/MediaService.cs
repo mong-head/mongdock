@@ -31,6 +31,7 @@ public sealed class MediaService : IMediaService, IDisposable
     private double _rate = 1.0;
 
     public bool HasSession { get; private set; }
+    public string? SourceApp { get; private set; }
     public string? Title { get; private set; }
     public string? Artist { get; private set; }
     public ImageSource? Thumbnail { get; private set; }
@@ -181,6 +182,7 @@ public sealed class MediaService : IMediaService, IDisposable
         if (s is null)
         {
             HasSession = false;
+            SourceApp = null;
             Title = Artist = null;
             Thumbnail = null;
             IsPlaying = false;
@@ -190,6 +192,8 @@ public sealed class MediaService : IMediaService, IDisposable
             return;
         }
         HasSession = true;
+        try { SourceApp = s.SourceAppUserModelId; }
+        catch (Exception ex) { SourceApp = null; Log.Warn($"재생 앱 읽기 실패: {ex.GetType().Name}"); }
         ReadPlayback(s);
         ReadTimeline(s);
         RaiseChanged();

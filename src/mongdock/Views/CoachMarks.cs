@@ -374,6 +374,41 @@ internal static class CoachMarks
             Loc.T("독 끝에 넣었어요 — 눌러서 펼쳐 보세요")),
     };
 
+    /// <summary>카드에 설명 아래 버튼을 붙인 복사본 (WithStacksButton 과 같은 항목만 옮김).</summary>
+    private static CoachPage WithInline(CoachPage page, InlineAction inline) => new()
+    {
+        Title = page.Title,
+        Body = page.Body,
+        Anchor = page.Anchor,
+        Hint = page.Hint,
+        Pictures = page.Pictures,
+        Inline = inline,
+    };
+
+    /// <summary>
+    /// 0.8 창 최소화 효과 카드 [켜기] (#20): 「차분하게」(살짝 내려앉기)로 켬 → 결과 줄
+    /// "켰어요 — 윈도우 최소화·최대화 효과는 껐어요" + [되돌리기](끔 → 윈도우 효과 되돌림). 이미 켜져 있으면 버튼 없음.
+    /// </summary>
+    private static InlineAction MinimizeInline() => new(Loc.T("켜기"),
+        () => _services is { } sv && sv.Settings.Current.Dock.MinimizeEffect == MinimizeEffect.Off,
+        () =>
+        {
+            if (_services is not { } sv) return Task.FromResult<InlineResult?>(null);
+            sv.Settings.Current.Dock.MinimizeEffect = MinimizeEffect.Settle;
+            sv.Settings.Save(); // MinimizeEffectController.Sync → 윈도우 효과 끄기
+            bool off = WindowAnimationSetting.TurnedOffByMongdock;
+            Log.Info($"둘러보기: 창 최소화 효과 켬 (윈도우 효과 {(off ? "껐음" : "원래 꺼져 있었음")})");
+            string msg = off ? Loc.T("켰어요 — 윈도우 최소화·최대화 효과는 껐어요") : Loc.T("켰어요 — 설정 → 독에서 바꿀 수 있어요");
+            return Task.FromResult<InlineResult?>(new InlineResult(msg, () =>
+            {
+                sv.Settings.Current.Dock.MinimizeEffect = MinimizeEffect.Off;
+                sv.Settings.Save(); // 윈도우 효과 되돌림
+                Log.Info("둘러보기: 창 최소화 효과 되돌림 (끔)");
+                return Loc.T("되돌렸어요 — 윈도우 효과 그대로예요");
+            }));
+        },
+        Loc.T("켰어요 — 윈도우 최소화·최대화 효과는 껐어요"));
+
     /// <summary>[다운로드·휴지통 넣기] 실행: 넣은 것만 기억해 [되돌리기]는 그것만 뺌.</summary>
     private static InlineResult? AddDockStacks()
     {
@@ -538,7 +573,12 @@ internal static class CoachMarks
         var latestSteps = WhatsNew.Releases.Where(x => WhatsNew.Parse(x.Version) == latest.Version).ToList();
         // 그림 장면이 있는 새 기능은 가리킬 자리가 지금 없어도 넣음 (카드만 가운데 — 장면이 설명함)
         var coach = latestSteps.Where(x => x.IsAvailable(s) && (WhatsNew.TourPictures.Contains(x.Key) || AnchorVisible(x.Anchor))).Take(MaxWhatsNewSteps).ToList();
-        pages.AddRange(coach.Select(x => x.Key == "stacks" ? WithStacksButton(ToPage(x, s)) : ToPage(x, s)));
+        pages.AddRange(coach.Select(x => x.Key switch
+        {
+            "stacks" => WithStacksButton(ToPage(x, s)),
+            "minimize" => WithInline(ToPage(x, s), MinimizeInline()), // 0.8 창 최소화 효과 [켜기] (#20)
+            _ => ToPage(x, s),
+        }));
 
         // 말풍선으로 본 기능(Key)은 목록에서 빼고, 이전 버전에 같은 Key 가 있어도 한 번만
         var seenKeys = new HashSet<string>(coach.Select(x => x.Key), StringComparer.OrdinalIgnoreCase);

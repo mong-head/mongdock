@@ -42,6 +42,10 @@ public sealed class DockItemViewModel : ObservableObject
     /// </summary>
     public bool IsLaunching { get => _isLaunching; set => Set(ref _isLaunching, value); }
 
+    private double? _progress;
+    /// <summary>아이콘 아래 진행 막대 0~1 (재생 위치 — #22). null 이면 막대 없음.</summary>
+    public double? Progress { get => _progress; set => Set(ref _progress, value); }
+
     private bool _hasNotification;
     public bool HasNotification { get => _hasNotification; set => Set(ref _hasNotification, value); }
 }

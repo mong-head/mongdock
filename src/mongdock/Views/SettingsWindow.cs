@@ -160,6 +160,9 @@ internal sealed partial class SettingsWindow : Window
     // ───────────────────────── 변경 반영 ─────────────────────────
 
     /// <summary>설정 변경 → 저장(SettingsChanged 로 독·상단바 즉시 반영). rebuild 면 현재 페이지를 다시 그림(의존 항목 활성/비활성 등).</summary>
+    /// <summary>이 설정 창에서 방금 창 최소화 효과를 켰음 → 결과 줄 [되돌리기] 를 보임 (#20).</summary>
+    private bool _minimizeJustOn;
+
     private void Commit(Action change, bool rebuild = false)
     {
         try { change(); }
@@ -583,12 +586,33 @@ internal sealed partial class SettingsWindow : Window
             more.Add(Row(Loc.T("모서리 둥글기"), null, ValueSlider(d.CornerRadius, 8, 28, 1, v => $"{v:0}px", v => D().CornerRadius = v)));
         more.Add(Row(Loc.T("실행 중 앱도 독에 보이기"), Loc.T("고정하지 않은 실행 중 앱도 구분선 뒤에 보여요."),
             Toggle(d.ShowRunningApps, on => Commit(() => D().ShowRunningApps = on))));
+        more.Add(Row(Loc.T("재생 진행 막대"), Loc.T("음악·영상을 재생 중인 앱의 독 아이콘 아래에 재생 위치가 보여요."),
+            Toggle(d.ShowMediaProgress, on => Commit(() => D().ShowMediaProgress = on)))); // #22
         more.Add(Row(Loc.T("창이 여러 개일 때 클릭"), null, Segmented(d.MultiWindowClick,
             new[] { (MultiWindowClick.Picker, Loc.T("창 고르기")), (MultiWindowClick.MostRecent, Loc.T("최근 창")) },
             v => Commit(() => D().MultiWindowClick = v))));
         more.Add(Row(Loc.T("앱 켤 때"), Loc.T("창이 뜰 때까지 아이콘이 튀거나 실행 점이 깜빡여요."), Segmented(d.LaunchAnimation,
             new[] { (LaunchAnimation.Bounce, Loc.T("통통 튀기")), (LaunchAnimation.Blink, Loc.T("점 깜빡이기")) },
             v => Commit(() => D().LaunchAnimation = v))));
+        // 창 최소화 효과 (#20): 켜는 순간 윈도우 효과를 껐다는 결과 줄 + [되돌리기](= 몽독 효과 끄기 → 윈도우 효과 되돌림)
+        more.Add(Row(Loc.T("창 최소화 효과"), Loc.T("최소화한 창이 독 쪽으로 들어가고, 독에서 열면 거꾸로 나와요. 켜 두는 동안 윈도우 최소화·최대화 애니메이션은 꺼져요(끄면 되돌려요)."),
+            Segmented(d.MinimizeEffect, new[] { (MinimizeEffect.Off, Loc.T("끔")), (MinimizeEffect.Settle, Loc.T("차분하게")), (MinimizeEffect.Scale, Loc.T("아이콘으로")), (MinimizeEffect.Genie, Loc.T("지니")) },
+                v =>
+                {
+                    bool wasOff = D().MinimizeEffect == MinimizeEffect.Off;
+                    _minimizeJustOn = wasOff && v != MinimizeEffect.Off;
+                    Commit(() => D().MinimizeEffect = v, rebuild: true);
+                })));
+        if (d.MinimizeEffect != MinimizeEffect.Off)
+            more.Add(Row(Loc.T("최소화 효과 속도"), null, Segmented(d.MinimizeSpeed,
+                new[] { (MinimizeSpeed.Fast, Loc.T("빠르게")), (MinimizeSpeed.Normal, Loc.T("보통")), (MinimizeSpeed.Slow, Loc.T("느리게")) },
+                v => Commit(() => D().MinimizeSpeed = v))));
+        if (_minimizeJustOn && d.MinimizeEffect != MinimizeEffect.Off && WindowAnimationSetting.TurnedOffByMongdock)
+            more.Add(Row(Loc.T("윈도우 최소화·최대화 효과를 껐어요"), null, ActionButton(Loc.T("되돌리기"), () =>
+            {
+                _minimizeJustOn = false;
+                Commit(() => D().MinimizeEffect = MinimizeEffect.Off, rebuild: true);
+            })));
         more.Add(Row(Loc.T("작업 표시줄 고정 앱 가져오기"),
             _taskbarImportResult ?? Loc.T("윈도우 작업 표시줄에 고정한 앱 중 독에 없는 것을 끝에 더해요."),
             ActionButton(Loc.T("가져오기"), () => Commit(() =>
@@ -667,6 +691,8 @@ internal sealed partial class SettingsWindow : Window
         top.Add(Row(Loc.T("색"), null, ColorModeDropdown(t.ColorMode)));
         top.Add(Row(Loc.T("시계에 날짜 보이기"), Loc.T("예: 10월 9일 (목). 12·24시간은 윈도우 시간 형식을 따라요."),
             Toggle(t.ShowClockDate, on => Commit(() => T().ShowClockDate = on))));
+        top.Add(Row(Loc.T("볼륨 키를 누르면 몽독 표시"), Loc.T("오른쪽 위에 작은 몽독 볼륨 표시가 떠요. 윈도우 기본 표시는 뜨지 않아요. 전체 화면 앱에서는 윈도우 표시 그대로예요."),
+            Toggle(t.VolumeIndicator, on => Commit(() => T().VolumeIndicator = on)))); // #21
         body.Children.Add(Group(top.ToArray()));
 
         AddTopBarItems(body); // SettingsWindow.TopBarOrder.cs: 표시할 항목 + 순서 (한 목록)

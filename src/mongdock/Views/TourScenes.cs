@@ -26,7 +26,7 @@ internal static partial class TourScenes
     public static int Count(string? key) => key switch
     {
         "allapps" => 5,
-        "dock" or "topbar" or "routines" or "stacks" or "hotkeys" or "profiles" => 3,
+        "dock" or "topbar" or "routines" or "stacks" or "hotkeys" or "profiles" or "appvolume" or "minimize" => 3,
         "settings" or "bounce" or "spotlight" => 2,
         _ => 0,
     };
@@ -80,7 +80,7 @@ internal static partial class TourScenes
     public static List<string> Check(AppServices services, UiPalette p, IEnumerable<string>? keys = null)
     {
         var problems = new List<string>();
-        foreach (var key in keys ?? new[] { "dock", "topbar", "spotlight", "allapps", "routines", "stacks", "settings", "bounce", "hotkeys", "profiles" })
+        foreach (var key in keys ?? new[] { "dock", "topbar", "spotlight", "allapps", "routines", "stacks", "settings", "bounce", "hotkeys", "profiles", "appvolume", "minimize" })
             for (int i = 0; i < Count(key); i++)
             {
                 var local = new List<string>();
@@ -200,6 +200,8 @@ internal static partial class TourScenes
                 case "bounce": Bounce(g, top, i); break;
                 case "hotkeys": Hotkeys(g, top, i); break;
                 case "profiles": Profiles(g, top, i); break;
+                case "appvolume": AppVolume(g, top, i); break; // 0.8 (TourScenes.V08.cs)
+                case "minimize": Minimize(g, top, i); break;
                 default: return null;
             }
             return Render(g);

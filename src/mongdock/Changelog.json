@@ -2,8 +2,8 @@
   "_comment": "mongdock 변경 내역 단일 원본. 앱(설정 → 변경 내역, 새로운 기능 코치마크)과 build-release.ps1(GitHub 릴리스 노트)이 함께 읽는다. 최신 버전을 맨 위에. kind = feature | improvement | fix. coach 가 있는 feature 는 업데이트 후 상단바·독 위 말풍선으로 소개(anchor = Center|Dock|Logo|AppName|Desktops|Tray|Search|Clock, condition = topBar|trayIcons|spotlight|banners|dock|appMenus, 없으면 항상). major = 그 버전의 주요 업데이트(버전당 1~4개, 오랜만에 업데이트한 사람·변경 내역 맨 위·릴리스 노트 \"이번 버전 핵심\"에 씀), headline = 그 버전 한 줄 요약. body 의 {hotkey} 는 실제 검색 단축키 문구로 바뀜.",
   "versions": [
     {
-      "version": "0.7.0",
-      "date": "2026-10-17",
+      "version": "0.8.1",
+      "date": "2026-10-18",
       "headline": "Microsoft Store 판",
       "headline_en": "Microsoft Store edition",
       "entries": [
@@ -21,6 +21,65 @@
           "kind": "improvement",
           "text": "체험이 끝나면 작업 표시줄과 알림을 원래대로 돌려 두고 구매 안내를 보여 줘요. 인터넷이 잠깐 안 돼도 바로 멈추지 않아요.",
           "text_en": "When the trial ends, the taskbar and notifications go back to normal and a purchase prompt appears. A short time offline won't stop mongdock."
+        }
+      ]
+    },
+    {
+      "version": "0.8.0",
+      "date": "2026-10-18",
+      "headline": "앱별 볼륨 · 창 최소화 효과",
+      "headline_en": "Per-app volume · Minimize effect",
+      "entries": [
+        {
+          "kind": "feature",
+          "major": true,
+          "text": "소리 판에서 앱마다 볼륨을 따로 조절할 수 있어요.",
+          "text_en": "Set the volume of each app separately in the sound panel.",
+          "coach": {
+            "key": "appvolume",
+            "anchor": "Center",
+            "title": "앱마다 볼륨을 따로",
+            "title_en": "Volume for each app",
+            "body": "상단바 소리 판에서 소리 나는 앱마다 막대를 움직이거나 음소거해요. 볼륨 키를 누르면 오른쪽 위에 몽독 표시가 떠요.",
+            "body_en": "In the menu bar's sound panel, move the slider or mute each app that's playing sound. Volume keys now show a mongdock indicator at the top right."
+          }
+        },
+        {
+          "kind": "feature",
+          "text": "볼륨 키를 누르면 몽독 모양으로 소리 크기를 보여 줘요(설정에서 끌 수 있어요).",
+          "text_en": "Volume keys now show a mongdock-style indicator (can be turned off in Settings)."
+        },
+        {
+          "kind": "feature",
+          "major": true,
+          "text": "창을 최소화하면 독 쪽으로 자연스럽게 들어가고 독에서 열면 거꾸로 나오는 효과를 켤 수 있어요 — 차분하게·아이콘으로·지니, 속도도 골라요(설정 → 독).",
+          "text_en": "Turn on a minimize effect that sends windows toward the dock and back out when you open them from it: Calm, Into icon or Genie, at the speed you like (Settings → Dock).",
+          "coach": {
+            "key": "minimize",
+            "anchor": "Center",
+            "title": "창이 독으로 살며시",
+            "title_en": "Windows that settle into the dock",
+            "body": "창을 최소화하면 조금 작아지며 독 쪽으로 내려앉고, 독에서 열면 거꾸로 나와요. 설정 → 독에서 「아이콘으로」·「지니」와 속도도 고를 수 있어요. 켜 두는 동안 윈도우 최소화 효과는 꺼지고, 끄면 되돌려요.",
+            "body_en": "Minimized windows shrink a little and settle toward the dock, then come back the same way when you open them from the dock. You can switch to Into icon or Genie and pick the speed in Settings → Dock. While it's on, the Windows minimize animation is off and comes back when you turn this off."
+          }
+        },
+        {
+          "kind": "feature",
+          "text": "음악·영상을 재생 중인 앱의 독 아이콘 아래에 재생 위치가 보여요.",
+          "text_en": "The dock icon of the app playing music or video shows the playback position."
+        }
+      ]
+    },
+    {
+      "version": "0.6.5",
+      "date": "2026-10-17",
+      "headline": "앱 모음 판 고침",
+      "headline_en": "All Apps panel fix",
+      "entries": [
+        {
+          "kind": "fix",
+          "text": "앱 모음 판을 두 번째로 열 때 앱이 안 보이던 문제를 고쳤어요.",
+          "text_en": "Fixed apps missing from the All Apps panel when opening it again."
         }
       ]
     },

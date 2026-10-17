@@ -18,7 +18,7 @@ namespace LiveTest;
 /// 시나리오: 열기·닫기 5번(가운데·아이콘) / 열려 있는 동안 다른 창 활성화 / 연타 10번 / 나타나는 도중 닫기(Esc) / (--idle) 오래 쉰 뒤 열기.
 /// 열 때마다 판 자리를 16ms 간격으로 찍어 "판이 보이는 정도"가 0→1 로 한 번만 오르는지(사라졌다 다시 뜨지 않는지) 보고, 프레임 그림을 OUT 에 남김.
 /// </summary>
-internal static class Program
+internal static partial class Program
 {
     private const BindingFlags Any = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;
     private static readonly List<string> Results = new();
@@ -28,6 +28,7 @@ internal static class Program
     private static int Main(string[] args)
     {
         if (args.Length == 0) { Console.WriteLine("live-test OUT [--idle 초] [--new] | live-test --demo [횟수] [간격초]"); return 2; }
+        if (args[0] == "--testwindow") return TestWindowMain(); // --minimize 의 시험 창 (다른 프로세스)
         if (args[0] == "--demo") return Demo(args.Length > 1 ? int.Parse(args[1]) : 3, args.Length > 2 ? int.Parse(args[2]) : 12);
         string outDir = Path.GetFullPath(args[0]);
         Directory.CreateDirectory(outDir);
@@ -88,9 +89,21 @@ internal static class Program
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
             return _fail == 0 ? 0 : 1;
         }
+        if (Array.IndexOf(args, "--minimize") >= 0)
+        {
+            MinimizeRun(services, settings, work, outDir);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            return _fail == 0 ? 0 : 1;
+        }
         if (Array.IndexOf(args, "--tour") >= 0)
         {
             TourRun(services, work, outDir);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            return _fail == 0 ? 0 : 1;
+        }
+        if (Array.IndexOf(args, "--panelreopen") >= 0)
+        {
+            PanelReopen(services, panelType, work);
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
             return _fail == 0 ? 0 : 1;
         }
@@ -507,6 +520,44 @@ internal static class Program
     /// 독 확대·아이콘 수 변화는 가짜 자리(resolve)의 사각형을 바꿔 흉내 (진짜 마우스·독 없음).
     /// 다시 만듦 = TourCard._frames 목록이 새 것으로 바뀜 (ShowCurrent → Card.Show).
     /// </summary>
+    /// <summary>
+    /// --panelreopen (#26): 실제 열기 길(Acquire)로 앱 모음 판을 3번 열고 닫으며 열 때마다 판 본문에 앱 칸이 그려졌는지.
+    /// 두 번째부터는 숨겨 둔 판을 다시 씀(#14) — 0.6.4 에서 다시 쓴 판이 비어 보였음.
+    /// </summary>
+    private static void PanelReopen(AppServices services, Type panelType, Rect work)
+    {
+        var acquire = panelType.GetMethod("Acquire", Any)!;
+        var body = panelType.GetField("_body", Any)!;
+        for (int i = 0; i < 3; i++)
+        {
+            var args = new object?[] { services, Mongdock.ViewModels.UiTheme.Palette(services.Settings.Current), new Rect(work.Left + work.Width / 2 - 26, work.Bottom - 62, 52, 52), DockEdge.Bottom, Monitors.GetPrimary(), null };
+            var w = (Window)acquire.Invoke(null, args)!;
+            bool reused = (bool)args[5]!;
+            if (!reused) w.Show();
+            Pump(1500);
+            var content = body.GetValue(w) as System.Windows.Controls.ContentControl;
+            var root = content?.Content as FrameworkElement;
+            int cells = root is null ? 0 : CountCells(root);
+            Check($"앱 모음 판 {i + 1}번째 열기{(reused ? " (다시 씀)" : "")}: 본문 {(root is null ? "없음" : "있음")}, 칸 {cells}개", root is not null && cells > 0);
+            w.GetType().GetMethod("CloseAnimated", Any)!.Invoke(w, null);
+            Pump(800);
+        }
+        panelType.GetMethod("DropSpare", Any)!.Invoke(null, null);
+    }
+
+    private static int CountCells(DependencyObject root)
+    {
+        int n = 0;
+        int c = VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < c; i++)
+        {
+            var ch = VisualTreeHelper.GetChild(root, i);
+            if (ch is System.Windows.Controls.Image) n++;
+            n += CountCells(ch);
+        }
+        return n;
+    }
+
     /// <summary>
     /// --introzoom (#14 반 해상도 나타나기 그림 확인): 진짜 앱 모음 판(라이트·다크)을 띄워 그림을 원래·반 해상도로 뜨고, 가운데에서 커지는
     /// 움직임의 55%·85% 크기로 그린 장면을 배율 125%(이 PC)·100%(흉내)로 만들어 왼쪽 위(검색 칸·첫 줄 아이콘)를 2배 확대해 나란히.

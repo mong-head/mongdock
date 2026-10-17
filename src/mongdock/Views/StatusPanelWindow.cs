@@ -654,6 +654,7 @@ internal sealed partial class StatusPanelWindow : Window
         var slider = new PillSlider(_p) { Margin = new Thickness(0, 6, 0, 2) };
         slider.UserChanged += (_, v) => SetVolume(v);
         root.Children.Add(slider);
+        root.Children.Add(BuildAppVolumeSection()); // 앱별 볼륨 (#21) — StatusPanelWindow.AppVolume.cs
         root.Children.Add(Divider());
 
         var devTitle = Sub(Loc.T("출력 장치"));
