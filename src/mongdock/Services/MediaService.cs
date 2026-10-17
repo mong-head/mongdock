@@ -17,6 +17,12 @@ public sealed class MediaService : IMediaService, IDisposable
     private Dispatcher? _dispatcher;
     private GlobalSystemMediaTransportControlsSessionManager? _manager;
     private GlobalSystemMediaTransportControlsSession? _session;
+    /// <summary>
+    /// 떼어 낸 미디어 세션을 붙잡아 둠 (#15): 0.6.3 에서 세션 호출이 NullReferenceException 을 낸 뒤(창·탭이 닫히는 순간) 그 WinRT 객체를
+    /// 종료자가 치우다 같은 예외로 앱 전체가 꺼짐 — .NET 은 종료자 예외를 못 잡음. 세션은 하루 몇 개뿐이라 붙잡아 두면 종료자가 돌지 않음.
+    /// </summary>
+    private static readonly Queue<GlobalSystemMediaTransportControlsSession> Retired = new();
+    private const int RetiredMax = 256;
     private bool _started;
     private int _refreshVersion;
 
@@ -119,6 +125,7 @@ public sealed class MediaService : IMediaService, IDisposable
         var s = _session;
         _session = null;
         if (s is null) return;
+        Retire(s);
         try
         {
             s.MediaPropertiesChanged -= OnMediaPropertiesChanged;
@@ -136,6 +143,35 @@ public sealed class MediaService : IMediaService, IDisposable
 
     private void OnTimelineChanged(GlobalSystemMediaTransportControlsSession sender, TimelinePropertiesChangedEventArgs args) =>
         _ = OnUi(() => { if (sender == _session && ReadTimeline(sender)) RaiseChanged(); });
+
+    private static void Retire(GlobalSystemMediaTransportControlsSession s)
+    {
+        lock (Retired)
+        {
+            if (Retired.Contains(s)) return;
+            Retired.Enqueue(s);
+            while (Retired.Count > RetiredMax) Retired.Dequeue();
+        }
+    }
+
+    /// <summary>
+    /// 세션 호출이 깨진 객체 예외(NullReference·ObjectDisposed·InvalidCast)를 내면: 그 세션을 붙잡아 두고(종료자 방지) 떼어 낸 뒤
+    /// 지금 세션을 다시 받음 (#15). UI 스레드에서.
+    /// </summary>
+    private void OnBrokenSession(GlobalSystemMediaTransportControlsSession s, Exception ex, string what)
+    {
+        if (ex is not (NullReferenceException or ObjectDisposedException or InvalidCastException)) return;
+        Retire(s);
+        Log.Warn($"미디어 세션이 깨짐({what}: {ex.GetType().Name}) → 세션을 다시 받음");
+        _ = OnUi(() =>
+        {
+            if (!_started || _manager is null || !ReferenceEquals(s, _session)) return;
+            GlobalSystemMediaTransportControlsSession? fresh = null;
+            try { fresh = _manager.GetCurrentSession(); }
+            catch (Exception e2) { Log.Warn($"미디어 세션 다시 받기 실패: {e2.GetType().Name}"); }
+            AttachSession(ReferenceEquals(fresh, s) ? null : fresh);
+        });
+    }
 
     // ───────────────────────── 읽기 ─────────────────────────
 
@@ -184,6 +220,7 @@ public sealed class MediaService : IMediaService, IDisposable
         catch (Exception ex)
         {
             Log.Warn($"미디어 정보 읽기 실패: {ex.Message}");
+            OnBrokenSession(s, ex, "미디어 정보");
         }
     }
 
@@ -230,6 +267,7 @@ public sealed class MediaService : IMediaService, IDisposable
         catch (Exception ex)
         {
             Log.Warn($"재생 상태 읽기 실패: {ex.Message}");
+            OnBrokenSession(s, ex, "재생 상태");
             return false;
         }
     }
@@ -253,6 +291,7 @@ public sealed class MediaService : IMediaService, IDisposable
         catch (Exception ex)
         {
             Log.Warn($"타임라인 읽기 실패: {ex.Message}");
+            OnBrokenSession(s, ex, "타임라인");
             return false;
         }
     }

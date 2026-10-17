@@ -94,6 +94,18 @@ internal static class Program
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
             return _fail == 0 ? 0 : 1;
         }
+        if (Array.IndexOf(args, "--introzoom") >= 0)
+        {
+            IntroZoom(services, panelType, settings, work, outDir);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            return _fail == 0 ? 0 : 1;
+        }
+        if (Array.IndexOf(args, "--memscenario") >= 0)
+        {
+            MemScenario(services, panelType, Open, Close, work, outDir);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            return _fail == 0 ? 0 : 1;
+        }
         if (Array.IndexOf(args, "--tourflicker") >= 0)
         {
             TourFlicker(services, work, outDir);
@@ -422,6 +434,7 @@ internal static class Program
             var card = (Window)st.GetField("_card", Any)!.GetValue(session)!;
             var hole = (Rect?)st.GetField("_hole", Any)!.GetValue(session);
             double pad = (double)card.GetType().GetProperty("ShadowPad")!.GetValue(card)!;
+            CardPad = pad;
             var cardRect = new Rect(card.Left + pad, card.Top + pad, card.ActualWidth - pad * 2, card.ActualHeight - pad * 2);
             var tourCard = card.GetType().GetProperty("Card")!.GetValue(card)!;
             var frames = (System.Collections.ICollection)tourCard.GetType().GetField("_frames", Any)!.GetValue(tourCard)!;
@@ -494,6 +507,235 @@ internal static class Program
     /// 독 확대·아이콘 수 변화는 가짜 자리(resolve)의 사각형을 바꿔 흉내 (진짜 마우스·독 없음).
     /// 다시 만듦 = TourCard._frames 목록이 새 것으로 바뀜 (ShowCurrent → Card.Show).
     /// </summary>
+    /// <summary>
+    /// --introzoom (#14 반 해상도 나타나기 그림 확인): 진짜 앱 모음 판(라이트·다크)을 띄워 그림을 원래·반 해상도로 뜨고, 가운데에서 커지는
+    /// 움직임의 55%·85% 크기로 그린 장면을 배율 125%(이 PC)·100%(흉내)로 만들어 왼쪽 위(검색 칸·첫 줄 아이콘)를 2배 확대해 나란히.
+    /// 화면 배율은 바꾸지 않음(100% 는 그림 배율로 흉내). intro-{theme}-{dpi}.png.
+    /// </summary>
+    private static void IntroZoom(AppServices services, Type panelType, SettingsService settings, Rect work, string outDir)
+    {
+        var asm = typeof(Mongdock.App).Assembly;
+        var dsp = asm.GetType("Mongdock.Views.DockStackPanel")!;
+        var snap = dsp.GetMethod("SnapshotOf", Any)!;
+        var sample = asm.GetType("Mongdock.Views.PanelIntro")!.GetMethod("Sample")!;
+        var monitor = Monitors.GetPrimary();
+        var icon = new Rect(work.Left + work.Width / 2 - 26, work.Bottom - 62, 52, 52);
+        foreach (var theme in new[] { DockTheme.Light, DockTheme.Dark })
+        {
+            settings.Current.Dock.Theme = theme;
+            Mongdock.ViewModels.UiTheme.Apply(settings.Current);
+            var palette = Mongdock.ViewModels.UiTheme.Palette(settings.Current);
+            var w = (Window)Activator.CreateInstance(panelType, Any, null, new object[] { services, palette, icon, DockEdge.Bottom, monitor }, null)!;
+            w.Show();
+            Pump(1500);
+            var root = (FrameworkElement)w.Content;
+            var final = new Rect(w.Left, w.Top, w.ActualWidth, w.ActualHeight);
+            foreach (double dpi in new[] { 1.25, 1.0 })
+            {
+                var full = (BitmapSource)snap.Invoke(null, new object?[] { root, w.Background, dpi, dpi })!;
+                var half = (BitmapSource)snap.Invoke(null, new object?[] { root, w.Background, dpi * 0.5, dpi * 0.5 })!;
+                const int cropW = 340, cropH = 200, zoom = 2;
+                var dv = new DrawingVisual();
+                using (var dc = dv.RenderOpen())
+                {
+                    dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, 2 * cropW * zoom + 30, 3 * (cropH * zoom + 26)));
+                    var ts = new[] { 0.5, 0.85, 1.0 };
+                    for (int row = 0; row < ts.Length; row++)
+                    {
+                        var (r, _) = ((Rect, double))sample.Invoke(null, new object[] { "center", ts[row], final, icon })!;
+                        for (int col = 0; col < 2; col++)
+                        {
+                            var pic = col == 0 ? full : half;
+                            // 그림 창이 하는 대로: 그림을 r 크기로 늘려 그림 → 장치 픽셀로
+                            int pw = (int)Math.Ceiling(r.Width * dpi), ph = (int)Math.Ceiling(r.Height * dpi);
+                            var frame = new DrawingVisual();
+                            using (var fdc = frame.RenderOpen())
+                                fdc.DrawRectangle(new ImageBrush(pic) { Stretch = Stretch.Fill }, null, new Rect(0, 0, r.Width, r.Height));
+                            var rtb = new RenderTargetBitmap(pw, ph, 96 * dpi, 96 * dpi, PixelFormats.Pbgra32);
+                            rtb.Render(frame);
+                            var crop = new CroppedBitmap(rtb, new Int32Rect(0, 0, Math.Min(cropW, pw), Math.Min(cropH, ph)));
+                            double x = col * (cropW * zoom + 30), y = row * (cropH * zoom + 26);
+                            dc.DrawText(new FormattedText($"{(col == 0 ? "원래 해상도" : "반 해상도")} · 움직임 {ts[row] * 100:0}% (판 {r.Width / final.Width * 100:0}% 크기) · 배율 {dpi * 100:0}%",
+                                System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Segoe UI"), 13, Brushes.Black, 1.0), new Point(x, y + 2));
+                            var brush = new ImageBrush(crop) { Stretch = Stretch.Fill };
+                            RenderOptions.SetBitmapScalingMode(brush, BitmapScalingMode.NearestNeighbor);
+                            dc.DrawRectangle(brush, null, new Rect(x, y + 20, crop.PixelWidth * zoom, crop.PixelHeight * zoom));
+                        }
+                    }
+                }
+                var outBmp = new RenderTargetBitmap(2 * cropW * zoom + 30, 3 * (cropH * zoom + 26), 96, 96, PixelFormats.Pbgra32);
+                outBmp.Render(dv);
+                var enc = new PngBitmapEncoder();
+                enc.Frames.Add(BitmapFrame.Create(outBmp));
+                string name = $"intro-{theme.ToString().ToLowerInvariant()}-{dpi * 100:0}.png";
+                using (var fs = File.Create(Path.Combine(outDir, name))) enc.Save(fs);
+                Check($"나타나기 그림 비교 {name}: 원래 {full.PixelWidth}×{full.PixelHeight} ({full.PixelWidth * full.PixelHeight * 4 / 1048576.0:0.0}MB) / 반 {half.PixelWidth}×{half.PixelHeight} ({half.PixelWidth * half.PixelHeight * 4 / 1048576.0:0.0}MB)", true);
+            }
+            w.Close();
+            Pump(500);
+        }
+    }
+
+    /// <summary>
+    /// --memscenario (#14 메모리 C 전후 비교): 늘 같은 순서로 투명 창들을 띄우고 닫으며 단계마다 전용·그래픽 드라이버 MB 를 적음.
+    /// 앱 모음 판 열고 닫기 5번 → 검색 창에 글자 하나씩(세 낱말) → 상단바 판 5가지 → 둘러보기 끝까지 → 20초 쉼.
+    /// 실제 입력 없음(반사·코드로 조작). 결과는 memscenario.txt (고치기 전·후 같은 PC 에서 비교).
+    /// </summary>
+    private static void MemScenario(AppServices services, Type panelType, Func<Window> open, Action<Window> close, Rect work, string outDir)
+    {
+        var asm = typeof(Mongdock.App).Assembly;
+        Mongdock.Views.LayeredWindowStats.Install();
+        var lines = new List<string>();
+        long startPriv = 0;
+        void M(string what)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            Pump(600);
+            using var p = Process.GetCurrentProcess();
+            long mb = 1024 * 1024, priv = p.PrivateMemorySize64;
+            if (startPriv == 0) startPriv = priv;
+            string line = $"{what,-34} 전용 {priv / mb,4}MB (시작 +{(priv - startPriv) / mb,3}) | 그래픽 드라이버 {Mongdock.Views.LayeredWindowStats.DriverMemoryBytes() / mb,4}MB | 작업 집합 {p.WorkingSet64 / mb,4}MB";
+            lines.Add(line);
+            Console.WriteLine("  " + line);
+        }
+        M("준비 끝 (판 미리 준비 뒤)");
+
+        // 1) 앱 모음 판 열고 닫기 5번 (--panelreuse: 한 판을 숨겼다 다시 보이기 5번 — 다시 쓰기의 효과 미리 보기, #14)
+        if (Environment.GetCommandLineArgs().Contains("--panelreuse"))
+        {
+            var w = open();
+            w.Show();
+            Pump(1200);
+            for (int i = 0; i < 5; i++)
+            {
+                w.Hide();
+                Pump(800);
+                w.Show();
+                Pump(1200);
+            }
+            close(w);
+            Pump(800);
+            M("앱 모음 판 한 창 숨김·보임 5번");
+        }
+        else
+        {
+            // 실제 열기 길(Acquire — 숨겨 둔 판이 있으면 다시 씀, #14). 첫/두 번째 열기 시간도 적음
+            var acquire = panelType.GetMethod("Acquire", Any);
+            for (int i = 0; i < 5; i++)
+            {
+                var clock = Stopwatch.StartNew();
+                Window w;
+                bool reused = false;
+                if (acquire is not null)
+                {
+                    var args = new object?[] { services, Mongdock.ViewModels.UiTheme.Palette(services.Settings.Current), new Rect(work.Left + work.Width / 2 - 26 - 3 * 62, work.Bottom - 62, 52, 52), DockEdge.Bottom, Monitors.GetPrimary(), null };
+                    w = (Window)acquire.Invoke(null, args)!;
+                    reused = (bool)args[5]!;
+                }
+                else w = open();
+                long frame = -1;
+                if (w.GetType().GetEvent("FirstFrame") is { } ev) ev.AddEventHandler(w, new Action(() => frame = clock.ElapsedMilliseconds));
+                if (!reused) w.Show();
+                for (int k = 0; k < 60 && frame < 0; k++) Pump(25);
+                lines.Add($"  앱 모음 판 {i + 1}번째 열기{(reused ? " (다시 씀)" : "")}: 첫 프레임 {frame}ms");
+                Pump(1200);
+                close(w);
+                Pump(800);
+            }
+            M("앱 모음 판 열고 닫기 5번");
+        }
+
+        // 2) 검색 창: 글자를 하나씩 (결과 수가 바뀌며 창 높이가 바뀜)
+        var spot = asm.GetType("Mongdock.Views.SpotlightWindow")!;
+        spot.GetMethod("Toggle")!.Invoke(null, new object[] { services });
+        Pump(800);
+        var cur = spot.GetField("_current", Any)!.GetValue(null);
+        if (cur is not null)
+        {
+            var box = (System.Windows.Controls.TextBox)spot.GetField("_box", Any)!.GetValue(cur)!;
+            foreach (var word in new[] { "chrome", "note", "set" })
+            {
+                for (int k = 1; k <= word.Length; k++) { box.Text = word[..k]; Pump(350); }
+                if (word == "chrome" && cur is Window sw)
+                {
+                    // 검색 창 모양 확인 (#14 높이 고정): 창 높이·결과가 잘리지 않는지 그림으로
+                    var r = new Rect(sw.Left, sw.Top, sw.ActualWidth, sw.ActualHeight);
+                    lines.Add($"  검색 창 {sw.ActualWidth:0}×{sw.ActualHeight:0} DIP, 크기 고정 {sw.SizeToContent == SizeToContent.Manual}");
+                    SaveStrip(Path.Combine(outDir, "search-chrome.png"), new List<(long, byte[])> { (0, Grab(r)) }, (int)r.Width, (int)r.Height);
+                }
+                box.Text = "";
+                Pump(300);
+            }
+            spot.GetMethod("CloseIfOpen")!.Invoke(null, null);
+            Pump(800);
+        }
+        else Check("메모리 시나리오: 검색 창이 안 열림", false);
+        M("검색 창 글자 입력 3낱말");
+
+        // 3) 상단바 판 (제어 센터·달력·소리·Wi-Fi·블루투스)
+        var monitor = Monitors.GetPrimary();
+        var palette = Mongdock.ViewModels.UiTheme.Palette(services.Settings.Current);
+        var sp = asm.GetType("Mongdock.Views.StatusPanelWindow")!;
+        var kindT = asm.GetType("Mongdock.Views.StatusPanelKind")!;
+        double barBottom = monitor.WorkArea.Top;
+        foreach (var name in new[] { "ControlCenter", "Calendar", "Volume", "Wifi", "Bluetooth" })
+        {
+            var panel = (Window)Activator.CreateInstance(sp, Any, null, new object[] { services, Enum.Parse(kindT, name), palette, 0 }, null)!;
+            var anchor = new Rect(monitor.WorkArea.Right - 200, monitor.WorkArea.Top - 28, 28, 24);
+            sp.GetMethod("ShowBelow")!.Invoke(panel, new object[] { anchor, barBottom, monitor, true });
+            Pump(1200);
+            if (name == "ControlCenter")
+            {
+                var r = new Rect(panel.Left, panel.Top, panel.ActualWidth, panel.ActualHeight);
+                lines.Add($"  제어 센터 창 {panel.ActualWidth:0}×{panel.ActualHeight:0} DIP");
+                SaveStrip(Path.Combine(outDir, "controlcenter.png"), new List<(long, byte[])> { (0, Grab(r)) }, (int)r.Width, (int)r.Height);
+            }
+            sp.GetMethod("CloseImmediately")!.Invoke(panel, null);
+            Pump(400);
+        }
+        M("상단바 판 5가지");
+
+        // 4) 둘러보기 끝까지
+        var coach = asm.GetType("Mongdock.Views.CoachMarks")!;
+        var dockRect = new Rect(work.Left + work.Width / 2 - 220, work.Bottom - 78, 440, 70);
+        var bar = new Rect(monitor.Bounds.Left, monitor.Bounds.Top, monitor.Bounds.Width, 32);
+        Func<CoachAnchor, (Rect Rect, MonitorInfo Monitor)?> resolve = a => a switch
+        {
+            CoachAnchor.Dock => (dockRect, monitor),
+            CoachAnchor.TopBar => (bar, monitor),
+            CoachAnchor.AllApps => (new Rect(dockRect.Left + 70, dockRect.Top + 9, 52, 52), monitor),
+            _ => null,
+        };
+        coach.GetMethod("Init")!.Invoke(null, new object?[] { services, resolve, null });
+        var listType = typeof(List<>).MakeGenericType(asm.GetType("Mongdock.Views.CoachPage")!);
+        var buildDel = Delegate.CreateDelegate(typeof(Func<>).MakeGenericType(listType), coach.GetMethod("BuildTourPages")!);
+        if ((bool)coach.GetMethod("Play")!.Invoke(null, new object?[] { buildDel, null, true })!)
+        {
+            Pump(2500);
+            var session = coach.GetField("_session", Any)!.GetValue(null)!;
+            var st = session.GetType();
+            for (int i = 0; i < 12 && coach.GetField("_session", Any)!.GetValue(null) is not null; i++)
+            {
+                st.GetMethod("Next", Any)!.Invoke(session, null);
+                Pump(1500);
+            }
+            if (coach.GetField("_session", Any)!.GetValue(null) is not null)
+                st.GetMethod("Close", Any)!.Invoke(session, new object[] { false, Enum.Parse(asm.GetType("Mongdock.Views.CoachEndReason")!, "Completed") });
+            Pump(4000); // 둘러보기 그림 정리(3초 뒤)
+        }
+        else Check("메모리 시나리오: 둘러보기 시작 안 됨", false);
+        M("둘러보기 끝까지 (+그림 정리)");
+
+        Pump(20000);
+        M("20초 쉼");
+        lines.Add(Mongdock.Views.LayeredWindowStats.Summary());
+        Console.WriteLine("  " + Mongdock.Views.LayeredWindowStats.Summary());
+        File.WriteAllLines(Path.Combine(outDir, "memscenario.txt"), lines);
+        Check("메모리 시나리오: 끝까지 돎", true);
+    }
+
     private static void TourFlicker(AppServices services, Rect work, string outDir)
     {
         var asm = typeof(Mongdock.App).Assembly;
@@ -526,6 +768,13 @@ internal static class Program
         Rect? Hole() => (Rect?)st.GetField("_hole", Any)!.GetValue(session);
         FlickerDir = outDir;
         Check($"깜빡임 측정: 독 단계 그림 {((System.Collections.ICollection)Frames()).Count}장", ((System.Collections.ICollection)Frames()).Count >= 2);
+        // 카드 창 방식 (#9): 일반 창(MONGDOCK_TOUR_CARD=plain)이면 그림자 여백 0
+        CardPad = (double)card.GetType().GetProperty("ShadowPad")!.GetValue(card)!;
+        Console.WriteLine($"  카드 창: {(CardPad == 0 ? "일반 창 (plain)" : "투명 창 (layered)")}, 그림자 여백 {CardPad}");
+        {
+            var shot = new Rect(card.Left - 24, card.Top - 24, card.ActualWidth + 48, card.ActualHeight + 48);
+            SaveStrip(Path.Combine(outDir, $"tourcard-{(CardPad == 0 ? "plain" : "layered")}.png"), new List<(long, byte[])> { (0, Grab(shot)) }, (int)shot.Width, (int)shot.Height);
+        }
 
         // A) 가만히 25초 (자동 장 넘김 1.4초) — 카드 창이 한 프레임 비는지
         var r = CardBlank(card, 25000, "가만히 25초");
@@ -580,6 +829,7 @@ internal static class Program
     /// 그림 가운데(60px 상자)는 교차 흐림이라 전·후 사이 값은 정상, 범위에서 3 넘게 벗어나면 "튐".
     /// </summary>
     private static string FlickerDir = Path.GetTempPath();
+    private static double CardPad = 28;
     private static bool FlickerDump;
 
     private static string Flicker(Window card, string label, Action act)
@@ -593,9 +843,9 @@ internal static class Program
         {
             Box(new Point(-160, card.ActualHeight / 2), 40),
             Box(new Point(card.ActualWidth + 160, card.ActualHeight / 2), 40),
-            Box(new Point(card.ActualWidth / 2, 28 + 90), 60), // 그림 영역 위·가운데·아래 (그림자 여백 28)
-            Box(new Point(card.ActualWidth / 2, 28 + 175), 60),
-            Box(new Point(card.ActualWidth * 0.4, 28 + 290), 60),
+            Box(new Point(card.ActualWidth / 2, CardPad + 90), 60), // 그림 영역 위·가운데·아래 (그림자 여백 CardPad)
+            Box(new Point(card.ActualWidth / 2, CardPad + 175), 60),
+            Box(new Point(card.ActualWidth * 0.4, CardPad + 290), 60),
         };
         var frames = new List<(long T, double[] V)>();
         string? error = null;
@@ -636,12 +886,20 @@ internal static class Program
         return $"깜빡임 {label}: 프레임 {during.Count}개, 어두운 곳 벗어남 {dim:0.0} (전후 차 {dimShift:0.0}), 그림 벗어남 {pic:0.0} (전후 차 {picShift:0.0}){(bad ? " — 튐" : "")}";
     }
 
-    /// <summary>카드 창이 한 프레임 비는(투명하게 그려지는) 횟수: 카드 아래쪽 글자 영역 빈 곳(흰 바탕)이 중앙값에서 15 넘게 벗어난 프레임.</summary>
+    /// <summary>
+    /// 카드 창이 한 프레임 비는(투명하게 그려지는) 횟수: 카드 안 빈 여백 세 곳(오른쪽 가장자리 안쪽, 아래 가장자리 안쪽, 왼쪽 아래)이
+    /// 같은 프레임에 모두 중앙값에서 15 넘게 벗어나면 빈 프레임. (예전엔 한 곳만 봤는데 장마다 바뀌는 글자에 걸려 장 넘김마다 튐으로 잡힘 — #9)
+    /// </summary>
     private static string CardBlank(Window card, int ms, string label, Action? during = null)
     {
-        var px = card.PointToScreen(new Point(card.ActualWidth - 28 - 60, card.ActualHeight - 28 - 70)); // 카드 오른쪽 아래 [다음] 위 빈 곳
-        var boxes = new[] { ((int)px.X - 10, (int)px.Y - 10, 20, 20) };
-        var frames = new List<(long T, double V)>();
+        if (PresentationSource.FromVisual(card) is null) return $"카드 빔 {label}: 카드 창이 닫혀 다시 만들어짐 — 측정 못 함 튐?";
+        // 창이 아니라 카드 요소 기준 (창 크기·그림자 여백과 상관없이 카드 안 여백)
+        var inner = (FrameworkElement)card.GetType().GetProperty("Card")!.GetValue(card)!;
+        (int, int, int, int) Box(double x, double y) { var px = inner.PointToScreen(new Point(x, y)); return ((int)px.X - 3, (int)px.Y - 3, 6, 6); }
+        double w = inner.ActualWidth, h = inner.ActualHeight;
+        var boxes = new[] { Box(w - 8, h / 2 + 40), Box(w / 2 + 40, h - 7), Box(48, h - 7) };
+        Console.WriteLine($"    카드 요소 {w:0}x{h:0}, 창 {card.ActualWidth:0}x{card.ActualHeight:0}, 상자 {string.Join(" ", boxes.Select(b => $"({b.Item1},{b.Item2})"))}");
+        var frames = new List<(long T, double[] V)>();
         bool stop = false;
         string? error = null;
         var sw = Stopwatch.StartNew();
@@ -651,7 +909,7 @@ internal static class Program
             {
                 using var dup = new DesktopDup();
                 while (!System.Threading.Volatile.Read(ref stop))
-                    if (dup.Next(50, boxes) is { } v) lock (frames) frames.Add((sw.ElapsedMilliseconds, v[0]));
+                    if (dup.Next(50, boxes) is { } v) lock (frames) frames.Add((sw.ElapsedMilliseconds, v));
             }
             catch (Exception ex) { error = ex.Message; }
         }) { IsBackground = true };
@@ -660,11 +918,12 @@ internal static class Program
         System.Threading.Volatile.Write(ref stop, true);
         th.Join();
         if (error is not null) return $"카드 빔 {label}: 화면 받기 실패 ({error}) 튐?";
-        var sorted = frames.Select(x => x.V).OrderBy(x => x).ToList();
-        double median = sorted.Count > 0 ? sorted[sorted.Count / 2] : 0;
-        var bad = frames.Where(x => Math.Abs(x.V - median) > 15).ToList();
-        File.WriteAllLines(Path.Combine(FlickerDir, $"cardblank-{string.Concat(label.Where(char.IsLetterOrDigit))}.csv"), frames.Select(x => $"{x.T},{x.V:0.0}"));
-        return $"카드 빔 {label}: 프레임 {frames.Count}개, 바탕 {median:0}, 빈 프레임 {bad.Count}개 ({string.Join(" ", bad.Select(x => $"{x.T}ms={x.V:0}"))}){(bad.Count > 0 ? " — 튐" : "")}";
+        double Median(int k) { var o = frames.Select(x => x.V[k]).OrderBy(x => x).ToList(); return o.Count > 0 ? o[o.Count / 2] : 0; }
+        var med = Enumerable.Range(0, boxes.Length).Select(Median).ToArray();
+        var bad = frames.Where(x => Enumerable.Range(0, boxes.Length).All(k => Math.Abs(x.V[k] - med[k]) > 15)).ToList();
+        int some = frames.Count(x => Enumerable.Range(0, boxes.Length).Any(k => Math.Abs(x.V[k] - med[k]) > 15));
+        File.WriteAllLines(Path.Combine(FlickerDir, $"cardblank-{string.Concat(label.Where(char.IsLetterOrDigit))}.csv"), frames.Select(x => $"{x.T},{string.Join(",", x.V.Select(v => v.ToString("0.0")))}"));
+        return $"카드 빔 {label}: 프레임 {frames.Count}개, 바탕 {string.Join("/", med.Select(m => m.ToString("0")))}, 빈 프레임 {bad.Count}개 ({string.Join(" ", bad.Select(x => $"{x.T}ms={string.Join("/", x.V.Select(v => v.ToString("0")))}"))}), 한 곳만 벗어남 {some - bad.Count}개{(bad.Count > 0 ? " — 튐" : "")}";
     }
 
     private sealed class EndBox

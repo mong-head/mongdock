@@ -186,7 +186,7 @@ public sealed class AppLauncher : IAppLauncher
                 ActivateWindow(hwnd);
                 return;
             }
-            if (!await VirtualDesktopService.MoveToAsync(target))
+            if (!await VirtualDesktopService.GoToAsync(hwnd, target))
             {
                 Log.Warn($"데스크톱 {target} 로 이동하지 못해 활성화 생략 hwnd=0x{hwnd.ToInt64():X}");
                 return;

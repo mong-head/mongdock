@@ -36,7 +36,34 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         public bool Positioning;
         public bool Queued;
         public RECT LastRect;
+        /// <summary>등록 뒤 ABM_SETPOS 를 한 번이라도 보냈는지 (안 보냈으면 자리가 같아 보여도 보냄).</summary>
+        public bool PosSent;
         public EdgeReservation? Reservation;
+    }
+
+    /// <summary>
+    /// ABM_SETPOS 를 보낼지 (0.6.2 — 모니터 여러 대 작업 표시줄 깜빡임): 등록 뒤 처음이거나 자리가 바뀔 때만.
+    /// 자리가 그대로인데 매번 보내면, 탐색기가 다른 AppBar(모니터마다 있는 상단바)에 ABN_POSCHANGED 를 보내고 그들이 또 SETPOS 를 보내는
+    /// 고리가 생겨 탐색기가 숨겨 둔 작업 표시줄을 계속 다시 띄웠음 (지원 uid 28, 모니터 3대).
+    /// </summary>
+    internal static bool ShouldSendSetPos(bool posSent, RECT proposed, RECT last) =>
+        !posSent || proposed.Left != last.Left || proposed.Top != last.Top || proposed.Right != last.Right || proposed.Bottom != last.Bottom;
+
+    // AppBar 알림 횟수 (문제가 있을 때만 1분에 한 줄)
+    private long _appBarMinuteStart;
+    private int _posChangedCount, _setPosSent, _setPosSkipped;
+
+    private void CountAppBar(ref int counter)
+    {
+        long now = Environment.TickCount64;
+        if (now - _appBarMinuteStart > 60_000)
+        {
+            if (_posChangedCount > 20)
+                Log.Info($"AppBar 알림: 1분에 자리 바뀜 알림 {_posChangedCount}번, 자리 알림 보냄 {_setPosSent}번·같아서 건너뜀 {_setPosSkipped}번 (상단바 {_slots.Count(x => x.IsTopBar)}개)");
+            _appBarMinuteStart = now;
+            _posChangedCount = _setPosSent = _setPosSkipped = 0;
+        }
+        counter++;
     }
 
     private sealed class EdgeReservation : IEdgeReservation
@@ -1051,6 +1078,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
             Log.Warn($"ABM_NEW FALSE hwnd=0x{slot.Hwnd.ToInt64():X} (이미 등록됐을 수 있음)");
         }
         slot.Registered = true;
+        slot.PosSent = false;
         lock (RegistryGate) RegisteredHwnds.Add(slot.Hwnd);
     }
 
@@ -1084,6 +1112,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
                 switch ((int)wParam.ToInt64())
                 {
                     case Shell32.ABN_POSCHANGED:
+                        CountAppBar(ref _posChangedCount);
                         QueueReposition(slot);
                         break;
                     case Shell32.ABN_FULLSCREENAPP:
@@ -1166,8 +1195,14 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
             Shell32.SHAppBarMessage(Shell32.ABM_QUERYPOS, ref abd);
             OffsetBelowTopBar(slot, screen, ref abd.rc);
             ApplyThickness(ref abd.rc, slot.Edge, px);
-            Shell32.SHAppBarMessage(Shell32.ABM_SETPOS, ref abd);
-            ApplyThickness(ref abd.rc, slot.Edge, px);
+            if (ShouldSendSetPos(slot.PosSent, abd.rc, slot.LastRect))
+            {
+                Shell32.SHAppBarMessage(Shell32.ABM_SETPOS, ref abd);
+                ApplyThickness(ref abd.rc, slot.Edge, px);
+                slot.PosSent = true;
+                CountAppBar(ref _setPosSent);
+            }
+            else CountAppBar(ref _setPosSkipped); // 자리 그대로 — 탐색기를 다시 깨우지 않음 (모니터 여러 대 고리 끊기)
             _monitorCache = Monitors.GetAll(); // 작업 영역이 바뀌었을 수 있음 (WM_SETTINGCHANGE 보다 먼저 캐시 갱신)
 
             RECT rc = abd.rc;
@@ -1324,6 +1359,8 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
 
     private int _taskbarCheckTick;
     private int _taskbarRehideLogs;
+    private int _taskbarFights;
+    private bool _taskbarAutoHideOnly;
 
     // ── 작업 표시줄이 다시 보이는 순간 숨기기 (#13) ──
     // explorer 가 자동 숨김 상태의 작업 표시줄을 가끔 다시 보이게 한다(실측 14분에 13번). 예전엔 아래 2초 폴링으로만 잡아서
@@ -1392,9 +1429,16 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
             {
                 _taskbarHookBackoffUntil = now + 10_000;
                 _taskbarShowTimes.Clear();
-                Log.Warn("작업 표시줄이 2초에 8번 넘게 다시 보임 → 10초 동안 즉시 숨기기 멈춤");
+                Log.Warn("작업 표시줄이 2초에 8번 넘게 다시 보임 → 10초 동안 즉시 숨기기 멈춤 (2초 확인도 쉼)");
+                if (++_taskbarFights >= 3 && !_taskbarAutoHideOnly)
+                {
+                    // 탐색기와 계속 싸우면 숨겼다 보였다 깜빡임이 더 눈에 띔 → 이번 실행은 자동 숨김(가장자리 줄)으로만 둠
+                    _taskbarAutoHideOnly = true;
+                    Log.Warn("작업 표시줄 숨기기 싸움이 3번 — 이번 실행은 자동 숨김으로만 둠 (창 숨기기 그만)");
+                }
                 return;
             }
+            if (_taskbarAutoHideOnly) return;
 
             User32.ShowWindowAsync(hwnd, User32.SW_HIDE);
             // 진단 로그는 처음 몇 번만 (원인 조사는 #13 에서 끝남 — 이후 이상하면 tools/taskbar-watch 로)
@@ -1429,6 +1473,8 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     private void KeepTaskbarHidden()
     {
         if (!_taskbarHidden || ++_taskbarCheckTick % 2 != 0) return;
+        // 즉시 숨기기가 쉬는 동안(탐색기와 싸움)·자동 숨김만 모드에선 2초 확인도 쉼 — 2초마다 숨겼다 보였다가 오히려 깜빡임
+        if (_taskbarAutoHideOnly || Environment.TickCount64 < _taskbarHookBackoffUntil) return;
         try
         {
             foreach (IntPtr h in FindTaskbars())

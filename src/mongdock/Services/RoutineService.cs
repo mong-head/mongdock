@@ -336,7 +336,10 @@ internal static class RoutineService
         if (!here && index > 0)
         {
             Log.Info("루틴 다시 누름: 루틴 데스크톱으로 이동");
-            await VirtualDesktopService.MoveToAsync(index);
+            // 그 데스크톱에 있는 루틴 창을 앞으로 → 윈도우가 바로 그 데스크톱으로 (#16). 없거나 안 되면 키로 한 칸씩
+            var there = windows.FirstOrDefault(w => VirtualDesktopHelper.GetDesktopIndex(w, ids) == index);
+            if (there == IntPtr.Zero || !await VirtualDesktopService.JumpByActivatingAsync(there, index))
+                await VirtualDesktopService.MoveToAsync(index);
             await Task.Delay(150);
         }
         else Log.Info("루틴 다시 누름: 이미 이 데스크톱 — 창을 앞으로");
@@ -515,7 +518,7 @@ internal static class RoutineService
         int index = VirtualDesktopHelper.GetDesktopIndex(hwnd, VirtualDesktopService.ReadDesktopIds());
         if (index > 0 && index != VirtualDesktopService.Read().Current)
         {
-            await VirtualDesktopService.MoveToAsync(index);
+            await VirtualDesktopService.GoToAsync(hwnd, index); // 창 활성화로 바로, 안 되면 키 (#16)
             await Task.Delay(150);
         }
         services.Launcher.Activate(hwnd);
@@ -685,9 +688,21 @@ internal static class RoutineService
             lock (Runs) fresh = services.Windows.Windows.Where(w => !before.Contains(w.Hwnd) && !state.Claimed.Contains(w.Hwnd)).ToList();
             fresh = fresh.Where(OnRunDesktop).ToList();
             found = fresh.FirstOrDefault(w => Matches(item, w));
-            if (found is null && exe == "explorer" && item.Kind == RoutineItemKind.Path && fresh.Any(w => ExeName(w.ProcessPath) == "explorer"))
-                found = FolderWindow(fresh, item.Target); // 폴더 여럿을 같이 열어도 창마다 제 폴더로 (0.6.1)
-            if (found is null && exe is not null)
+            bool folderItem = exe == "explorer" && item.Kind == RoutineItemKind.Path;
+            if (found is null && folderItem && fresh.Any(w => ExeName(w.ProcessPath) == "explorer"))
+            {
+                // 폴더 항목은 그 폴더를 보여 주는 창만 (폴더 여럿을 같이 열어도 창마다 제 폴더로 — 0.6.1).
+                // 0.6.2 QA: "새 탐색기 창이 딱 하나면 그 창" 을 폴더 항목에도 쓰면, 내 창보다 다음 폴더 창이 먼저 뜬 순간 그 창을 잡아
+                // 두 창 자리가 맞바뀌었음(9번 중 3번) → 폴더 항목은 폴더가 맞는 창만, 5초가 지나도 못 찾으면 폴더를 아직 못 읽는 창(다른 폴더로 확정된 창은 아님)이 하나일 때만
+                found = FolderWindow(fresh, item.Target);
+                if (found is null && Environment.TickCount64 - started > 5000)
+                {
+                    var known = ExplorerFolders();
+                    var unknown = fresh.Where(w => ExeName(w.ProcessPath) == "explorer" && !known.ContainsKey(w.Hwnd)).ToList();
+                    if (unknown.Count == 1) found = unknown[0];
+                }
+            }
+            if (found is null && exe is not null && !folderItem)
             {
                 var byExe = fresh.Where(w => ExeName(w.ProcessPath) == exe).ToList();
                 if (byExe.Count == 1) found = byExe[0];

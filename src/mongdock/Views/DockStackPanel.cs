@@ -21,9 +21,9 @@ internal abstract class DockStackPanel : Window
 
     protected readonly AppServices Services;
     protected readonly UiPalette P;
-    protected readonly MonitorInfo Monitor;
-    private readonly Rect _anchor;
-    private readonly DockEdge _edge;
+    protected MonitorInfo Monitor;
+    private Rect _anchor;
+    private DockEdge _edge;
     private readonly OutsideClickWatcher _watch;
     private readonly Border _card;
     private bool _closing;
@@ -36,6 +36,33 @@ internal abstract class DockStackPanel : Window
 
     /// <summary>머리줄 연필: 아이콘 바꾸기 카드를 열어 달라는 요청 (판은 닫힘).</summary>
     public event Action? EditIconRequested;
+
+    /// <summary>판이 사라짐 — 닫힘(Closed) 또는 다시 쓰려고 숨김 (#14). 한 번 열 때마다 한 번.</summary>
+    public event Action? Dismissed;
+    /// <summary>열 때마다 진짜 판의 첫 프레임이 그려진 뒤 (다시 쓴 판은 ContentRendered 가 다시 오지 않아 이것으로).</summary>
+    public event Action? FirstFrame;
+    private bool _dismissed;
+
+    /// <summary>다시 쓴 판에 앞 열기의 구독이 남지 않게 (#14).</summary>
+    protected void ClearOpenEvents()
+    {
+        Dismissed = null;
+        FirstFrame = null;
+        EditIconRequested = null;
+    }
+
+    private void RaiseDismissed()
+    {
+        if (_dismissed) return;
+        _dismissed = true;
+        Dismissed?.Invoke();
+    }
+
+    /// <summary>true 면 닫을 때 창을 없애지 않고 숨겨 다음 열기에 다시 씀 (#14 — 큰 일반 창을 열 때마다 새로 만들면 그래픽 메모리를 판마다 새로 잡음).</summary>
+    protected virtual bool ReuseOnClose => false;
+
+    /// <summary>다시 쓰려고 숨긴 직후 (판 쪽 정리 — Closed 대신).</summary>
+    protected virtual void OnHiddenForReuse() { }
 
     protected DockStackPanel(AppServices services, UiPalette palette, Rect anchorDip, DockEdge edge, MonitorInfo monitor, string title)
     {
@@ -111,19 +138,38 @@ internal abstract class DockStackPanel : Window
         _intro = !Layered && Centered ? PanelIntro.Mode(services.Settings.Current) : PanelIntro.Fade;
         if (!Layered && _intro == PanelIntro.Fade) _card.Opacity = 0.5;
         // 일반 창(앱 모음): 첫 프레임이 실제로 화면에 나간 뒤 0.5→1.0 120ms (빈 구간 없이 바로 보이고 살짝 차오름)
-        ContentRendered += (_, _) =>
+        ContentRendered += (_, _) => OnFirstFrame();
+        Loaded += (_, _) => StartShow();
+        // 비활성화(포커스를 다른 창이 가져감)만으로는 닫지 않음 — 독 클릭·알림·백그라운드 창이 잠깐 포커스를 가져가도 판이 그대로.
+        // 닫기는 바깥 클릭(OutsideClickWatcher — 마우스 훅으로 판 밖 누름), Esc, 앱 실행, 버튼 다시 누르기, 다른 몽독 판 열기.
+        Deactivated += (_, _) => Log.Info($"{title}: 비활성화 (닫지 않음, {_showClock.ElapsedMilliseconds}ms)");
+        KeyDown += (_, e) => { if (e.Key == Key.Escape) { e.Handled = true; CloseAnimated(); } };
+        Closed += (_, _) =>
         {
-            FirstFrameMs = _showClock.ElapsedMilliseconds;
-            if (Layered) return;
-            _rendered = true;
-            if (_introHold is not null)
-            {
-                if (_introDone) ReleaseIntro(); // 그림이 먼저 끝났으면 이제 제자리에 (화면 밖에서 다 그려짐)
-                return;
-            }
-            _card.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0.5, 1, TimeSpan.FromMilliseconds(120)));
+            _watch.Stop();
+            if (_introPlaying) PanelIntro.Stop(_introPlay); // 나타나는 중에 닫힘 — 그림 창도 (그 판의 차례만)
+            RaiseDismissed();
         };
-        Loaded += (_, _) =>
+    }
+
+    /// <summary>진짜 판의 첫 프레임이 그려짐 (새 창 = ContentRendered, 다시 쓴 창 = 렌더 두 번 뒤).</summary>
+    private void OnFirstFrame()
+    {
+        FirstFrameMs = _showClock.ElapsedMilliseconds;
+        FirstFrame?.Invoke();
+        if (Layered) return;
+        _rendered = true;
+        if (_introHold is not null)
+        {
+            if (_introDone) ReleaseIntro(); // 그림이 먼저 끝났으면 이제 제자리에 (화면 밖에서 다 그려짐)
+            return;
+        }
+        _card.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0.5, 1, TimeSpan.FromMilliseconds(120)));
+    }
+
+    /// <summary>보인 직후 (배치 끝): 나타나기 그림을 떠서 움직이고, 포커스·바깥 클릭 감시를 시작.</summary>
+    private void StartShow()
+    {
         {
             Place();
             if (!Layered && _intro != PanelIntro.Fade)
@@ -157,16 +203,40 @@ internal abstract class DockStackPanel : Window
             Keyboard.Focus(this);
             EnsureForeground(retry: true);
             _watch.Start();
-        };
-        // 비활성화(포커스를 다른 창이 가져감)만으로는 닫지 않음 — 독 클릭·알림·백그라운드 창이 잠깐 포커스를 가져가도 판이 그대로.
-        // 닫기는 바깥 클릭(OutsideClickWatcher — 마우스 훅으로 판 밖 누름), Esc, 앱 실행, 버튼 다시 누르기, 다른 몽독 판 열기.
-        Deactivated += (_, _) => Log.Info($"{title}: 비활성화 (닫지 않음, {_showClock.ElapsedMilliseconds}ms)");
-        KeyDown += (_, e) => { if (e.Key == Key.Escape) { e.Handled = true; CloseAnimated(); } };
-        Closed += (_, _) =>
+        }
+    }
+
+    /// <summary>
+    /// 숨겨 둔 판을 다시 엶 (#14): 새 창을 만들 때와 같은 순서 — 자리·모니터를 새로, 나타나기 상태를 처음으로, 가린 채 보이고
+    /// 배치가 끝나면 StartShow, 두 번째 렌더 뒤 첫 프레임 처리. 판 내용(상태)은 부르기 전에 판 쪽에서 초기화해 둠.
+    /// </summary>
+    protected void ReopenAt(Rect anchorDip, DockEdge edge, MonitorInfo monitor)
+    {
+        _anchor = anchorDip;
+        _edge = edge;
+        Monitor = monitor;
+        _closing = false;
+        _dismissed = false;
+        _introHold = null;
+        _introPlaying = _introDone = _rendered = false;
+        FirstFrameMs = -1;
+        _showClock.Restart();
+        _intro = !Layered && Centered ? PanelIntro.Mode(Services.Settings.Current) : PanelIntro.Fade;
+        _card.BeginAnimation(OpacityProperty, null);
+        _card.Opacity = !Layered && _intro == PanelIntro.Fade ? 0.5 : 1;
+        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (!Layered && _intro != PanelIntro.Fade) Cloak(hwnd, true);
+        Show();
+        UpdateLayout();
+        StartShow();
+        int frames = 0;
+        void Rendered(object? s, EventArgs e)
         {
-            _watch.Stop();
-            if (_introPlaying) PanelIntro.Stop(_introPlay); // 나타나는 중에 닫힘 — 그림 창도 (그 판의 차례만)
-        };
+            if (++frames < 2) return;
+            CompositionTarget.Rendering -= Rendered;
+            if (!_closing) OnFirstFrame();
+        }
+        CompositionTarget.Rendering += Rendered;
     }
 
     /// <summary>true 면 나타나기 동안 판 내용이 판이 70% 커졌을 때부터 겹쳐 나타남 (빈 판 그림 + 내용 그림).</summary>
@@ -188,7 +258,7 @@ internal abstract class DockStackPanel : Window
     protected virtual bool Layered => true;
 
     private readonly System.Diagnostics.Stopwatch _showClock;
-    private readonly string _intro;
+    private string _intro;
     /// <summary>나타나는 중: 진짜 판의 제자리 (그동안 판은 화면 밖, 그림이 움직임).</summary>
     private Rect? _introHold;
     [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
@@ -243,30 +313,46 @@ internal abstract class DockStackPanel : Window
         Log.Info($"앱 모음 판: 창 생성→제자리 {_showClock.ElapsedMilliseconds}ms (첫 프레임 {FirstFrameMs}ms)");
     }
 
-    /// <summary>판 전체를 그림으로 (모니터 배율 그대로).</summary>
+    /// <summary>
+    /// 나타나기 그림 해상도 (모니터 배율 대비, #14): 1 = 원래. 반 해상도(0.5)는 그림 메모리가 1/4 이지만 가운데에서 커지는 움직임은
+    /// 절반 시간에 이미 판 99% 크기라 흐린 글자가 보여(live-test --introzoom, 특히 100% 배율) 쓰지 않음. MONGDOCK_INTRO_SCALE 로 바꿔 비교.
+    /// </summary>
+    internal static double IntroPictureScale { get; set; } =
+        double.TryParse(Environment.GetEnvironmentVariable("MONGDOCK_INTRO_SCALE"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) && v is > 0.1 and <= 1 ? v : 1.0;
+
+    /// <summary>판 전체를 그림으로 (모니터 배율 × IntroPictureScale).</summary>
     private System.Windows.Media.Imaging.BitmapSource? Snapshot()
     {
         try
         {
             if (Content is not FrameworkElement root || root.ActualWidth <= 0) return null;
             var dpi = VisualTreeHelper.GetDpi(root);
+            return SnapshotOf(root, Background, dpi.DpiScaleX * IntroPictureScale, dpi.DpiScaleY * IntroPictureScale);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"판 그림 뜨기 실패: {ex.GetType().Name}");
+            return null;
+        }
+    }
+
+    /// <summary>root 를 배율 sx·sy 의 그림으로 (창 배경 포함). 시험 그림에서도 씀.</summary>
+    internal static System.Windows.Media.Imaging.BitmapSource SnapshotOf(FrameworkElement root, Brush? background, double sx, double sy)
+    {
+        {
+            var dpi = new DpiScale(sx, sy);
             var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(root.ActualWidth * dpi.DpiScaleX), (int)Math.Ceiling(root.ActualHeight * dpi.DpiScaleY),
                 96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, PixelFormats.Pbgra32);
             var dv = new DrawingVisual();
             using (var dc = dv.RenderOpen())
             {
                 var size = new Size(root.ActualWidth, root.ActualHeight);
-                dc.DrawRectangle(Background, null, new Rect(size)); // 창 배경(카드 색)도
+                dc.DrawRectangle(background, null, new Rect(size)); // 창 배경(카드 색)도
                 dc.DrawRectangle(new VisualBrush(root) { Stretch = Stretch.None, AlignmentX = AlignmentX.Left, AlignmentY = AlignmentY.Top }, null, new Rect(size));
             }
             bmp.Render(dv);
             bmp.Freeze();
             return bmp;
-        }
-        catch (Exception ex)
-        {
-            Log.Warn($"판 그림 뜨기 실패: {ex.GetType().Name}");
-            return null;
         }
     }
 
@@ -556,10 +642,23 @@ internal abstract class DockStackPanel : Window
         _watch.Stop();
         if (!Layered)
         {
+            if (ReuseOnClose) { HideForReuse(); return; }
             Close(); // 일반 창은 바로 (반투명으로 사라지는 중간 상태 없이)
             return;
         }
         Anim.Disappear(_card, 120, () => Dispatcher.BeginInvoke(Close));
+    }
+
+    /// <summary>창은 그대로 두고 숨김 (다음 열기에 다시 씀 — #14).</summary>
+    private void HideForReuse()
+    {
+        if (_introPlaying) PanelIntro.Stop(_introPlay);
+        _introPlaying = false;
+        _introHold = null;
+        if (_openMenu is { IsOpen: true } m) m.IsOpen = false;
+        Hide();
+        OnHiddenForReuse();
+        RaiseDismissed();
     }
 
     protected bool IsClosing => _closing;

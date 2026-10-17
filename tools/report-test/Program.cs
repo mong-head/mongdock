@@ -218,6 +218,8 @@ internal static class Program
         if (Array.IndexOf(args, "--clipdemo") >= 0) { ClipDemo(); return 0; }
         if (Array.IndexOf(args, "--suggest") >= 0) return SuggestTable();
         if (Array.IndexOf(args, "--tourmem") >= 0) return TourMemory(); // 둘러보기 장면 그림 메모리: 다 그린 뒤 / 정리 뒤 (화면 없음)
+        if (Array.IndexOf(args, "--appbarcheck") >= 0) return AppBarCheck(); // 0.6.2 모니터 여러 대 작업 표시줄 깜빡임 — 자리 같으면 안 알림·고리 끊김 (실제 AppBar 등록 없음)
+        if (Array.IndexOf(args, "--clipcheck") >= 0) return ClipCheck(); // 0.6.3 문제 신고 영역 캡처·붙여넣기 (#13) — 실제 캡처 도구·클립보드는 안 건드림
         if (Array.IndexOf(args, "--profilecheck") >= 0) return ProfileCheck(); // 0.6.1 루틴 브라우저 계정·탐색기 창 (화면·실제 실행 없음)
         if (Array.IndexOf(args, "--hotkeycheck") >= 0) return HotkeyCheck(); // 0.6 단축키 규칙·저장·키 처리 점검 (화면·실제 입력 없음)
         if (Array.IndexOf(args, "--reviewcheck") >= 0) return ReviewCheck(); // 0.5.0 검토 수정 점검 (화면 없음)
@@ -419,6 +421,8 @@ internal static class Program
                     enc.Save(ms);
                     w.AddPreviewAttachment(new Mongdock.Services.ReportAttachment("screen-20261013-131500.jpg", "image/jpeg", ms.ToArray()));
                     w.AddPreviewAttachment(new Mongdock.Services.ReportAttachment("kakao.log", "text/plain", new byte[48_000]));
+                    // 영역 캡처 기다리는 중 줄 (#13)
+                    ((FrameworkElement)typeof(ReportWindow).GetField("_clipWaiting", Any)!.GetValue(w)!).Visibility = Visibility.Visible;
                 }
                 w.UpdateLayout();
                 string name = $"report-{(Mongdock.Loc.IsKorean ? "" : Mongdock.Loc.Code + "-")}{theme.ToString().ToLowerInvariant()}{(open ? "-details" : "")}.png";
@@ -1322,11 +1326,11 @@ internal static class Program
         var stepType = asm.GetType("Mongdock.Views.TourStep")!;
         coach.GetMethod("Init", any)!.Invoke(null, new object?[] { services, (Func<Mongdock.Services.CoachAnchor, (Rect, MonitorInfo)?>)(_ => null), null });
         var problems = new List<string>();
-        foreach (var flow in new[] { "tour", "update", "update06", "update061", "update062" }) // update = 0.4.2→0.5.0, update06 = 0.5.0→0.6.0 (장면 카드여야 함)
+        foreach (var flow in new[] { "tour", "update", "update06", "update061", "update062", "catchup" }) // update = 0.4.2→0.5.0, update06 = 0.5.0→0.6.0 (장면 카드여야 함), catchup = 0.2.0→지금 (오래된 버전 — 카드가 화면에 들어가야 함)
         {
             var pages = (flow == "tour"
                 ? (System.Collections.IEnumerable)coach.GetMethod("BuildTourPages", any)!.Invoke(null, null)!
-                : (System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "update062" ? new object[] { new Version(0, 6, 1), new Version(0, 6, 2) } : flow == "update061" ? new object[] { new Version(0, 6, 0), new Version(0, 6, 1) } : flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
+                : (System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "catchup" ? new object[] { new Version(0, 2, 0), Mongdock.Services.WhatsNew.Current } : flow == "update062" ? new object[] { new Version(0, 6, 1), new Version(0, 6, 2) } : flow == "update061" ? new object[] { new Version(0, 6, 0), new Version(0, 6, 1) } : flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
             if (flow is "update06" or "update061" && !pages.Any(x => x.GetType().GetProperty("Pictures")!.GetValue(x) is string))
                 problems.Add($"{flow} 새 기능 안내에 장면 카드가 없음 (예전 말풍선으로 뜸)");
             var steps = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(stepType))!;
@@ -1363,8 +1367,21 @@ internal static class Program
             }
             var card = (FrameworkElement)Activator.CreateInstance(cardType, any, null, new object[] { palette }, null)!;
             var host = new System.Windows.Controls.Border { Child = card }; // 앱처럼 부모 아래 (상속 글꼴)
-            cardType.GetMethod("FixHeight", any)!.Invoke(card, new object[] { steps });
+            // 화면 높이 한도: 1920×1080 125% · 위 상단바(작업 영역 838 DIP, 오류 신고 uid 29 때 PC) - 위아래 8
+            const double maxCard = 838 - 16;
+            cardType.GetMethod("FixHeight", any)!.Invoke(card, new object[] { steps, maxCard });
             double fixedHeight = card.Height;
+            if (fixedHeight > maxCard + 0.5)
+            {
+                var nat = cardType.GetMethod("NaturalHeight", any)!;
+                var tall = new List<string>();
+                for (int i = 0; i < steps.Count; i++)
+                {
+                    cardType.GetMethod("Show", any)!.Invoke(card, new object[] { steps[i]!, i, steps.Count });
+                    tall.Add($"{i + 1}:{(double)nat.Invoke(card, null)!:0}");
+                }
+                problems.Add($"{flow}: 카드가 화면보다 큼 ({fixedHeight:0} > {maxCard:0}) — 장별 {string.Join(" ", tall)}");
+            }
             for (int i = 0; i < steps.Count; i++)
             {
                 cardType.GetMethod("Show", any)!.Invoke(card, new object[] { steps[i]!, i, steps.Count });
@@ -1600,7 +1617,234 @@ internal static class Program
         public IReadOnlyList<TP> Get<TP>(string exe) => _list.Cast<TP>().ToList();
     }
 
+    /// <summary>
+    /// --appbarcheck: DesktopWindowService.ShouldSendSetPos (자리 알림을 보낼지) + 가짜 탐색기 흉내로 상단바 3개 고리:
+    /// 탐색기는 SETPOS 를 받을 때마다 다른 AppBar 들에 자리 바뀜 알림을 보내고 작업 표시줄을 다시 띄움. 예전 규칙(늘 보냄)이면 끝없이 돌고,
+    /// 새 규칙이면 처음 한 바퀴 뒤 멈추는지. 실제 AppBar 를 등록하지 않음(화면 예약 없음).
+    /// </summary>
+    private static int AppBarCheck()
+    {
+        var asm = typeof(Mongdock.App).Assembly;
+        int bad = 0;
+        void Check(string what, bool ok) { Console.WriteLine($"  {(ok ? "통과" : "실패")}  {what}"); if (!ok) bad++; }
+        var dws = asm.GetType("Mongdock.Services.DesktopWindowService")!;
+        var rectT = asm.GetType("Mongdock.Native.RECT")!;
+        object R(int l, int t, int r, int b2)
+        {
+            var o = Activator.CreateInstance(rectT)!;
+            foreach (var (n, v) in new[] { ("Left", l), ("Top", t), ("Right", r), ("Bottom", b2) })
+            {
+                var f = rectT.GetField(n);
+                if (f is not null) f.SetValue(o, v); else rectT.GetProperty(n)!.SetValue(o, v);
+            }
+            return o;
+        }
+        var should = dws.GetMethod("ShouldSendSetPos", Any)!;
+        bool Send(bool sent, object prop, object last) => (bool)should.Invoke(null, new object[] { sent, prop, last })!;
+        var bar = R(0, 0, 1920, 32);
+        Check("등록 뒤 처음 → 보냄", Send(false, bar, R(0, 0, 0, 0)));
+        Check("처음이면 자리가 같아 보여도 보냄", Send(false, bar, bar));
+        Check("보낸 뒤 자리 그대로 → 안 보냄", !Send(true, bar, bar));
+        Check("자리 바뀜(두께) → 보냄", Send(true, R(0, 0, 1920, 36), bar));
+        Check("자리 바뀜(다른 모니터) → 보냄", Send(true, R(1920, 0, 3840, 32), bar));
+
+        // 가짜 탐색기: 상단바 3개(모니터 3대). 알림 큐가 빌 때까지 돌리고 SETPOS·작업 표시줄 다시 띄움 횟수를 셈
+        (int setPos, int reshow, bool endless) Simulate(bool newRule)
+        {
+            var rects = new[] { R(0, 0, 1920, 32), R(1920, 0, 3840, 32), R(3840, 0, 5760, 32) };
+            var last = new object[] { R(0, 0, 0, 0), R(0, 0, 0, 0), R(0, 0, 0, 0) };
+            var sent = new bool[3];
+            var queue = new Queue<int>(new[] { 0, 1, 2 }); // 처음 배치
+            int setPos = 0, reshow = 0, steps = 0;
+            while (queue.Count > 0 && steps++ < 1000)
+            {
+                int i = queue.Dequeue();
+                bool go = newRule ? Send(sent[i], rects[i], last[i]) : true;
+                if (!go) continue;
+                setPos++;
+                sent[i] = true;
+                last[i] = rects[i];
+                reshow++; // 탐색기가 작업 표시줄 배치를 다시 계산 → 숨겨 둔 작업 표시줄을 다시 띄움
+                for (int j = 0; j < 3; j++) if (j != i && !queue.Contains(j)) queue.Enqueue(j); // 다른 AppBar 에 자리 바뀜 알림
+            }
+            return (setPos, reshow, steps >= 1000);
+        }
+        var oldRule = Simulate(false);
+        var newRuleRun = Simulate(true);
+        Check($"예전 규칙(늘 보냄): 끝없이 돎 {oldRule.endless} (자리 알림 {oldRule.setPos}번 — 1000단계에서 끊음)", oldRule.endless);
+        Check($"새 규칙: 멈춤 (자리 알림 {newRuleRun.setPos}번, 작업 표시줄 다시 띄움 {newRuleRun.reshow}번 — 상단바마다 한 번)", !newRuleRun.endless && newRuleRun.setPos == 3);
+        // 둘러보기 카드 위치 (오류 신고 uid 29): 카드가 화면보다 크면 범위가 뒤집혀 예외 → 이제 가운데
+        var tcw = asm.GetType("Mongdock.Views.TourCardWindow")!;
+        double Fit(double top, double h, double wt, double wb) => (double)tcw.GetMethod("FitTop", Any)!.Invoke(null, new object[] { top, h, wt, wb, 28.0 })!;
+        double crash = double.NaN;
+        try { crash = Fit(300, 1013, 25.6, 864); } catch (Exception ex) { Check($"카드가 화면보다 클 때 예외 없음 ({ex.InnerException?.Message})", false); }
+        if (!double.IsNaN(crash)) Check($"카드가 화면보다 클 때(신고 값 h 1013, 작업 영역 25.6~864) → 가운데 {crash:0.#}", Math.Abs(crash - (25.6 + (864 - 25.6 - 1013) / 2)) < 0.01);
+        Check("들어가면 그대로", Fit(200, 600, 25.6, 864) == 200);
+        Check("아래로 넘치면 끌어올림", Math.Abs(Fit(500, 600, 25.6, 864) - (864 - 600 + 28 - 8)) < 0.01);
+        // 독 아이콘 크기 흔들림 막기 (#18): 줄이기는 바로, 키우기는 줄인 지 10초 + 2초 계속일 때만
+        var dw = asm.GetType("Mongdock.Views.DockWindow")!;
+        bool Grows(double of, double os, double nf, double ns) => (bool)dw.GetMethod("FitGrows", Any)!.Invoke(null, new object[] { of, os, nf, ns })!;
+        bool Allowed(long now, long shrunk, long since) => (bool)dw.GetMethod("FitGrowAllowed", Any)!.Invoke(null, new object[] { now, shrunk, since })!;
+        Check("50 → 설정값(0)은 키우기", Grows(50, -1, 0, -1));
+        Check("47 → 50 은 키우기", Grows(47, -1, 50, -1));
+        Check("50 → 47 은 줄이기", !Grows(50, -1, 47, -1));
+        Check("설정값 → 50 은 줄이기", !Grows(0, -1, 50, -1));
+        Check("줄인 지 3초 → 키우기 미룸", !Allowed(13_000, 10_000, 10_500));
+        Check("줄인 지 12초, 들어간 지 1초 → 미룸", !Allowed(22_000, 10_000, 21_000));
+        Check("줄인 지 12초, 2초 계속 들어감 → 키움", Allowed(22_000, 10_000, 20_000));
+        // 23:02 로그처럼 아이콘이 몇 초마다 생겼다 없어지는 흉내: 25초 동안 몇 번 바뀌나 (예전 6번)
+        {
+            double fit = 0; long shrunk = 0, since = 0; int changes = 0;
+            for (long t = 0; t <= 25_000; t += 500)
+            {
+                double want = (t / 3000) % 2 == 0 ? 50 : 0; // 3초마다 넘침 ↔ 들어감
+                bool grows = Grows(fit, -1, want, -1);
+                if (Math.Abs(want - fit) < 0.5) { since = 0; continue; }
+                if (grows) { if (since == 0) since = t + 1; if (!Allowed(t + 1, shrunk, since)) continue; since = 0; }
+                else shrunk = t + 1;
+                fit = want; changes++;
+            }
+            Check($"3초마다 넘침↔들어감 25초: 크기 바뀜 {changes}번 (예전 규칙 9번, 키우기는 10초에 한 번까지)", changes <= 5);
+        }
+        Console.WriteLine(bad == 0 ? "AppBar 점검: 모두 통과" : $"AppBar 점검: 실패 {bad}개");
+        return bad == 0 ? 0 : 1;
+    }
+
     /// <summary>--profilecheck: 루틴 항목 계정 인자(있음·없어짐·안 고름·크로미움 아님), 저장 형식(없으면 안 씀·옛 판 무시), 창 명령줄에서 계정 읽기.</summary>
+    /// <summary>
+    /// --clipcheck (#13): 클립보드 데이터 → 첨부(PNG·비트맵·글자·큰 그림 줄이기), 신고 창 붙여넣기(파일·그림·글자·개수 제한),
+    /// 영역 캡처 흐름(가짜 캡처 도구·가짜 클립보드: 받음·취소·도구 화면 못 찾음·열기 실패·멈춤·시간 제한). 실제 클립보드·캡처 도구는 쓰지 않음.
+    /// </summary>
+    private static int ClipCheck()
+    {
+        int bad = 0;
+        void Check(string what, bool ok) { Console.WriteLine($"  {(ok ? "통과" : "실패")}  {what}"); if (!ok) bad++; }
+        var app = new Mongdock.App();
+        Mongdock.Loc.Init(_lang);
+        app.InitializeComponent();
+        byte[] Png(int w, int h)
+        {
+            var rtb = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
+            var dv = new DrawingVisual();
+            using (var dc = dv.RenderOpen()) dc.DrawRectangle(Brushes.SteelBlue, null, new Rect(0, 0, w, h));
+            rtb.Render(dv);
+            var enc = new PngBitmapEncoder();
+            enc.Frames.Add(BitmapFrame.Create(rtb));
+            using var ms = new MemoryStream();
+            enc.Save(ms);
+            return ms.ToArray();
+        }
+        DataObject PngData(int w, int h) { var d = new DataObject(); d.SetData("PNG", new MemoryStream(Png(w, h))); return d; }
+
+        // 1) 클립보드 데이터 → 첨부
+        var small = ScreenClip.FromDataObject(PngData(400, 300));
+        Check($"PNG 그림 → {small?.Name} ({small?.Mime})", small is { Mime: "image/png" } && small.Name.StartsWith("clip-") && small.Name.EndsWith(".png"));
+        var big = ScreenClip.FromDataObject(PngData(3000, 1800));
+        var bigFrame = big is null ? null : BitmapFrame.Create(new MemoryStream(big.Data));
+        Check($"큰 그림 3000×1800 → {big?.Mime} {bigFrame?.PixelWidth}×{bigFrame?.PixelHeight} (긴 변 2000)", big is { Mime: "image/jpeg" } && bigFrame?.PixelWidth == 2000);
+        var bmpData = new DataObject();
+        bmpData.SetData(DataFormats.Bitmap, BitmapFrame.Create(new MemoryStream(Png(200, 100))));
+        var fromBmp = ScreenClip.FromDataObject(bmpData);
+        Check($"비트맵 형식만 → {fromBmp?.Mime}", fromBmp is { Mime: "image/png" });
+        Check("글자만 → 그림 아님", ScreenClip.FromDataObject(new DataObject(DataFormats.UnicodeText, "hello")) is null);
+
+        // 2) 신고 창 붙여넣기
+        var w = new ReportWindow(new Settings()) { Left = -20000, Top = -20000, ShowActivated = false };
+        w.Show();
+        var paste = typeof(ReportWindow).GetMethod("PasteAttachments", Any)!;
+        var list = (System.Collections.IList)typeof(ReportWindow).GetField("_attachments", Any)!.GetValue(w)!;
+        var err = (System.Windows.Controls.TextBlock)typeof(ReportWindow).GetField("_attachError", Any)!.GetValue(w)!;
+        bool Paste(IDataObject d) => (bool)paste.Invoke(w, new object[] { d })!;
+        Check("글자 붙여넣기 → 입력 칸에 맡김 (첨부 안 함)", !Paste(new DataObject(DataFormats.UnicodeText, "hello")) && list.Count == 0);
+        Check($"그림 붙여넣기 → 첨부 {list.Count + 1}개", Paste(PngData(640, 480)) && list.Count == 1);
+        string tmp = Path.Combine(Path.GetTempPath(), "mongdock-clipcheck");
+        Directory.CreateDirectory(tmp);
+        string png = Path.Combine(tmp, "shot.png"), txt = Path.Combine(tmp, "note.txt"), exe = Path.Combine(tmp, "tool.exe");
+        File.WriteAllBytes(png, Png(300, 200));
+        File.WriteAllText(txt, @"C:\Users\melon\Desktop\연봉.xlsx");
+        File.WriteAllBytes(exe, new byte[10]);
+        var files = new DataObject();
+        files.SetData(DataFormats.FileDrop, new[] { png, txt });
+        bool pastedFiles = Paste(files);
+        Check($"파일 2개 붙여넣기 → 첨부 {list.Count}개 (3 기대)", pastedFiles && list.Count == 3);
+        var noteText = System.Text.Encoding.UTF8.GetString(((ReportAttachment)list[2]!).Data);
+        Check($"붙여 넣은 텍스트도 가림 ({noteText})", !noteText.Contains("melon"));
+        bool fourth = Paste(PngData(100, 100));
+        Check($"넷째 그림 → 개수 제한 안내 ({err.Text})", fourth && list.Count == 3 && err.Visibility == Visibility.Visible);
+        list.Clear();
+        var exeDrop = new DataObject();
+        exeDrop.SetData(DataFormats.FileDrop, new[] { exe });
+        err.Visibility = Visibility.Collapsed;
+        bool exeHandled = Paste(exeDrop);
+        Check($"허용 안 되는 파일 → 안내 ({err.Text})", exeHandled && list.Count == 0 && err.Visibility == Visibility.Visible && err.Text.Contains("mp4"));
+        // 캡처 때 다른 몽독 창도 숨김 (#17): 작업 표시줄에 뜨는 일반 창만, 독·상단바 같은 창(ShowInTaskbar=false)은 그대로
+        var other = new Window { Left = -20000, Top = -20000, Width = 200, Height = 100, ShowInTaskbar = true, ShowActivated = false, Title = "설정 흉내" };
+        var bar = new Window { Left = -20000, Top = -19000, Width = 200, Height = 30, ShowInTaskbar = false, ShowActivated = false, Title = "상단바 흉내" };
+        other.Show();
+        bar.Show();
+        var hidden = (List<Window>)typeof(ReportWindow).GetMethod("HideForCapture", Any)!.Invoke(w, null)!;
+        Check($"캡처 때 숨김: 신고 창 {!w.IsVisible}, 일반 창 {!other.IsVisible}, 상단바 같은 창은 그대로 {bar.IsVisible}", !w.IsVisible && !other.IsVisible && bar.IsVisible && hidden.Count == 1);
+        typeof(ReportWindow).GetMethod("RestoreAfterCapture", Any)!.Invoke(null, new object[] { hidden });
+        w.Show();
+        Check($"캡처 뒤 되돌림: 일반 창 {other.IsVisible}, 신고 창 {w.IsVisible}", other.IsVisible && w.IsVisible);
+        other.Close();
+        bar.Close();
+        w.Close();
+        Directory.Delete(tmp, true);
+
+        // 3) 영역 캡처 흐름 (가짜 도구·클립보드)
+        var sc = typeof(ScreenClip);
+        object? Get(string f) => sc.GetField(f, Any)!.GetValue(null);
+        var saved = new[] { "Launch", "Sequence", "OverlayVisible", "ReadClipboard" }.ToDictionary(f => f, Get);
+        void Set(string f, object v) => sc.GetField(f, Any)!.SetValue(null, v);
+        var shot = new ReportAttachment("clip-test.png", "image/png", Png(50, 50));
+        (ReportAttachment?, ScreenClipOutcome, int gone, long ms) Run(Func<long, bool> overlay, long imageAt, bool launchOk = true, int timeout = 8000, int stopAt = -1)
+        {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            Set("Launch", new Func<bool>(() => launchOk));
+            Set("Sequence", new Func<uint>(() => imageAt >= 0 && clock.ElapsedMilliseconds >= imageAt ? 2u : 1u));
+            Set("OverlayVisible", new Func<bool>(() => overlay(clock.ElapsedMilliseconds)));
+            Set("ReadClipboard", new Func<ReportAttachment?>(() => shot));
+            int gone = 0;
+            using var cts = new CancellationTokenSource();
+            if (stopAt >= 0) cts.CancelAfter(stopAt);
+            var t = ScreenClip.CaptureAsync(() => gone++, cts.Token, timeout);
+            while (!t.IsCompleted) Thread.Sleep(20);
+            var (a, o) = t.Result;
+            return (a, o, gone, clock.ElapsedMilliseconds);
+        }
+        try
+        {
+            var r = Run(ms => ms > 300 && ms < 1500, 1400);
+            Check($"도구 화면 → 그림 들어옴: {r.Item2}, 신고 창 다시 띄움 {r.gone}번, {r.ms}ms", r.Item2 == ScreenClipOutcome.Captured && r.Item1 == shot && r.gone == 1);
+            r = Run(ms => ms > 300 && ms < 1200, -1);
+            Check($"그림 없이 도구 닫음 → {r.Item2} ({r.ms}ms, 1.2초 + 1.5초쯤)", r.Item2 == ScreenClipOutcome.Cancelled && r.gone == 1 && r.ms is > 2500 and < 3600);
+            r = Run(_ => false, 4500);
+            Check($"도구 화면 못 찾음 → 3초에 신고 창 다시, 그 뒤 그림 받음: {r.Item2} ({r.ms}ms, 다시 띄움 {r.gone}번)", r.Item2 == ScreenClipOutcome.Captured && r.gone == 1 && r.ms > 4400);
+            r = Run(_ => false, -1, timeout: 4000);
+            Check($"도구 화면도 그림도 없음 → {r.Item2} ({r.ms}ms)", r.Item2 == ScreenClipOutcome.NoTool && r.gone == 1);
+            r = Run(_ => true, -1, launchOk: false);
+            Check($"도구 열기 실패 → {r.Item2}", r.Item2 == ScreenClipOutcome.LaunchFailed && r.gone == 1);
+            r = Run(_ => true, -1, stopAt: 800);
+            Check($"[취소] → {r.Item2} ({r.ms}ms)", r.Item2 == ScreenClipOutcome.Stopped && r.gone == 1 && r.ms < 1500);
+            Set("ReadClipboard", new Func<ReportAttachment?>(() => null));
+            var clock2 = System.Diagnostics.Stopwatch.StartNew();
+            Set("Launch", new Func<bool>(() => true));
+            Set("Sequence", new Func<uint>(() => clock2.ElapsedMilliseconds > 500 ? 2u : 1u));
+            Set("OverlayVisible", new Func<bool>(() => clock2.ElapsedMilliseconds < 1000));
+            var t2 = ScreenClip.CaptureAsync(null, CancellationToken.None, 8000);
+            while (!t2.IsCompleted) Thread.Sleep(20);
+            Check($"글자가 복사됨(그림 아님) → 계속 기다리다 도구 닫힘으로 끝: {t2.Result.Outcome}", t2.Result.Outcome == ScreenClipOutcome.Cancelled);
+        }
+        finally
+        {
+            foreach (var (f, v) in saved) Set(f, v!);
+        }
+        Console.WriteLine($"  정보  이 PC 캡처 도구 있음(버튼 보임): {ScreenClip.Available()}");
+        Console.WriteLine(bad == 0 ? "영역 캡처·붙여넣기 점검: 모두 통과" : $"영역 캡처·붙여넣기 점검: 실패 {bad}개");
+        return bad == 0 ? 0 : 1;
+    }
+
     private static int ProfileCheck()
     {
         var asm = typeof(Mongdock.App).Assembly;
@@ -1889,8 +2133,8 @@ internal static class Program
             coach.GetMethod("Init", any)!.Invoke(null, new object?[] { services, (Func<Mongdock.Services.CoachAnchor, (Rect, MonitorInfo)?>)(_ => null), null });
             List<object> Pages(string flow) => flow == "tour"
                 ? ((System.Collections.IEnumerable)coach.GetMethod("BuildTourPages", any)!.Invoke(null, null)!).Cast<object>().ToList()
-                : ((System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "update062" ? new object[] { new Version(0, 6, 1), new Version(0, 6, 2) } : flow == "update061" ? new object[] { new Version(0, 6, 0), new Version(0, 6, 1) } : flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
-            foreach (var flow in new[] { "tour", "update", "update06", "update061", "update062" })
+                : ((System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "catchup" ? new object[] { new Version(0, 2, 0), Mongdock.Services.WhatsNew.Current } : flow == "update062" ? new object[] { new Version(0, 6, 1), new Version(0, 6, 2) } : flow == "update061" ? new object[] { new Version(0, 6, 0), new Version(0, 6, 1) } : flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
+            foreach (var flow in new[] { "tour", "update", "update06", "update061", "update062", "catchup" })
             {
                 var pages = Pages(flow);
                 var rows = new List<BitmapSource>();
@@ -1920,7 +2164,7 @@ internal static class Program
                 }
                 // 시트
                 var sheet = new System.Windows.Controls.StackPanel { Background = Brushes.White };
-                sheet.Children.Add(new System.Windows.Controls.TextBlock { Text = (flow == "tour" ? "첫 설치 둘러보기" : flow == "update06" ? "0.5.x → 0.6.0 새 기능" : flow == "update061" ? "0.6.0 → 0.6.1 새 기능" : flow == "update062" ? "0.6.1 → 0.6.2 새 기능" : "0.4.x → 0.5.0 새 기능") + $" · {_lang} · {theme}", FontSize = 22, FontWeight = FontWeights.Bold, Margin = new Thickness(16, 12, 0, 8) });
+                sheet.Children.Add(new System.Windows.Controls.TextBlock { Text = (flow == "tour" ? "첫 설치 둘러보기" : flow == "update06" ? "0.5.x → 0.6.0 새 기능" : flow == "update061" ? "0.6.0 → 0.6.1 새 기능" : flow == "update062" ? "0.6.1 → 0.6.2 새 기능" : flow == "catchup" ? "0.2.0 → 지금 (오래된 버전)" : "0.4.x → 0.5.0 새 기능") + $" · {_lang} · {theme}", FontSize = 22, FontWeight = FontWeights.Bold, Margin = new Thickness(16, 12, 0, 8) });
                 foreach (var r in rows) sheet.Children.Add(new System.Windows.Controls.Image { Source = r, Width = r.PixelWidth, Height = r.PixelHeight, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 10) });
                 Save(Snap(sheet, 0.6), $"sheet-{flow}-{_lang}-{theme}.png");
                 Console.WriteLine($"  저장  sheet-{flow}-{_lang}-{theme}.png ({pages.Count}장)");

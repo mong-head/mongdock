@@ -139,6 +139,7 @@ public partial class DockWindow : Window
     {
         _closed = true;
         _folderPanel?.Close();
+        AllAppsPanel.DropSpare(); // 숨겨 둔 앱 모음 판 (#14)
         _folders?.Dispose();
         _recycle?.Dispose();
         _pollTimer.Stop();

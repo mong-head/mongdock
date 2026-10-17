@@ -132,6 +132,32 @@ public sealed class VirtualDesktopService : IVirtualDesktopService, IDisposable
         return ok;
     });
 
+    /// <summary>
+    /// 다른 데스크톱의 창을 앞으로 가져와 윈도우가 그 데스크톱으로 <b>바로</b> 가게 함 (#16 — 키 방식은 1→2→3→4 로 한 칸씩 넘어가 보임).
+    /// 공개 방식(창 활성화)만 씀. 0.6초 안에 target 에 도착하지 않으면 false — 부르는 쪽이 키 방식(<see cref="MoveToAsync"/>)으로.
+    /// </summary>
+    internal static Task<bool> JumpByActivatingAsync(IntPtr hwnd, int target) => RunGatedAsync($"jump to {target}", async () =>
+    {
+        if (target <= 0 || !User32.IsWindow(hwnd)) return false;
+        if (Read().Current == target) return true;
+        AppLauncher.ActivateWindow(hwnd);
+        for (int i = 0; i < 8; i++)
+        {
+            await Task.Delay(75);
+            if (Read().Current == target)
+            {
+                Log.Info($"가상 데스크톱 {target} 로 바로 감 (창 활성화)");
+                return true;
+            }
+        }
+        Log.Info($"창 활성화로 데스크톱 {target} 에 가지 않음 (지금 {Read().Current}) → 키 방식");
+        return false;
+    });
+
+    /// <summary>창이 있는 데스크톱으로: 먼저 창 활성화로 바로, 안 되면 키로 한 칸씩 (#16). 도착하면 true.</summary>
+    internal static async Task<bool> GoToAsync(IntPtr hwnd, int target) =>
+        await JumpByActivatingAsync(hwnd, target) || await MoveToAsync(target);
+
     /// <summary>데스크톱 전환/추가/삭제 (백그라운드 스레드에서 발생 — 받는 쪽이 UI 스레드로 넘길 것). WindowTracker 가 목록 갱신에 사용.</summary>
     internal static event EventHandler? DesktopsChangedStatic;
 
