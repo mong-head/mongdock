@@ -18,7 +18,8 @@ namespace Mongdock.Views;
 /// </summary>
 internal sealed class MinimizeEffectController : IDisposable
 {
-    private const int DurationMs = 320;
+    /// <summary>움직임 값 (시간·휘는 정도·끝 감속·흐려지기) — 한곳에서 바꿈 (MinimizeMotion.Current).</summary>
+    private static MinimizeMotion M => MinimizeMotion.Current;
     private const int GenieStrips = 24;
 
     private readonly AppServices _services;
@@ -207,7 +208,7 @@ internal sealed class MinimizeEffectController : IDisposable
             var clock = Stopwatch.StartNew();
             _frame = (_, _) =>
             {
-                double t = Math.Min(1, clock.ElapsedMilliseconds / (double)DurationMs);
+                double t = Math.Min(1, clock.ElapsedMilliseconds / (double)M.DurationMs);
                 for (int i = 0; i < _thumbs.Count; i++)
                 {
                     double v0 = (double)i / _thumbs.Count, v1 = (double)(i + 1) / _thumbs.Count;
@@ -217,7 +218,7 @@ internal sealed class MinimizeEffectController : IDisposable
                         dwFlags = DWM_TNP_RECTDESTINATION | DWM_TNP_RECTSOURCE | DWM_TNP_OPACITY | DWM_TNP_VISIBLE,
                         rcDestination = new RECT((int)dst.Left, (int)dst.Top, (int)Math.Ceiling(dst.Right), (int)Math.Ceiling(dst.Bottom)),
                         rcSource = new RECT(0, (int)(src.cy * v0), src.cx, (int)Math.Ceiling(src.cy * v1)),
-                        opacity = (byte)Math.Round(255 * (t < 0.8 ? 1 : 1 - (t - 0.8) / 0.2)),
+                        opacity = (byte)Math.Round(255 * (t < M.FadeFrom ? 1 : 1 - (t - M.FadeFrom) / Math.Max(0.01, 1 - M.FadeFrom))),
                         fVisible = true,
                     };
                     DwmUpdateThumbnailProperties(_thumbs[i], ref props);
@@ -243,12 +244,13 @@ internal sealed class MinimizeEffectController : IDisposable
 
     // ───────────────────────── 모양 계산 (시험에서도 씀) ─────────────────────────
 
-    private static double EaseIn(double t) => t * t;
+    /// <summary>시간 → 진행: 끝에서 천천히 멈춤(EaseOut, 3제곱) 또는 빨라지며 빨려 들어감(EaseIn, 2제곱). 튀는 탄성 없음.</summary>
+    private static double Ease(double t) => M.EaseOut ? 1 - Math.Pow(1 - t, 3) : t * t;
 
     /// <summary>크기 줄이기: 창 사각형이 아이콘 사각형으로 (빨라지며).</summary>
     internal static Rect ScaleRect(Rect from, Rect to, double t)
     {
-        double e = EaseIn(t);
+        double e = Ease(t);
         return new Rect(from.X + (to.X - from.X) * e, from.Y + (to.Y - from.Y) * e,
             Math.Max(1, from.Width + (to.Width - from.Width) * e), Math.Max(1, from.Height + (to.Height - from.Height) * e));
     }
@@ -258,12 +260,13 @@ internal sealed class MinimizeEffectController : IDisposable
     /// </summary>
     internal static Rect GenieStrip(Rect from, Rect to, double v0, double v1, double t)
     {
-        double down = EaseIn(Math.Clamp((t - 0.15) / 0.85, 0, 1)); // 내려가기 (처음 15% 는 좁아지기만)
+        double down = Ease(Math.Clamp((t - 0.15) / 0.85, 0, 1)); // 내려가기 (처음 15% 는 좁아지기만)
         double Y(double v) => from.Top + v * from.Height + (to.Top + v * to.Height - (from.Top + v * from.Height)) * down;
         (double L, double R) X(double v)
         {
             // 아래(v=1)일수록 먼저 좁아짐
-            double k = Math.Clamp(t * 1.8 - (1 - v) * 0.8, 0, 1);
+            // Bend 1 = 아래가 먼저 확 좁아짐(강한 지니), 0 = 모든 띠가 같이 좁아짐(크기 줄이기와 비슷)
+            double k = Math.Clamp(t * (1 + 0.8 * M.Bend) - (1 - v) * 0.8 * M.Bend, 0, 1);
             k = k * k * (3 - 2 * k); // 부드럽게
             return (from.Left + (to.Left - from.Left) * k, from.Right + (to.Right - from.Right) * k);
         }
@@ -320,4 +323,14 @@ internal sealed class MinimizeEffectController : IDisposable
     [DllImport("dwmapi.dll")] private static extern int DwmUnregisterThumbnail(IntPtr thumb);
     [DllImport("dwmapi.dll")] private static extern int DwmUpdateThumbnailProperties(IntPtr thumb, ref DWM_THUMBNAIL_PROPERTIES props);
     [DllImport("dwmapi.dll")] private static extern int DwmQueryThumbnailSourceSize(IntPtr thumb, out SIZE size);
+}
+
+/// <summary>
+/// 창 최소화 효과의 움직임 값 (#20, 사용자가 시안에서 고르는 중 — 2026-10-17): 시간(ms), 지니 휘는 정도(0~1), 끝에서 천천히 멈춤, 흐려지기 시작(0~1).
+/// 고르면 <see cref="Current"/> 하나만 바꿈. 되살리기 효과는 이 시간의 0.8배로 할 예정.
+/// </summary>
+internal sealed record MinimizeMotion(int DurationMs, double Bend, bool EaseOut, double FadeFrom)
+{
+    /// <summary>지금 값 (1e1542b 그대로 — 강한 지니·빨라지며 빨려 들어감).</summary>
+    public static MinimizeMotion Current { get; set; } = new(320, 1.0, false, 0.8);
 }
