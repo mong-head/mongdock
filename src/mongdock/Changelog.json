@@ -2,6 +2,24 @@
   "_comment": "mongdock 변경 내역 단일 원본. 앱(설정 → 변경 내역, 새로운 기능 코치마크)과 build-release.ps1(GitHub 릴리스 노트)이 함께 읽는다. 최신 버전을 맨 위에. kind = feature | improvement | fix. coach 가 있는 feature 는 업데이트 후 상단바·독 위 말풍선으로 소개(anchor = Center|Dock|Logo|AppName|Desktops|Tray|Search|Clock, condition = topBar|trayIcons|spotlight|banners|dock|appMenus, 없으면 항상). major = 그 버전의 주요 업데이트(버전당 1~4개, 오랜만에 업데이트한 사람·변경 내역 맨 위·릴리스 노트 \"이번 버전 핵심\"에 씀), headline = 그 버전 한 줄 요약. body 의 {hotkey} 는 실제 검색 단축키 문구로 바뀜.",
   "versions": [
     {
+      "version": "0.8.0",
+      "date": "2026-10-20",
+      "headline": "앱별 볼륨",
+      "headline_en": "Per-app volume",
+      "entries": [
+        {
+          "kind": "feature",
+          "text": "소리 판에서 앱마다 볼륨을 따로 조절할 수 있어요.",
+          "text_en": "Set the volume of each app separately in the sound panel."
+        },
+        {
+          "kind": "feature",
+          "text": "볼륨 키를 누르면 몽독 모양으로 소리 크기를 보여 줘요(설정에서 끌 수 있어요).",
+          "text_en": "Volume keys now show a mongdock-style indicator (can be turned off in Settings)."
+        }
+      ]
+    },
+    {
       "version": "0.6.5",
       "date": "2026-10-17",
       "headline": "앱 모음 판 고침",
