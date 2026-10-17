@@ -1061,7 +1061,7 @@ public partial class DockWindow : Window
                 : item.Windows.Any(w => _flashed.Contains(w.Hwnd));
             UpdateLaunching(item);
         }
-        if (_mediaHooked) ApplyMediaProgress(); // 재생 진행 막대 (#22) — 항목이 새로 만들어져도 이어서
+        if (_mediaHooked) ApplyMediaProgress(); // 재생 중 소리 표시 (#22·#27) — 항목이 새로 만들어져도 이어서
     }
 
     private void RebuildViews(bool recreateAll)
@@ -1355,7 +1355,7 @@ public partial class DockWindow : Window
         {
             _flashTimer?.Stop();
             if (_closed || _label is null) return;
-            if (_labelView == view && view.IsMouseOver && LabelAnchor(view) is Point a) _label.ShowAt(view.Item.Name, a, _layout.Edge);
+            if (_labelView == view && view.IsMouseOver && LabelAnchor(view) is Point a) _label.ShowAt(LabelText(view), a, _layout.Edge);
             else _label.Hide();
         };
         _flashTimer.Start();
@@ -1384,7 +1384,8 @@ public partial class DockWindow : Window
             _label.SetColors(_layout.LabelBackground, _layout.LabelForeground, _layout.LabelBorder);
         }
         _labelView = view;
-        _label.ShowAt(view.Item.Name, anchor, _layout.Edge);
+        _label.ShowAt(LabelText(view), anchor, _layout.Edge);
+        if (view.Item.PlayingSource is not null) RefreshMediaLabel(); // 재생 시간 1초마다
         // 배율이 다른 모니터끼리 DIP 가 겹쳐 엉뚱한 모니터에 만들어졌으면 옮긴 뒤 다시 (단일 모니터는 아무것도 안 함)
         if (_services.DesktopWindows.EnsureOnMonitor(_label, _monitor)) _label.MoveTo(anchor);
     }

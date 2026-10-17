@@ -7,13 +7,18 @@
       "entries": [
         {
           "kind": "fix",
-          "text": "창 최소화 효과로 독에서 창을 다시 열 때 끝에서 깜빡이던 문제를 고쳤어요.",
+          "text": "창 최소화 효과로 독에서 창을 다시 열 때 끝에서 깜빡이던 문제를 고쳤어요(세 효과 모두).",
           "text_en": "Fixed a flicker at the end when a window opens back out of the dock with the minimize effect."
         },
         {
           "kind": "improvement",
           "text": "설정 → 독에 늘 남아 있던 「윈도우 최소화·최대화 효과를 껐어요 [되돌리기]」 줄을 뺐어요. 「끔」을 고르면 윈도우 효과가 돌아와요.",
           "text_en": "Removed the \"Turned off the Windows minimize/maximize animation [Undo]\" row that stayed in Settings → Dock. Choosing Off brings the Windows animation back."
+        },
+        {
+          "kind": "improvement",
+          "text": "음악·영상을 재생 중인 앱은 독의 점이 작은 소리 표시로 바뀌어요. 마우스를 올리면 재생 시간이 보여요.",
+          "text_en": "Apps playing media show a small sound mark instead of the dot; hover to see the time."
         }
       ]
     },

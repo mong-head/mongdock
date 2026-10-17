@@ -42,9 +42,12 @@ public sealed class DockItemViewModel : ObservableObject
     /// </summary>
     public bool IsLaunching { get => _isLaunching; set => Set(ref _isLaunching, value); }
 
-    private double? _progress;
-    /// <summary>아이콘 아래 진행 막대 0~1 (재생 위치 — #22). null 이면 막대 없음.</summary>
-    public double? Progress { get => _progress; set => Set(ref _progress, value); }
+    private string? _playingSource;
+    /// <summary>
+    /// 이 앱이 음악·영상을 재생 중이면 그 미디어 세션의 앱 이름(SourceAppUserModelId) — 실행 중 점 자리에 작은 소리 표시, 이름표에 재생 시간 (#22·#27).
+    /// 일시 정지·재생 없음이면 null (그냥 점).
+    /// </summary>
+    public string? PlayingSource { get => _playingSource; set => Set(ref _playingSource, value); }
 
     private bool _hasNotification;
     public bool HasNotification { get => _hasNotification; set => Set(ref _hasNotification, value); }

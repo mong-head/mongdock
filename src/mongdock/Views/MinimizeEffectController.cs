@@ -515,13 +515,12 @@ internal static class MinimizeMotion
         return B(y1, y2, u);
     }
 
-    /// <summary>길 위치 p 의 불투명도: 끝 30% 안에서만 옅어짐 (아이콘으로·지니는 아이콘에 닿을 때 조금 남김). 흐려짐만(Off)은 처음부터 끝까지 옅어짐.</summary>
+    /// <summary>길 위치 p 의 불투명도: 끝 30% 안에서만 옅어져 끝에서 0. 흐려짐만(Off)은 처음부터 끝까지 옅어짐.</summary>
     public static double Opacity(MinimizeEffect shape, double p)
     {
         if (shape == MinimizeEffect.Off) return 1 - p;
         double f = p <= FadeFrom ? 0 : (p - FadeFrom) / (1 - FadeFrom);
-        double end = shape is MinimizeEffect.Scale or MinimizeEffect.Genie ? 0.1 : 0;
-        return 1 - (1 - end) * f;
+        return 1 - f; // 끝에서 완전히 사라짐 — 최소화 끝에 덮개를 치울 때 옅은 그림이 툭 없어지지 않게 (#27)
     }
 
     /// <summary>아이콘으로: 길 위치 p 의 흐림 반지름 (끝 30% 안에서 0 → BlurPx).</summary>

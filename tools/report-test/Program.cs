@@ -1861,22 +1861,50 @@ internal static class Program
         Check("스토어 앱 AUMID ↔ 그 앱 핀", Match("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify", new PinItem { Kind = PinKind.Aumid, Target = "SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify" }));
         Check("다른 앱은 아님 (Spotify ↔ chrome)", !Match("Spotify.exe", null, Win(@"C:\x\chrome.exe")));
         Check("빈 이름은 아님", !Match("  ", spotifyPin));
+        // 재생 중 표시 (#27): 이름표 시간 글자
+        string TimeText((TimeSpan, TimeSpan)? t) => (string)dockType.GetMethod("MediaTimeText", Any)!.Invoke(null, new object?[] { t })!;
+        Check($"이름표: 「{TimeText((TimeSpan.FromSeconds(151), TimeSpan.FromSeconds(245)))}」", TimeText((TimeSpan.FromSeconds(151), TimeSpan.FromSeconds(245))).EndsWith("2:31 / 4:05"));
+        Check($"이름표: 길이 모름 → 「{TimeText((TimeSpan.FromSeconds(10), TimeSpan.Zero))}」, 한 시간 넘으면 「{TimeText((TimeSpan.FromSeconds(3725), TimeSpan.FromSeconds(7200)))}」",
+            TimeText((TimeSpan.FromSeconds(10), TimeSpan.Zero)) == Mongdock.Loc.T("재생 중") && TimeText(null) == Mongdock.Loc.T("재생 중")
+            && TimeText((TimeSpan.FromSeconds(3725), TimeSpan.FromSeconds(7200))).EndsWith("1:02:05 / 2:00:00"));
         if (dir is not null)
         {
-            // 독 아이콘 그림: 재생 진행 40% (라이트·다크 독, 아이콘 52·72)
-            foreach (var (theme, size) in new[] { ("light", 52.0), ("dark", 52.0), ("light", 72.0) })
-            {
-                var ds = new DockSettings { Theme = theme == "dark" ? DockTheme.Dark : DockTheme.Light, IconSize = size };
-                var layout = Mongdock.ViewModels.DockLayout.From(ds, theme == "light");
-                var icon = new IconService().GetIcon(new PinItem { Kind = PinKind.Exe, Target = @"C:\Windows\System32\notepad.exe" }, IconStyle.Mac);
-                var vm = new Mongdock.ViewModels.DockItemViewModel("t", null, false, "Spotify", icon) { IsRunning = true, Progress = 0.4 };
-                var view = (FrameworkElement)Activator.CreateInstance(asm.GetType("Mongdock.Views.DockItemView")!, vm, layout)!;
-                var host = new System.Windows.Controls.Border { Padding = new Thickness(16), Background = new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x2A, 0x2A, 0x30) : Color.FromRgb(0xF0, 0xF0, 0xF5)), Child = view };
-                host.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-                host.Arrange(new Rect(host.DesiredSize));
-                host.UpdateLayout();
-                SaveVisual(host, host.DesiredSize, theme, Path.Combine(dir, $"dock-progress-{theme}-{size:0}.png"));
-            }
+            // 독 아이콘 그림: 재생 중(소리 표시) + 그냥 실행 중(점) 나란히 — 라이트·다크 × 아래·왼쪽·오른쪽 독 × 아이콘 36·52·72
+            var sheet = new System.Windows.Controls.Grid { Background = Brushes.White };
+            int row = 0;
+            foreach (var theme in new[] { "light", "dark" })
+                foreach (var edge in new[] { DockEdge.Bottom, DockEdge.Left, DockEdge.Right })
+                {
+                    sheet.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = GridLength.Auto });
+                    int col = 0;
+                    foreach (var size in new[] { 36.0, 52.0, 72.0 })
+                    {
+                        if (row == 0) sheet.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = GridLength.Auto });
+                        var ds = new DockSettings { Theme = theme == "dark" ? DockTheme.Dark : DockTheme.Light, IconSize = size, Edge = edge };
+                        var layout = Mongdock.ViewModels.DockLayout.From(ds, theme == "light");
+                        var panel = new System.Windows.Controls.StackPanel { Orientation = edge == DockEdge.Bottom ? System.Windows.Controls.Orientation.Horizontal : System.Windows.Controls.Orientation.Vertical };
+                        foreach (var (exe, playing) in new[] { (@"C:\Windows\System32\notepad.exe", true), (@"C:\Windows\explorer.exe", false) })
+                        {
+                            var icon = new IconService().GetIcon(new PinItem { Kind = PinKind.Exe, Target = exe }, IconStyle.Mac);
+                            var vm = new Mongdock.ViewModels.DockItemViewModel("t" + exe, null, false, "app", icon) { IsRunning = true, PlayingSource = playing ? "Spotify.exe" : null };
+                            panel.Children.Add((FrameworkElement)Activator.CreateInstance(asm.GetType("Mongdock.Views.DockItemView")!, vm, layout)!);
+                        }
+                        var cell = new System.Windows.Controls.Border
+                        {
+                            Padding = new Thickness(14), Margin = new Thickness(4), CornerRadius = new CornerRadius(14),
+                            Background = new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x2A, 0x2A, 0x30) : Color.FromRgb(0xEC, 0xEC, 0xF2)),
+                            Child = panel, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
+                        };
+                        System.Windows.Controls.Grid.SetRow(cell, row);
+                        System.Windows.Controls.Grid.SetColumn(cell, col++);
+                        sheet.Children.Add(cell);
+                    }
+                    row++;
+                }
+            sheet.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            sheet.Arrange(new Rect(sheet.DesiredSize));
+            sheet.UpdateLayout();
+            SaveVisual(sheet, sheet.DesiredSize, "light", Path.Combine(dir, "dock-playing.png"));
         }
         // 창 최소화 효과 (#20): 윈도우 최소화 애니메이션 끄기·되돌리기 (가짜 시스템 설정 — 실제 설정은 안 건드림)
         {
@@ -1941,7 +1969,7 @@ internal static class Program
             Check($"되살리기: 끝(1) → 창 자리(0), 창 자리에 닿을 때 천천히 (처음 10% {rFirst:0.000} > 끝 10% {rLast:0.000}), 탄성 없음",
                 PathAt(0, true) == 1 && PathAt(1, true) == 0 && Mono(true) && rFirst > rLast * 5);
             Check($"흐려짐은 끝 30% 안에서만 (p=0.7 불투명도 {Op(MinimizeEffect.Settle, 0.7):0.00}, p=1 차분하게 {Op(MinimizeEffect.Settle, 1):0.00} · 아이콘으로 {Op(MinimizeEffect.Scale, 1):0.00})",
-                Op(MinimizeEffect.Settle, 0.7) == 1 && Op(MinimizeEffect.Genie, 0.5) == 1 && Op(MinimizeEffect.Settle, 1) == 0 && Math.Abs(Op(MinimizeEffect.Scale, 1) - 0.1) < 1e-9);
+                Op(MinimizeEffect.Settle, 0.7) == 1 && Op(MinimizeEffect.Genie, 0.5) == 1 && Op(MinimizeEffect.Settle, 1) == 0 && Op(MinimizeEffect.Scale, 1) == 0 && Op(MinimizeEffect.Genie, 1) == 0);
             Check($"아이콘으로: 끝에서만 흐림 (p=0.6 {BlurAt(MinimizeEffect.Scale, 0.6):0}px, p=1 {BlurAt(MinimizeEffect.Scale, 1):0}px), 다른 모양은 흐림 없음",
                 BlurAt(MinimizeEffect.Scale, 0.6) == 0 && BlurAt(MinimizeEffect.Scale, 1) > 0 && BlurAt(MinimizeEffect.Settle, 1) == 0);
 
@@ -1957,7 +1985,7 @@ internal static class Program
             var settleLeft = Frame(MinimizeEffect.Settle, DockEdge.Left, from, icon, 1);
             Check("차분하게 (독 왼쪽) → 왼쪽으로", settleLeft.R.Left < from.Left && Math.Abs(settleLeft.R.Height - from.Height * 0.82) < 0.5);
             var scaleEnd = Frame(MinimizeEffect.Scale, DockEdge.Bottom, from, icon, 1);
-            Check($"아이콘으로 p=1 → 아이콘 자리, 옅게 ({scaleEnd.O:0.00})", Near(scaleEnd.R, icon) && scaleEnd.O < 0.2 && scaleEnd.O > 0);
+            Check($"아이콘으로 p=1 → 아이콘 자리, 사라짐 ({scaleEnd.O:0.00})", Near(scaleEnd.R, icon) && scaleEnd.O == 0);
             var fade = Frame(MinimizeEffect.Off, DockEdge.Bottom, from, icon, 0.5);
             Check("흐려짐만 → 자리 그대로, 처음부터 옅어짐 (p=0.5 → 0.5)", Near(fade.R, from) && Math.Abs(fade.O - 0.5) < 1e-9);
             Check("지니는 독이 아래일 때만 (옆이면 아이콘으로), 애니메이션 줄이기·절전 → 흐려짐만",

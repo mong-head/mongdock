@@ -228,6 +228,16 @@ public interface IMediaService
     TimeSpan Position { get; }
     TimeSpan Duration { get; }
     event EventHandler? Changed;
+
+    /// <summary>
+    /// 지금 재생 중(Playing)인 모든 세션의 앱 이름 (SourceAppUserModelId, 같은 앱은 한 번) — 독의 소리 표시용 (#22·#27, 0.8.2).
+    /// 바뀌면 PlayingChanged (UI 스레드). 일시 정지·멈춘 세션은 빠짐.
+    /// </summary>
+    IReadOnlyList<string> PlayingApps { get; }
+    event EventHandler? PlayingChanged;
+
+    /// <summary>그 앱의 재생 중 세션 하나의 위치·길이 (길이를 모르면 Duration 0). 재생 중 세션이 없으면 null.</summary>
+    (TimeSpan Position, TimeSpan Duration)? PlayingTime(string sourceApp);
     Task PlayPauseAsync();
     Task NextAsync();
     Task PreviousAsync();

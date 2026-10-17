@@ -7,9 +7,10 @@ using Mongdock.Services;
 namespace Mongdock.Views;
 
 /// <summary>
-/// 재생 진행 막대 (#22, 0.8): 음악·영상을 재생 중인 앱의 독 아이콘 아래 얇은 막대로 재생 위치를 보임.
-/// 재생 앱 = 미디어 세션의 SourceAppUserModelId ("Spotify.exe"·"Chrome"·스토어 앱 AUMID) — 독 항목의 핀·창과 짝지음.
-/// 재생 중일 때만 1초 타이머 (멈추거나 세션이 없으면 타이머도 멈춤). 다운로드 같은 작업 표시줄 진행은 다른 앱 것을 읽을 공개 방법이 없어 아직 안 함.
+/// 재생 중 표시 (#22 → #27, 0.8.2): 음악·영상을 재생 중(Playing)인 앱마다 독의 실행 중 점이 작은 소리 표시로 바뀜 (일시 정지면 그냥 점).
+/// 재생 앱 = 미디어 세션의 SourceAppUserModelId ("Spotify.exe"·"Chrome"·스토어 앱 AUMID) — 독 항목의 핀·창과 짝지음. 세션마다 따로라 여러 앱이 동시에 재생 중이면 앱마다.
+/// 마우스를 올리면 이름표에 「재생 중 · 2:31 / 4:05」(길이를 모르면 「재생 중」) — 이름표가 떠 있는 동안만 1초마다 다시.
+/// 진행 막대는 다운로드 막대처럼 보여 뺐음. 다운로드 같은 작업 표시줄 진행은 다른 앱 것을 읽을 공개 방법이 없어 안 함.
 /// </summary>
 public partial class DockWindow
 {
@@ -20,7 +21,7 @@ public partial class DockWindow
     {
         if (_mediaHooked) return;
         _mediaHooked = true;
-        _services.Media.Changed += OnMediaChanged;
+        _services.Media.PlayingChanged += OnMediaChanged;
         ApplyMediaProgress();
     }
 
@@ -28,7 +29,7 @@ public partial class DockWindow
     {
         if (!_mediaHooked) return;
         _mediaHooked = false;
-        _services.Media.Changed -= OnMediaChanged;
+        _services.Media.PlayingChanged -= OnMediaChanged;
         _mediaTimer?.Stop();
     }
 
@@ -38,31 +39,50 @@ public partial class DockWindow
         ApplyMediaProgress();
     }
 
-    /// <summary>재생 위치를 짝이 맞는 독 항목에만 (나머지는 막대 없음). 재생 중이면 1초마다 다시.</summary>
+    /// <summary>재생 중인 앱마다 짝이 맞는 독 항목 하나에 소리 표시 (같은 앱이 독에 둘이면 앞의 것). 이름표가 그 항목 위면 시간도 다시.</summary>
     private void ApplyMediaProgress()
     {
         if (_closed) return;
-        var m = _services.Media;
         bool on = _services.Settings.Current.Dock.ShowMediaProgress;
-        double? value = null;
-        string? source = null;
-        if (on && m.HasSession && m.Duration.TotalSeconds >= 1)
-        {
-            value = Math.Clamp(m.Position.TotalSeconds / m.Duration.TotalSeconds, 0, 1);
-            source = m.SourceApp;
-        }
-        bool matched = false;
+        var playing = on ? _services.Media.PlayingApps : Array.Empty<string>();
+        var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in _items)
         {
             if (item.IsSeparator) continue;
-            bool mine = !matched && value is not null && source is { Length: > 0 } && MediaSourceMatches(source, item.Pin, item.Windows);
-            if (mine) matched = true;
-            item.Progress = mine ? value : null;
+            string? mine = null;
+            foreach (var source in playing)
+                if (!taken.Contains(source) && MediaSourceMatches(source, item.Pin, item.Windows)) { mine = source; break; }
+            if (mine is not null) taken.Add(mine);
+            item.PlayingSource = mine;
         }
-        bool tick = matched && m.IsPlaying;
-        if (tick)
+        RefreshMediaLabel();
+    }
+
+    /// <summary>이름표 글자: 이름 + 재생 중이면 「 · 재생 중 · 2:31 / 4:05」.</summary>
+    private string LabelText(DockItemView view)
+    {
+        string name = view.Item.Name;
+        if (view.Item.PlayingSource is not { } src) return name;
+        return name + " · " + MediaTimeText(_services.Media.PlayingTime(src));
+    }
+
+    /// <summary>「재생 중 · 2:31 / 4:05」, 길이를 모르면 「재생 중」.</summary>
+    internal static string MediaTimeText((TimeSpan Position, TimeSpan Duration)? time)
+    {
+        string playing = Loc.T("재생 중");
+        if (time is not { } t || t.Duration <= TimeSpan.Zero) return playing;
+        static string F(TimeSpan x) => x.TotalHours >= 1 ? $"{(int)x.TotalHours}:{x.Minutes:00}:{x.Seconds:00}" : $"{(int)x.TotalMinutes}:{x.Seconds:00}";
+        return $"{playing} · {F(t.Position)} / {F(t.Duration)}";
+    }
+
+    /// <summary>이름표가 재생 중 항목 위에 떠 있으면 글자를 다시 쓰고 1초 뒤 또 (아니면 타이머 멈춤).</summary>
+    private void RefreshMediaLabel()
+    {
+        bool showing = _label is { IsVisible: true } && _labelView is { } v && v.IsMouseOver && v.Item.PlayingSource is not null;
+        if (showing && LabelAnchor(_labelView!) is Point a) _label!.ShowAt(LabelText(_labelView!), a, _layout.Edge);
+        if (showing)
         {
-            _mediaTimer ??= new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => ApplyMediaProgress(), Dispatcher);
+            _mediaTimer ??= new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => RefreshMediaLabel(), Dispatcher);
             if (!_mediaTimer.IsEnabled) _mediaTimer.Start();
         }
         else _mediaTimer?.Stop();

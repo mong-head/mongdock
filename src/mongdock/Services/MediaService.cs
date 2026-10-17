@@ -57,6 +57,102 @@ public sealed class MediaService : IMediaService, IDisposable
 
     public event EventHandler? Changed;
 
+    // ───────────────────────── 재생 중인 모든 세션 (#22·#27) ─────────────────────────
+
+    /// <summary>지켜보는 세션 → 앱 이름. 재생 상태가 바뀔 때만 다시 셈 (위치는 물어볼 때 읽음).</summary>
+    private readonly Dictionary<GlobalSystemMediaTransportControlsSession, string> _watched = new();
+
+    public IReadOnlyList<string> PlayingApps { get; private set; } = Array.Empty<string>();
+    public event EventHandler? PlayingChanged;
+
+    private void OnSessionsChanged(GlobalSystemMediaTransportControlsSessionManager sender, SessionsChangedEventArgs args) =>
+        _ = OnUi(WatchSessions);
+
+    /// <summary>세션 목록을 다시 받아 새 세션은 재생 상태 변화를 구독, 사라진 세션은 떼어 붙잡아 둠(#15). UI 스레드.</summary>
+    private void WatchSessions()
+    {
+        if (!_started || _manager is null) return;
+        IReadOnlyList<GlobalSystemMediaTransportControlsSession> now;
+        try { now = _manager.GetSessions(); }
+        catch (Exception ex) { Log.Warn($"미디어 세션 목록 읽기 실패: {ex.GetType().Name}"); return; }
+        foreach (var gone in _watched.Keys.Where(s => !now.Contains(s)).ToList()) Unwatch(gone);
+        foreach (var s in now)
+        {
+            if (_watched.ContainsKey(s)) continue;
+            string source;
+            try { source = s.SourceAppUserModelId ?? ""; }
+            catch (Exception ex) { Retire(s); Log.Warn($"재생 앱 읽기 실패: {ex.GetType().Name}"); continue; }
+            _watched[s] = source;
+            try { s.PlaybackInfoChanged += OnAnyPlaybackChanged; } catch { }
+        }
+        UpdatePlayingApps();
+    }
+
+    private void Unwatch(GlobalSystemMediaTransportControlsSession s)
+    {
+        _watched.Remove(s);
+        Retire(s);
+        try { s.PlaybackInfoChanged -= OnAnyPlaybackChanged; } catch { }
+    }
+
+    private void OnAnyPlaybackChanged(GlobalSystemMediaTransportControlsSession sender, PlaybackInfoChangedEventArgs args) =>
+        _ = OnUi(UpdatePlayingApps);
+
+    private static bool IsSessionPlaying(GlobalSystemMediaTransportControlsSession s) =>
+        s.GetPlaybackInfo()?.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+
+    /// <summary>재생 중인 앱 이름을 다시 셈 — 바뀌었으면 PlayingChanged. 깨진 세션(#15)은 떼어 냄.</summary>
+    private void UpdatePlayingApps()
+    {
+        var playing = new List<string>();
+        foreach (var (s, source) in _watched.ToList())
+        {
+            try
+            {
+                if (source.Length > 0 && IsSessionPlaying(s) && !playing.Contains(source, StringComparer.OrdinalIgnoreCase)) playing.Add(source);
+            }
+            catch (Exception ex) when (ex is NullReferenceException or ObjectDisposedException or InvalidCastException)
+            {
+                Log.Warn($"미디어 세션이 깨짐(재생 상태: {ex.GetType().Name}) → 지켜보기 뺌");
+                Unwatch(s);
+            }
+            catch (Exception ex) { Log.Warn($"재생 상태 읽기 실패: {ex.GetType().Name}"); }
+        }
+        if (playing.SequenceEqual(PlayingApps, StringComparer.OrdinalIgnoreCase)) return;
+        PlayingApps = playing;
+        try { PlayingChanged?.Invoke(this, EventArgs.Empty); }
+        catch (Exception ex) { Log.Error("MediaService.PlayingChanged 핸들러 예외", ex); }
+    }
+
+    public (TimeSpan Position, TimeSpan Duration)? PlayingTime(string sourceApp)
+    {
+        foreach (var (s, source) in _watched.ToList())
+        {
+            if (!string.Equals(source, sourceApp, StringComparison.OrdinalIgnoreCase)) continue;
+            try
+            {
+                var info = s.GetPlaybackInfo();
+                if (info?.PlaybackStatus != GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing) continue;
+                var t = s.GetTimelineProperties();
+                var duration = t.EndTime - t.StartTime;
+                if (duration < TimeSpan.FromSeconds(1)) duration = TimeSpan.Zero;
+                var pos = t.Position - t.StartTime;
+                // 재생 중이면 마지막 갱신 뒤 흐른 시간만큼 (LastUpdatedTime 이 비어 있는 앱은 그대로)
+                if (t.LastUpdatedTime.Year > 2000)
+                {
+                    var elapsed = DateTimeOffset.Now - t.LastUpdatedTime;
+                    double rate = info.PlaybackRate is double r && r > 0 ? r : 1.0;
+                    if (elapsed > TimeSpan.Zero) pos += TimeSpan.FromTicks((long)(elapsed.Ticks * rate));
+                }
+                if (pos < TimeSpan.Zero) pos = TimeSpan.Zero;
+                if (duration > TimeSpan.Zero && pos > duration) pos = duration;
+                return (pos, duration);
+            }
+            catch (Exception ex) { Log.Warn($"재생 시간 읽기 실패: {ex.GetType().Name}"); }
+        }
+        return null;
+    }
+
     // ───────────────────────── 시작/정지 ─────────────────────────
 
     public void Start()
@@ -77,7 +173,9 @@ public sealed class MediaService : IMediaService, IDisposable
                 if (!_started) return;
                 _manager = mgr;
                 _manager.CurrentSessionChanged += OnCurrentSessionChanged;
+                _manager.SessionsChanged += OnSessionsChanged;
                 AttachSession(_manager.GetCurrentSession());
+                WatchSessions();
             });
         }
         catch (Exception ex)
@@ -94,6 +192,9 @@ public sealed class MediaService : IMediaService, IDisposable
         if (_manager is not null)
         {
             try { _manager.CurrentSessionChanged -= OnCurrentSessionChanged; } catch { }
+            try { _manager.SessionsChanged -= OnSessionsChanged; } catch { }
+            foreach (var s in _watched.Keys.ToList()) Unwatch(s);
+            PlayingApps = Array.Empty<string>();
             _manager = null;
         }
     }

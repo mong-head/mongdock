@@ -29,7 +29,7 @@ internal sealed class DockItemView : Grid
     private readonly Ellipse? _runningDot;
     private readonly Ellipse? _notifyDot;
     /// <summary>재생 진행 막대 (#22) 바탕·채움.</summary>
-    private readonly Border? _progressBar, _progressFill;
+    private readonly System.Windows.Shapes.Path? _soundMark;
     /// <summary>드래그 정렬 중 비켜서기 이동 (독 방향). 레이아웃은 그대로 두고 그림만 옮긴다.</summary>
     private readonly TranslateTransform _shift = new();
     private const double ShiftMs = 150;
@@ -148,24 +148,6 @@ internal sealed class DockItemView : Grid
             _pressHost.Children.Add(_darken);
         }
         iconHost.Children.Add(_pressHost);
-        // 재생 진행 막대 (#22): 아이콘 아래쪽 안에 어두운 둥근 바탕 + 흰 채움 — 어떤 아이콘 색 위에서도 보이게. 아이콘과 같이 확대됨
-        double barH = Math.Max(3, Math.Round(icon * 0.075)), barW = Math.Round(icon * 0.66);
-        _progressFill = new Border { CornerRadius = new CornerRadius(barH / 2), Background = Brushes.White, HorizontalAlignment = HorizontalAlignment.Left, Width = 0 };
-        _progressBar = new Border
-        {
-            Width = barW,
-            Height = barH + 2,
-            Padding = new Thickness(1),
-            CornerRadius = new CornerRadius(barH / 2 + 1),
-            Background = new SolidColorBrush(Color.FromArgb(0xA6, 0x1C, 0x1C, 0x22)),
-            VerticalAlignment = VerticalAlignment.Bottom,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(0, 0, 0, Math.Round(icon * 0.1)),
-            Child = _progressFill,
-            IsHitTestVisible = false,
-            Visibility = Visibility.Collapsed,
-        };
-        iconHost.Children.Add(_progressBar);
         _iconHost = iconHost;
 
         double n = layout.NotificationSize;
@@ -220,8 +202,37 @@ internal sealed class DockItemView : Grid
         }
         Children.Add(_runningDot);
 
+        // 재생 중 소리 표시 (#22·#27): 음악·영상을 재생 중이면 점 대신 같은 자리·같은 색의 작은 스피커 모양 (움직이지 않음, 아이콘을 덮지 않음)
+        _soundMark = new System.Windows.Shapes.Path
+        {
+            Data = SoundMarkGeometry,
+            Fill = layout.Indicator,
+            Stretch = Stretch.Uniform,
+            Height = Math.Round(d * 1.9),
+            Width = Math.Round(d * 1.9 * 1.15),
+            IsHitTestVisible = false,
+            Visibility = Visibility.Collapsed,
+            HorizontalAlignment = _runningDot.HorizontalAlignment,
+            VerticalAlignment = _runningDot.VerticalAlignment,
+            Margin = _runningDot.Margin,
+        };
+        RenderOptions.SetEdgeMode(_soundMark, EdgeMode.Unspecified);
+        Children.Add(_soundMark);
+
         UpdateDots();
         item.PropertyChanged += OnItemPropertyChanged;
+    }
+
+    /// <summary>작은 스피커 모양 (약 11×10 칸: 몸통 + 나팔 + 소리 물결 둘). 채우기만으로 그려 작은 크기에서도 선명.</summary>
+    private static readonly Geometry SoundMarkGeometry = MakeSoundMark();
+
+    private static Geometry MakeSoundMark()
+    {
+        var g = Geometry.Parse("M0,3.5 L2.4,3.5 L5.4,0.8 L5.4,9.2 L2.4,6.5 L0,6.5 Z " +
+                               "M7,2.3 A3.8,3.8 0 0 1 7,7.7 L6.3,6.9 A2.7,2.7 0 0 0 6.3,3.1 Z " +
+                               "M8.7,0.6 A5.8,5.8 0 0 1 8.7,9.4 L8,8.6 A4.7,4.7 0 0 0 8,1.4 Z");
+        g.Freeze();
+        return g;
     }
 
     /// <summary>뷰를 버릴 때 VM 구독 해제.</summary>
@@ -243,7 +254,9 @@ internal sealed class DockItemView : Grid
         if (_runningDot != null)
         {
             // 실행을 누르면 창이 뜨기 전에도 점을 바로 보여 줌
-            _runningDot.Visibility = Item.IsRunning || Item.IsLaunching ? Visibility.Visible : Visibility.Collapsed;
+            bool sound = Item.PlayingSource is not null && Item.IsRunning;
+            _runningDot.Visibility = (Item.IsRunning || Item.IsLaunching) && !sound ? Visibility.Visible : Visibility.Collapsed;
+            if (_soundMark != null) _soundMark.Visibility = sound ? Visibility.Visible : Visibility.Collapsed;
             bool blink = WaitingForWindow && _layout.LaunchAnimation == LaunchAnimation.Blink && Anim.Enabled;
             if (blink) StartBlink();
             else
@@ -255,11 +268,6 @@ internal sealed class DockItemView : Grid
         if (!Item.IsLaunching) _bounceStopped = false; // 다음 실행 때 다시 튈 수 있게
         if (WantBounce) StartBounce();
         if (_notifyDot != null) _notifyDot.Visibility = Item.HasNotification ? Visibility.Visible : Visibility.Collapsed;
-        if (_progressBar != null && _progressFill != null)
-        {
-            _progressBar.Visibility = Item.Progress is null ? Visibility.Collapsed : Visibility.Visible;
-            if (Item.Progress is { } v) _progressFill.Width = Math.Max(_progressBar.Height - 2, (_progressBar.Width - 2) * v);
-        }
     }
 
     // ───────────────────────── 누름 반응 ─────────────────────────

@@ -583,7 +583,7 @@ internal sealed partial class SettingsWindow : Window
             more.Add(Row(Loc.T("모서리 둥글기"), null, ValueSlider(d.CornerRadius, 8, 28, 1, v => $"{v:0}px", v => D().CornerRadius = v)));
         more.Add(Row(Loc.T("실행 중 앱도 독에 보이기"), Loc.T("고정하지 않은 실행 중 앱도 구분선 뒤에 보여요."),
             Toggle(d.ShowRunningApps, on => Commit(() => D().ShowRunningApps = on))));
-        more.Add(Row(Loc.T("재생 진행 막대"), Loc.T("음악·영상을 재생 중인 앱의 독 아이콘 아래에 재생 위치가 보여요."),
+        more.Add(Row(Loc.T("재생 중 표시"), Loc.T("음악·영상을 재생 중인 앱은 독의 점이 작은 소리 표시로 바뀌어요. 마우스를 올리면 재생 시간이 보여요."),
             Toggle(d.ShowMediaProgress, on => Commit(() => D().ShowMediaProgress = on)))); // #22
         more.Add(Row(Loc.T("창이 여러 개일 때 클릭"), null, Segmented(d.MultiWindowClick,
             new[] { (MultiWindowClick.Picker, Loc.T("창 고르기")), (MultiWindowClick.MostRecent, Loc.T("최근 창")) },
