@@ -1499,5 +1499,8 @@
  "최소화한 창이 독 아이콘으로 들어가요. 켜 두는 동안 윈도우 최소화·최대화 애니메이션은 꺼져요(끄면 되돌려요).": "Les fenêtres réduites rentrent dans leur icône du dock. Tant qu’il est actif, l’animation de réduction/agrandissement de Windows est désactivée (rétablie quand vous le désactivez).",
  "크기 줄이기": "Échelle",
  "지니": "Génie",
- "윈도우 최소화·최대화 효과를 껐어요": "Animation de réduction/agrandissement de Windows désactivée"
+ "윈도우 최소화·최대화 효과를 껐어요": "Animation de réduction/agrandissement de Windows désactivée",
+ "켰어요 — 윈도우 최소화·최대화 효과는 껐어요": "Activé — l’animation de réduction/agrandissement de Windows est désactivée",
+ "켰어요 — 설정 → 독에서 바꿀 수 있어요": "Activé — modifiez-le dans Paramètres → Dock",
+ "되돌렸어요 — 윈도우 효과 그대로예요": "Annulé — l’animation de Windows est comme avant"
 }

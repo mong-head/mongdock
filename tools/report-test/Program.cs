@@ -1320,12 +1320,12 @@ internal static class Program
         var stepType = asm.GetType("Mongdock.Views.TourStep")!;
         coach.GetMethod("Init", any)!.Invoke(null, new object?[] { services, (Func<Mongdock.Services.CoachAnchor, (Rect, MonitorInfo)?>)(_ => null), null });
         var problems = new List<string>();
-        foreach (var flow in new[] { "tour", "update", "update06", "update061", "update062", "catchup" }) // update = 0.4.2→0.5.0, update06 = 0.5.0→0.6.0 (장면 카드여야 함), catchup = 0.2.0→지금 (오래된 버전 — 카드가 화면에 들어가야 함)
+        foreach (var flow in new[] { "tour", "update", "update06", "update061", "update062", "update08", "catchup" }) // update = 0.4.2→0.5.0, update06 = 0.5.0→0.6.0 (장면 카드여야 함), catchup = 0.2.0→지금 (오래된 버전 — 카드가 화면에 들어가야 함)
         {
             var pages = (flow == "tour"
                 ? (System.Collections.IEnumerable)coach.GetMethod("BuildTourPages", any)!.Invoke(null, null)!
-                : (System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "catchup" ? new object[] { new Version(0, 2, 0), Mongdock.Services.WhatsNew.Current } : flow == "update062" ? new object[] { new Version(0, 6, 1), new Version(0, 6, 2) } : flow == "update061" ? new object[] { new Version(0, 6, 0), new Version(0, 6, 1) } : flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
-            if (flow is "update06" or "update061" && !pages.Any(x => x.GetType().GetProperty("Pictures")!.GetValue(x) is string))
+                : (System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "catchup" ? new object[] { new Version(0, 2, 0), Mongdock.Services.WhatsNew.Current } : flow == "update08" ? new object[] { new Version(0, 6, 5), new Version(0, 8, 0) } : flow == "update062" ? new object[] { new Version(0, 6, 1), new Version(0, 6, 2) } : flow == "update061" ? new object[] { new Version(0, 6, 0), new Version(0, 6, 1) } : flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
+            if (flow is "update06" or "update061" or "update08" && !pages.Any(x => x.GetType().GetProperty("Pictures")!.GetValue(x) is string))
                 problems.Add($"{flow} 새 기능 안내에 장면 카드가 없음 (예전 말풍선으로 뜸)");
             var steps = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(stepType))!;
             var titles = new List<string>();
@@ -2374,8 +2374,8 @@ internal static class Program
             coach.GetMethod("Init", any)!.Invoke(null, new object?[] { services, (Func<Mongdock.Services.CoachAnchor, (Rect, MonitorInfo)?>)(_ => null), null });
             List<object> Pages(string flow) => flow == "tour"
                 ? ((System.Collections.IEnumerable)coach.GetMethod("BuildTourPages", any)!.Invoke(null, null)!).Cast<object>().ToList()
-                : ((System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "catchup" ? new object[] { new Version(0, 2, 0), Mongdock.Services.WhatsNew.Current } : flow == "update062" ? new object[] { new Version(0, 6, 1), new Version(0, 6, 2) } : flow == "update061" ? new object[] { new Version(0, 6, 0), new Version(0, 6, 1) } : flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
-            foreach (var flow in new[] { "tour", "update", "update06", "update061", "update062", "catchup" })
+                : ((System.Collections.IEnumerable)coach.GetMethod("BuildWhatsNew", any)!.Invoke(null, (flow == "catchup" ? new object[] { new Version(0, 2, 0), Mongdock.Services.WhatsNew.Current } : flow == "update08" ? new object[] { new Version(0, 6, 5), new Version(0, 8, 0) } : flow == "update062" ? new object[] { new Version(0, 6, 1), new Version(0, 6, 2) } : flow == "update061" ? new object[] { new Version(0, 6, 0), new Version(0, 6, 1) } : flow == "update06" ? new object[] { new Version(0, 5, 0), new Version(0, 6, 0) } : new object[] { new Version(0, 4, 2), new Version(0, 5, 0) }))!).Cast<object>().ToList();
+            foreach (var flow in new[] { "tour", "update", "update06", "update061", "update062", "update08", "catchup" })
             {
                 var pages = Pages(flow);
                 var rows = new List<BitmapSource>();
@@ -2405,7 +2405,7 @@ internal static class Program
                 }
                 // 시트
                 var sheet = new System.Windows.Controls.StackPanel { Background = Brushes.White };
-                sheet.Children.Add(new System.Windows.Controls.TextBlock { Text = (flow == "tour" ? "첫 설치 둘러보기" : flow == "update06" ? "0.5.x → 0.6.0 새 기능" : flow == "update061" ? "0.6.0 → 0.6.1 새 기능" : flow == "update062" ? "0.6.1 → 0.6.2 새 기능" : flow == "catchup" ? "0.2.0 → 지금 (오래된 버전)" : "0.4.x → 0.5.0 새 기능") + $" · {_lang} · {theme}", FontSize = 22, FontWeight = FontWeights.Bold, Margin = new Thickness(16, 12, 0, 8) });
+                sheet.Children.Add(new System.Windows.Controls.TextBlock { Text = (flow == "tour" ? "첫 설치 둘러보기" : flow == "update06" ? "0.5.x → 0.6.0 새 기능" : flow == "update061" ? "0.6.0 → 0.6.1 새 기능" : flow == "update08" ? "0.6.5 → 0.8.0 새 기능" : flow == "update062" ? "0.6.1 → 0.6.2 새 기능" : flow == "catchup" ? "0.2.0 → 지금 (오래된 버전)" : "0.4.x → 0.5.0 새 기능") + $" · {_lang} · {theme}", FontSize = 22, FontWeight = FontWeights.Bold, Margin = new Thickness(16, 12, 0, 8) });
                 foreach (var r in rows) sheet.Children.Add(new System.Windows.Controls.Image { Source = r, Width = r.PixelWidth, Height = r.PixelHeight, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 10) });
                 Save(Snap(sheet, 0.6), $"sheet-{flow}-{_lang}-{theme}.png");
                 Console.WriteLine($"  저장  sheet-{flow}-{_lang}-{theme}.png ({pages.Count}장)");

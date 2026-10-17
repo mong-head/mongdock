@@ -1499,5 +1499,8 @@
  "최소화한 창이 독 아이콘으로 들어가요. 켜 두는 동안 윈도우 최소화·최대화 애니메이션은 꺼져요(끄면 되돌려요).": "Minimized windows go into their dock icon. While on, the Windows minimize/maximize animation is turned off (restored when you turn this off).",
  "크기 줄이기": "Scale",
  "지니": "Genie",
- "윈도우 최소화·최대화 효과를 껐어요": "Turned off the Windows minimize/maximize animation"
+ "윈도우 최소화·최대화 효과를 껐어요": "Turned off the Windows minimize/maximize animation",
+ "켰어요 — 윈도우 최소화·최대화 효과는 껐어요": "Turned on — the Windows minimize/maximize animation is off",
+ "켰어요 — 설정 → 독에서 바꿀 수 있어요": "Turned on — change it in Settings → Dock",
+ "되돌렸어요 — 윈도우 효과 그대로예요": "Undone — the Windows animation is back as it was"
 }

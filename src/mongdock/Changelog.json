@@ -4,13 +4,22 @@
     {
       "version": "0.8.0",
       "date": "2026-10-20",
-      "headline": "앱별 볼륨",
-      "headline_en": "Per-app volume",
+      "headline": "앱별 볼륨 · 창 최소화 효과",
+      "headline_en": "Per-app volume · Minimize effect",
       "entries": [
         {
           "kind": "feature",
+          "major": true,
           "text": "소리 판에서 앱마다 볼륨을 따로 조절할 수 있어요.",
-          "text_en": "Set the volume of each app separately in the sound panel."
+          "text_en": "Set the volume of each app separately in the sound panel.",
+          "coach": {
+            "key": "appvolume",
+            "anchor": "Center",
+            "title": "앱마다 볼륨을 따로",
+            "title_en": "Volume for each app",
+            "body": "상단바 소리 판에서 소리 나는 앱마다 막대를 움직이거나 음소거해요. 볼륨 키를 누르면 오른쪽 위에 몽독 표시가 떠요.",
+            "body_en": "In the menu bar's sound panel, move the slider or mute each app that's playing sound. Volume keys now show a mongdock indicator at the top right."
+          }
         },
         {
           "kind": "feature",
@@ -19,13 +28,22 @@
         },
         {
           "kind": "feature",
-          "text": "음악·영상을 재생 중인 앱의 독 아이콘 아래에 재생 위치가 보여요.",
-          "text_en": "The dock icon of the app playing music or video shows the playback position."
+          "major": true,
+          "text": "창을 최소화하면 독 아이콘으로 쏙 들어가는 효과(지니·크기 줄이기)를 켤 수 있어요(설정 → 독).",
+          "text_en": "Turn on a minimize effect (Genie or Scale) that sends windows into their dock icon (Settings → Dock).",
+          "coach": {
+            "key": "minimize",
+            "anchor": "Center",
+            "title": "창이 독으로 쏙",
+            "title_en": "Windows that fly into the dock",
+            "body": "창을 최소화하면 독 아이콘으로 빨려 들어가요. 켜 두는 동안 윈도우 최소화 효과는 꺼지고, 끄면 되돌려요. 설정 → 독에서 지니·크기 줄이기를 골라요.",
+            "body_en": "Minimized windows get pulled into their dock icon. While it's on, the Windows minimize animation is off and comes back when you turn this off. Pick Genie or Scale in Settings → Dock."
+          }
         },
         {
           "kind": "feature",
-          "text": "창을 최소화하면 독 아이콘으로 쏙 들어가는 효과(지니·크기 줄이기)를 켤 수 있어요(설정 → 독).",
-          "text_en": "Turn on a minimize effect (Genie or Scale) that sends windows into their dock icon (Settings → Dock)."
+          "text": "음악·영상을 재생 중인 앱의 독 아이콘 아래에 재생 위치가 보여요.",
+          "text_en": "The dock icon of the app playing music or video shows the playback position."
         }
       ]
     },

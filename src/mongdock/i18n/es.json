@@ -1499,5 +1499,8 @@
  "최소화한 창이 독 아이콘으로 들어가요. 켜 두는 동안 윈도우 최소화·최대화 애니메이션은 꺼져요(끄면 되돌려요).": "Las ventanas minimizadas entran en su icono del dock. Mientras esté activo, la animación de minimizar/maximizar de Windows se desactiva (se restaura al desactivarlo).",
  "크기 줄이기": "Escalar",
  "지니": "Genio",
- "윈도우 최소화·최대화 효과를 껐어요": "Se desactivó la animación de minimizar/maximizar de Windows"
+ "윈도우 최소화·최대화 효과를 껐어요": "Se desactivó la animación de minimizar/maximizar de Windows",
+ "켰어요 — 윈도우 최소화·최대화 효과는 껐어요": "Activado: la animación de minimizar/maximizar de Windows está desactivada",
+ "켰어요 — 설정 → 독에서 바꿀 수 있어요": "Activado: cámbialo en Configuración → Dock",
+ "되돌렸어요 — 윈도우 효과 그대로예요": "Deshecho: la animación de Windows queda como estaba"
 }

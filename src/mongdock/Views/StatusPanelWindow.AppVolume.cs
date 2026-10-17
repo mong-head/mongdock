@@ -27,6 +27,12 @@ internal sealed partial class StatusPanelWindow
     /// <summary>시험 그림용: 앱 목록을 바로 채움 (뒤에서 읽기를 기다리지 않게).</summary>
     private Action<IReadOnlyList<AppVolume>>? _applyAppVolumeForTest;
 
+    /// <summary>둘러보기 장면: 예시 앱 목록으로 바로 채움 (장면 아이콘은 <see cref="SceneIconForApp"/>).</summary>
+    internal void FillAppVolumeForScene(IReadOnlyList<AppVolume> apps) => _applyAppVolumeForTest?.Invoke(apps);
+
+    /// <summary>둘러보기 장면: 예시 앱 아이콘 (실제 실행 파일 대신). null 이면 보통처럼.</summary>
+    internal static Func<AppVolume, ImageSource?>? SceneIconForApp { get; set; }
+
     private UIElement BuildAppVolumeSection()
     {
         var section = new StackPanel { Visibility = Visibility.Collapsed };
@@ -166,6 +172,7 @@ internal sealed partial class StatusPanelWindow
     /// <summary>앱 아이콘 (몽독 아이콘 캐시 — 실행 파일 또는 스토어 앱). 없으면 null.</summary>
     private ImageSource? AppVolumeIcon(AppVolume a)
     {
+        if (SceneIconForApp is { } scene) return scene(a);
         try
         {
             var style = _services.Settings.Current.Dock.IconStyle;
