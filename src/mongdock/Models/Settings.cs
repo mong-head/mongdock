@@ -191,6 +191,8 @@ public sealed class TopBarSettings
     public string ClockFormat { get; set; } = "ddd tt h:mm";
     /// <summary>시계 앞에 날짜·요일 표시 (예 "10월 9일 (목) 오후 7:50"). 끄면 시각만.</summary>
     public bool ShowClockDate { get; set; } = true;
+    /// <summary>볼륨 키(키보드·미디어 키)를 몽독이 받아 볼륨을 바꾸고 몽독 표시를 띄움 — 윈도우 기본 볼륨 표시는 뜨지 않음 (#21, 0.8). 끄면 윈도우 그대로.</summary>
+    public bool VolumeIndicator { get; set; } = true;
     public bool ShowDesktopButtons { get; set; } = true;
     /// <summary>앱 이름 오른쪽에 그 앱의 메뉴(파일·편집·보기…) 표시 (맥 메뉴바처럼).</summary>
     public bool ShowAppMenus { get; set; } = true;

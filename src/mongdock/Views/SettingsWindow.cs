@@ -667,6 +667,8 @@ internal sealed partial class SettingsWindow : Window
         top.Add(Row(Loc.T("색"), null, ColorModeDropdown(t.ColorMode)));
         top.Add(Row(Loc.T("시계에 날짜 보이기"), Loc.T("예: 10월 9일 (목). 12·24시간은 윈도우 시간 형식을 따라요."),
             Toggle(t.ShowClockDate, on => Commit(() => T().ShowClockDate = on))));
+        top.Add(Row(Loc.T("볼륨 키를 누르면 몽독 표시"), Loc.T("오른쪽 위에 작은 몽독 볼륨 표시가 떠요. 윈도우 기본 표시는 뜨지 않아요. 전체 화면 앱에서는 윈도우 표시 그대로예요."),
+            Toggle(t.VolumeIndicator, on => Commit(() => T().VolumeIndicator = on)))); // #21
         body.Children.Add(Group(top.ToArray()));
 
         AddTopBarItems(body); // SettingsWindow.TopBarOrder.cs: 표시할 항목 + 순서 (한 목록)

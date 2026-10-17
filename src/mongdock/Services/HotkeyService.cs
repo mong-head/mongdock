@@ -123,6 +123,14 @@ public sealed class HotkeyService : IDisposable
         if (!down) return false;
 
         long now = Environment.TickCount64;
+        // 볼륨 올림·내림 (#21): 누르고 있으면 자동 반복마다 한 칸씩 (다른 단축키와 달리 한 번만이 아님). 업은 위에서 삼킴(_heldVk)
+        if (_recorder is null && _table.TryGetValue(Current(vk), out var repeatAction) && RepeatsWhileHeld(repeatAction))
+        {
+            _heldVk = vk;
+            _lastDownAt = now;
+            _dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => RaisePressed(repeatAction)));
+            return true;
+        }
         if (_heldVk == vk)
         {
             // 누르고 있는 동안의 자동 반복 → 다시 하지 않고 계속 삼킴
@@ -152,6 +160,9 @@ public sealed class HotkeyService : IDisposable
         _dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() => RaisePressed(action)));
         return true;
     }
+
+    /// <summary>누르고 있는 동안 반복할 할 일 (볼륨 올림·내림).</summary>
+    private static bool RepeatsWhileHeld(string action) => action is "volume:up" or "volume:down";
 
     /// <summary>삼킨 키를 기억 (반복·업도 삼키게) + Win/Alt 면 더미 키.</summary>
     private void Hold(int vk, long now, HotkeyChord chord)

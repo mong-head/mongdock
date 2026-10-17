@@ -12,6 +12,9 @@ namespace Mongdock.Views;
 internal sealed class HotkeyController : IDisposable
 {
     public const string Search = "search", AllApps = "allApps", ControlCenter = "controlCenter", Notifications = "notifications", RoutinePrefix = "routine:";
+    /// <summary>볼륨 키 (#21): 수정자 없이 누른 볼륨 올림·내림·음소거 키. 올림·내림은 누르고 있으면 반복.</summary>
+    public const string VolumeUp = "volume:up", VolumeDown = "volume:down", VolumeMute = "volume:mute";
+    public const int VK_VOLUME_MUTE = 0xAD, VK_VOLUME_DOWN = 0xAE, VK_VOLUME_UP = 0xAF;
 
     /// <summary>설정 창의 키 칸이 키를 받을 때 씀 (몽독이 돌고 있으면 늘 있음).</summary>
     public static HotkeyController? Instance { get; private set; }
@@ -85,6 +88,12 @@ internal sealed class HotkeyController : IDisposable
         Add(s.Hotkeys.ControlCenter, ControlCenter);
         Add(s.Hotkeys.Notifications, Notifications);
         foreach (var r in s.Routines) Add(r.Hotkey, RoutinePrefix + r.Id);
+        if (s.TopBar.VolumeIndicator)
+        {
+            t[new HotkeyChord(false, false, false, false, VK_VOLUME_UP)] = VolumeUp;
+            t[new HotkeyChord(false, false, false, false, VK_VOLUME_DOWN)] = VolumeDown;
+            t[new HotkeyChord(false, false, false, false, VK_VOLUME_MUTE)] = VolumeMute;
+        }
         return t;
     }
 

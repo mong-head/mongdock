@@ -242,6 +242,9 @@ public partial class App : Application
                 case HotkeyController.AllApps:
                     if (_dock is null || !_dock.ToggleAllAppsFromHotkey()) Log.Info("단축키: 앱 모음 판을 열 독이 없음 (독 꺼짐)");
                     break;
+                case HotkeyController.VolumeUp or HotkeyController.VolumeDown or HotkeyController.VolumeMute:
+                    VolumeOsdWindow.Handle(_services, action); // 볼륨 키 → 몽독 표시 (#21)
+                    break;
                 case HotkeyController.ControlCenter or HotkeyController.Notifications:
                     if (!_topBars.TryGetValue("", out var bar) || !bar.TogglePanelFromHotkey(action == HotkeyController.ControlCenter ? StatusPanelKind.ControlCenter : StatusPanelKind.Calendar))
                         Log.Info("단축키: 상단바가 꺼져 있어 판을 열 수 없음");

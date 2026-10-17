@@ -211,6 +211,8 @@ internal static class Program
         if (Array.IndexOf(args, "--suggest") >= 0) return SuggestTable();
         if (Array.IndexOf(args, "--tourmem") >= 0) return TourMemory(); // 둘러보기 장면 그림 메모리: 다 그린 뒤 / 정리 뒤 (화면 없음)
         if (Array.IndexOf(args, "--appbarcheck") >= 0) return AppBarCheck(); // 0.6.2 모니터 여러 대 작업 표시줄 깜빡임 — 자리 같으면 안 알림·고리 끊김 (실제 AppBar 등록 없음)
+        int volAt = Array.FindIndex(args, a => a == "--volumecheck");
+        if (volAt >= 0) return VolumeCheck(volAt + 1 < args.Length ? args[volAt + 1] : null); // 0.8 앱별 볼륨·볼륨 표시 (#21) — 실제 볼륨은 안 바꿈
         if (Array.IndexOf(args, "--clipcheck") >= 0) return ClipCheck(); // 0.6.3 문제 신고 영역 캡처·붙여넣기 (#13) — 실제 캡처 도구·클립보드는 안 건드림
         if (Array.IndexOf(args, "--profilecheck") >= 0) return ProfileCheck(); // 0.6.1 루틴 브라우저 계정·탐색기 창 (화면·실제 실행 없음)
         if (Array.IndexOf(args, "--hotkeycheck") >= 0) return HotkeyCheck(); // 0.6 단축키 규칙·저장·키 처리 점검 (화면·실제 입력 없음)
@@ -1707,6 +1709,159 @@ internal static class Program
     /// --clipcheck (#13): 클립보드 데이터 → 첨부(PNG·비트맵·글자·큰 그림 줄이기), 신고 창 붙여넣기(파일·그림·글자·개수 제한),
     /// 영역 캡처 흐름(가짜 캡처 도구·가짜 클립보드: 받음·취소·도구 화면 못 찾음·열기 실패·멈춤·시간 제한). 실제 클립보드·캡처 도구는 쓰지 않음.
     /// </summary>
+    /// <summary>
+    /// --volumecheck [DIR] (#21): 볼륨 한 칸 계산, 단축키 표의 볼륨 키(설정 켬/끔), 볼륨 키를 누르고 있을 때 반복(다른 단축키는 한 번),
+    /// 그림 — 소리 판 앱별 볼륨(예시 목록)·볼륨 표시(45%·음소거) 라이트/다크. 실제 볼륨·키보드 훅은 쓰지 않음(가짜 상태·훅 흉내).
+    /// </summary>
+    private static int VolumeCheck(string? dir)
+    {
+        int bad = 0;
+        void Check(string what, bool ok) { Console.WriteLine($"  {(ok ? "통과" : "실패")}  {what}"); if (!ok) bad++; }
+        var asm = typeof(Mongdock.App).Assembly;
+        var osdType = asm.GetType("Mongdock.Views.VolumeOsdWindow")!;
+        double Next(double v, bool up) => (double)osdType.GetMethod("Next", Any)!.Invoke(null, new object[] { v, up })!;
+        Check($"0.50 → 올림 {Next(0.5, true):0.00}", Math.Abs(Next(0.5, true) - 0.52) < 1e-9);
+        Check($"0.51(칸 사이) → 올림 {Next(0.51, true):0.00}", Math.Abs(Next(0.51, true) - 0.52) < 1e-9);
+        Check($"0.01 → 내림 {Next(0.01, false):0.00}", Next(0.01, false) == 0);
+        Check($"0.51 → 내림 {Next(0.51, false):0.00}", Math.Abs(Next(0.51, false) - 0.50) < 1e-9);
+        Check($"1.00 → 올림 그대로 {Next(1, true):0.00}", Next(1, true) == 1);
+        // 단축키 표
+        var hc = asm.GetType("Mongdock.Views.HotkeyController")!;
+        var table = hc.GetMethod("Table", Any)!;
+        var s = new Settings();
+        var t = (Dictionary<HotkeyChord, string>)table.Invoke(null, new object[] { s })!;
+        Check($"설정 켬(기본) → 볼륨 키 3개 ({t.Values.Count(v => v.StartsWith("volume:"))})", t[new HotkeyChord(false, false, false, false, 0xAF)] == "volume:up" && t[new HotkeyChord(false, false, false, false, 0xAE)] == "volume:down" && t[new HotkeyChord(false, false, false, false, 0xAD)] == "volume:mute");
+        s.TopBar.VolumeIndicator = false;
+        t = (Dictionary<HotkeyChord, string>)table.Invoke(null, new object[] { s })!;
+        Check("설정 끔 → 볼륨 키 없음 (윈도우가 처리)", !t.Values.Any(v => v.StartsWith("volume:")));
+        Check("Shift+볼륨 올림은 몽독이 안 받음", !((Dictionary<HotkeyChord, string>)table.Invoke(null, new object[] { new Settings() })!).ContainsKey(new HotkeyChord(false, false, true, false, 0xAF)));
+        var app = new Mongdock.App();
+        Mongdock.Loc.Init(_lang);
+        app.InitializeComponent();
+        // 비용 (#21): 소리 판이 열린 동안 1초마다 하는 앱 목록 읽기 시간 (실제 장치, 읽기만) + 볼륨 표시 창을 처음 띄울 때 메모리
+        {
+            AppVolumeService.List(); // 처음(이름 캐시 채움)
+            var swList = System.Diagnostics.Stopwatch.StartNew();
+            var cpu0 = System.Diagnostics.Process.GetCurrentProcess().TotalProcessorTime;
+            int rows = 0;
+            for (int k = 0; k < 20; k++) rows = AppVolumeService.List().Count;
+            var cpu = System.Diagnostics.Process.GetCurrentProcess().TotalProcessorTime - cpu0;
+            Console.WriteLine($"  정보  앱 목록 읽기: 한 번 {swList.Elapsed.TotalMilliseconds / 20:0.0}ms (CPU {cpu.TotalMilliseconds / 20:0.0}ms), 이 PC 앱 {rows}개 — 판이 열린 동안 1초에 한 번");
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+            long before = System.Diagnostics.Process.GetCurrentProcess().PrivateMemorySize64;
+            var s0 = new SettingsService();
+            var tr = new WindowTracker();
+            var la = new AppLauncher(tr);
+            var sv = new AppServices(s0, tr, la, new IconService(), new DesktopWindowService(), new VirtualDesktopService(),
+                new ShellActions(), new ImeService(), new StatusService(), new MediaService(), new AppMenuService(s0), new StartupService(),
+                new NotificationService(tr, la), new TrayIconService(), new CalendarFeedService(s0));
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+            long mid = System.Diagnostics.Process.GetCurrentProcess().PrivateMemorySize64;
+            osdType.GetMethod("Show", Any, new[] { typeof(AppServices), typeof(double), typeof(bool) })!.Invoke(null, new object[] { sv, 0.5, false });
+            var ow = (Window)osdType.GetField("_instance", Any)!.GetValue(null)!;
+            ow.UpdateLayout();
+            System.Threading.Thread.Sleep(300);
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+            long after = System.Diagnostics.Process.GetCurrentProcess().PrivateMemorySize64;
+            Console.WriteLine($"  정보  볼륨 표시 창 처음 띄우기: 전용 +{(after - mid) / 1048576.0:0.0}MB (창 {ow.Width:0}×{ow.Height:0} DIP 하나를 계속 다시 씀)");
+            ow.Close();
+            osdType.GetField("_instance", Any)!.SetValue(null, null);
+            s0.Dispose();
+            _ = before;
+        }
+        if (dir is not null)
+        {
+            Directory.CreateDirectory(dir);
+            var listProp = typeof(AppVolumeService).GetProperty("ListForTest", Any)!;
+            listProp.SetValue(null, (Func<IReadOnlyList<AppVolume>>)(() => new List<AppVolume>
+            {
+                new("chrome", "Google Chrome", @"C:\Program Files\Google\Chrome\Application\chrome.exe", null, new uint[] { 1 }, 0.8, false, true, false),
+                new("notepad", "Spotify", @"C:\Windows\System32\notepad.exe", null, new uint[] { 2 }, 0.45, false, true, false),
+                new("explorer", "Discord — 아주 긴 앱 이름 예시", @"C:\Windows\explorer.exe", null, new uint[] { 3 }, 0.6, true, false, false),
+                new(AppVolumeService.SystemKey, Mongdock.Loc.T("시스템 소리"), null, null, new uint[] { 0 }, 1.0, false, false, true),
+            }));
+            var kindType = asm.GetType("Mongdock.Views.StatusPanelKind")!;
+            var panelType = asm.GetType("Mongdock.Views.StatusPanelWindow")!;
+            Console.WriteLine($"  정보  앱 {Application.Current is not null}, MacSwitch {Application.Current?.TryFindResource("MacSwitch") is not null}");
+            foreach (var theme in new[] { "light", "dark" })
+            {
+                var settings = new SettingsService();
+                settings.Current.Dock.Theme = theme == "dark" ? DockTheme.Dark : DockTheme.Light;
+                Mongdock.ViewModels.UiTheme.Apply(settings.Current);
+                Mongdock.ViewModels.UiFonts.Apply(settings.Current);
+                var tracker = new WindowTracker();
+                var launcher = new AppLauncher(tracker);
+                var services = new AppServices(settings, tracker, launcher, new IconService(), new DesktopWindowService(), new VirtualDesktopService(),
+                    new ShellActions(), new ImeService(), new StatusService(), new MediaService(), new AppMenuService(settings), new StartupService(),
+                    new NotificationService(tracker, launcher), new TrayIconService(), new CalendarFeedService(settings));
+                var palette = Mongdock.ViewModels.UiTheme.Palette(settings.Current);
+                var w = (Window)panelType.GetConstructors(Any)[0].Invoke(new object[] { services, Enum.Parse(kindType, "Volume"), palette, 0 });
+                ((Delegate)panelType.GetField("_applyAppVolumeForTest", Any)!.GetValue(w)!).DynamicInvoke(AppVolumeService.List());
+                var content = (FrameworkElement)w.Content;
+                content.Opacity = 1;
+                content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                var size = content.DesiredSize;
+                content.Arrange(new Rect(size));
+                content.UpdateLayout();
+                SaveVisual(content, size, theme, Path.Combine(dir, $"panel-{theme}-volume-apps.png"));
+                w.Close();
+                // 테마마다 표시 창을 새로 (같은 창을 그림으로 뜨면 앞 장면이 남음 — 색 바뀜 자체는 위 정보 줄로 확인)
+                if (osdType.GetField("_instance", Any)!.GetValue(null) is Window old) { old.Close(); osdType.GetField("_instance", Any)!.SetValue(null, null); }
+                foreach (var (vol, muted, tag) in new[] { (0.45, false, "45"), (0.0, true, "mute") })
+                {
+                    osdType.GetMethod("Show", Any, new[] { typeof(AppServices), typeof(double), typeof(bool) })!.Invoke(null, new object[] { services, vol, muted });
+                    var osd = (Window)osdType.GetField("_instance", Any)!.GetValue(null)!;
+                    var card = (FrameworkElement)osd.Content;
+                    Console.WriteLine($"  정보  표시 {theme}: 팔레트 밝음 {palette.IsLight}, 카드 {((System.Windows.Controls.Border)card).Background}");
+                    card.BeginAnimation(UIElement.OpacityProperty, null);
+                    card.Opacity = 1;
+                    card.RenderTransform = Transform.Identity;
+                    SaveVisual(card, new Size(osd.Width, osd.Height), theme, Path.Combine(dir, $"volume-osd-{theme}-{tag}.png"));
+                    osdType.GetMethod("HideNow", Any)!.Invoke(null, null);
+                }
+                Check($"그림 {theme}: 소리 판·볼륨 표시 2장", true);
+                settings.Dispose();
+            }
+            listProp.SetValue(null, null);
+        }
+        // 훅 흉내: 볼륨 올림을 누르고 있으면(다운 3번) 3번, 음소거는 1번, 업은 삼킴
+        var keyState = typeof(HotkeyService).GetProperty("KeyStateForTest", Any)!;
+        keyState.SetValue(null, (Func<int, bool>)(_ => false));
+        var hs = new HotkeyService();
+        var sim = typeof(HotkeyService).GetMethod("SimulateForTest", Any)!;
+        bool Sim(int vk, bool down) => (bool)sim.Invoke(hs, new object[] { vk, down })!;
+        var pressed = new List<string>();
+        hs.Pressed += a => pressed.Add(a);
+        hs.Apply((Dictionary<HotkeyChord, string>)table.Invoke(null, new object[] { new Settings() })!);
+        bool sw1 = Sim(0xAF, true), sw2 = Sim(0xAF, true), sw3 = Sim(0xAF, true), up1 = Sim(0xAF, false);
+        bool m1 = Sim(0xAD, true), m2 = Sim(0xAD, true), mu = Sim(0xAD, false);
+        for (int i = 0; i < 5; i++) System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle); // 훅이 올린 Pressed 처리
+        Check($"볼륨 올림 누르고 있기(다운 3번) → {pressed.Count(a => a == "volume:up")}번, 다운·업 삼킴 {sw1 && sw2 && sw3 && up1}", pressed.Count(a => a == "volume:up") == 3 && sw1 && sw2 && sw3 && up1);
+        Check($"음소거 누르고 있기 → {pressed.Count(a => a == "volume:mute")}번 (한 번만), 삼킴 {m1 && m2 && mu}", pressed.Count(a => a == "volume:mute") == 1 && m1 && m2 && mu);
+        Check($"다른 키(A)는 그대로 통과", !Sim(0x41, true));
+        GC.KeepAlive(hs); // Dispose 하면 훅 스레드 정리가 시험 앱 Dispatcher 까지 끝내 그림을 못 그림 — 시험이 끝나면 프로세스째 정리
+        keyState.SetValue(null, null);
+
+        Console.WriteLine(bad == 0 ? "볼륨 점검: 모두 통과" : $"볼륨 점검: 실패 {bad}개");
+        return bad == 0 ? 0 : 1;
+    }
+
+    private static void SaveVisual(FrameworkElement el, Size size, string theme, string path)
+    {
+        var dv = new DrawingVisual();
+        using (var dc = dv.RenderOpen())
+        {
+            dc.DrawRectangle(new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x14, 0x16, 0x1C) : Color.FromRgb(0xE9, 0xEC, 0xF4)), null, new Rect(size));
+            dc.DrawRectangle(new VisualBrush(el) { ViewboxUnits = BrushMappingMode.Absolute, Viewbox = new Rect(size), Stretch = Stretch.None }, null, new Rect(size));
+        }
+        var rtb = new RenderTargetBitmap((int)Math.Ceiling(size.Width), (int)Math.Ceiling(size.Height), 96, 96, PixelFormats.Pbgra32);
+        rtb.Render(dv);
+        var enc = new PngBitmapEncoder();
+        enc.Frames.Add(BitmapFrame.Create(rtb));
+        using (var fs = File.Create(path)) enc.Save(fs);
+        Console.WriteLine($"  저장  {path}");
+    }
+
     private static int ClipCheck()
     {
         int bad = 0;
@@ -1962,7 +2117,7 @@ internal static class Program
         st.Routines.Add(new RoutineDef { Id = "r1", Name = "업무", Hotkey = new HotkeyBinding { On = true, Key = "Ctrl+Alt+1" } });
         var table = (Dictionary<HotkeyChord, string>)ctl.GetMethod("Table", Any)!.Invoke(null, new object[] { st })!;
         Check($"키 표: {string.Join(", ", table.Select(kv => $"{kv.Key}→{kv.Value}"))}",
-            table.Count == 3 && table[HotkeyChord.Parse("Ctrl+Alt+A")!.Value] == "allApps" && table[HotkeyChord.Parse("Ctrl+Alt+1")!.Value] == "routine:r1"
+            table.Count(kv => !kv.Value.StartsWith("volume:")) == 3 && table[HotkeyChord.Parse("Ctrl+Alt+A")!.Value] == "allApps" // 볼륨 키 3개는 기본으로 따로 (#21) && table[HotkeyChord.Parse("Ctrl+Alt+1")!.Value] == "routine:r1"
             && table.ContainsValue("search") && !table.ContainsValue("controlCenter") && !table.ContainsValue("notifications"));
         // 훅 처리 (가짜 키, 진짜 훅 없음)
         var keyState = typeof(HotkeyService).GetProperty("KeyStateForTest", Any)!;

@@ -1486,5 +1486,11 @@
  "캡처 도구에서 영역을 고르면 여기에 붙어요.": "Selecciona un área en Recortes y se adjuntará aquí.",
  "클립보드 그림을 읽지 못했어요.": "No se pudo leer la imagen del portapapeles.",
  "캡처 도구를 열지 못했어요.": "No se pudo abrir Recortes.",
- "캡처한 그림이 들어오지 않았어요. 캡처 도구에서 복사한 뒤 {0}+V로 붙여 넣어도 돼요.": "No llegó ninguna captura. Puedes copiarla en Recortes y pegarla aquí con {0}+V."
+ "캡처한 그림이 들어오지 않았어요. 캡처 도구에서 복사한 뒤 {0}+V로 붙여 넣어도 돼요.": "No llegó ninguna captura. Puedes copiarla en Recortes y pegarla aquí con {0}+V.",
+ "시스템 소리": "Sonidos del sistema",
+ "볼륨 키를 누르면 몽독 표시": "Mostrar indicador de volumen de mongdock",
+ "오른쪽 위에 작은 몽독 볼륨 표시가 떠요. 윈도우 기본 표시는 뜨지 않아요. 전체 화면 앱에서는 윈도우 표시 그대로예요.": "Aparece un pequeño indicador de volumen de mongdock arriba a la derecha en lugar del de Windows. En apps a pantalla completa se mantiene el de Windows.",
+ "앱 볼륨": "Volumen por app",
+ "소리 켜기": "Activar sonido",
+ "음소거": "Silenciar"
 }

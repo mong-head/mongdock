@@ -1486,5 +1486,11 @@
  "캡처 도구에서 영역을 고르면 여기에 붙어요.": "Wähle im Snipping Tool einen Bereich aus – er wird hier angehängt.",
  "클립보드 그림을 읽지 못했어요.": "Das Bild in der Zwischenablage konnte nicht gelesen werden.",
  "캡처 도구를 열지 못했어요.": "Das Snipping Tool konnte nicht geöffnet werden.",
- "캡처한 그림이 들어오지 않았어요. 캡처 도구에서 복사한 뒤 {0}+V로 붙여 넣어도 돼요.": "Es ist keine Aufnahme angekommen. Du kannst sie im Snipping Tool kopieren und hier mit {0}+V einfügen."
+ "캡처한 그림이 들어오지 않았어요. 캡처 도구에서 복사한 뒤 {0}+V로 붙여 넣어도 돼요.": "Es ist keine Aufnahme angekommen. Du kannst sie im Snipping Tool kopieren und hier mit {0}+V einfügen.",
+ "시스템 소리": "Systemklänge",
+ "볼륨 키를 누르면 몽독 표시": "mongdock-Lautstärkeanzeige zeigen",
+ "오른쪽 위에 작은 몽독 볼륨 표시가 떠요. 윈도우 기본 표시는 뜨지 않아요. 전체 화면 앱에서는 윈도우 표시 그대로예요.": "Oben rechts erscheint eine kleine mongdock-Lautstärkeanzeige statt der von Windows. In Vollbild-Apps bleibt die Windows-Anzeige.",
+ "앱 볼륨": "App-Lautstärke",
+ "소리 켜기": "Ton an",
+ "음소거": "Stumm"
 }

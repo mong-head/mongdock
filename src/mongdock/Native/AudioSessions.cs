@@ -62,6 +62,75 @@ internal static class AudioSessions
         return byDevice;
     }
 
+    /// <summary>기본 출력(재생) 장치의 세션 하나 — 앱별 볼륨 (#21).</summary>
+    public readonly record struct RenderSession(uint Pid, bool System, bool Active, float Volume, bool Muted);
+
+    /// <summary>
+    /// 기본 출력 장치의 오디오 세션들 (만료된 것 빼고). <paramref name="apply"/> 가 있으면 각 세션의 볼륨 인터페이스에 그것을 해 봄
+    /// (pid·시스템 여부를 보고 맞는 세션만 바꾸게). 실패하면 빈 목록. 호출한 스레드(MTA 권장)에서 COM.
+    /// </summary>
+    public static List<RenderSession> RenderSessions(Func<RenderSession, ISimpleAudioVolume, bool>? apply = null)
+    {
+        var list = new List<RenderSession>();
+        object? enumObj = null;
+        try
+        {
+            enumObj = new MMDeviceEnumeratorClass();
+            var en = (IMMDeviceEnumerator)enumObj;
+            if (en.GetDefaultAudioEndpoint(CoreAudio.eRender, CoreAudio.eMultimedia, out var device) != 0 || device == null) return list;
+            try
+            {
+                var iid = typeof(IAudioSessionManager2).GUID;
+                if (device.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out var mgrObj) != 0 || mgrObj is not IAudioSessionManager2 mgr) return list;
+                try
+                {
+                    if (mgr.GetSessionEnumerator(out var sessions) != 0 || sessions == null) return list;
+                    try
+                    {
+                        sessions.GetCount(out int n);
+                        for (int j = 0; j < n; j++)
+                        {
+                            if (sessions.GetSession(j, out var ctl) != 0 || ctl == null) continue;
+                            try
+                            {
+                                if (ctl is not IAudioSessionControl2 c2 || ctl is not ISimpleAudioVolume vol) continue;
+                                if (c2.GetState(out int state) != 0 || state == AudioSessionStateExpired) continue;
+                                bool system = c2.IsSystemSoundsSession() == 0;
+                                c2.GetProcessId(out uint pid);
+                                if (!system && (pid == 0 || pid == (uint)Environment.ProcessId)) continue;
+                                vol.GetMasterVolume(out float level);
+                                vol.GetMute(out bool mute);
+                                var rs = new RenderSession(pid, system, state == AudioSessionStateActive, level, mute);
+                                if (apply is not null && apply(rs, vol))
+                                {
+                                    vol.GetMasterVolume(out level);
+                                    vol.GetMute(out mute);
+                                    rs = rs with { Volume = level, Muted = mute };
+                                }
+                                list.Add(rs);
+                            }
+                            finally { Marshal.ReleaseComObject(ctl); }
+                        }
+                    }
+                    finally { Marshal.ReleaseComObject(sessions); }
+                }
+                finally { Marshal.ReleaseComObject(mgr); }
+            }
+            finally { Marshal.ReleaseComObject(device); }
+        }
+        catch (Exception ex)
+        {
+            Services.Log.Warn($"재생 장치 세션 조회 실패: {ex.Message}");
+        }
+        finally
+        {
+            if (enumObj != null) Marshal.ReleaseComObject(enumObj);
+        }
+        return list;
+    }
+
+    private const int AudioSessionStateExpired = 2;
+
     private static void Collect(IAudioSessionManager2 mgr, HashSet<uint> pids)
     {
         if (mgr.GetSessionEnumerator(out var sessions) != 0 || sessions == null) return;
@@ -118,4 +187,14 @@ internal interface IAudioSessionControl2
     [PreserveSig] int GetProcessId(out uint pid);
     [PreserveSig] int IsSystemSoundsSession();
     [PreserveSig] int SetDuckingPreference(bool optOut);
+}
+
+/// <summary>세션 볼륨 (앱별 볼륨 — #21).</summary>
+[ComImport, Guid("87CE5498-68D6-44E5-9215-6DA47EF883D8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface ISimpleAudioVolume
+{
+    [PreserveSig] int SetMasterVolume(float level, ref Guid eventContext);
+    [PreserveSig] int GetMasterVolume(out float level);
+    [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool mute, ref Guid eventContext);
+    [PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool mute);
 }
