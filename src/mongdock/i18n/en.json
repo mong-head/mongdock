@@ -1492,5 +1492,7 @@
  "오른쪽 위에 작은 몽독 볼륨 표시가 떠요. 윈도우 기본 표시는 뜨지 않아요. 전체 화면 앱에서는 윈도우 표시 그대로예요.": "A small mongdock volume indicator appears at the top right instead of the Windows one. Full-screen apps still show the Windows indicator.",
  "앱 볼륨": "App volume",
  "소리 켜기": "Unmute",
- "음소거": "Mute"
+ "음소거": "Mute",
+ "재생 진행 막대": "Playback progress bar",
+ "음악·영상을 재생 중인 앱의 독 아이콘 아래에 재생 위치가 보여요.": "Shows the playback position under the dock icon of the app playing music or video."
 }

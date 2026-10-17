@@ -108,7 +108,7 @@ public partial class DockWindow : Window
 
         SourceInitialized += OnSourceInitialized;
         DpiChanged += OnWindowDpiChanged;
-        Loaded += (_, _) => ApplyMode(initial: true);
+        Loaded += (_, _) => { ApplyMode(initial: true); StartMediaProgress(); };
         Closed += OnClosed;
     }
 
@@ -138,6 +138,7 @@ public partial class DockWindow : Window
     private void OnClosed(object? sender, EventArgs e)
     {
         _closed = true;
+        StopMediaProgress();
         _folderPanel?.Close();
         AllAppsPanel.DropSpare(); // 숨겨 둔 앱 모음 판 (#14)
         _folders?.Dispose();
@@ -1060,6 +1061,7 @@ public partial class DockWindow : Window
                 : item.Windows.Any(w => _flashed.Contains(w.Hwnd));
             UpdateLaunching(item);
         }
+        if (_mediaHooked) ApplyMediaProgress(); // 재생 진행 막대 (#22) — 항목이 새로 만들어져도 이어서
     }
 
     private void RebuildViews(bool recreateAll)

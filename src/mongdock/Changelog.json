@@ -16,6 +16,11 @@
           "kind": "feature",
           "text": "볼륨 키를 누르면 몽독 모양으로 소리 크기를 보여 줘요(설정에서 끌 수 있어요).",
           "text_en": "Volume keys now show a mongdock-style indicator (can be turned off in Settings)."
+        },
+        {
+          "kind": "feature",
+          "text": "음악·영상을 재생 중인 앱의 독 아이콘 아래에 재생 위치가 보여요.",
+          "text_en": "The dock icon of the app playing music or video shows the playback position."
         }
       ]
     },

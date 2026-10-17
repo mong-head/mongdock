@@ -28,6 +28,8 @@ internal sealed class DockItemView : Grid
     private readonly ScaleTransform? _scale;
     private readonly Ellipse? _runningDot;
     private readonly Ellipse? _notifyDot;
+    /// <summary>재생 진행 막대 (#22) 바탕·채움.</summary>
+    private readonly Border? _progressBar, _progressFill;
     /// <summary>드래그 정렬 중 비켜서기 이동 (독 방향). 레이아웃은 그대로 두고 그림만 옮긴다.</summary>
     private readonly TranslateTransform _shift = new();
     private const double ShiftMs = 150;
@@ -146,6 +148,24 @@ internal sealed class DockItemView : Grid
             _pressHost.Children.Add(_darken);
         }
         iconHost.Children.Add(_pressHost);
+        // 재생 진행 막대 (#22): 아이콘 아래쪽 안에 어두운 둥근 바탕 + 흰 채움 — 어떤 아이콘 색 위에서도 보이게. 아이콘과 같이 확대됨
+        double barH = Math.Max(3, Math.Round(icon * 0.075)), barW = Math.Round(icon * 0.66);
+        _progressFill = new Border { CornerRadius = new CornerRadius(barH / 2), Background = Brushes.White, HorizontalAlignment = HorizontalAlignment.Left, Width = 0 };
+        _progressBar = new Border
+        {
+            Width = barW,
+            Height = barH + 2,
+            Padding = new Thickness(1),
+            CornerRadius = new CornerRadius(barH / 2 + 1),
+            Background = new SolidColorBrush(Color.FromArgb(0xA6, 0x1C, 0x1C, 0x22)),
+            VerticalAlignment = VerticalAlignment.Bottom,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, Math.Round(icon * 0.1)),
+            Child = _progressFill,
+            IsHitTestVisible = false,
+            Visibility = Visibility.Collapsed,
+        };
+        iconHost.Children.Add(_progressBar);
         _iconHost = iconHost;
 
         double n = layout.NotificationSize;
@@ -235,6 +255,11 @@ internal sealed class DockItemView : Grid
         if (!Item.IsLaunching) _bounceStopped = false; // 다음 실행 때 다시 튈 수 있게
         if (WantBounce) StartBounce();
         if (_notifyDot != null) _notifyDot.Visibility = Item.HasNotification ? Visibility.Visible : Visibility.Collapsed;
+        if (_progressBar != null && _progressFill != null)
+        {
+            _progressBar.Visibility = Item.Progress is null ? Visibility.Collapsed : Visibility.Visible;
+            if (Item.Progress is { } v) _progressFill.Width = Math.Max(_progressBar.Height - 2, (_progressBar.Width - 2) * v);
+        }
     }
 
     // ───────────────────────── 누름 반응 ─────────────────────────

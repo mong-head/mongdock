@@ -169,6 +169,8 @@ public sealed class DockSettings
     /// <summary>화면 가장자리와 독 사이 여백 (DIP).</summary>
     public double Margin { get; set; } = 10;
     public bool ShowRunningApps { get; set; } = true;
+    /// <summary>음악·영상을 재생 중인 앱의 독 아이콘 아래 재생 위치 막대 (#22, 0.8).</summary>
+    public bool ShowMediaProgress { get; set; } = true;
     /// <summary>독을 둘 모니터의 장치 이름 (예 "\.\DISPLAY2"). "" 또는 연결 안 된 모니터면 주 모니터.</summary>
     public string Monitor { get; set; } = "";
 }

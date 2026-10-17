@@ -1492,5 +1492,7 @@
  "오른쪽 위에 작은 몽독 볼륨 표시가 떠요. 윈도우 기본 표시는 뜨지 않아요. 전체 화면 앱에서는 윈도우 표시 그대로예요.": "Aparece un pequeño indicador de volumen de mongdock arriba a la derecha en lugar del de Windows. En apps a pantalla completa se mantiene el de Windows.",
  "앱 볼륨": "Volumen por app",
  "소리 켜기": "Activar sonido",
- "음소거": "Silenciar"
+ "음소거": "Silenciar",
+ "재생 진행 막대": "Barra de progreso de reproducción",
+ "음악·영상을 재생 중인 앱의 독 아이콘 아래에 재생 위치가 보여요.": "Muestra la posición de reproducción bajo el icono del dock de la app que reproduce música o vídeo."
 }

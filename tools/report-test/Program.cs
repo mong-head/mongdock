@@ -1842,6 +1842,34 @@ internal static class Program
         GC.KeepAlive(hs); // Dispose 하면 훅 스레드 정리가 시험 앱 Dispatcher 까지 끝내 그림을 못 그림 — 시험이 끝나면 프로세스째 정리
         keyState.SetValue(null, null);
 
+        // 재생 진행 막대 (#22): 재생 앱 이름 ↔ 독 항목 짝
+        var dockType = asm.GetType("Mongdock.Views.DockWindow")!;
+        bool Match(string src, PinItem? pin, params AppWindowInfo[] wins) => (bool)dockType.GetMethod("MediaSourceMatches", Any)!.Invoke(null, new object?[] { src, pin, wins })!;
+        AppWindowInfo Win(string path, string? aumid = null) => new(IntPtr.Zero, "t", path, aumid, false);
+        var spotifyPin = new PinItem { Kind = PinKind.Exe, Target = @"C:\Users\a\AppData\Roaming\Spotify\Spotify.exe" };
+        Check("Spotify.exe ↔ Spotify 핀", Match("Spotify.exe", spotifyPin));
+        Check("Chrome ↔ chrome.exe 창", Match("Chrome", null, Win(@"C:\Program Files\Google\Chrome\Application\chrome.exe")));
+        Check("MSEdge ↔ msedge.exe 창", Match("MSEdge", null, Win(@"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe")));
+        Check("스토어 앱 AUMID ↔ 그 앱 핀", Match("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify", new PinItem { Kind = PinKind.Aumid, Target = "SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify" }));
+        Check("다른 앱은 아님 (Spotify ↔ chrome)", !Match("Spotify.exe", null, Win(@"C:\x\chrome.exe")));
+        Check("빈 이름은 아님", !Match("  ", spotifyPin));
+        if (dir is not null)
+        {
+            // 독 아이콘 그림: 재생 진행 40% (라이트·다크 독, 아이콘 52·72)
+            foreach (var (theme, size) in new[] { ("light", 52.0), ("dark", 52.0), ("light", 72.0) })
+            {
+                var ds = new DockSettings { Theme = theme == "dark" ? DockTheme.Dark : DockTheme.Light, IconSize = size };
+                var layout = Mongdock.ViewModels.DockLayout.From(ds, theme == "light");
+                var icon = new IconService().GetIcon(new PinItem { Kind = PinKind.Exe, Target = @"C:\Windows\System32\notepad.exe" }, IconStyle.Mac);
+                var vm = new Mongdock.ViewModels.DockItemViewModel("t", null, false, "Spotify", icon) { IsRunning = true, Progress = 0.4 };
+                var view = (FrameworkElement)Activator.CreateInstance(asm.GetType("Mongdock.Views.DockItemView")!, vm, layout)!;
+                var host = new System.Windows.Controls.Border { Padding = new Thickness(16), Background = new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x2A, 0x2A, 0x30) : Color.FromRgb(0xF0, 0xF0, 0xF5)), Child = view };
+                host.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                host.Arrange(new Rect(host.DesiredSize));
+                host.UpdateLayout();
+                SaveVisual(host, host.DesiredSize, theme, Path.Combine(dir, $"dock-progress-{theme}-{size:0}.png"));
+            }
+        }
         Console.WriteLine(bad == 0 ? "볼륨 점검: 모두 통과" : $"볼륨 점검: 실패 {bad}개");
         return bad == 0 ? 0 : 1;
     }
