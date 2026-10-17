@@ -90,6 +90,7 @@ internal sealed partial class AllAppsPanel
     /// <summary>다시 열기: 앞 열기의 상태를 모두 처음으로(새로 만든 판과 같게) 돌리고 다시 그린 뒤 보임.</summary>
     private void Reopen(Rect anchorDip, DockEdge edge, MonitorInfo monitor)
     {
+        BeginReopen(); // 먼저 "닫히는 중"을 꺼야 아래 다시 그리기가 됨 (#26)
         ClearOpenEvents();
         Launched = null;
         PinToDockRequested = null;

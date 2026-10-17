@@ -207,6 +207,12 @@ internal abstract class DockStackPanel : Window
     }
 
     /// <summary>
+    /// 다시 열기 첫 단계 (#26): 숨길 때 켠 "닫히는 중"을 끔 — 이것이 켜져 있으면 판 쪽 다시 그리기(Rebuild)가 아무것도 안 해서
+    /// 0.6.4 에서 두 번째 열기부터 판 본문이 비어 보였음. 판 상태를 초기화·다시 그리기 전에 부를 것.
+    /// </summary>
+    protected void BeginReopen() => _closing = false;
+
+    /// <summary>
     /// 숨겨 둔 판을 다시 엶 (#14): 새 창을 만들 때와 같은 순서 — 자리·모니터를 새로, 나타나기 상태를 처음으로, 가린 채 보이고
     /// 배치가 끝나면 StartShow, 두 번째 렌더 뒤 첫 프레임 처리. 판 내용(상태)은 부르기 전에 판 쪽에서 초기화해 둠.
     /// </summary>
