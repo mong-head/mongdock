@@ -1796,7 +1796,7 @@ internal static class Program
             var listProp = typeof(AppVolumeService).GetProperty("ListForTest", Any)!;
             listProp.SetValue(null, (Func<IReadOnlyList<AppVolume>>)(() => new List<AppVolume>
             {
-                new("chrome", "Google Chrome", @"C:\Program Files\Google\Chrome\Application\chrome.exe", null, new uint[] { 1 }, 0.8, false, true, false),
+                new("chrome", AppVolumeService.NameForTest(@"C:\Program Files\Google\Chrome\Application\chrome.exe"), @"C:\Program Files\Google\Chrome\Application\chrome.exe", null, new uint[] { 1 }, 0.8, false, true, false),
                 new("notepad", "Spotify", @"C:\Windows\System32\notepad.exe", null, new uint[] { 2 }, 0.45, false, true, false),
                 new("explorer", "Discord — 아주 긴 앱 이름 예시", @"C:\Windows\explorer.exe", null, new uint[] { 3 }, 0.6, true, false, false),
                 new(AppVolumeService.SystemKey, Mongdock.Loc.T("시스템 소리"), null, null, new uint[] { 0 }, 1.0, false, false, true),
@@ -1872,8 +1872,8 @@ internal static class Program
                 sheet.Arrange(new Rect(sheet.DesiredSize));
                 sheet.UpdateLayout();
                 SaveVisual(sheet, new Size(sheet.DesiredSize.Width, sheetH), theme, Path.Combine(dir, $"sound-panel-{_lang}-{theme}.png"));
-                Check($"소리 판 {_lang} {theme}: 첫 화면 높이 {shots[0].Size.Height:0} — 세부 화면도 같은 높이 ({string.Join("/", shots.Skip(2).Select(x => x.Size.Height.ToString("0")))})",
-                    shots.Skip(2).All(x => Math.Abs(x.Size.Height - shots[0].Size.Height) < 1));
+                Check($"소리 판 {_lang} {theme}: 첫 화면 높이 {shots[0].Size.Height:0} — 세부 화면은 내용만큼 ({string.Join("/", shots.Skip(2).Select(x => x.Size.Height.ToString("0")))}, 아래가 비지 않음)",
+                    shots.Skip(2).All(x => x.Size.Height < shots[0].Size.Height - 40));
                 foreach (var w in opened) w.Close();
                 // 테마마다 표시 창을 새로 (같은 창을 그림으로 뜨면 앞 장면이 남음 — 색 바뀜 자체는 위 정보 줄로 확인)
                 if (osdType.GetField("_instance", Any)!.GetValue(null) is Window old) { old.Close(); osdType.GetField("_instance", Any)!.SetValue(null, null); }
@@ -1923,6 +1923,8 @@ internal static class Program
         Check("스토어 앱 AUMID ↔ 그 앱 핀", Match("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify", new PinItem { Kind = PinKind.Aumid, Target = "SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify" }));
         Check("다른 앱은 아님 (Spotify ↔ chrome)", !Match("Spotify.exe", null, Win(@"C:\x\chrome.exe")));
         Check("빈 이름은 아님", !Match("  ", spotifyPin));
+        Check($"소리 판 짧은 이름: chrome.exe → {AppVolumeService.NameForTest(@"C:\x\chrome.exe")}, msedge.exe → {AppVolumeService.NameForTest(@"C:\x\msedge.exe")}, whale.exe → {AppVolumeService.NameForTest(@"C:\x\whale.exe")}",
+            AppVolumeService.NameForTest(@"C:\x\chrome.exe") == "Chrome" && AppVolumeService.NameForTest(@"C:\x\msedge.exe") == "Edge" && AppVolumeService.NameForTest(@"C:\x\whale.exe") == "Whale");
         // 앱 볼륨 (#21·#27): 여러 프로세스 세션(pid 0)도 세션 식별자의 실행 파일로 — 크롬 오디오 하위 프로세스 등
         {
             var asx = typeof(Mongdock.App).Assembly.GetType("Mongdock.Native.AudioSessions")!;

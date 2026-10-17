@@ -94,9 +94,26 @@ public static class AppVolumeService
         return (s.IdPath, null, NameOfExe(s.IdPath));
     }
 
-    /// <summary>실행 파일의 보일 이름: 파일 설명("Google Chrome"), 없으면 파일 이름.</summary>
+    /// <summary>
+    /// 소리 판 이름 칸이 좁아 잘리지 않게 알려진 앱은 짧은 제품 이름 (실행 파일 이름 → 이름). 파일 설명이 "Google Chrome"·"Microsoft Edge"처럼 길어서.
+    /// </summary>
+    private static readonly Dictionary<string, string> ShortNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["chrome"] = "Chrome", ["msedge"] = "Edge", ["whale"] = "Whale", ["firefox"] = "Firefox", ["brave"] = "Brave",
+        ["opera"] = "Opera", ["vivaldi"] = "Vivaldi", ["arc"] = "Arc", ["discord"] = "Discord", ["spotify"] = "Spotify",
+        ["steam"] = "Steam", ["steamwebhelper"] = "Steam", ["ms-teams"] = "Teams", ["teams"] = "Teams", ["zoom"] = "Zoom",
+        ["slack"] = "Slack", ["vlc"] = "VLC", ["potplayermini64"] = "PotPlayer", ["potplayermini"] = "PotPlayer",
+        ["kakaotalk"] = "KakaoTalk", ["obs64"] = "OBS", ["msedgewebview2"] = "Edge WebView", ["applemusic"] = "Apple Music",
+        ["itunes"] = "iTunes", ["telegram"] = "Telegram", ["whatsapp"] = "WhatsApp", ["youtube music"] = "YouTube Music",
+    };
+
+    /// <summary>시험용: 실행 파일 경로 → 소리 판 이름.</summary>
+    public static string NameForTest(string path) => NameOfExe(path);
+
+    /// <summary>실행 파일의 보일 이름: 알려진 앱은 짧은 이름, 아니면 파일 설명, 없으면 파일 이름.</summary>
     private static string NameOfExe(string path)
     {
+        if (ShortNames.TryGetValue(Path.GetFileNameWithoutExtension(path), out var shortName)) return shortName;
         string name = "";
         try { name = FileVersionInfo.GetVersionInfo(path).FileDescription?.Trim() ?? ""; }
         catch (Exception ex) when (ex is FileNotFoundException or ArgumentException or IOException) { }

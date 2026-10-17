@@ -13,7 +13,8 @@ namespace Mongdock.Views;
 /// - 출력: 제목 + 켜기 스위치(음소거) → 볼륨 막대 → 지금 소리 내는 앱 1~2개 막대 → 「앱별 볼륨 n개 ›」 → 「출력 장치: 이름 ›」.
 /// - 입력: 제목 + 켜기 스위치(마이크 음소거) → 음량 막대 + 레벨 점 → 「입력 장치: 이름 ›」.
 /// - 스위치를 끄면 그 아래 내용 대신 「음소거됨」 한 줄. 재생 중 카드는 늘 보임.
-/// - 장치 목록·모든 앱 볼륨은 판 안에서 옆으로 넘어가는 세부 화면(‹ 뒤로, Esc·← 로도). 세부 화면 높이는 첫 화면과 같게(판 크기가 바뀌지 않음), 넘치면 세부 안에서 스크롤.
+/// - 장치 목록·모든 앱 볼륨은 판 안에서 옆으로 넘어가는 세부 화면(‹ 뒤로, Esc·← 로도). 세부 화면은 내용만큼 높이(아래가 비지 않게)이고
+///   넘어갈 때 판 높이가 180ms 동안 부드럽게 바뀜. 화면보다 길면 판 전체가 스크롤.
 /// </summary>
 internal sealed partial class StatusPanelWindow
 {
@@ -158,10 +159,42 @@ internal sealed partial class StatusPanelWindow
         var allApps = new AppRows();
         var devices = new StackPanel();
 
-        // 세부 화면 높이 = 첫 화면 높이 (넘어가도 판 크기 그대로)
-        main.SizeChanged += (_, _) => { if (page != SoundPage.None) detail.Height = main.ActualHeight; };
 
         IReadOnlyList<AppVolume> apps = Array.Empty<AppVolume>();
+        bool heightAnimating = false;
+
+        double PageWidth() => host.ActualWidth > 0 ? host.ActualWidth : _card.Width - 34;
+
+        // 세부 화면이 원하는 높이 (머리 줄 + 목록)
+        double DetailHeight()
+        {
+            detail.Measure(new Size(PageWidth(), double.PositiveInfinity));
+            return Math.Ceiling(detail.DesiredSize.Height);
+        }
+
+        // 판(=host) 높이를 from → to 로 부드럽게 (움직임을 끈 PC·화면에 없을 땐 바로). 끝나면 done
+        void ResizeHost(double from, double to, Action? done = null)
+        {
+            host.BeginAnimation(FrameworkElement.HeightProperty, null);
+            if (!Anim.Enabled || !IsLoaded || Math.Abs(from - to) < 1)
+            {
+                host.Height = to;
+                done?.Invoke();
+                return;
+            }
+            heightAnimating = true;
+            var a = new DoubleAnimation(from, to, TimeSpan.FromMilliseconds(180)) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }, FillBehavior = FillBehavior.Stop };
+            a.Completed += (_, _) =>
+            {
+                heightAnimating = false;
+                host.Height = to;
+                done?.Invoke();
+            };
+            host.Height = to;
+            host.BeginAnimation(FrameworkElement.HeightProperty, a);
+        }
+        // 세부 화면이 열려 있는 동안 내용이 바뀌면(장치 추가 등) 높이를 바로 맞춤
+        detailBody.SizeChanged += (_, _) => { if (page != SoundPage.None && !heightAnimating) host.Height = DetailHeight(); };
         string devSignature = "";
 
         void FillDetail()
@@ -236,11 +269,12 @@ internal sealed partial class StatusPanelWindow
                 SoundPage.Output => Loc.T("출력 장치"),
                 _ => Loc.T("입력 장치"),
             };
-            detail.Height = main.ActualHeight > 0 ? main.ActualHeight : double.NaN;
+            double fromHeight = host.ActualHeight > 0 ? host.ActualHeight : main.ActualHeight;
             detail.Visibility = Visibility.Visible;
             detailScroll.ScrollToTop();
             FillDetail();
-            double w = host.ActualWidth > 0 ? host.ActualWidth : _card.Width;
+            ResizeHost(fromHeight, DetailHeight());
+            double w = PageWidth();
             if (animate)
             {
                 Slide(mainShift, 0, -w);
@@ -261,15 +295,19 @@ internal sealed partial class StatusPanelWindow
         {
             if (page == SoundPage.None) return false;
             page = SoundPage.None;
-            double w = host.ActualWidth > 0 ? host.ActualWidth : _card.Width;
+            double w = PageWidth();
             main.IsHitTestVisible = true;
             detail.IsHitTestVisible = false;
+            main.Measure(new Size(w, double.PositiveInfinity));
+            ResizeHost(host.ActualHeight > 0 ? host.ActualHeight : main.DesiredSize.Height, Math.Ceiling(main.DesiredSize.Height), () =>
+            {
+                if (page == SoundPage.None) host.Height = double.NaN; // 첫 화면은 다시 내용대로 (재생 카드가 생기고 사라져도)
+            });
             Slide(mainShift, -w, 0);
             Slide(detailShift, 0, w, () =>
             {
                 if (page != SoundPage.None) return; // 그 사이 다시 엶
                 detail.Visibility = Visibility.Collapsed;
-                detail.Height = double.NaN;
             });
             RefreshAll();
             return true;

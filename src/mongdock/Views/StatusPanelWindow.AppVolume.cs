@@ -48,7 +48,7 @@ internal sealed partial class StatusPanelWindow
         var name = new TextBlock
         {
             Text = a.Name,
-            Width = 88,
+            Width = 104, // 0.8.2: 이름이 덜 잘리게 넓히고 막대는 그만큼 짧게
             FontSize = 13,
             Foreground = _p.Text,
             TextTrimming = TextTrimming.CharacterEllipsis,
