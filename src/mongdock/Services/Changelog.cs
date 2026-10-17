@@ -71,13 +71,14 @@ public static class Changelog
         {
             string text = Str(v, "version") ?? "";
             if (WhatsNew.Parse(text) is not { } ver) continue;
+            if (!ForThisEdition(v)) continue;
             var entries = new List<ChangeEntry>();
             if (v.TryGetProperty("entries", out var arr) && arr.ValueKind == JsonValueKind.Array)
             {
                 foreach (var e in arr.EnumerateArray())
                 {
                     string? line = Text(e, "text");
-                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    if (string.IsNullOrWhiteSpace(line) || !ForThisEdition(e)) continue;
                     var kind = (Str(e, "kind") ?? "").ToLowerInvariant() switch
                     {
                         "fix" => ChangeKind.Fix,
@@ -95,9 +96,25 @@ public static class Changelog
                 foreach (var i in ki.EnumerateArray())
                     if (i.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(i.GetString())) issues.Add(i.GetString()!);
             }
+            if (entries.Count == 0 && issues.Count == 0) continue; // 이 판에 보일 줄이 없는 버전
             list.Add(new ChangeRelease(ver, ver.ToString(3), Str(v, "date") ?? "", entries, issues, Text(v, "headline")?.Trim() ?? ""));
         }
         return list.OrderByDescending(r => r.Version).ToList();
+    }
+
+    /// <summary>시험용: 판을 바꿔 끼움 (true = 스토어판).</summary>
+    internal static bool? StoreEditionForTest { get; set; }
+
+    /// <summary>
+    /// "edition": "store" | "direct" 가 있으면 그 판에서만 보임 (스토어판 = 패키지로 실행 중). 없으면 두 판 모두.
+    /// 스토어판·일반판이 같은 코드를 쓰므로 스토어판만의 버전(0.8.1 등)이 일반판 변경 내역·새 기능에 나오지 않게.
+    /// </summary>
+    private static bool ForThisEdition(JsonElement e)
+    {
+        string? edition = Str(e, "edition");
+        if (string.IsNullOrEmpty(edition)) return true;
+        bool store = StoreEditionForTest ?? AppInfo.IsPackaged;
+        return edition.Equals(store ? "store" : "direct", StringComparison.OrdinalIgnoreCase);
     }
 
     private static ChangeCoach? ReadCoach(JsonElement entry)

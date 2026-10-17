@@ -2038,6 +2038,22 @@ internal static class Program
                 Console.WriteLine($"  저장  {Path.Combine(dir, "minimize-shapes.png")}");
             }
         }
+        // 변경 내역 판 나누기 (0.8.2): "edition": "store" 버전(0.8.1)은 스토어판에만, 일반판 변경 내역·새 기능에는 안 나옴
+        {
+            var cl = typeof(Mongdock.Services.Changelog);
+            string json;
+            using (var st = cl.Assembly.GetManifestResourceStream(Mongdock.Services.Changelog.ResourceName)!)
+            using (var rd = new StreamReader(st)) json = rd.ReadToEnd();
+            var ed = cl.GetProperty("StoreEditionForTest", Any)!;
+            IReadOnlyList<Mongdock.Services.ChangeRelease> ParseAs(bool store) { ed.SetValue(null, store); return (IReadOnlyList<Mongdock.Services.ChangeRelease>)cl.GetMethod("Parse", Any)!.Invoke(null, new object[] { json })!; }
+            var direct = ParseAs(false);
+            var store = ParseAs(true);
+            ed.SetValue(null, null);
+            Check($"변경 내역: 일반판에는 0.8.1(스토어판) 없음, 0.8.2·0.8.0 있음 ({string.Join(",", direct.Take(3).Select(r => r.VersionText))})",
+                !direct.Any(r => r.VersionText == "0.8.1") && direct.Any(r => r.VersionText == "0.8.2") && direct.Any(r => r.VersionText == "0.8.0"));
+            Check($"변경 내역: 스토어판에는 0.8.2·0.8.1·0.8.0 모두 ({string.Join(",", store.Take(3).Select(r => r.VersionText))})",
+                store.Any(r => r.VersionText == "0.8.1") && store.Any(r => r.VersionText == "0.8.2") && store.Any(r => r.VersionText == "0.8.0"));
+        }
         Console.WriteLine(bad == 0 ? "볼륨 점검: 모두 통과" : $"볼륨 점검: 실패 {bad}개");
         return bad == 0 ? 0 : 1;
     }

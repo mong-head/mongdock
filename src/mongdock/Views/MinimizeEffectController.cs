@@ -3,7 +3,6 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
-using System.Windows.Threading;
 using Mongdock.Models;
 using Mongdock.Services;
 
@@ -204,7 +203,6 @@ internal sealed class MinimizeEffectController : IDisposable
         private readonly List<IntPtr> _thumbs = new();
         private EventHandler? _frame;
         private Action? _onDone;
-        private DispatcherTimer? _hideLater;
         private Rect _bounds;
 
         public OverlayWindow(AppServices services)
@@ -228,7 +226,12 @@ internal sealed class MinimizeEffectController : IDisposable
             };
         }
 
-        /// <summary>효과 시작. 썸네일을 못 만들면 false (되살리기면 부르는 쪽이 바로 되살림).</summary>
+        /// <summary>
+        /// 효과 시작. 썸네일을 못 만들면 false (되살리기면 부르는 쪽이 바로 되살림).
+        /// 되살리기 끝 넘기기(#20 깜빡임): 시간 85% 에 진짜 창을 덮개 밑에서 먼저 되살리고(창이 거의 제자리라 가려짐), 끝난 뒤에도
+        /// 진짜 창이 그려질 시간(넘긴 뒤 60ms 이상 + 화면 2프레임)을 기다렸다가 덮개를 치움 — 덮개 그림 → 진짜 창이 한 번에 바뀜.
+        /// 썸네일 원본은 창의 보이지 않는 테두리(왼·오른·아래 약 8px, 최대화면 위도)를 빼고 잘라 써서 끝 모습이 진짜 창과 같은 자리·크기.
+        /// </summary>
         public bool Run(IntPtr source, Rect monitorPx, Rect from, Rect to, MinimizeEffect shape, DockEdge edge, bool restore, int duration, Action? onDone)
         {
             Stop();
@@ -246,13 +249,15 @@ internal sealed class MinimizeEffectController : IDisposable
                 _thumbs.Add(t);
             }
             if (DwmQueryThumbnailSourceSize(_thumbs[0], out var src) != 0 || src.cx <= 0 || src.cy <= 0) { Stop(); Hide(); return false; }
+            var crop = SourceCrop(source, src, from);
             var local = new Rect(from.X - monitorPx.X, from.Y - monitorPx.Y, from.Width, from.Height);
             var target = new Rect(to.X - monitorPx.X, to.Y - monitorPx.Y, to.Width, to.Height);
             _onDone = onDone;
             var clock = Stopwatch.StartNew();
-            _frame = (_, _) =>
+            long handedOffAt = -1;
+            int endFrames = 0;
+            void Draw(double t)
             {
-                double t = FreezeAtForTest ?? Math.Min(1, clock.ElapsedMilliseconds / (double)duration);
                 double p = MinimizeMotion.Path(t, restore);
                 bool genie = shape == MinimizeEffect.Genie;
                 for (int i = 0; i < _thumbs.Count; i++)
@@ -272,25 +277,65 @@ internal sealed class MinimizeEffectController : IDisposable
                     var props = new DWM_THUMBNAIL_PROPERTIES
                     {
                         dwFlags = DWM_TNP_RECTDESTINATION | DWM_TNP_RECTSOURCE | DWM_TNP_OPACITY | DWM_TNP_VISIBLE,
-                        rcDestination = new RECT((int)dst.Left, (int)dst.Top, (int)Math.Ceiling(dst.Right), (int)Math.Ceiling(dst.Bottom)),
-                        rcSource = new RECT(0, (int)(src.cy * v0), src.cx, (int)Math.Ceiling(src.cy * v1)),
+                        rcDestination = new RECT((int)Math.Round(dst.Left), (int)Math.Round(dst.Top), (int)Math.Round(dst.Right), (int)Math.Round(dst.Bottom)),
+                        rcSource = new RECT((int)crop.Left, (int)Math.Round(crop.Top + crop.Height * v0), (int)crop.Right, (int)Math.Round(crop.Top + crop.Height * v1)),
                         opacity = (byte)Math.Round(255 * Math.Clamp(opacity, 0, 1)),
                         fVisible = true,
                     };
                     DwmUpdateThumbnailProperties(_thumbs[i], ref props);
                 }
-                if (t < 1) return;
-                if (_frame is not null) { CompositionTarget.Rendering -= _frame; _frame = null; }
-                if (Finish())
+            }
+            Draw(0); // 첫 모습을 바로 (최소화되어 창이 사라진 순간과 첫 프레임 사이에 빈 화면이 없게)
+            _frame = (_, _) =>
+            {
+                double t = FreezeAtForTest ?? Math.Min(1, clock.ElapsedMilliseconds / (double)duration);
+                // 되살리기: 끝나기 전에 진짜 창을 덮개 밑에서 먼저 되살림 → 그 뒤로는 썸네일이 되살아난 창의 실제 모습 (원본 크기를 다시 읽음)
+                if (restore && handedOffAt < 0 && t >= HandoffAt)
                 {
-                    // 되살린 창이 그려질 때까지 마지막 모습을 잠깐 더 들고 있다가 숨김 (빈 화면 깜빡임 방지)
-                    _hideLater ??= new DispatcherTimer(TimeSpan.FromMilliseconds(80), DispatcherPriority.Normal, (_, _) => { _hideLater!.Stop(); Stop(); Hide(); }, Dispatcher);
-                    _hideLater.Start();
+                    handedOffAt = clock.ElapsedMilliseconds;
+                    Finish();
                 }
-                else { Stop(); Hide(); }
+                if (handedOffAt >= 0 && !IsIconic(source) && DwmQueryThumbnailSourceSize(_thumbs[0], out var live) == 0 && live.cx > 0 && live.cy > 0)
+                    crop = SourceCrop(source, live, from);
+                Draw(t);
+                if (t < 1) return;
+                if (restore && handedOffAt >= 0)
+                {
+                    // 진짜 창이 그려질 시간: 넘긴 뒤 60ms 이상, 그리고 끝 모습으로 2프레임 더 (넘긴 뒤 최대 260ms)
+                    endFrames++;
+                    long since = clock.ElapsedMilliseconds - handedOffAt;
+                    if ((since < 60 || endFrames < 3) && since < 260) return;
+                }
+                if (_frame is not null) { CompositionTarget.Rendering -= _frame; _frame = null; }
+                Stop();
+                Hide();
             };
             CompositionTarget.Rendering += _frame;
             return true;
+        }
+
+        /// <summary>되살리기에서 진짜 창을 되살리는 시간 비율 (그때 썸네일은 창 자리와 1~3px 차이).</summary>
+        private const double HandoffAt = 0.85;
+
+        /// <summary>
+        /// 썸네일 원본에서 창의 보이는 부분 (보이지 않는 크기 조절 테두리 빼기). 창이 떠 있으면 GetWindowRect 와 DWM 테두리 사각형으로 정확히,
+        /// 최소화 중이면 원본 크기와 보이는 크기 차이로 어림: 좌우 같은 폭, 위는 최대화(위아래 차이가 좌우 합만큼)일 때만.
+        /// </summary>
+        private static Rect SourceCrop(IntPtr source, SIZE src, Rect visible)
+        {
+            if (!IsIconic(source) && GetWindowRect(source, out var wr)
+                && DwmGetWindowAttribute(source, DWMWA_EXTENDED_FRAME_BOUNDS, out RECT fb, Marshal.SizeOf<RECT>()) == 0)
+            {
+                double l = Math.Max(0, fb.Left - wr.Left), t = Math.Max(0, fb.Top - wr.Top);
+                double r = Math.Max(0, wr.Right - fb.Right), b = Math.Max(0, wr.Bottom - fb.Bottom);
+                if (l + r < src.cx && t + b < src.cy) return new Rect(l, t, src.cx - l - r, src.cy - t - b);
+            }
+            double mx = Math.Max(0, (src.cx - visible.Width) / 2);
+            double extraY = Math.Max(0, src.cy - visible.Height);
+            double top = mx > 0 && extraY >= 2 * mx - 1 ? mx : 0;
+            double bottom = Math.Max(0, extraY - top);
+            if (2 * mx >= src.cx || top + bottom >= src.cy) return new Rect(0, 0, src.cx, src.cy);
+            return new Rect(mx, top, src.cx - 2 * mx, src.cy - top - bottom);
         }
 
         /// <summary>기다리던 되살리기를 부름 (있었으면 true).</summary>
@@ -305,7 +350,6 @@ internal sealed class MinimizeEffectController : IDisposable
 
         private void Stop()
         {
-            _hideLater?.Stop();
             if (_frame is not null) { CompositionTarget.Rendering -= _frame; _frame = null; }
             Finish(); // 중간에 끊겨도 창은 꼭 되살림
             foreach (var t in _thumbs) DwmUnregisterThumbnail(t);
@@ -395,6 +439,8 @@ internal sealed class MinimizeEffectController : IDisposable
     [DllImport("dwmapi.dll")] private static extern int DwmUnregisterThumbnail(IntPtr thumb);
     [DllImport("dwmapi.dll")] private static extern int DwmUpdateThumbnailProperties(IntPtr thumb, ref DWM_THUMBNAIL_PROPERTIES props);
     [DllImport("dwmapi.dll")] private static extern int DwmQueryThumbnailSourceSize(IntPtr thumb, out SIZE size);
+    [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
 }
 
 /// <summary>

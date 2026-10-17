@@ -122,6 +122,33 @@ internal static partial class Program
                 if (!animated) ShowWindowAsync(hwnd, 9);
                 Pump(900);
                 Check($"{name}: 되살아남", !IsIconic(hwnd) && IsWindowVisible(hwnd));
+
+                // 되살리기 끝 넘기기 (#20 깜빡임): 90%(진짜 창을 덮개 밑에서 되살린 뒤)·99%·끝난 뒤 사진
+                ShowWindowAsync(hwnd, 6);
+                Pump(900);
+                freeze.SetValue(null, 0.9);
+                hook = restoreHook.GetValue(null) as Func<IntPtr, Action, bool>;
+                bool animatedEnd = hook?.Invoke(hwnd, () => { ShowWindowAsync(hwnd, 9); SetForegroundWindow(hwnd); }) == true;
+                Pump(400);
+                Check($"{name}: 90% 에서 진짜 창은 덮개 밑에서 이미 되살아남 (최소화 {IsIconic(hwnd)})", animatedEnd && !IsIconic(hwnd));
+                frames.Add(("되살리기 90% (넘긴 뒤)", Grab(crop)));
+                freeze.SetValue(null, 0.99);
+                Pump(150);
+                frames.Add(("되살리기 99%", Grab(crop)));
+                freeze.SetValue(null, null);
+                Pump(700);
+                frames.Add(("끝 (덮개 치움)", Grab(crop)));
+                Check($"{name}: 끝 모습 = 덮개 치운 뒤 모습 (99% 와 다른 픽셀 {Diff(frames[^2].Item2, frames[^1].Item2):P1})", Diff(frames[^2].Item2, frames[^1].Item2) < 0.02);
+
+                // 깜빡임: 다시 최소화 → 멈춤 없이 되살리기를 화면 프레임마다(DXGI) 재서, 창 자리 밝기가 끝 값에 닿은 뒤 다시 벗어나는 프레임이 있는지
+                ShowWindowAsync(hwnd, 6);
+                Pump(900);
+                string flick = RestoreFlicker(name, wr, () =>
+                {
+                    var h2 = restoreHook.GetValue(null) as Func<IntPtr, Action, bool>;
+                    if (h2?.Invoke(hwnd, () => { ShowWindowAsync(hwnd, 9); SetForegroundWindow(hwnd); }) != true) ShowWindowAsync(hwnd, 9);
+                }, outDir, out bool flickered);
+                Check(flick, !flickered);
                 rows.Add((name, frames));
             }
 
@@ -168,6 +195,55 @@ internal static partial class Program
         }
     }
 
+    /// <summary>
+    /// 되살리기 동안 화면 프레임마다(DXGI) 창 안 네 곳의 밝기를 재서: 끝 값(마지막 프레임)에 닿은 뒤 10 넘게 벗어나는 프레임 = 깜빡임.
+    /// 프레임 값은 OUT/restore-flicker-이름.csv.
+    /// </summary>
+    private static string RestoreFlicker(string name, RECTL wr, Action restore, string outDir, out bool flickered)
+    {
+        flickered = false;
+        int cx = (wr.Left + wr.Right) / 2, cy = (wr.Top + wr.Bottom) / 2;
+        var boxes = new (int X, int Y, int W, int H)[]
+        {
+            (wr.Left + 40, wr.Top + 10, 200, 16),        // 제목 줄
+            (cx - 60, cy - 40, 120, 80),                 // 가운데 글자
+            (wr.Left + 40, wr.Bottom - 120, 120, 60),    // 왼쪽 아래
+            (wr.Right - 200, cy + 40, 120, 60),          // 오른쪽
+        };
+        var frames = new List<(long T, double[] V)>();
+        var sw = Stopwatch.StartNew();
+        bool stop = false, ready = false;
+        string? error = null;
+        var th = new System.Threading.Thread(() =>
+        {
+            try
+            {
+                using var dup = new DesktopDup();
+                System.Threading.Volatile.Write(ref ready, true);
+                while (!System.Threading.Volatile.Read(ref stop))
+                    if (dup.Next(50, boxes) is { } v) lock (frames) frames.Add((sw.ElapsedMilliseconds, v));
+            }
+            catch (Exception ex) { error = ex.Message; System.Threading.Volatile.Write(ref ready, true); }
+        }) { IsBackground = true };
+        th.Start();
+        while (!System.Threading.Volatile.Read(ref ready)) Pump(20);
+        Pump(200);
+        long at = sw.ElapsedMilliseconds;
+        restore();
+        Pump(1200);
+        System.Threading.Volatile.Write(ref stop, true);
+        th.Join();
+        if (error is not null) { flickered = true; return $"{name}: 깜빡임 — 화면 받기 실패 ({error})"; }
+        var during = frames.Where(x => x.T >= at).ToList();
+        File.WriteAllLines(Path.Combine(outDir, $"restore-flicker-{name}.csv"), frames.Select(x => $"{x.T - at},{string.Join(",", x.V.Select(v => v.ToString("0.0")))}"));
+        if (during.Count < 3) { flickered = true; return $"{name}: 깜빡임 — 프레임이 {during.Count}개뿐"; }
+        var end = during[^1].V;
+        int arrived = during.FindIndex(x => Enumerable.Range(0, boxes.Length).All(k => Math.Abs(x.V[k] - end[k]) < 4));
+        var after = arrived < 0 ? new List<(long T, double[] V)>() : during.Skip(arrived).Where(x => Enumerable.Range(0, boxes.Length).Any(k => Math.Abs(x.V[k] - end[k]) > 10)).ToList();
+        flickered = arrived < 0 || after.Count > 0;
+        return $"{name}: 되살리기 끝 깜빡임 없음 (프레임 {during.Count}개, 끝 모습에 닿음 {(arrived < 0 ? "없음" : $"{during[arrived].T - at}ms")}, 그 뒤 벗어난 프레임 {after.Count}개{(after.Count > 0 ? ": " + string.Join(" ", after.Select(x => $"{x.T - at}ms")) : "")})";
+    }
+
     private static void SaveMinimizeSheet(string path, List<(string Name, List<(string Label, byte[] Px)> Frames)> rows, int w, int h)
     {
         const double k = 0.34;
@@ -211,4 +287,5 @@ internal static partial class Program
     [DllImport("user32.dll")] private static extern bool ShowWindowAsync(IntPtr hwnd, int cmd);
     [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
 }
