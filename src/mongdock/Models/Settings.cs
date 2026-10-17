@@ -28,7 +28,8 @@ public enum LaunchAnimation { Bounce, Blink }
 
 /// <summary>창 최소화 효과 (#20, 0.8): Off = 윈도우 그대로, Scale = 작아지며 독 아이콘으로, Genie = 깔때기처럼 휘며 빨려 들어감.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum MinimizeEffect { Off, Scale, Genie }
+/// <summary>창 최소화 효과 (#20): Scale = 아이콘으로 줄어들기, Genie = 부드러운 지니, Settle = 살짝 내려앉기, Slide = 아래로 미끄러지기. 저장 이름이라 바꾸지 말 것.</summary>
+public enum MinimizeEffect { Off, Scale, Genie, Settle, Slide }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum DockTheme { System, Light, Dark }

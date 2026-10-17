@@ -386,7 +386,7 @@ internal static class CoachMarks
     };
 
     /// <summary>
-    /// 0.8 창 최소화 효과 카드 [켜기] (#20): 지니로 켬(독이 아래가 아니면 그 자리에선 크기 줄이기로 보임) → 결과 줄
+    /// 0.8 창 최소화 효과 카드 [켜기] (#20): 「살짝 내려앉기」로 켬 → 결과 줄
     /// "켰어요 — 윈도우 최소화·최대화 효과는 껐어요" + [되돌리기](끔 → 윈도우 효과 되돌림). 이미 켜져 있으면 버튼 없음.
     /// </summary>
     private static InlineAction MinimizeInline() => new(Loc.T("켜기"),
@@ -394,7 +394,7 @@ internal static class CoachMarks
         () =>
         {
             if (_services is not { } sv) return Task.FromResult<InlineResult?>(null);
-            sv.Settings.Current.Dock.MinimizeEffect = MinimizeEffect.Genie;
+            sv.Settings.Current.Dock.MinimizeEffect = MinimizeEffect.Settle;
             sv.Settings.Save(); // MinimizeEffectController.Sync → 윈도우 효과 끄기
             bool off = WindowAnimationSetting.TurnedOffByMongdock;
             Log.Info($"둘러보기: 창 최소화 효과 켬 (윈도우 효과 {(off ? "껐음" : "원래 꺼져 있었음")})");

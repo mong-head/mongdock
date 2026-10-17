@@ -199,15 +199,38 @@ public sealed class AppLauncher : IAppLauncher
         }
     }
 
+    /// <summary>
+    /// 창 최소화 효과(#20)가 켜져 있으면: 최소화된 창을 열 때 독에서 나오는 효과를 먼저 보이고 끝에서 받은 동작(되살리기·앞으로)을 부름.
+    /// 효과를 못 보이면 false (바로 되살림). MinimizeEffectController 가 넣음.
+    /// </summary>
+    internal static Func<IntPtr, Action, bool>? AnimatedRestore { get; set; }
+
     /// <summary>창을 앞으로 (최소화면 복원). AppMenuService 등 다른 서비스도 사용. 실패 시 false.</summary>
     internal static bool ActivateWindow(IntPtr hwnd)
     {
         try
         {
             if (hwnd == IntPtr.Zero || !User32.IsWindow(hwnd)) return false;
-            // 응답 없는 창에 동기 호출을 하면 UI 스레드가 멈추므로 비동기 ShowWindowAsync 사용
-            if (User32.IsIconic(hwnd)) User32.ShowWindowAsync(hwnd, User32.SW_RESTORE);
+            if (User32.IsIconic(hwnd))
+            {
+                if (AnimatedRestore?.Invoke(hwnd, () => { User32.ShowWindowAsync(hwnd, User32.SW_RESTORE); BringForward(hwnd); }) == true) return true;
+                // 응답 없는 창에 동기 호출을 하면 UI 스레드가 멈추므로 비동기 ShowWindowAsync 사용
+                User32.ShowWindowAsync(hwnd, User32.SW_RESTORE);
+            }
+            return BringForward(hwnd);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Activate 실패", ex);
+            return false;
+        }
+    }
 
+    /// <summary>창을 포그라운드로 (되살린 뒤).</summary>
+    private static bool BringForward(IntPtr hwnd)
+    {
+        try
+        {
             if (TrySetForeground(hwnd)) return true;
 
             // 관리자 권한(더 높은 무결성) 창: UIPI 때문에 AttachThreadInput·입력 주입이 막힘 → 다른 순서로

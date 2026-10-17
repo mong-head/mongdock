@@ -1893,47 +1893,108 @@ internal static class Program
             Check("원래 꺼져 있었으면 되돌려도 꺼진 채", !sysOn && !File.Exists(statePath));
             sysProp.SetValue(null, null);
         }
-        // 모양 계산
+        // 모양 계산 (4가지 + 흐려짐만, 되살리기는 같은 길 거꾸로)
         {
             var mec = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.MinimizeEffectController")!;
-            Rect Scale(Rect f, Rect t, double x) => (Rect)mec.GetMethod("ScaleRect", Any)!.Invoke(null, new object[] { f, t, x })!;
-            Rect Genie(Rect f, Rect t, double v0, double v1, double x) => (Rect)mec.GetMethod("GenieStrip", Any)!.Invoke(null, new object[] { f, t, v0, v1, x })!;
+            var mm = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.MinimizeMotion")!;
+            Rect Genie(Rect f, Rect t, double v0, double v1, double x) => (Rect)mec.GetMethod("GenieStrip", Any, new[] { typeof(Rect), typeof(Rect), typeof(double), typeof(double), typeof(double) })!.Invoke(null, new object[] { f, t, v0, v1, x })!;
+            (Rect R, double O) Frame(MinimizeEffect e, DockEdge edge, Rect f, Rect t, double x) => ((Rect, double))mm.GetMethod("Frame", Any)!.Invoke(null, new object[] { e, edge, f, t, x })!;
+            int Dur(MinimizeEffect e, bool restore) => (int)mm.GetMethod("DurationMs", Any)!.Invoke(null, new object[] { e, restore })!;
+            double PathAt(double t, bool restore) => (double)mm.GetMethod("Path", Any)!.Invoke(null, new object[] { t, restore })!;
+            MinimizeEffect Resolve(MinimizeEffect e, DockEdge edge, bool reduced) => (MinimizeEffect)mec.GetMethod("Resolve", Any)!.Invoke(null, new object[] { e, edge, reduced })!;
+            bool Near(Rect a, Rect b) => Math.Abs(a.X - b.X) < 0.5 && Math.Abs(a.Y - b.Y) < 0.5 && Math.Abs(a.Width - b.Width) < 0.5 && Math.Abs(a.Height - b.Height) < 0.5;
             var from = new Rect(300, 150, 1200, 760);
             var icon = new Rect(880, 1000, 64, 64);
-            Check("크기 줄이기 t=0 → 창 자리, t=1 → 아이콘", Scale(from, icon, 0) == from && Scale(from, icon, 1) == icon);
+
+            Check($"시간: 내려앉기 {Dur(MinimizeEffect.Settle, false)} · 줄어들기 {Dur(MinimizeEffect.Scale, false)} · 미끄러지기 {Dur(MinimizeEffect.Slide, false)} · 지니 {Dur(MinimizeEffect.Genie, false)} ms, 되살리기 0.8배",
+                Dur(MinimizeEffect.Settle, false) == 200 && Dur(MinimizeEffect.Scale, false) == 260 && Dur(MinimizeEffect.Slide, false) == 220 && Dur(MinimizeEffect.Genie, false) == 300
+                && Dur(MinimizeEffect.Settle, true) == 160 && Dur(MinimizeEffect.Genie, true) == 240);
+            // 끝에서 천천히 멈춤, 튀지 않음: 길 위치가 0~1 안에서 줄곧 한 방향, 끝 구간이 처음 구간보다 느림
+            bool mono = true, inRange = true;
+            double prev = 0;
+            for (int i = 1; i <= 100; i++)
+            {
+                double p = PathAt(i / 100.0, false);
+                if (p < prev - 1e-9) mono = false;
+                if (p < 0 || p > 1) inRange = false;
+                prev = p;
+            }
+            double startStep = PathAt(0.1, false) - PathAt(0, false), endStep = PathAt(1, false) - PathAt(0.9, false);
+            Check($"움직임: 한 방향·0~1 안(탄성 없음), 끝이 느림 (처음 10% {startStep:0.000} > 끝 10% {endStep:0.000})", mono && inRange && startStep > endStep * 5);
+            Check("되살리기: 끝(1) → 창 자리(0), 같은 길 거꾸로", PathAt(0, true) == 1 && PathAt(1, true) == 0 && Math.Abs(PathAt(0.3, true) - (1 - PathAt(0.3, false))) < 1e-9);
+
+            foreach (var e in new[] { MinimizeEffect.Settle, MinimizeEffect.Scale, MinimizeEffect.Slide, MinimizeEffect.Off })
+            {
+                var (r0, o0) = Frame(e, DockEdge.Bottom, from, icon, 0);
+                Check($"{e} p=0 → 창 자리 그대로·불투명", Near(r0, from) && o0 == 1);
+            }
+            var settleEnd = Frame(MinimizeEffect.Settle, DockEdge.Bottom, from, icon, 1);
+            Check($"내려앉기 p=1 → 0.82배 ({settleEnd.R.Width:0}×{settleEnd.R.Height:0}), 아래로 {settleEnd.R.Bottom - from.Bottom:0}px, 아이콘 쪽으로, 사라짐",
+                Math.Abs(settleEnd.R.Width - from.Width * 0.82) < 0.5 && Math.Abs(settleEnd.R.Bottom - (from.Bottom + from.Height * 0.18)) < 0.5
+                && Math.Abs(settleEnd.R.X + settleEnd.R.Width / 2 - (900 + (912 - 900) * 0.35)) < 0.5 && settleEnd.O == 0);
+            var settleLeft = Frame(MinimizeEffect.Settle, DockEdge.Left, from, icon, 1);
+            Check("내려앉기 (독 왼쪽) → 왼쪽으로", settleLeft.R.Left < from.Left && Math.Abs(settleLeft.R.Height - from.Height * 0.82) < 0.5);
+            var scaleEnd = Frame(MinimizeEffect.Scale, DockEdge.Bottom, from, icon, 1);
+            Check($"줄어들기 p=1 → 아이콘 자리, 옅게 ({scaleEnd.O:0.00})", Near(scaleEnd.R, icon) && scaleEnd.O < 0.2 && scaleEnd.O > 0);
+            var slideEnd = Frame(MinimizeEffect.Slide, DockEdge.Bottom, from, icon, 1);
+            Check($"미끄러지기 p=1 → 크기 그대로 창 높이의 70% 아래 ({slideEnd.R.Y - from.Y:0}px), 사라짐", Math.Abs(slideEnd.R.Y - from.Y - from.Height * 0.7) < 0.5 && slideEnd.R.Size == from.Size && slideEnd.O == 0);
+            var slideRight = Frame(MinimizeEffect.Slide, DockEdge.Right, from, icon, 1);
+            Check("미끄러지기 (독 오른쪽) → 오른쪽으로", slideRight.R.X > from.X && slideRight.R.Y == from.Y);
+            var fade = Frame(MinimizeEffect.Off, DockEdge.Bottom, from, icon, 0.5);
+            Check("흐려짐만 → 자리 그대로 반투명", Near(fade.R, from) && Math.Abs(fade.O - 0.5) < 1e-9);
+            Check("지니는 독이 아래일 때만 (옆이면 줄어들기), 애니메이션 줄이기·절전 → 흐려짐만",
+                Resolve(MinimizeEffect.Genie, DockEdge.Bottom, false) == MinimizeEffect.Genie && Resolve(MinimizeEffect.Genie, DockEdge.Left, false) == MinimizeEffect.Scale
+                && Resolve(MinimizeEffect.Settle, DockEdge.Left, false) == MinimizeEffect.Settle && Resolve(MinimizeEffect.Slide, DockEdge.Bottom, true) == MinimizeEffect.Off);
+
             var top0 = Genie(from, icon, 0, 1.0 / 24, 0);
-            Check($"지니 t=0 → 띠가 창과 같은 폭·자리 ({top0.Left:0}~{top0.Right:0}, 위 {top0.Top:0})", Math.Abs(top0.Left - from.Left) < 0.5 && Math.Abs(top0.Right - from.Right) < 0.5 && Math.Abs(top0.Top - from.Top) < 0.5);
+            Check($"지니 p=0 → 띠가 창과 같은 폭·자리 ({top0.Left:0}~{top0.Right:0}, 위 {top0.Top:0})", Math.Abs(top0.Left - from.Left) < 0.5 && Math.Abs(top0.Right - from.Right) < 0.5 && Math.Abs(top0.Top - from.Top) < 0.5);
             var midTop = Genie(from, icon, 0, 1.0 / 24, 0.4);
             var midBottom = Genie(from, icon, 23.0 / 24, 1, 0.4);
-            Check($"지니 t=0.4 → 아래 띠가 위 띠보다 좁음 ({midBottom.Width:0} < {midTop.Width:0})", midBottom.Width < midTop.Width);
+            Check($"부드러운 지니 p=0.4 → 아래 띠가 조금 좁음 ({midBottom.Width:0} < {midTop.Width:0}, 차이 창 폭의 {(midTop.Width - midBottom.Width) / from.Width:P0})",
+                midBottom.Width < midTop.Width && (midTop.Width - midBottom.Width) / from.Width < 0.35);
             var endTop = Genie(from, icon, 0, 1.0 / 24, 1);
             var endBottom = Genie(from, icon, 23.0 / 24, 1, 1);
-            Check($"지니 t=1 → 아이콘 안 ({endTop.Left:0}~{endTop.Right:0}, {endTop.Top:0}~{endBottom.Bottom:0})", endTop.Left >= icon.Left - 0.5 && endTop.Right <= icon.Right + 0.5 && endTop.Top >= icon.Top - 0.5 && endBottom.Bottom <= icon.Bottom + 0.5);
+            Check($"지니 p=1 → 아이콘 안 ({endTop.Left:0}~{endTop.Right:0}, {endTop.Top:0}~{endBottom.Bottom:0})", endTop.Left >= icon.Left - 0.5 && endTop.Right <= icon.Right + 0.5 && endTop.Top >= icon.Top - 0.5 && endBottom.Bottom <= icon.Bottom + 0.5);
             if (dir is not null)
             {
-                // 지니 모양 그림: 1920×1080 화면을 1/3 로, 5 시점 겹쳐 그림 (띠 24장)
-                var ts = new[] { 0.0, 0.25, 0.5, 0.75, 0.95 };
+                // 모양 그림: 1920×1080 화면을 1/4 로, 4가지 모양을 2×2 칸에, 칸마다 5 시점 겹쳐 그림 (테두리 굵기 = 불투명도)
+                var ps = new[] { 0.0, 0.25, 0.5, 0.75, 0.95 };
                 var colors = new[] { Colors.SteelBlue, Colors.MediumPurple, Colors.Orchid, Colors.Coral, Colors.Gold };
+                var shapes = new[] { (MinimizeEffect.Settle, "살짝 내려앉기"), (MinimizeEffect.Scale, "아이콘으로 줄어들기"), (MinimizeEffect.Slide, "아래로 미끄러지기"), (MinimizeEffect.Genie, "부드러운 지니") };
                 var dv = new DrawingVisual();
                 using (var dc = dv.RenderOpen())
                 {
-                    dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, 640, 360));
-                    dc.PushTransform(new ScaleTransform(1 / 3.0, 1 / 3.0));
-                    dc.DrawRectangle(null, new Pen(Brushes.Gray, 3), icon);
-                    for (int k = 0; k < ts.Length; k++)
-                        for (int i = 0; i < 24; i++)
+                    dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, 960, 540));
+                    for (int si = 0; si < shapes.Length; si++)
+                    {
+                        var (e, name) = shapes[si];
+                        dc.PushTransform(new TranslateTransform(si % 2 * 480, si / 2 * 270));
+                        dc.DrawRectangle(null, new Pen(Brushes.LightGray, 1), new Rect(0, 0, 480, 270));
+                        dc.DrawText(new FormattedText(name, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Malgun Gothic"), 13, Brushes.Black, 1), new Point(8, 6));
+                        dc.PushTransform(new ScaleTransform(0.25, 0.25));
+                        dc.DrawRectangle(null, new Pen(Brushes.Gray, 4), icon);
+                        for (int k = 0; k < ps.Length; k++)
                         {
-                            var r = Genie(from, icon, i / 24.0, (i + 1) / 24.0, ts[k]);
-                            dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(70, colors[k].R, colors[k].G, colors[k].B)), new Pen(new SolidColorBrush(colors[k]), 1.5), r);
+                            var c = colors[k];
+                            if (e == MinimizeEffect.Genie)
+                                for (int i = 0; i < 24; i++)
+                                    dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(60, c.R, c.G, c.B)), new Pen(new SolidColorBrush(c), 3), Genie(from, icon, i / 24.0, (i + 1) / 24.0, ps[k]));
+                            else
+                            {
+                                var (r, o) = Frame(e, DockEdge.Bottom, from, icon, ps[k]);
+                                dc.DrawRectangle(new SolidColorBrush(Color.FromArgb((byte)(80 * o), c.R, c.G, c.B)), new Pen(new SolidColorBrush(c), 2 + 6 * o), r);
+                            }
                         }
-                    dc.Pop();
+                        dc.Pop();
+                        dc.Pop();
+                    }
                 }
-                var rtb = new RenderTargetBitmap(640, 360, 96, 96, PixelFormats.Pbgra32);
+                var rtb = new RenderTargetBitmap(960, 540, 96, 96, PixelFormats.Pbgra32);
                 rtb.Render(dv);
                 var enc = new PngBitmapEncoder();
                 enc.Frames.Add(BitmapFrame.Create(rtb));
-                using (var fs = File.Create(Path.Combine(dir, "minimize-genie-shape.png"))) enc.Save(fs);
-                Console.WriteLine($"  저장  {Path.Combine(dir, "minimize-genie-shape.png")}");
+                using (var fs = File.Create(Path.Combine(dir, "minimize-shapes.png"))) enc.Save(fs);
+                Console.WriteLine($"  저장  {Path.Combine(dir, "minimize-shapes.png")}");
             }
         }
         Console.WriteLine(bad == 0 ? "볼륨 점검: 모두 통과" : $"볼륨 점검: 실패 {bad}개");

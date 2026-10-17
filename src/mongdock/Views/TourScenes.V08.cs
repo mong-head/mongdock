@@ -10,7 +10,7 @@ namespace Mongdock.Views;
 
 /// <summary>
 /// 0.8 새 기능 장면 (#21 앱별 볼륨, #20 창 최소화 효과) — 업데이트 안내 카드 그림.
-/// 앱별 볼륨은 실제 소리 판 코드를 예시 앱으로, 창 최소화는 실제 지니 모양 계산(MinimizeEffectController.GenieStrip)으로 창 그림을 띠로 그림.
+/// 앱별 볼륨은 실제 소리 판 코드를 예시 앱으로, 창 최소화는 실제 「살짝 내려앉기」 계산(MinimizeMotion.Frame)으로 창 그림을 그림.
 /// </summary>
 internal static partial class TourScenes
 {
@@ -141,7 +141,7 @@ internal static partial class TourScenes
                 Cursor(top, new Point(from.Right - 22, from.Top + 14), pressed: true);
                 return;
             }
-            // ②③ 지니: 창 그림을 띠 24장으로 나눠 독 아이콘으로 (실제 효과와 같은 계산)
+            // ②③ 살짝 내려앉기: 창 그림이 조금 작아지며 독 쪽으로 내려가고 흐려짐 (실제 효과와 같은 계산)
             win.Effect = null;
             // 창 그림: 자리(오프셋)와 상관없이 창 내용만 (VisualBrush — 판 그림 뜨기와 같은 방식)
             var shot = new RenderTargetBitmap((int)(from.Width * Scale), (int)(from.Height * Scale), 96 * Scale, 96 * Scale, PixelFormats.Pbgra32);
@@ -151,25 +151,10 @@ internal static partial class TourScenes
             shot.Render(shotVisual);
             shot.Freeze();
             g.Children.Remove(win);
-            double t = f == 1 ? 0.45 : 0.78;
-            var dv = new DrawingVisual();
-            using (var dc = dv.RenderOpen())
-            {
-                const int strips = 24;
-                for (int i = 0; i < strips; i++)
-                {
-                    double v0 = (double)i / strips, v1 = (double)(i + 1) / strips;
-                    var r = MinimizeEffectController.GenieStrip(from, iconRect, v0, v1, t);
-                    var brush = new ImageBrush(shot) { Viewbox = new Rect(0, v0, 1, v1 - v0), ViewboxUnits = BrushMappingMode.RelativeToBoundingBox, Stretch = Stretch.Fill };
-                    dc.DrawRectangle(brush, null, new Rect(r.X, r.Y, r.Width, r.Height + 0.6));
-                }
-            }
-            var genie = new RenderTargetBitmap((int)(W * Scale), (int)(H * Scale), 96 * Scale, 96 * Scale, PixelFormats.Pbgra32);
-            genie.Render(dv);
-            genie.Freeze();
-            var img = new Image { Source = genie, Width = W, Height = H, IsHitTestVisible = false };
-            Canvas.SetLeft(img, 0);
-            Canvas.SetTop(img, 0);
+            var (r, opacity) = MinimizeMotion.Frame(MinimizeEffect.Settle, DockEdge.Bottom, from, iconRect, f == 1 ? 0.35 : 0.7);
+            var img = new Image { Source = shot, Width = r.Width, Height = r.Height, Stretch = Stretch.Fill, Opacity = opacity, IsHitTestVisible = false };
+            Canvas.SetLeft(img, r.X);
+            Canvas.SetTop(img, r.Y);
             top.Children.Insert(0, img);
         }
     }
