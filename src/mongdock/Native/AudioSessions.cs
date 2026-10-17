@@ -62,8 +62,27 @@ internal static class AudioSessions
         return byDevice;
     }
 
-    /// <summary>기본 출력(재생) 장치의 세션 하나 — 앱별 볼륨 (#21).</summary>
-    public readonly record struct RenderSession(uint Pid, bool System, bool Active, float Volume, bool Muted);
+    /// <summary>
+    /// 기본 출력(재생) 장치의 세션 하나 — 앱별 볼륨 (#21). IdPath = 세션 식별자 안의 실행 파일 경로(DOS 경로, 없으면 "") —
+    /// 여러 프로세스가 함께 쓰는 세션(크롬·엣지·디스코드 등의 오디오 하위 프로세스)은 pid 가 0 으로 와서 이것으로 앱을 앎.
+    /// </summary>
+    public readonly record struct RenderSession(uint Pid, bool System, bool Active, float Volume, bool Muted, string IdPath = "");
+
+    /// <summary>
+    /// 세션 식별자 "{장치}|\Device\HarddiskVolume3\…\chrome.exe%b{…}" 에서 실행 파일 경로 (DOS 경로로). 없으면 "".
+    /// 시스템 소리 세션은 "…|#%b{…}" 라 "".
+    /// </summary>
+    internal static string ExeFromSessionId(string? id, Func<string, string?>? ntToDos = null)
+    {
+        if (string.IsNullOrEmpty(id)) return "";
+        int bar = id.IndexOf('|');
+        if (bar < 0) return "";
+        int end = id.IndexOf("%b", bar + 1, StringComparison.Ordinal);
+        string raw = (end < 0 ? id[(bar + 1)..] : id[(bar + 1)..end]).Trim();
+        if (!raw.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) return "";
+        if (raw.StartsWith(@"\Device\", StringComparison.OrdinalIgnoreCase)) return (ntToDos ?? Kernel32.NtPathToDos)(raw) ?? "";
+        return raw.Length > 2 && raw[1] == ':' ? raw : "";
+    }
 
     /// <summary>
     /// 기본 출력 장치의 오디오 세션들 (만료된 것 빼고). <paramref name="apply"/> 가 있으면 각 세션의 볼륨 인터페이스에 그것을 해 봄
@@ -97,10 +116,19 @@ internal static class AudioSessions
                                 if (c2.GetState(out int state) != 0 || state == AudioSessionStateExpired) continue;
                                 bool system = c2.IsSystemSoundsSession() == 0;
                                 c2.GetProcessId(out uint pid);
-                                if (!system && (pid == 0 || pid == (uint)Environment.ProcessId)) continue;
+                                if (!system && pid == (uint)Environment.ProcessId) continue;
+                                string idPath = "";
+                                if (!system)
+                                {
+                                    // 여러 프로세스 세션(pid 0)도 세션 식별자의 실행 파일로 앱을 앎 (#21 — 크롬 소리가 빠지던 것)
+                                    c2.GetSessionIdentifier(out IntPtr idPtr);
+                                    try { idPath = ExeFromSessionId(idPtr == IntPtr.Zero ? null : Marshal.PtrToStringUni(idPtr)); }
+                                    finally { if (idPtr != IntPtr.Zero) Marshal.FreeCoTaskMem(idPtr); }
+                                    if (pid == 0 && idPath.Length == 0) continue;
+                                }
                                 vol.GetMasterVolume(out float level);
                                 vol.GetMute(out bool mute);
-                                var rs = new RenderSession(pid, system, state == AudioSessionStateActive, level, mute);
+                                var rs = new RenderSession(pid, system, state == AudioSessionStateActive, level, mute, idPath);
                                 if (apply is not null && apply(rs, vol))
                                 {
                                     vol.GetMasterVolume(out level);
@@ -130,6 +158,75 @@ internal static class AudioSessions
     }
 
     private const int AudioSessionStateExpired = 2;
+
+    /// <summary>
+    /// 점검용 (report-test --audiosessions, 읽기만): 모든 재생 장치(기본 장치 표시)의 모든 세션 — 상태·pid·GetProcessId 결과·표시 이름·아이콘 경로·볼륨 인터페이스 여부.
+    /// </summary>
+    internal static List<string> DescribeRenderForDiag()
+    {
+        var lines = new List<string>();
+        object? enumObj = null;
+        try
+        {
+            enumObj = new MMDeviceEnumeratorClass();
+            var en = (IMMDeviceEnumerator)enumObj;
+            string? Id(int role)
+            {
+                if (en.GetDefaultAudioEndpoint(CoreAudio.eRender, role, out var d) != 0 || d == null) return null;
+                try { return d.GetId(out string? id) == 0 ? id : null; } finally { Marshal.ReleaseComObject(d); }
+            }
+            string? multimedia = Id(CoreAudio.eMultimedia), console = Id(0), comms = Id(2);
+            if (en.EnumAudioEndpoints(CoreAudio.eRender, DEVICE_STATE_ACTIVE, out var devices) != 0 || devices == null) return lines;
+            try
+            {
+                devices.GetCount(out uint count);
+                var iid = typeof(IAudioSessionManager2).GUID;
+                for (uint i = 0; i < count; i++)
+                {
+                    if (devices.Item(i, out var device) != 0 || device == null) continue;
+                    try
+                    {
+                        device.GetId(out string? id);
+                        lines.Add($"장치 {id}{(id == multimedia ? " [기본 멀티미디어]" : "")}{(id == console ? " [기본 콘솔]" : "")}{(id == comms ? " [기본 통신]" : "")}");
+                        if (device.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out var mgrObj) != 0 || mgrObj is not IAudioSessionManager2 mgr) { lines.Add("  세션 관리자 없음"); continue; }
+                        try
+                        {
+                            if (mgr.GetSessionEnumerator(out var sessions) != 0 || sessions == null) continue;
+                            try
+                            {
+                                sessions.GetCount(out int n);
+                                for (int j = 0; j < n; j++)
+                                {
+                                    if (sessions.GetSession(j, out var ctl) != 0 || ctl == null) { lines.Add($"  세션 {j}: 못 받음"); continue; }
+                                    try
+                                    {
+                                        if (ctl is not IAudioSessionControl2 c2) { lines.Add($"  세션 {j}: IAudioSessionControl2 아님"); continue; }
+                                        c2.GetState(out int state);
+                                        int hr = c2.GetProcessId(out uint pid);
+                                        bool system = c2.IsSystemSoundsSession() == 0;
+                                        string Str(Func<IntPtr> get) { var ptr = get(); try { return ptr == IntPtr.Zero ? "" : Marshal.PtrToStringUni(ptr) ?? ""; } finally { if (ptr != IntPtr.Zero) Marshal.FreeCoTaskMem(ptr); } }
+                                        string dn = Str(() => { c2.GetDisplayName(out var x); return x; });
+                                        string icon = Str(() => { c2.GetIconPath(out var x); return x; });
+                                        string sid = Str(() => { c2.GetSessionIdentifier(out var x); return x; });
+                                        var (path, _) = Kernel32.QueryProcess(pid);
+                                        lines.Add($"  세션 {j}: 상태 {state} pid {pid} (hr 0x{hr:X8}) 시스템 {system} 볼륨IF {ctl is ISimpleAudioVolume} 경로 '{path}' 이름 '{dn}' 아이콘 '{icon}' id '{sid}'");
+                                    }
+                                    finally { Marshal.ReleaseComObject(ctl); }
+                                }
+                            }
+                            finally { Marshal.ReleaseComObject(sessions); }
+                        }
+                        finally { Marshal.ReleaseComObject(mgr); }
+                    }
+                    finally { Marshal.ReleaseComObject(device); }
+                }
+            }
+            finally { Marshal.ReleaseComObject(devices); }
+        }
+        catch (Exception ex) { lines.Add($"실패: {ex.GetType().Name} {ex.Message}"); }
+        finally { if (enumObj != null) Marshal.ReleaseComObject(enumObj); }
+        return lines;
+    }
 
     private static void Collect(IAudioSessionManager2 mgr, HashSet<uint> pids)
     {

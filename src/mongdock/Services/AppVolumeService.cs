@@ -39,8 +39,8 @@ public static class AppVolumeService
             }
             else
             {
-                var (path, aumid, name) = Describe(s.Pid);
-                key = path.Length > 0 ? path.ToLowerInvariant() : $"pid:{s.Pid}";
+                var (path, aumid, name) = Describe(s);
+                key = KeyOf(s);
                 info.TryAdd(key, (name, path.Length > 0 ? path : null, aumid));
             }
             if (!groups.TryGetValue(key, out var g)) groups[key] = g = new();
@@ -63,7 +63,7 @@ public static class AppVolumeService
         int changed = 0;
         AudioSessions.RenderSessions((s, vol) =>
         {
-            string k = s.System ? SystemKey : KeyOf(s.Pid);
+            string k = s.System ? SystemKey : KeyOf(s);
             if (k != key) return false;
             var g = Guid.Empty;
             if (volume is { } v) vol.SetMasterVolume((float)Math.Clamp(v, 0, 1), ref g);
@@ -74,10 +74,33 @@ public static class AppVolumeService
         return changed > 0;
     }
 
-    private static string KeyOf(uint pid)
+    /// <summary>
+    /// 세션의 앱 키 = 실행 파일 경로(소문자). 크롬·엣지·웨일·디스코드·스포티파이처럼 소리를 하위 프로세스가 내도 실행 파일이 같아 한 줄로 묶임
+    /// (윈도우 볼륨 믹서와 같게). 프로세스 경로를 못 읽거나 pid 가 0(여러 프로세스 세션)이면 세션 식별자 안의 경로.
+    /// </summary>
+    internal static string KeyOf(AudioSessions.RenderSession s)
     {
-        var (path, _, _) = Describe(pid);
-        return path.Length > 0 ? path.ToLowerInvariant() : $"pid:{pid}";
+        var (path, _, _) = Describe(s);
+        return path.Length > 0 ? path.ToLowerInvariant() : $"pid:{s.Pid}";
+    }
+
+    private static (string Path, string? Aumid, string Name) Describe(AudioSessions.RenderSession s)
+    {
+        if (s.Pid != 0)
+        {
+            var d = Describe(s.Pid);
+            if (d.Path.Length > 0 || s.IdPath.Length == 0) return d;
+        }
+        return (s.IdPath, null, NameOfExe(s.IdPath));
+    }
+
+    /// <summary>실행 파일의 보일 이름: 파일 설명("Google Chrome"), 없으면 파일 이름.</summary>
+    private static string NameOfExe(string path)
+    {
+        string name = "";
+        try { name = FileVersionInfo.GetVersionInfo(path).FileDescription?.Trim() ?? ""; }
+        catch (Exception ex) when (ex is FileNotFoundException or ArgumentException or IOException) { }
+        return name.Length > 0 ? name : Path.GetFileNameWithoutExtension(path);
     }
 
     /// <summary>pid → (경로, AUMID, 보일 이름). 프로세스마다 한 번만 (같은 pid 가 다른 앱이 되는 일은 드묾 — 경로가 바뀌면 다시).</summary>
@@ -87,12 +110,7 @@ public static class AppVolumeService
             if (NameCache.TryGetValue(pid, out var hit)) return hit;
         var (path, aumid) = Kernel32.QueryProcess(pid);
         string name = "";
-        if (path.Length > 0)
-        {
-            try { name = FileVersionInfo.GetVersionInfo(path).FileDescription?.Trim() ?? ""; }
-            catch (Exception ex) when (ex is FileNotFoundException or ArgumentException or IOException) { }
-            if (name.Length == 0) name = Path.GetFileNameWithoutExtension(path);
-        }
+        if (path.Length > 0) name = NameOfExe(path);
         else
         {
             try { using var p = Process.GetProcessById((int)pid); name = p.ProcessName; }

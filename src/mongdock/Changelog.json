@@ -11,6 +11,11 @@
           "text_en": "Fixed a flicker at the end when a window opens back out of the dock with the minimize effect."
         },
         {
+          "kind": "fix",
+          "text": "상단바 소리 판의 앱 볼륨에 크롬·엣지·디스코드처럼 소리를 따로 된 프로세스가 내는 앱이 빠지던 문제를 고쳤어요.",
+          "text_en": "Fixed apps such as Chrome, Edge and Discord, whose sound comes from a helper process, missing from the app volumes in the sound panel."
+        },
+        {
           "kind": "improvement",
           "text": "설정 → 독에 늘 남아 있던 「윈도우 최소화·최대화 효과를 껐어요 [되돌리기]」 줄을 뺐어요. 「끔」을 고르면 윈도우 효과가 돌아와요.",
           "text_en": "Removed the \"Turned off the Windows minimize/maximize animation [Undo]\" row that stayed in Settings → Dock. Choosing Off brings the Windows animation back."

@@ -223,6 +223,19 @@ internal static class Program
         if (volAt >= 0) return VolumeCheck(volAt + 1 < args.Length ? args[volAt + 1] : null); // 0.8 앱별 볼륨·볼륨 표시 (#21) — 실제 볼륨은 안 바꿈
         if (Array.IndexOf(args, "--clipcheck") >= 0) return ClipCheck(); // 0.6.3 문제 신고 영역 캡처·붙여넣기 (#13) — 실제 캡처 도구·클립보드는 안 건드림
         if (Array.IndexOf(args, "--profilecheck") >= 0) return ProfileCheck(); // 0.6.1 루틴 브라우저 계정·탐색기 창 (화면·실제 실행 없음)
+        if (Array.IndexOf(args, "--audiosessions") >= 0)
+        {
+            // 점검(읽기만, #21): 재생 장치마다 오디오 세션 전부 + 소리 판 앱 목록 — 앱 볼륨에 앱이 빠질 때 원인 찾기
+            var asmA = typeof(Mongdock.App).Assembly;
+            var lines = (List<string>)asmA.GetType("Mongdock.Native.AudioSessions")!.GetMethod("DescribeRenderForDiag", Any)!.Invoke(null, null)!;
+            var list = Mongdock.Services.AppVolumeService.List();
+            lines.Add("소리 판 앱 목록:");
+            lines.AddRange(list.Select(a => $"  {a.Name} key={a.Key} pids={string.Join(",", a.Pids)} 볼륨 {a.Volume:0.00} 음소거 {a.Muted} 소리남 {a.Active}"));
+            int outAt = Array.IndexOf(args, "--audiosessions") + 1;
+            if (outAt < args.Length) File.WriteAllLines(args[outAt], lines);
+            else lines.ForEach(Console.WriteLine);
+            return 0;
+        }
         if (Array.IndexOf(args, "--hotkeycheck") >= 0) return HotkeyCheck(); // 0.6 단축키 규칙·저장·키 처리 점검 (화면·실제 입력 없음)
         if (Array.IndexOf(args, "--reviewcheck") >= 0) return ReviewCheck(); // 0.5.0 검토 수정 점검 (화면 없음)
         int unin = Array.FindIndex(args, a => a == "--uninstall");
@@ -1861,6 +1874,20 @@ internal static class Program
         Check("스토어 앱 AUMID ↔ 그 앱 핀", Match("SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify", new PinItem { Kind = PinKind.Aumid, Target = "SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify" }));
         Check("다른 앱은 아님 (Spotify ↔ chrome)", !Match("Spotify.exe", null, Win(@"C:\x\chrome.exe")));
         Check("빈 이름은 아님", !Match("  ", spotifyPin));
+        // 앱 볼륨 (#21·#27): 여러 프로세스 세션(pid 0)도 세션 식별자의 실행 파일로 — 크롬 오디오 하위 프로세스 등
+        {
+            var asx = typeof(Mongdock.App).Assembly.GetType("Mongdock.Native.AudioSessions")!;
+            string Exe(string id) => (string)asx.GetMethod("ExeFromSessionId", Any)!.Invoke(null, new object?[] { id, (Func<string, string?>)(nt => nt.Replace(@"\Device\HarddiskVolume3\", @"C:\")) })!;
+            Check("세션 식별자 → 크롬 경로", Exe(@"{0.0.0.00000000}.{97b2}|\Device\HarddiskVolume3\Program Files\Google\Chrome\Application\chrome.exe%b{00000000-0000-0000-0000-000000000000}") == @"C:\Program Files\Google\Chrome\Application\chrome.exe");
+            Check("시스템 소리 세션 식별자 → 없음", Exe(@"{0.0.0.00000000}.{97b2}|#%b{A9EF3FD9-4240-455E-A4D5-F2B3301887B2}") == "");
+            Check("이상한 식별자 → 없음", Exe("") == "" && Exe("abc") == "" && Exe(@"{x}|\Device\HarddiskVolume3\x.dll%b{0}") == "");
+            // 같은 실행 파일(크롬 주 프로세스·오디오 하위 프로세스·pid 0 세션)은 한 줄
+            var rsType = asx.GetNestedType("RenderSession", Any)!;
+            object Rs(uint pid, string idPath) => Activator.CreateInstance(rsType, pid, false, true, 1f, false, idPath)!;
+            var keyOf = typeof(Mongdock.Services.AppVolumeService).GetMethod("KeyOf", Any)!;
+            string chrome = @"C:\Program Files\Google\Chrome\Application\chrome.exe";
+            Check("pid 0 세션도 식별자 경로로 앱 키", (string)keyOf.Invoke(null, new[] { Rs(0, chrome) })! == chrome.ToLowerInvariant());
+        }
         // 재생 중 표시 (#27): 이름표 시간 글자
         string TimeText((TimeSpan, TimeSpan)? t) => (string)dockType.GetMethod("MediaTimeText", Any)!.Invoke(null, new object?[] { t })!;
         Check($"이름표: 「{TimeText((TimeSpan.FromSeconds(151), TimeSpan.FromSeconds(245)))}」", TimeText((TimeSpan.FromSeconds(151), TimeSpan.FromSeconds(245))).EndsWith("2:31 / 4:05"));
