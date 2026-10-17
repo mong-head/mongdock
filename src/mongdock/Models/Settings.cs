@@ -28,8 +28,11 @@ public enum LaunchAnimation { Bounce, Blink }
 
 /// <summary>창 최소화 효과 (#20, 0.8): Off = 윈도우 그대로, Scale = 작아지며 독 아이콘으로, Genie = 깔때기처럼 휘며 빨려 들어감.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-/// <summary>창 최소화 효과 (#20): Scale = 아이콘으로 줄어들기, Genie = 부드러운 지니, Settle = 살짝 내려앉기, Slide = 아래로 미끄러지기. 저장 이름이라 바꾸지 말 것.</summary>
-public enum MinimizeEffect { Off, Scale, Genie, Settle, Slide }
+/// <summary>창 최소화 효과 (#20): Settle = 차분하게(살짝 내려앉기), Scale = 아이콘으로, Genie = 지니. 저장 이름이라 바꾸지 말 것.</summary>
+public enum MinimizeEffect { Off, Scale, Genie, Settle }
+
+/// <summary>창 최소화 효과 속도 (#20): 보통(기본) / 빠르게 0.7배 시간 / 느리게 1.4배.</summary>
+public enum MinimizeSpeed { Normal, Fast, Slow }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum DockTheme { System, Light, Dark }
@@ -147,6 +150,7 @@ public sealed class DockSettings
     public LaunchAnimation LaunchAnimation { get; set; } = LaunchAnimation.Bounce;
     /// <summary>창을 최소화할 때 독 아이콘으로 들어가는 효과 (#20). 켜 두는 동안 윈도우 최소화·최대화 애니메이션은 몽독이 끔(되돌림 보장).</summary>
     public MinimizeEffect MinimizeEffect { get; set; } = MinimizeEffect.Off;
+    public MinimizeSpeed MinimizeSpeed { get; set; } = MinimizeSpeed.Normal;
     /// <summary>다른 가상 데스크톱의 창도 독에 표시(실행 중 점, 창 선택에 "데스크톱 N").</summary>
     public bool ShowWindowsFromAllDesktops { get; set; } = true;
     public DockEdge Edge { get; set; } = DockEdge.Bottom;

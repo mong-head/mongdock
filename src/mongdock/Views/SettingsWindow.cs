@@ -595,20 +595,18 @@ internal sealed partial class SettingsWindow : Window
             new[] { (LaunchAnimation.Bounce, Loc.T("통통 튀기")), (LaunchAnimation.Blink, Loc.T("점 깜빡이기")) },
             v => Commit(() => D().LaunchAnimation = v))));
         // 창 최소화 효과 (#20): 켜는 순간 윈도우 효과를 껐다는 결과 줄 + [되돌리기](= 몽독 효과 끄기 → 윈도우 효과 되돌림)
-        // 모양 4가지 + 끔 — 칸이 많아 드롭다운
-        var minimizeOptions = new[]
-        {
-            (MinimizeEffect.Off, Loc.T("끔")), (MinimizeEffect.Settle, Loc.T("살짝 내려앉기")), (MinimizeEffect.Scale, Loc.T("아이콘으로 줄어들기")),
-            (MinimizeEffect.Slide, Loc.T("아래로 미끄러지기")), (MinimizeEffect.Genie, Loc.T("부드러운 지니")),
-        };
         more.Add(Row(Loc.T("창 최소화 효과"), Loc.T("최소화한 창이 독 쪽으로 들어가고, 독에서 열면 거꾸로 나와요. 켜 두는 동안 윈도우 최소화·최대화 애니메이션은 꺼져요(끄면 되돌려요)."),
-            Dropdown(minimizeOptions.First(o => o.Item1 == d.MinimizeEffect).Item2, () => minimizeOptions.Select(o => (o.Item2, o.Item1 == D().MinimizeEffect, (Action)(() =>
-            {
-                var v = o.Item1;
-                bool wasOff = D().MinimizeEffect == MinimizeEffect.Off;
-                _minimizeJustOn = wasOff && v != MinimizeEffect.Off;
-                Commit(() => D().MinimizeEffect = v, rebuild: true);
-            }))))));
+            Segmented(d.MinimizeEffect, new[] { (MinimizeEffect.Off, Loc.T("끔")), (MinimizeEffect.Settle, Loc.T("차분하게")), (MinimizeEffect.Scale, Loc.T("아이콘으로")), (MinimizeEffect.Genie, Loc.T("지니")) },
+                v =>
+                {
+                    bool wasOff = D().MinimizeEffect == MinimizeEffect.Off;
+                    _minimizeJustOn = wasOff && v != MinimizeEffect.Off;
+                    Commit(() => D().MinimizeEffect = v, rebuild: true);
+                })));
+        if (d.MinimizeEffect != MinimizeEffect.Off)
+            more.Add(Row(Loc.T("최소화 효과 속도"), null, Segmented(d.MinimizeSpeed,
+                new[] { (MinimizeSpeed.Fast, Loc.T("빠르게")), (MinimizeSpeed.Normal, Loc.T("보통")), (MinimizeSpeed.Slow, Loc.T("느리게")) },
+                v => Commit(() => D().MinimizeSpeed = v))));
         if (_minimizeJustOn && d.MinimizeEffect != MinimizeEffect.Off && WindowAnimationSetting.TurnedOffByMongdock)
             more.Add(Row(Loc.T("윈도우 최소화·최대화 효과를 껐어요"), null, ActionButton(Loc.T("되돌리기"), () =>
             {

@@ -386,7 +386,7 @@ internal static class CoachMarks
     };
 
     /// <summary>
-    /// 0.8 창 최소화 효과 카드 [켜기] (#20): 「살짝 내려앉기」로 켬 → 결과 줄
+    /// 0.8 창 최소화 효과 카드 [켜기] (#20): 「차분하게」(살짝 내려앉기)로 켬 → 결과 줄
     /// "켰어요 — 윈도우 최소화·최대화 효과는 껐어요" + [되돌리기](끔 → 윈도우 효과 되돌림). 이미 켜져 있으면 버튼 없음.
     /// </summary>
     private static InlineAction MinimizeInline() => new(Loc.T("켜기"),

@@ -29,15 +29,15 @@
         {
           "kind": "feature",
           "major": true,
-          "text": "창을 최소화하면 독 쪽으로 자연스럽게 들어가고 독에서 열면 거꾸로 나오는 효과를 켤 수 있어요 — 살짝 내려앉기·아이콘으로 줄어들기·아래로 미끄러지기·부드러운 지니(설정 → 독).",
-          "text_en": "Turn on a minimize effect that sends windows toward the dock and back out when you open them from it: Settle, Shrink to icon, Slide down or Soft genie (Settings → Dock).",
+          "text": "창을 최소화하면 독 쪽으로 자연스럽게 들어가고 독에서 열면 거꾸로 나오는 효과를 켤 수 있어요 — 차분하게·아이콘으로·지니, 속도도 골라요(설정 → 독).",
+          "text_en": "Turn on a minimize effect that sends windows toward the dock and back out when you open them from it: Calm, Into icon or Genie, at the speed you like (Settings → Dock).",
           "coach": {
             "key": "minimize",
             "anchor": "Center",
             "title": "창이 독으로 살며시",
             "title_en": "Windows that settle into the dock",
-            "body": "창을 최소화하면 조금 작아지며 독 쪽으로 내려앉고, 독에서 열면 거꾸로 나와요. 설정 → 독에서 아이콘으로 줄어들기·아래로 미끄러지기·부드러운 지니로도 바꿀 수 있어요. 켜 두는 동안 윈도우 최소화 효과는 꺼지고, 끄면 되돌려요.",
-            "body_en": "Minimized windows shrink a little and settle toward the dock, then come back the same way when you open them from the dock. You can switch to Shrink to icon, Slide down or Soft genie in Settings → Dock. While it's on, the Windows minimize animation is off and comes back when you turn this off."
+            "body": "창을 최소화하면 조금 작아지며 독 쪽으로 내려앉고, 독에서 열면 거꾸로 나와요. 설정 → 독에서 「아이콘으로」·「지니」와 속도도 고를 수 있어요. 켜 두는 동안 윈도우 최소화 효과는 꺼지고, 끄면 되돌려요.",
+            "body_en": "Minimized windows shrink a little and settle toward the dock, then come back the same way when you open them from the dock. You can switch to Into icon or Genie and pick the speed in Settings → Dock. While it's on, the Windows minimize animation is off and comes back when you turn this off."
           }
         },
         {

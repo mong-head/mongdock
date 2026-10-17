@@ -11,18 +11,21 @@ namespace Mongdock.Views;
 
 /// <summary>
 /// 창 최소화 효과 (#20, 0.8): 다른 앱 창이 최소화되면 그 창이 독 쪽으로 들어가고, 몽독에서 다시 열면 같은 길을 거꾸로 나옴.
-/// - 모양(설정 → 독): 살짝 내려앉기 / 아이콘으로 줄어들기 / 아래로 미끄러지기 / 부드러운 지니. 모두 끝에서 천천히 멈춤(튀는 탄성 없음).
-///   되살리기는 같은 길 거꾸로, 0.8배 시간. 윈도우 「애니메이션 효과」가 꺼져 있거나 절전 모드면 짧은 흐려짐만(되살리기는 바로).
+/// - 모양(설정 → 독): 차분하게(살짝 내려앉기) / 아이콘으로(줄어들며 끝에서 흐림) / 지니(느리게 단계적으로 휨) + 속도 빠르게·보통·느리게.
+///   들어갈 때 천천히 시작해 천천히 멈춤, 튀는 탄성 없음. 되살리기는 같은 길 거꾸로, 0.8배 시간. 윈도우 「애니메이션 효과」가 꺼져 있거나 절전 모드면 짧은 흐려짐만(되살리기는 바로).
 /// - 알아채기: EVENT_SYSTEM_MINIMIZESTART (SetWinEventHook, 몽독 밖에서 받음 — 다른 앱에 끼어들지 않음).
 ///   되살리기는 몽독이 창을 여는 때만(독 클릭 등 AppLauncher.ActivateWindow): 효과를 먼저 보이고 끝에서 창을 되살림. 다른 곳(Alt+Tab 등)에서 열면 효과 없음.
 /// - 그리기: 모니터 크기 투명 덮개 창 하나(계속 다시 씀)에 그 창의 DWM 썸네일(윈도우가 그려 둔 창 모습 — 최소화 뒤에도 마지막 모습을 들고 있음)을
-///   띄워 움직임. 그림 복사가 없어 메모리를 거의 안 씀. 지니 = 가로 띠 24장(띠마다 다른 폭·위치), 나머지 = 썸네일 1장.
+///   띄워 움직임. 그림 복사가 없어 메모리를 거의 안 씀. 지니 = 가로 띠 24장(띠마다 다른 폭·위치), 아이콘으로 = 5장(끝 흐림: 조금씩 어긋나게 겹침), 차분하게 = 1장.
 /// - 윈도우 기본 최소화 효과와 겹치지 않게 켜 둔 동안만 윈도우 「최소화·최대화 애니메이션」을 끔 (WindowAnimationSetting — 되돌림 보장).
-/// 독이 아래가 아니면(왼쪽·오른쪽·위) 지니 대신 아이콘으로 줄어들기, 내려앉기·미끄러지기는 독 쪽으로. 독 아이콘을 못 찾으면 독 가운데로.
+/// 독이 아래가 아니면(왼쪽·오른쪽·위) 지니 대신 아이콘으로, 차분하게는 독 쪽으로. 독 아이콘을 못 찾으면 독 가운데로.
 /// </summary>
 internal sealed class MinimizeEffectController : IDisposable
 {
     private const int GenieStrips = 24;
+
+    /// <summary>아이콘으로 끝 흐림: 썸네일 5장의 어긋남 방향 (가운데 + 네 방향).</summary>
+    private static readonly (double X, double Y)[] BlurCopies = { (0, 0), (-1, 0), (1, 0), (0, -1), (0, 1) };
 
     private readonly AppServices _services;
     private readonly Func<IntPtr, Rect?> _iconRect;
@@ -129,7 +132,8 @@ internal sealed class MinimizeEffectController : IDisposable
         var shape = Resolve(Effect, edge, Reduced());
         LastPlayedForTest = (from, to, shape, restore);
         var overlay = _overlay ??= new OverlayWindow(_services);
-        return overlay.Run(hwnd, new Rect(bounds.Left, bounds.Top, bounds.Right - bounds.Left, bounds.Bottom - bounds.Top), from, to, shape, edge, restore, onDone);
+        int duration = MinimizeMotion.DurationMs(shape, restore, _services.Settings.Current.Dock.MinimizeSpeed);
+        return overlay.Run(hwnd, new Rect(bounds.Left, bounds.Top, bounds.Right - bounds.Left, bounds.Bottom - bounds.Top), from, to, shape, edge, restore, duration, onDone);
     }
 
     /// <summary>사각형(물리 픽셀) 가운데가 있는 모니터 (없으면 주 모니터).</summary>
@@ -222,7 +226,7 @@ internal sealed class MinimizeEffectController : IDisposable
         }
 
         /// <summary>효과 시작. 썸네일을 못 만들면 false (되살리기면 부르는 쪽이 바로 되살림).</summary>
-        public bool Run(IntPtr source, Rect monitorPx, Rect from, Rect to, MinimizeEffect shape, DockEdge edge, bool restore, Action? onDone)
+        public bool Run(IntPtr source, Rect monitorPx, Rect from, Rect to, MinimizeEffect shape, DockEdge edge, bool restore, int duration, Action? onDone)
         {
             Stop();
             if (_hwnd == IntPtr.Zero) new WindowInteropHelper(this).EnsureHandle();
@@ -232,7 +236,7 @@ internal sealed class MinimizeEffectController : IDisposable
                 Native.User32.SetWindowPos(_hwnd, IntPtr.Zero, (int)monitorPx.X, (int)monitorPx.Y, (int)monitorPx.Width, (int)monitorPx.Height, Native.User32.SWP_NOZORDER | Native.User32.SWP_NOACTIVATE);
             }
             if (!IsVisible) Show();
-            int strips = shape == MinimizeEffect.Genie ? GenieStrips : 1;
+            int strips = shape == MinimizeEffect.Genie ? GenieStrips : shape == MinimizeEffect.Scale ? BlurCopies.Length : 1;
             for (int i = 0; i < strips; i++)
             {
                 if (DwmRegisterThumbnail(_hwnd, source, out var t) != 0) { Stop(); Hide(); return false; }
@@ -241,19 +245,27 @@ internal sealed class MinimizeEffectController : IDisposable
             if (DwmQueryThumbnailSourceSize(_thumbs[0], out var src) != 0 || src.cx <= 0 || src.cy <= 0) { Stop(); Hide(); return false; }
             var local = new Rect(from.X - monitorPx.X, from.Y - monitorPx.Y, from.Width, from.Height);
             var target = new Rect(to.X - monitorPx.X, to.Y - monitorPx.Y, to.Width, to.Height);
-            int duration = MinimizeMotion.DurationMs(shape, restore);
             _onDone = onDone;
             var clock = Stopwatch.StartNew();
             _frame = (_, _) =>
             {
                 double t = Math.Min(1, clock.ElapsedMilliseconds / (double)duration);
                 double p = MinimizeMotion.Path(t, restore);
+                bool genie = shape == MinimizeEffect.Genie;
                 for (int i = 0; i < _thumbs.Count; i++)
                 {
-                    double v0 = (double)i / _thumbs.Count, v1 = (double)(i + 1) / _thumbs.Count;
-                    var (dst, opacity) = shape == MinimizeEffect.Genie
+                    double v0 = genie ? (double)i / _thumbs.Count : 0, v1 = genie ? (double)(i + 1) / _thumbs.Count : 1;
+                    var (dst, opacity) = genie
                         ? (GenieStrip(local, target, v0, v1, p), MinimizeMotion.Opacity(shape, p))
                         : MinimizeMotion.Frame(shape, edge, local, target, p);
+                    if (_thumbs.Count > 1 && !genie)
+                    {
+                        // 흐림: 같은 모습을 조금씩 어긋나게 겹침. 흐림이 없을 땐 가운데 1장만 보이게, 있을 땐 겹친 합이 원래 불투명도가 되게
+                        double blur = MinimizeMotion.Blur(shape, p);
+                        var (ox, oy) = BlurCopies[i];
+                        dst.Offset(ox * blur, oy * blur);
+                        opacity = blur <= 0 ? (i == 0 ? opacity : 0) : 1 - Math.Pow(1 - Math.Clamp(opacity, 0, 0.999), 1.0 / _thumbs.Count);
+                    }
                     var props = new DWM_THUMBNAIL_PROPERTIES
                     {
                         dwFlags = DWM_TNP_RECTDESTINATION | DWM_TNP_RECTSOURCE | DWM_TNP_OPACITY | DWM_TNP_VISIBLE,
@@ -308,24 +320,28 @@ internal sealed class MinimizeEffectController : IDisposable
 
     /// <summary>
     /// 지니 (독이 아래): 창 높이의 v0~v1 띠가 길 위치 p(0 창 자리 → 1 아이콘)일 때 놓일 자리.
-    /// 아래 띠가 조금 먼저 좁아지고(휘는 정도 <see cref="MinimizeMotion.GenieBend"/>), 창 전체가 아이콘 쪽으로 내려감.
+    /// 단계: 창 아래부터 깔때기 모양으로 천천히 휘고, 그 깔때기를 따라 아이콘으로 내려감(두 단계가 겹쳐 이어짐) — 띠 폭은 띠가 있는 높이로 정해져 각도가 급하게 바뀌지 않음.
     /// </summary>
     internal static Rect GenieStrip(Rect from, Rect to, double v0, double v1, double p) => GenieStrip(from, to, v0, v1, p, MinimizeMotion.GenieBend);
 
     internal static Rect GenieStrip(Rect from, Rect to, double v0, double v1, double p, double bend)
     {
-        double down = Math.Clamp((p - 0.1) / 0.9, 0, 1); // 내려가기 (처음 10% 는 좁아지기만)
+        static double Smooth(double x) { x = Math.Clamp(x, 0, 1); return x * x * (3 - 2 * x); }
+        // 깔때기: 창 위(from.Top)에서 아이콘 위(to.Top)까지 폭이 창 폭 → 아이콘 폭으로 부드럽게 좁아지는 곡선 (모양은 고정)
+        double span = Math.Max(1, to.Top - from.Top);
+        // 휨(bend 만큼, 길 85% 동안 천천히)과 내려가기(처음부터 끝까지)가 겹쳐 이어짐: 처음엔 아래만 휘고, 그 깔때기를 따라 아이콘으로
+        double curve = bend * Smooth(p / 0.85) + (1 - bend) * Smooth(p);
+        double down = Smooth(p);
         double Y(double v) => from.Top + v * from.Height + (to.Top + v * to.Height - (from.Top + v * from.Height)) * down;
-        (double L, double R) X(double v)
+        (double L, double R) X(double y)
         {
-            // 아래(v=1)일수록 먼저 좁아짐 — bend 1 = 아래가 먼저 확(강한 지니), 0 = 모든 띠가 같이(크기 줄이기와 같음)
-            double k = Math.Clamp(p * (1 + 0.8 * bend) - (1 - v) * 0.8 * bend, 0, 1);
-            k = k * k * (3 - 2 * k); // 부드럽게
-            return (from.Left + (to.Left - from.Left) * k, from.Right + (to.Right - from.Right) * k);
+            double u = Math.Clamp((y - from.Top) / span, 0, 1);
+            double f = Smooth(u) * curve; // 양 끝이 평평한 S 곡선 — 아이콘 폭에 닿는 곳에 꺾인 모서리 없음
+            return (from.Left + (to.Left - from.Left) * f, from.Right + (to.Right - from.Right) * f);
         }
         double y0 = Y(v0), y1 = Y(v1);
-        var (l0, r0) = X(v0);
-        var (l1, r1) = X(v1);
+        var (l0, r0) = X(y0);
+        var (l1, r1) = X(y1);
         double l = Math.Min(l0, l1), r = Math.Max(r0, r1);
         return new Rect(l, y0, Math.Max(1, r - l), Math.Max(1, y1 - y0));
     }
@@ -379,48 +395,88 @@ internal sealed class MinimizeEffectController : IDisposable
 }
 
 /// <summary>
-/// 창 최소화 효과의 움직임 값과 모양 (#20 — 사용자 시안 후보 4가지, 2026-10-17). 값은 여기 한곳에서 바꿈.
-/// p = 길 위치 (0 창 자리 → 1 끝). 되살리기는 같은 길을 거꾸로(p 1 → 0), 0.8배 시간. 둘 다 끝에서 천천히 멈춤(튀는 탄성 없음).
+/// 창 최소화 효과의 움직임 값과 모양 (#20 — 사용자가 고른 3가지, 2026-10-17). 값은 여기 한곳에서 바꿈.
+/// p = 길 위치 (0 창 자리 → 1 끝). 들어갈 때는 천천히 시작해 천천히 멈춤(ease-in-out — 처음 몇 프레임에 다 움직여 "그냥 사라지는" 것처럼 보이지 않게),
+/// 되살리기는 같은 길을 거꾸로(p 1 → 0) 0.8배 시간, 창 자리에 닿을 때 천천히(ease-out). 튀는 탄성 없음. 흐려짐은 길 끝 30% 안에서만.
 /// </summary>
 internal static class MinimizeMotion
 {
-    /// <summary>들어가는 시간(ms): 살짝 내려앉기 200 · 아이콘으로 줄어들기 260 · 아래로 미끄러지기 220 · 부드러운 지니 300, 흐려짐만(Off) 120.</summary>
+    /// <summary>들어가는 시간(ms, 보통 속도): 차분하게 220 · 아이콘으로 300 · 지니 480, 흐려짐만(Off) 120.</summary>
     public static int Minimize(MinimizeEffect shape) => shape switch
     {
-        MinimizeEffect.Settle => 200,
-        MinimizeEffect.Scale => 260,
-        MinimizeEffect.Slide => 220,
-        MinimizeEffect.Genie => 300,
+        MinimizeEffect.Settle => 220,
+        MinimizeEffect.Scale => 300,
+        MinimizeEffect.Genie => 480,
         _ => 120,
+    };
+
+    /// <summary>속도 설정 배율: 빠르게 0.7 · 보통 1 · 느리게 1.4 (흐려짐만은 그대로).</summary>
+    public static double SpeedFactor(MinimizeSpeed speed) => speed switch
+    {
+        MinimizeSpeed.Fast => 0.7,
+        MinimizeSpeed.Slow => 1.4,
+        _ => 1.0,
     };
 
     /// <summary>되살리기 시간 = 들어가는 시간 × 이 값.</summary>
     public const double RestoreFactor = 0.8;
 
-    /// <summary>지니 휘는 정도 (0 = 휘지 않음, 1 = 예전 강한 지니). 부드러운 지니 = 0.35.</summary>
-    public const double GenieBend = 0.35;
+    /// <summary>지니 1단계에서 휘는 정도 (0 = 휘지 않고 내려가며 좁아짐, 1 = 제자리에서 깔때기 모양까지 다 휨).</summary>
+    public const double GenieBend = 0.6;
 
-    /// <summary>살짝 내려앉기: 끝 크기 0.82배, 독 쪽으로 창 높이의 18%, 독 아이콘 쪽으로 가로 거리의 35%.</summary>
+    /// <summary>차분하게: 끝 크기 0.82배, 독 쪽으로 창 높이의 18%, 독 아이콘 쪽으로 가로 거리의 35%.</summary>
     public const double SettleScale = 0.82, SettleDrop = 0.18, SettleTowardIcon = 0.35;
 
-    /// <summary>아래로 미끄러지기: 독 쪽으로 창 높이의 70%.</summary>
-    public const double SlideDistance = 0.70;
+    /// <summary>흐려지기 시작하는 길 위치 (끝 30%).</summary>
+    public const double FadeFrom = 0.7;
 
-    public static int DurationMs(MinimizeEffect shape, bool restore) => (int)Math.Round(Minimize(shape) * (restore ? RestoreFactor : 1));
+    /// <summary>아이콘으로: 끝에서 독에 녹아드는 흐림 반지름(물리 픽셀, 썸네일을 조금씩 어긋나게 겹쳐 그림 — 그림 복사 없음).</summary>
+    public const double BlurPx = 4;
 
-    /// <summary>끝에서 천천히 멈춤 (3제곱 ease-out).</summary>
+    public static int DurationMs(MinimizeEffect shape, bool restore, MinimizeSpeed speed = MinimizeSpeed.Normal) =>
+        (int)Math.Round(Minimize(shape) * (restore ? RestoreFactor : 1) * (shape == MinimizeEffect.Off ? 1 : SpeedFactor(speed)));
+
+    /// <summary>끝에서 천천히 멈춤 (3제곱 ease-out) — 되살리기.</summary>
     public static double EaseOut(double t) => 1 - Math.Pow(1 - Math.Clamp(t, 0, 1), 3);
 
-    /// <summary>시간 t(0~1) → 길 위치 p. 되살리기는 끝(1)에서 창 자리(0)로, 창 자리에 닿을 때 천천히.</summary>
-    public static double Path(double t, bool restore) => restore ? 1 - EaseOut(t) : EaseOut(t);
+    /// <summary>천천히 시작해 천천히 멈춤 — 들어갈 때. cubic-bezier(.45, 0, .3, 1).</summary>
+    public static double EaseInOut(double t) => CubicBezier(0.45, 0, 0.3, 1, t);
 
-    /// <summary>길 위치 p 의 불투명도.</summary>
-    public static double Opacity(MinimizeEffect shape, double p) => shape switch
+    /// <summary>시간 t(0~1) → 길 위치 p. 되살리기는 끝(1)에서 창 자리(0)로.</summary>
+    public static double Path(double t, bool restore) => restore ? 1 - EaseOut(t) : EaseInOut(t);
+
+    /// <summary>CSS cubic-bezier (x1,y1,x2,y2) 의 t 시점 값 (x 를 뉴턴법+이분법으로 풀어 y). y 가 0~1 밖으로 안 나가는 값만 씀(탄성 없음).</summary>
+    internal static double CubicBezier(double x1, double y1, double x2, double y2, double t)
     {
-        MinimizeEffect.Scale => 1 - 0.85 * p,                                 // 아이콘에 닿을 때 옅게
-        MinimizeEffect.Genie => p < 0.45 ? 1 : 1 - 0.9 * (p - 0.45) / 0.55,     // 뒤 절반에서 옅어짐
-        _ => 1 - p,                                                             // 내려앉기·미끄러지기·흐려짐만: 끝에서 사라짐
-    };
+        t = Math.Clamp(t, 0, 1);
+        static double B(double a, double b, double s) => 3 * a * s * (1 - s) * (1 - s) + 3 * b * s * s * (1 - s) + s * s * s;
+        static double D(double a, double b, double s) => 3 * a * (1 - s) * (1 - s) + 6 * (b - a) * s * (1 - s) + 3 * (1 - b) * s * s;
+        double u = t;
+        for (int i = 0; i < 8; i++)
+        {
+            double dx = D(x1, x2, u);
+            if (Math.Abs(dx) < 1e-6) break;
+            u = Math.Clamp(u - (B(x1, x2, u) - t) / dx, 0, 1);
+        }
+        if (Math.Abs(B(x1, x2, u) - t) > 1e-5)
+        {
+            double lo = 0, hi = 1;
+            for (int i = 0; i < 30; i++) { u = (lo + hi) / 2; if (B(x1, x2, u) < t) lo = u; else hi = u; }
+        }
+        return B(y1, y2, u);
+    }
+
+    /// <summary>길 위치 p 의 불투명도: 끝 30% 안에서만 옅어짐 (아이콘으로·지니는 아이콘에 닿을 때 조금 남김).</summary>
+    public static double Opacity(MinimizeEffect shape, double p)
+    {
+        double f = p <= FadeFrom ? 0 : (p - FadeFrom) / (1 - FadeFrom);
+        double end = shape is MinimizeEffect.Scale or MinimizeEffect.Genie ? 0.1 : 0;
+        return 1 - (1 - end) * f;
+    }
+
+    /// <summary>아이콘으로: 길 위치 p 의 흐림 반지름 (끝 30% 안에서 0 → BlurPx).</summary>
+    public static double Blur(MinimizeEffect shape, double p) =>
+        shape == MinimizeEffect.Scale && p > FadeFrom ? BlurPx * (p - FadeFrom) / (1 - FadeFrom) : 0;
 
     /// <summary>썸네일 1장 모양의 자리·불투명도. from = 창, icon = 독 아이콘, edge = 독 자리.</summary>
     public static (Rect Rect, double Opacity) Frame(MinimizeEffect shape, DockEdge edge, Rect from, Rect icon, double p)
@@ -448,14 +504,6 @@ internal static class MinimizeMotion
                     _ => (new Rect(ax - w / 2, from.Bottom + from.Height * SettleDrop * p - h, w, h), op),
                 };
             }
-            case MinimizeEffect.Slide:
-                return edge switch
-                {
-                    DockEdge.Left => (new Rect(from.X - from.Width * SlideDistance * p, from.Y, from.Width, from.Height), op),
-                    DockEdge.Right => (new Rect(from.X + from.Width * SlideDistance * p, from.Y, from.Width, from.Height), op),
-                    DockEdge.Top => (new Rect(from.X, from.Y - from.Height * SlideDistance * p, from.Width, from.Height), op),
-                    _ => (new Rect(from.X, from.Y + from.Height * SlideDistance * p, from.Width, from.Height), op),
-                };
             default: // 흐려짐만
                 return (from, op);
         }
