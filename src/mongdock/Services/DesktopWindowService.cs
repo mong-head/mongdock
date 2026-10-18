@@ -1505,16 +1505,16 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     /// 명령줄 <c>mongdock.exe --restore-taskbar</c> (제거 프로그램이 강제 종료 뒤 호출): 복구 기록이 있으면 작업 표시줄을 보이고
     /// 자동 숨김을 원래대로. 몽독이 실행 중이 아닐 때만 의미가 있다(호출자가 확인).
     /// </summary>
-    public static void RestoreTaskbarFromRecord()
+    public static void RestoreTaskbarFromRecord(string reason = "--restore-taskbar")
     {
-        RestoreWindowAnimation("--restore-taskbar"); // 제거 때 창 최소화 효과(#20)가 꺼 둔 윈도우 애니메이션도
+        RestoreWindowAnimation(reason); // 제거 때 창 최소화 효과(#20)가 꺼 둔 윈도우 애니메이션도
         if (!TaskbarAutoHide.HasRecord)
         {
-            Log.Info("--restore-taskbar: 작업 표시줄 상태 기록 없음");
+            Log.Info($"{reason}: 작업 표시줄 상태 기록 없음");
             return;
         }
         ApplyTaskbarVisibility(hidden: false);
-        TaskbarAutoHide.Restore("--restore-taskbar");
+        TaskbarAutoHide.Restore(reason);
     }
 
     private static void ApplyTaskbarVisibility(bool hidden)

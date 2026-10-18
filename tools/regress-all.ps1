@@ -16,7 +16,7 @@ $rt = Join-Path $root "tools\report-test\bin\Debug\net8.0-windows10.0.19041.0\re
 $lt = Join-Path $root "tools\live-test\bin\Debug\net8.0-windows10.0.19041.0\live-test.exe"
 
 "빌드..."
-foreach ($p in @("tools\report-test", "tools\live-test")) {
+foreach ($p in @("src\mongdock", "tools\report-test", "tools\live-test")) {
     $b = & dotnet build (Join-Path $root $p) 2>&1 | Select-String -Pattern "오류 \d+개|error" | Select-Object -First 3
     "  $p : $($b -join ' ')"
 }
@@ -42,7 +42,8 @@ $items = @(
     @("앱 모음 판 그림", $rt, @("--allapps", "OUT\allapps")),
     @("루틴 그림", $rt, @("--routines", "OUT\routines")),
     @("소리 판 넘김·판 6개 열기 (화면 밖)", $lt, @("OUT\soundpanel", "--soundpanel")),
-    @("최소화 덮개 시작 시간 (화면 밖)", $lt, @("OUT\overlay", "--overlaytiming"))
+    @("최소화 덮개 시작 시간 (화면 밖)", $lt, @("OUT\overlay", "--overlaytiming")),
+    @("갑자기 꺼짐 감시 (#36, 시험 폴더만)", "powershell.exe", @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $root "tools\watchdog-test.ps1")))
 )
 
 $rows = @()

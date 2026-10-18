@@ -40,6 +40,7 @@ public partial class App : Application
     // 설치 프로그램/스크립트용 정상 종료 요청 (mongdock.exe --exit). 트레이 "종료" 와 같은 경로로 끝나 작업 표시줄·AppBar 가 복원된다.
     private const string ExitEventName = @"Local\mongdock.Exit";
     private EventWaitHandle? _exitEvent;
+    private bool _watchdog;
     private RegisteredWaitHandle? _exitWait;
 
     /// <summary>화면 언어를 가장 먼저 정함 — 정적 목록(둘러보기 문구 등)이 만들어지기 전에 (Loc).</summary>
@@ -53,6 +54,24 @@ public partial class App : Application
         // 회사 인증 프록시(NTLM/Kerberos): 업데이트·캘린더·메뉴 규칙 요청이 로그인한 윈도우 계정으로 인증하게
         try { System.Net.Http.HttpClient.DefaultProxy.Credentials = System.Net.CredentialCache.DefaultCredentials; }
         catch (Exception ex) { Log.Warn($"프록시 자격 증명 설정 실패: {ex.Message}"); }
+
+        // 감시 프로세스 (#36): 창 없이 몽독이 끝나기를 기다렸다가, 갑자기 꺼졌으면 작업 표시줄을 되돌리고 다시 켬
+        int watchAt = Array.FindIndex(e.Args, a => string.Equals(a, CrashWatchdog.WatchArg, StringComparison.OrdinalIgnoreCase));
+        if (watchAt >= 0)
+        {
+            _watchdog = true;
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            if (watchAt + 1 >= e.Args.Length || !int.TryParse(e.Args[watchAt + 1], out int watchPid)) { Shutdown(); return; }
+            // 기다리기는 백그라운드 스레드에서 — UI 스레드가 메시지를 계속 받아야 윈도우 로그오프·종료를 막지 않음 (리뷰: 응답 없는 창)
+            var t = new Thread(() =>
+            {
+                try { CrashWatchdog.Run(watchPid); }
+                catch (Exception ex) { Log.Error("감시 프로세스 오류", ex); }
+                Dispatcher.BeginInvoke(Shutdown);
+            }) { IsBackground = true, Name = "mongdock watchdog" };
+            t.Start();
+            return;
+        }
 
         if (e.Args.Any(a => string.Equals(a, "--exit", StringComparison.OrdinalIgnoreCase)))
         {
@@ -90,8 +109,22 @@ public partial class App : Application
                 _singleInstance = new Mutex(true, @"Local\mongdock.SingleInstance", out isFirst);
             }
         }
+        if (isFirst && e.Args.Any(a => string.Equals(a, CrashWatchdog.RestartArg, StringComparison.OrdinalIgnoreCase)) && !CrashWatchdog.NoteRestart())
+        {
+            Log.Warn("갑자기 꺼진 뒤 다시 켜기: 10분에 3번 넘음 → 이번에는 켜지 않음");
+            _singleInstance.Dispose();
+            _singleInstance = null;
+            Shutdown();
+            return;
+        }
         if (isFirst)
             AppInfo.MigrateLegacyInstall();
+        if (!isFirst && e.Args.Any(a => string.Equals(a, CrashWatchdog.RestartArg, StringComparison.OrdinalIgnoreCase)))
+        {
+            // 감시 프로세스와 윈도우 다시 시작이 둘 다 켰을 때: 이미 다시 켜진 몽독을 깨우지 않고 조용히 끝남 (#36)
+            Shutdown();
+            return;
+        }
         if (!isFirst)
         {
             // 이미 실행 중이면 그 mongdock 을 깨운다 (일시 정지 해제 / 다 꺼져 있으면 독 켜기). --tour 면 둘러보기도.
@@ -106,6 +139,7 @@ public partial class App : Application
         // 오류 자동 신고: 지난 실행이 정상 종료됐는지 보고 이번 세션 표시를 씀 (가능한 한 일찍)
         _crashPending = CrashReporter.BeginSession();
         _sessionStarted = true;
+        CrashWatchdog.Start();
         _resumeEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ResumeEventName);
         _resumeWait = ThreadPool.RegisterWaitForSingleObject(_resumeEvent,
             (_, _) => Dispatcher.BeginInvoke(ResumeFromSecondLaunch), null, Timeout.Infinite, executeOnlyOnce: false);
@@ -121,8 +155,8 @@ public partial class App : Application
             (_, _) => Dispatcher.BeginInvoke(() =>
             {
                 Log.Info("종료 요청 받음 (--exit)");
-                // 설치 프로그램·업데이트가 기다리다(10초) 강제 종료해도 "갑자기 꺼졌어요" 가 뜨지 않게 미리 정상 종료 표시
-                if (_sessionStarted) CrashReporter.EndSession();
+                // 설치 프로그램·업데이트가 기다리다(10초) 강제 종료해도 "갑자기 꺼졌어요" 가 뜨지 않게 미리 「끝내는 중」 표시
+                if (_sessionStarted) CrashReporter.MarkExiting();
                 Shutdown();
             }), null, Timeout.Infinite, executeOnlyOnce: true);
 
@@ -431,14 +465,15 @@ public partial class App : Application
     protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
     {
         Log.Info($"윈도우 세션 끝 ({e.ReasonSessionEnding})");
-        if (_sessionStarted) CrashReporter.EndSession();
+        if (_watchdog) { base.OnSessionEnding(e); Shutdown(); return; } // 감시 프로세스: 로그오프·종료를 막지 않고 바로 끝남
+        if (_sessionStarted) CrashReporter.MarkExiting();
         base.OnSessionEnding(e);
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
-        // 정상 종료 표시는 정리 작업 전에 (정리가 오래 걸려 강제 종료돼도 비정상 종료로 보지 않게)
-        if (_sessionStarted) CrashReporter.EndSession();
+        // 「끝내는 중」 표시는 정리 작업 전에 (정리가 오래 걸려 강제 종료돼도 비정상 종료로 보지 않게), 표시 지우기는 정리 뒤 (#36)
+        if (_sessionStarted) CrashReporter.MarkExiting();
         if (_services is not null) Log.Info($"{AppInfo.Name} 종료");
         CoachMarks.CloseAll();
         // 트레이 아이콘을 내리고, 숨겨 둔 작업 표시줄을 복원한다.
@@ -499,6 +534,7 @@ public partial class App : Application
         _exitWait?.Unregister(null);
         _exitEvent?.Dispose();
         _singleInstance?.Dispose();
+        if (_sessionStarted) CrashReporter.EndSession();
         base.OnExit(e);
     }
 }

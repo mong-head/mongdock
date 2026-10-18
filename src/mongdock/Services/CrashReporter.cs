@@ -52,6 +52,8 @@ public static class CrashReporter
                 int pid = doc.RootElement.TryGetProperty("pid", out var p) ? p.GetInt32() : 0;
                 if (doc.RootElement.TryGetProperty("started", out var s) && s.TryGetDateTime(out var st)) started = st;
                 crashed = !IsSameProcessAlive(pid, started);
+                // 끝내는 중(종료 정리·로그오프)에 끝났으면 정상 종료로 봄 (#36 — 표시는 정리 전에, 파일 삭제는 정리 뒤)
+                if (crashed && doc.RootElement.TryGetProperty("exiting", out var ex0) && ex0.ValueKind == JsonValueKind.True) crashed = false;
                 // 지난 세션이 이번 부팅 전에 시작됐으면 재부팅·정전·윈도우 업데이트로 끝난 것 → 몽독 탓이 아님
                 DateTime bootTime = DateTime.Now - TimeSpan.FromMilliseconds(Environment.TickCount64);
                 if (crashed && started is DateTime s0 && s0 < bootTime)
@@ -79,6 +81,38 @@ public static class CrashReporter
             Log.Warn($"세션 표시 처리 실패: {ex.Message}");
         }
         return pending;
+    }
+
+    public enum SessionEnd { Clean, Exiting, Abrupt }
+
+    /// <summary>
+    /// 감시 프로세스(#36): <paramref name="pid"/> 의 세션이 어떻게 끝났는지 — 표시가 없거나 다른 프로세스 것이면 Clean,
+    /// 「끝내는 중」 표시가 남았으면 Exiting(정리 도중 끝남: 되돌리기는 하되 다시 켜지 않음), 그 밖은 Abrupt.
+    /// </summary>
+    public static SessionEnd EndOf(int pid)
+    {
+        try
+        {
+            if (!File.Exists(SessionPath)) return SessionEnd.Clean;
+            using var doc = JsonDocument.Parse(File.ReadAllText(SessionPath));
+            if (!(doc.RootElement.TryGetProperty("pid", out var p) && p.GetInt32() == pid)) return SessionEnd.Clean;
+            return doc.RootElement.TryGetProperty("exiting", out var x) && x.ValueKind == JsonValueKind.True ? SessionEnd.Exiting : SessionEnd.Abrupt;
+        }
+        catch { return SessionEnd.Abrupt; }
+    }
+
+    /// <summary>
+    /// 끝내기 시작 (--exit·로그오프·OnExit 처음): 세션 표시에 「끝내는 중」만 씀. 정리 도중 강제로 끝나도 다음 실행은 비정상 종료로 안 보고,
+    /// 감시 프로세스는 작업 표시줄을 되돌림 (예전엔 여기서 표시를 지워 정리 도중 꺼지면 감시가 아무것도 안 했음 — 리뷰).
+    /// </summary>
+    public static void MarkExiting()
+    {
+        try
+        {
+            var now = Process.GetCurrentProcess();
+            AtomicFile.WriteAllText(SessionPath, JsonSerializer.Serialize(new { pid = Environment.ProcessId, started = now.StartTime, ver = WhatsNew.Current.ToString(3), exiting = true }));
+        }
+        catch { }
     }
 
     /// <summary>정상 종료 (OnExit 끝).</summary>

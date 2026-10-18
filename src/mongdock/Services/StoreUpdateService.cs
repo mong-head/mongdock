@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using System.Windows.Threading;
 using Windows.Services.Store;
 
@@ -23,7 +22,7 @@ public enum StoreUpdateState
 ///   StoreContext.GetAppAndOptionalStorePackageUpdatesAsync → 새 버전이 있으면 Pending (상단바 점·메뉴 줄·버전마다 배너 한 번 = GitHub판과 같음, Views/UpdateUi).
 /// - [업데이트]: RequestDownloadAndInstallStorePackageUpdatesAsync (스토어 확인 창 + 진행). 설치 단계(Deploying)에 들어가면
 ///   일시 정지 = 작업 표시줄·자동 숨김을 먼저 원래대로 (윈도우가 설치하며 몽독을 끄면 작업 표시줄이 숨은 채 남지 않게).
-///   취소·실패면 일시 정지를 풂. 설치 뒤 다시 켜지기 = RegisterApplicationRestart (업데이트로 꺼졌을 때만 — 오류·멈춤·재부팅 땐 다시 켜지 않음).
+///   취소·실패면 일시 정지를 풂. 설치 뒤 다시 켜지기 = RegisterApplicationRestart (CrashWatchdog 이 등록 — 업데이트·크래시 때, 멈춤·재부팅 땐 아님).
 /// - 스토어가 앱 밖에서 자동으로 업데이트해도 RegisterApplicationRestart 로 다시 켜지고, 다음 실행이 작업 표시줄 기록대로 다시 숨김.
 /// - 시험: DEBUG 빌드에서만 MONGDOCK_FAKE_STOREUPDATE=none | available[:0.7.1] | error (패키지 밖에서도 정보 화면·배너 흐름).
 /// </summary>
@@ -76,7 +75,7 @@ public sealed class StoreUpdateService : IDisposable
 
     public void Start()
     {
-        RegisterRestart();
+        // 업데이트 뒤 다시 켜기는 CrashWatchdog.Start 의 RegisterApplicationRestart(크래시 포함)가 같이 맡음 — 여기서 다시 등록하면 그 설정을 덮어씀 (#36)
         _timer.Start();
     }
 
@@ -240,28 +239,6 @@ public sealed class StoreUpdateService : IDisposable
         PendingVersion = version;
         LastChecked = lastChecked;
         State = state;
-    }
-
-    // ───────────────────────── 업데이트 뒤 다시 켜기 ─────────────────────────
-
-    private const uint RESTART_NO_CRASH = 1, RESTART_NO_HANG = 2, RESTART_NO_REBOOT = 8;
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-    private static extern int RegisterApplicationRestart(string? commandLine, uint flags);
-
-    /// <summary>업데이트(패치)로 꺼졌을 때만 윈도우가 다시 켜 줌 (실행 60초 뒤부터 유효). 스토어판만.</summary>
-    private void RegisterRestart()
-    {
-        if (!AppInfo.IsPackaged) return;
-        try
-        {
-            int hr = RegisterApplicationRestart(null, RESTART_NO_CRASH | RESTART_NO_HANG | RESTART_NO_REBOOT);
-            if (hr != 0) Log.Warn($"업데이트 뒤 다시 켜기 등록 실패: 0x{hr:X8}");
-        }
-        catch (Exception ex)
-        {
-            Log.Warn($"업데이트 뒤 다시 켜기 등록 실패: {ex.Message}");
-        }
     }
 
     // ───────────────────────── 시험 스위치 (DEBUG 전용) ─────────────────────────
