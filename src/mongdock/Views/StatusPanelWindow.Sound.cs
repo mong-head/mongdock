@@ -282,7 +282,7 @@ internal sealed partial class StatusPanelWindow
                 foreach (var d in outs)
                 {
                     var id = d.Id;
-                    outDevices.Children.Add(DeviceRow(DeviceGlyph(d.Kind), d.IsDefault, d.Name, null, d.IsDefault ? null : () => st.SetDefaultOutput(id)));
+                    outDevices.Children.Add(AudioDeviceRow(DeviceGlyph(d.Kind), d.IsDefault, d.Name, null, d.IsDefault ? null : () => st.SetDefaultOutput(id)));
                 }
                 if (outs.Count == 0) outDevices.Children.Add(Sub(Loc.T("재생 장치 없음")));
                 outSignature = os;
@@ -298,7 +298,7 @@ internal sealed partial class StatusPanelWindow
                     // 장치마다 지금 녹음 중인 앱 ("사용 중: Discord") — 막대는 기본 장치만 바꾸므로, 앱이 다른 마이크를 쓰면 알 수 있게
                     string? sub = inUse.TryGetValue(d.Id, out var used) ? Loc.T("사용 중: ") + used
                         : d.Kind == AudioDeviceKind.Loopback ? Loc.T("재생 소리 녹음") : null;
-                    inDevices.Children.Add(DeviceRow(InputGlyph(d.Kind), d.IsDefault, d.Name, sub, d.IsDefault ? null : () => st.SetDefaultInput(id)));
+                    inDevices.Children.Add(AudioDeviceRow(InputGlyph(d.Kind), d.IsDefault, d.Name, sub, d.IsDefault ? null : () => st.SetDefaultInput(id)));
                 }
                 if (ins.Count == 0) inDevices.Children.Add(Sub(Loc.T("입력 장치 없음")));
                 inSignature = isig;
@@ -452,7 +452,7 @@ internal sealed partial class StatusPanelWindow
             if (!slider.IsDragging) slider.Value = st.Volume;
             var outs = st.OutputDevices ?? Array.Empty<AudioDevice>();
             var outDefault = outs.FirstOrDefault(d => d.IsDefault);
-            outNav.Text.Text = outDefault is null ? Loc.T("재생 장치 없음") : Loc.F($"스피커: {outDefault.Name}");
+            outNav.Text.Text = outDefault is null ? Loc.T("재생 장치 없음") : Loc.F($"스피커: {ShortDeviceName(outDefault.Name)}");
             // 입력
             var ins = st.InputDevices ?? Array.Empty<AudioDevice>();
             bool anyInput = ins.Any(d => d.Kind != AudioDeviceKind.Loopback);
@@ -466,7 +466,7 @@ internal sealed partial class StatusPanelWindow
             if (!inSlider.IsDragging) inSlider.Value = st.InputVolume;
             meterOn(anyInput && st.HasInput && !inOff && IsLoaded);
             var inDefault = ins.FirstOrDefault(d => d.IsDefault);
-            inNav.Text.Text = inDefault is null ? Loc.T("입력 장치 없음") : Loc.F($"마이크: {inDefault.Name}");
+            inNav.Text.Text = inDefault is null ? Loc.T("입력 장치 없음") : Loc.F($"마이크: {ShortDeviceName(inDefault.Name)}");
             // 세부 화면
             FillDevices();
             if (page is SoundPage.Output or SoundPage.Input) FitDetail();

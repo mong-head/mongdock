@@ -1865,6 +1865,9 @@ internal static class Program
                         new("o1", "DX245 (NVIDIA High Definition Audio)", true, AudioDeviceKind.Display),
                         new("o2", Mongdock.Loc.T("스피커") + " (Realtek(R) Audio)", false, AudioDeviceKind.Speakers),
                         new("o3", "WH-1000XM4", false, AudioDeviceKind.Headphones),
+                        // #38 사용자 PC 의 긴 이름 (괄호 앞 띄어쓰기 없음)
+                        new("o4", "DX245 HDMI(NVIDIA High Definition Audio)", false, AudioDeviceKind.Display),
+                        new("o5", "Realtek Digital Output(Realtek High Definition Audio)", false, AudioDeviceKind.Digital),
                     };
                     v["HasInput"] = true; v["InputVolume"] = 0.7; v["InputMuted"] = muted;
                     v["InputDevices"] = new List<AudioDevice>

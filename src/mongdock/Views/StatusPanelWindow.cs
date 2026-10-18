@@ -523,6 +523,46 @@ internal sealed partial class StatusPanelWindow : Window
         Margin = new Thickness(0, 4, 0, 0),
     };
 
+    /// <summary>
+    /// 소리 장치 이름 나누기 (#38): 윈도우 이름 「DX245 HDMI(NVIDIA High Definition Audio)」 → 앞 「DX245 HDMI」 + 괄호 속 드라이버 「NVIDIA High Definition Audio」.
+    /// 괄호가 끝에 없거나 앞이 비면 그대로 (드라이버 null).
+    /// </summary>
+    internal static (string Name, string? Driver) SplitDeviceName(string full)
+    {
+        string s = full.Trim();
+        if (!s.EndsWith(')')) return (s, null);
+        int depth = 0;
+        for (int i = s.Length - 1; i >= 0; i--)
+        {
+            if (s[i] == ')') depth++;
+            else if (s[i] == '(' && --depth == 0)
+            {
+                string name = s[..i].TrimEnd(), driver = s[(i + 1)..^1].Trim();
+                return name.Length == 0 || driver.Length == 0 ? (s, null) : (name, driver);
+            }
+        }
+        return (s, null);
+    }
+
+    /// <summary>첫 화면 「스피커: …」 줄의 이름: 앞부분만, 다만 「스피커」「마이크」처럼 일반 이름이면 드라이버까지 (「마이크: 마이크」가 되지 않게).</summary>
+    internal static string ShortDeviceName(string full)
+    {
+        var (name, driver) = SplitDeviceName(full);
+        if (driver is null) return name;
+        string[] generic = { Loc.T("스피커"), Loc.T("마이크"), Loc.T("헤드폰"), Loc.T("헤드셋"), "Speakers", "Microphone", "Headphones", "Headset" };
+        return generic.Any(g => string.Equals(g, name, StringComparison.OrdinalIgnoreCase)) ? $"{name} ({driver})" : name;
+    }
+
+    /// <summary>소리 장치 한 줄: 이름 + 둘째 줄 회색 드라이버(괄호 속) [· 보조 글], 길면 말줄임, 누를 수 있는 줄은 마우스를 올리면 전체 이름 (#38).</summary>
+    private Button AudioDeviceRow(string glyph, bool on, string fullName, string? sub, Action? onClick)
+    {
+        var (name, driver) = SplitDeviceName(fullName);
+        string? second = driver is null ? sub : sub is null ? driver : driver + " · " + sub;
+        var b = DeviceRow(glyph, on, name, second, onClick);
+        if (onClick != null) b.ToolTip = fullName;
+        return b;
+    }
+
     /// <summary>장치/네트워크 목록의 한 줄 (원형 아이콘 + 이름 [+ 보조 글]), 클릭 가능.</summary>
     private Button DeviceRow(string glyph, bool on, string name, string? sub, Action? onClick, Brush? subBrush = null)
     {
@@ -535,6 +575,7 @@ internal sealed partial class StatusPanelWindow : Window
         if (!string.IsNullOrEmpty(sub))
         {
             var s = Sub(sub, 12.5);
+            s.TextTrimming = TextTrimming.CharacterEllipsis;
             if (subBrush != null)
             {
                 s.Foreground = subBrush;
