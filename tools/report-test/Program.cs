@@ -1875,6 +1875,49 @@ internal static class Program
                 Check($"소리 판 {_lang} {theme}: 첫 화면 높이 {shots[0].Size.Height:0} — 세부 화면은 내용만큼 ({string.Join("/", shots.Skip(2).Select(x => x.Size.Height.ToString("0")))}, 아래가 비지 않음)",
                     shots.Skip(2).All(x => x.Size.Height < shots[0].Size.Height - 40));
                 foreach (var w in opened) w.Close();
+                // 목록이 늦게 채워짐 (#21 0.8.2 설치본: 출력 장치 세부 화면이 가끔 셋째 줄이 잘리고 스크롤): 1개로 연 뒤 3개가 오면 판 높이가 따라와 스크롤이 없어야
+                foreach (var pageName in new[] { "Output", "Input", "Apps" })
+                {
+                    var fake = FakeSound(false);
+                    var vals = ((FakeStatus)(object)fake).Values;
+                    var fullOut = vals["OutputDevices"];
+                    var fullIn = vals["InputDevices"];
+                    vals["OutputDevices"] = ((List<AudioDevice>)fullOut!).Take(1).ToList();
+                    vals["InputDevices"] = ((List<AudioDevice>)fullIn!).Take(1).ToList();
+                    var w = (Window)panelType.GetConstructors(Any)[0].Invoke(new object[] { services with { Status = fake }, Enum.Parse(kindType, "Volume"), palette, 0 });
+                    panelType.GetMethod("RefreshForScene", Any)!.Invoke(w, null);
+                    var applyApps = (Delegate)panelType.GetField("_applyAppVolumeForTest", Any)!.GetValue(w)!;
+                    applyApps.DynamicInvoke(AppVolumeService.List().Take(1).ToList());
+                    var content = (FrameworkElement)w.Content;
+                    void Lay() { content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity)); content.Arrange(new Rect(content.DesiredSize)); content.UpdateLayout(); }
+                    Lay();
+                    // 넘어가는 높이 움직임이 도는 도중에 목록이 옴 (설치본에서 잘리던 경우)
+                    panelType.GetProperty("HoldHeightAnimationForTest", Any)!.SetValue(null, true);
+                    panelType.GetMethod("OpenSoundPageForTest", Any)!.Invoke(w, new object[] { pageName });
+                    panelType.GetProperty("HoldHeightAnimationForTest", Any)!.SetValue(null, false);
+                    Lay();
+                    double before = content.DesiredSize.Height;
+                    // 늦게 옴: 장치 3개·2개, 앱 4개
+                    vals["OutputDevices"] = fullOut;
+                    vals["InputDevices"] = fullIn;
+                    panelType.GetMethod("RefreshForScene", Any)!.Invoke(w, null);
+                    applyApps.DynamicInvoke(AppVolumeService.List());
+                    Lay();
+                    panelType.GetMethod("FinishHeightAnimationForTest", Any)!.Invoke(w, null); // 움직임 끝
+                    Lay();
+                    double after = content.DesiredSize.Height;
+                    double Scrollable(DependencyObject d)
+                    {
+                        double m = d is System.Windows.Controls.ScrollViewer sv ? sv.ScrollableHeight : 0;
+                        for (int k = 0; k < VisualTreeHelper.GetChildrenCount(d); k++) m = Math.Max(m, Scrollable(VisualTreeHelper.GetChild(d, k)));
+                        return m;
+                    }
+                    double scroll = Scrollable(content);
+                    // 처음부터 다 채워 연 세부 화면(위 그림)과 같은 높이여야 (앱별 2번째·출력 3번째·입력 4번째 그림)
+                    double expected = shots[pageName == "Apps" ? 2 : pageName == "Output" ? 3 : 4].Size.Height;
+                    Check($"소리 판 {theme} {pageName}: 움직이는 도중 목록이 늦게 채워져도 높이가 따라옴 (움직임 시작 {before:0} → 끝 {after:0}, 다 채운 화면 {expected:0}, 스크롤 {scroll:0.0})", Math.Abs(after - expected) < 1 && scroll < 1);
+                    w.Close();
+                }
                 // 테마마다 표시 창을 새로 (같은 창을 그림으로 뜨면 앞 장면이 남음 — 색 바뀜 자체는 위 정보 줄로 확인)
                 if (osdType.GetField("_instance", Any)!.GetValue(null) is Window old) { old.Close(); osdType.GetField("_instance", Any)!.SetValue(null, null); }
                 foreach (var (vol, muted, tag) in new[] { (0.45, false, "45"), (0.0, true, "mute") })

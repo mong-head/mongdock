@@ -31,6 +31,13 @@ internal sealed partial class StatusPanelWindow
 
     internal void OpenSoundPageForTest(string page) => _openSoundPageForTest?.Invoke(page);
 
+    /// <summary>시험용: 판 높이 움직임을 "도는 중"으로 두고 끝내기를 기다림 (움직이는 도중 목록이 바뀌는 경우 재현). null 이면 보통.</summary>
+    internal static bool HoldHeightAnimationForTest { get; set; }
+
+    /// <summary>시험용: 붙잡아 둔 높이 움직임을 끝냄.</summary>
+    private Action? _finishHeightForTest;
+    internal void FinishHeightAnimationForTest() { var f = _finishHeightForTest; _finishHeightForTest = null; f?.Invoke(); }
+
     /// <summary>앱 줄 묶음 (첫 화면의 1~2줄, 세부 화면의 모든 앱) — 목록이 같으면 줄을 다시 만들지 않고 값만 고침.</summary>
     private sealed class AppRows
     {
@@ -172,10 +179,32 @@ internal sealed partial class StatusPanelWindow
             return Math.Ceiling(detail.DesiredSize.Height);
         }
 
+        // 세부 화면이면 지금 내용으로 다시 재서 판 높이를 맞춤 (#21 0.8.2 설치본: 목록이 다 그려지기 전 값이나 움직이는 도중 값으로
+        // 높이가 굳어 셋째 줄이 잘리고 스크롤이 생기던 것 — 넘어간 뒤·목록이 바뀐 뒤·움직임이 끝난 뒤마다 다시 잼)
+        void FitDetail()
+        {
+            if (page == SoundPage.None || heightAnimating) return;
+            double h = DetailHeight();
+            if (Math.Abs(host.Height - h) >= 0.5 || double.IsNaN(host.Height)) host.Height = h;
+        }
+
         // 판(=host) 높이를 from → to 로 부드럽게 (움직임을 끈 PC·화면에 없을 땐 바로). 끝나면 done
         void ResizeHost(double from, double to, Action? done = null)
         {
             host.BeginAnimation(FrameworkElement.HeightProperty, null);
+            if (HoldHeightAnimationForTest)
+            {
+                heightAnimating = true;
+                host.Height = from;
+                _finishHeightForTest = () =>
+                {
+                    heightAnimating = false;
+                    host.Height = to;
+                    done?.Invoke();
+                    FitDetail();
+                };
+                return;
+            }
             if (!Anim.Enabled || !IsLoaded || Math.Abs(from - to) < 1)
             {
                 host.Height = to;
@@ -189,12 +218,13 @@ internal sealed partial class StatusPanelWindow
                 heightAnimating = false;
                 host.Height = to;
                 done?.Invoke();
+                FitDetail(); // 움직이는 동안 목록이 바뀌었으면 마지막 측정값으로
             };
             host.Height = to;
             host.BeginAnimation(FrameworkElement.HeightProperty, a);
         }
         // 세부 화면이 열려 있는 동안 내용이 바뀌면(장치 추가 등) 높이를 바로 맞춤
-        detailBody.SizeChanged += (_, _) => { if (page != SoundPage.None && !heightAnimating) host.Height = DetailHeight(); };
+        detailBody.SizeChanged += (_, _) => FitDetail();
         string devSignature = "";
 
         void FillDetail()
@@ -274,6 +304,8 @@ internal sealed partial class StatusPanelWindow
             detailScroll.ScrollToTop();
             FillDetail();
             ResizeHost(fromHeight, DetailHeight());
+            // 처음 그린 뒤(글꼴·아이콘·줄 배치가 끝난 뒤) 한 번 더 잼
+            _ = Dispatcher.BeginInvoke(FitDetail, DispatcherPriority.Loaded);
             double w = PageWidth();
             if (animate)
             {
@@ -336,7 +368,11 @@ internal sealed partial class StatusPanelWindow
             ApplyAppRows(topApps, list.Where(a => a.Active && !a.System).Take(2).ToList());
             appsNav.Text.Text = Loc.F($"앱별 볼륨 {list.Count}개");
             appsNav.Button.Visibility = list.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-            if (page == SoundPage.Apps) ApplyAppRows(allApps, list);
+            if (page == SoundPage.Apps)
+            {
+                ApplyAppRows(allApps, list);
+                FitDetail();
+            }
         }
         bool reading = false, appsFixed = false;
         async void ReadApps()
@@ -381,7 +417,11 @@ internal sealed partial class StatusPanelWindow
             var inDefault = ins.FirstOrDefault(d => d.IsDefault);
             inNav.Text.Text = inDefault is null ? Loc.T("입력 장치 없음") : Loc.F($"입력 장치: {inDefault.Name}");
             // 세부 화면
-            if (page is SoundPage.Output or SoundPage.Input) FillDevices();
+            if (page is SoundPage.Output or SoundPage.Input)
+            {
+                FillDevices();
+                FitDetail();
+            }
             ReadApps();
         });
         return host;
