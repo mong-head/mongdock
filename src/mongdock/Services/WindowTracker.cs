@@ -223,6 +223,7 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
             {
                 if (!w.ProcessPath.EndsWith(@"\explorer.exe", StringComparison.OrdinalIgnoreCase)) continue;
                 seen.Add(w.Hwnd);
+                if (w.IsMinimized) continue; // 최소화 중엔 IsZoomed 가 false 라 「최대화 → 아님」으로 잘못 찍힘 (리뷰) — 되살아나면 다시 봄
                 bool zoomed = WindowPosApi.IsZoomed(w.Hwnd);
                 if (_explorerZoomed.TryGetValue(w.Hwnd, out bool before) && before == zoomed) continue;
                 var wp = new WindowPosApi.WINDOWPLACEMENT { length = System.Runtime.InteropServices.Marshal.SizeOf<WindowPosApi.WINDOWPLACEMENT>() };
