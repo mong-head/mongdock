@@ -1777,6 +1777,7 @@ internal static class Program
         void Check(string what, bool ok) { Console.WriteLine($"  {(ok ? "통과" : "실패")}  {what}"); if (!ok) bad++; }
         var asm = typeof(Mongdock.App).Assembly;
         var osdType = asm.GetType("Mongdock.Views.VolumeOsdWindow")!;
+        osdType.GetProperty("OffscreenForTest", Any)!.SetValue(null, true); // 볼륨 표시 창을 화면 밖에 (사용자 화면에 비치지 않게)
         double Next(double v, bool up) => (double)osdType.GetMethod("Next", Any)!.Invoke(null, new object[] { v, up })!;
         Check($"0.50 → 올림 {Next(0.5, true):0.00}", Math.Abs(Next(0.5, true) - 0.52) < 1e-9);
         Check($"0.51(칸 사이) → 올림 {Next(0.51, true):0.00}", Math.Abs(Next(0.51, true) - 0.52) < 1e-9);

@@ -178,5 +178,9 @@ internal sealed class VolumeOsdWindow : Window
         var work = monitor.WorkArea;
         Left = Math.Round(work.Right - Width + Shadow - 12);
         Top = Math.Round(work.Top - Shadow + 10);
+        if (OffscreenForTest) Left -= 40000; // 시험(report-test --volumecheck)이 사용자 화면에 띄우지 않게 (2026-10-19 화면 밖 지킴이가 잡음)
     }
+
+    /// <summary>시험용: 화면 밖에 놓음.</summary>
+    internal static bool OffscreenForTest { get; set; }
 }
