@@ -25,6 +25,19 @@ internal static class WindowPosApi
     [DllImport("user32.dll")]
     public static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
 
+    /// <summary>창 자리 (최대화·최소화 전 복원 크기 포함). 읽기만 — #29 탐색기 진단.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct WINDOWPLACEMENT
+    {
+        public int length, flags, showCmd;
+        public int minX, minY, maxX, maxY;
+        public RECT rcNormalPosition;
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetWindowPlacement(IntPtr hWnd, ref WINDOWPLACEMENT wp);
+
     /// <summary>hWnd = 0 이면 스레드 타이머: 이 스레드 메시지 큐에 WM_TIMER(hwnd 0)를 넣는다.</summary>
     [DllImport("user32.dll", SetLastError = true)]
     public static extern UIntPtr SetTimer(IntPtr hWnd, UIntPtr nIDEvent, uint uElapse, IntPtr lpTimerFunc);

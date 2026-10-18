@@ -202,9 +202,41 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
             return;
         }
 
+        WatchExplorerPlacement(list);
         if (!force && SameList(_windows, list)) return;
         _windows = list;
         WindowsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // ───────────────────────── 진단: 탐색기 창 최대화 (#29) ─────────────────────────
+    // "탐색기가 늘 최대화로 열림" — 몽독 코드에는 루틴 밖에서 남의 창을 최대화하는 곳이 없어, 언제 최대화되는지를 기록만 함 (동작 변화 없음).
+    // 탐색기 창(explorer.exe)이 처음 보일 때와 최대화 상태가 바뀔 때 한 줄: 처음부터 최대화(탐색기가 그렇게 연 것)인지, 뜬 뒤 바뀌었는지(누가 바꿈) 가름.
+
+    private readonly Dictionary<IntPtr, bool> _explorerZoomed = new();
+
+    private void WatchExplorerPlacement(List<AppWindowInfo> list)
+    {
+        try
+        {
+            var seen = new HashSet<IntPtr>();
+            foreach (var w in list)
+            {
+                if (!w.ProcessPath.EndsWith(@"\explorer.exe", StringComparison.OrdinalIgnoreCase)) continue;
+                seen.Add(w.Hwnd);
+                bool zoomed = WindowPosApi.IsZoomed(w.Hwnd);
+                if (_explorerZoomed.TryGetValue(w.Hwnd, out bool before) && before == zoomed) continue;
+                var wp = new WindowPosApi.WINDOWPLACEMENT { length = System.Runtime.InteropServices.Marshal.SizeOf<WindowPosApi.WINDOWPLACEMENT>() };
+                string normal = WindowPosApi.GetWindowPlacement(w.Hwnd, ref wp)
+                    ? $"복원 크기 {wp.rcNormalPosition.Left},{wp.rcNormalPosition.Top}~{wp.rcNormalPosition.Right},{wp.rcNormalPosition.Bottom}, showCmd {wp.showCmd}"
+                    : "자리 못 읽음";
+                Log.Info(_explorerZoomed.ContainsKey(w.Hwnd)
+                    ? $"탐색기 창 0x{w.Hwnd.ToInt64():X}: 최대화 {before} → {zoomed} ({normal})"
+                    : $"탐색기 창 0x{w.Hwnd.ToInt64():X} 나타남: 최대화 {zoomed} ({normal})");
+                _explorerZoomed[w.Hwnd] = zoomed;
+            }
+            foreach (var gone in _explorerZoomed.Keys.Where(h => !seen.Contains(h)).ToList()) _explorerZoomed.Remove(gone);
+        }
+        catch (Exception ex) { Log.Warn($"탐색기 창 자리 기록 실패: {ex.GetType().Name}"); }
     }
 
     private static bool SameList(IReadOnlyList<AppWindowInfo> a, IReadOnlyList<AppWindowInfo> b)

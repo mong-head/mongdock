@@ -223,6 +223,14 @@ internal static class Program
         if (volAt >= 0) return VolumeCheck(volAt + 1 < args.Length ? args[volAt + 1] : null); // 0.8 앱별 볼륨·볼륨 표시 (#21) — 실제 볼륨은 안 바꿈
         if (Array.IndexOf(args, "--clipcheck") >= 0) return ClipCheck(); // 0.6.3 문제 신고 영역 캡처·붙여넣기 (#13) — 실제 캡처 도구·클립보드는 안 건드림
         if (Array.IndexOf(args, "--profilecheck") >= 0) return ProfileCheck(); // 0.6.1 루틴 브라우저 계정·탐색기 창 (화면·실제 실행 없음)
+        if (Array.IndexOf(args, "--explorerlog") >= 0)
+        {
+            // #29 진단(읽기만): 창 목록을 한 번 읽혀 탐색기 창 자리 로그가 찍히는지 — 시험 데이터 폴더 로그로
+            var tr = new WindowTracker();
+            typeof(WindowTracker).GetMethod("Refresh", Any)!.Invoke(tr, new object[] { true });
+            Console.WriteLine($"  로그: {Path.Combine(Mongdock.AppInfo.DataDirectory, "logs", "mongdock.log")}");
+            return 0;
+        }
         if (Array.IndexOf(args, "--spotrows") >= 0) return SpotRowsCheck(); // 검색 이슈 ③: 호버 띠 자리 = 줄 자리 (화면 없음)
         if (Array.IndexOf(args, "--searchrank") >= 0) return SearchRankCheck(); // 검색 이슈 ①②: 연관도 순 (색인 없이 예시 목록)
         int sdAt = Array.IndexOf(args, "--searchdiag");
