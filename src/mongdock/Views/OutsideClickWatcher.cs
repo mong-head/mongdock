@@ -32,7 +32,10 @@ internal sealed class OutsideClickWatcher
     /// <summary>활성화돼도 닫지 않을 창 (패널 자기 자신 — 열면서 Activate 하는 창).</summary>
     public IntPtr IgnoreHwnd { get; set; }
 
-    /// <summary>몽독 자신의 창이 활성화돼도 닫지 않음 (상태 판 — 바깥 클릭은 마우스로 따로 잡음).</summary>
+    /// <summary>
+    /// 상태 판: 앞으로 오지 않게 만든 몽독 창(NOACTIVATE/TRANSPARENT — 판·덮개·이름표 등)이 앞으로 왔다고 알려 와도, 앞 창이 0(전환 중)이어도 닫지 않음.
+    /// 실제로 앞으로 오는 몽독 창(검색·앱 모음·설정)과 다른 앱 창은 그대로 닫음. 바깥 클릭은 마우스로 따로 잡음.
+    /// </summary>
     public bool IgnoreOwnWindows { get; set; }
 
     /// <summary>열린 뒤 이 시간 안의 다른 창 활성화는 무시 (누른 쪽이 포커스를 잠깐 다시 가져가는 것). 0 = 없음.</summary>
@@ -71,12 +74,21 @@ internal sealed class OutsideClickWatcher
     private void OnWindowActivated(object? sender, IntPtr hwnd)
     {
         if (hwnd != IntPtr.Zero && hwnd == IgnoreHwnd) return;
-        // 몽독 자신의 창(판 자신·최소화 효과 덮개·툴팁·이름표 등)이 앞으로 와도 닫지 않음 — 바깥 클릭은 마우스 쪽이 따로 잡음
-        // (0.8.2 설치본: 소리 판 「앱별 볼륨 ›」을 누르면 판이 닫힘 — 같은 프로세스 창 활성화가 의심)
-        if (IgnoreOwnWindows && hwnd != IntPtr.Zero && IsOwnProcess(hwnd))
+        if (IgnoreOwnWindows && _running)
         {
-            if (LogName is not null && _running) Log.Info($"{LogName}: 몽독 창 활성화 무시 (0x{hwnd.ToInt64():X})");
-            return;
+            // 전환 중이라 앞 창이 없음(0) — 닫지 않음 (다음 활성화·바깥 클릭으로 판단, 리뷰 #32)
+            if (hwnd == IntPtr.Zero)
+            {
+                if (LogName is not null) Log.Info($"{LogName}: 앞 창 없음(전환 중) — 닫지 않음");
+                return;
+            }
+            // 원래 앞으로 오면 안 되는 몽독 창(판·최소화 효과 덮개·이름표·볼륨 표시처럼 NOACTIVATE/TRANSPARENT)이 앞으로 와도 닫지 않음.
+            // 검색·앱 모음·설정처럼 실제로 앞으로 오는 몽독 창은 그대로 닫음 (단축키로 검색을 열면 판이 남지 않게)
+            if (IsOwnProcess(hwnd) && IsNonActivating(hwnd))
+            {
+                if (LogName is not null) Log.Info($"{LogName}: 앞으로 오지 않는 몽독 창 활성화 무시 (0x{hwnd.ToInt64():X})");
+                return;
+            }
         }
         if (_running && Environment.TickCount64 - _startedAt < ActivationGraceMs)
         {
@@ -95,6 +107,12 @@ internal sealed class OutsideClickWatcher
     {
         Native.User32.GetWindowThreadProcessId(hwnd, out uint pid);
         return pid == (uint)Environment.ProcessId;
+    }
+
+    private static bool IsNonActivating(IntPtr hwnd)
+    {
+        long ex = Native.User32.GetWindowLong(hwnd, Native.User32.GWL_EXSTYLE);
+        return (ex & (Native.User32.WS_EX_NOACTIVATE | 0x20 /* WS_EX_TRANSPARENT */)) != 0;
     }
 
     private static string ProcessOf(IntPtr hwnd)

@@ -72,11 +72,14 @@ internal static partial class Program
         {
             var watch = panelType.GetField("_watch", Any)!.GetValue(w)!;
             var act = watch.GetType().GetMethod("OnWindowActivated", Any)!;
+            // 앞으로 오지 않게 만든 몽독 창(덮개·이름표처럼 NOACTIVATE)·앞 창 없음(0) → 닫지 않음
             var own = new Window { Left = -4000, Top = 500, Width = 50, Height = 50, ShowActivated = false, ShowInTaskbar = false, WindowStyle = WindowStyle.None };
+            own.SourceInitialized += (_, _) => services.DesktopWindows.MakeOverlay(own);
             own.Show();
             act.Invoke(watch, new object?[] { null, new System.Windows.Interop.WindowInteropHelper(own).Handle });
+            act.Invoke(watch, new object?[] { null, IntPtr.Zero });
             Pump(300);
-            Check($"몽독 창 활성화: 판이 닫히지 않음 ({w.IsVisible})", w.IsVisible);
+            Check($"앞으로 오지 않는 몽독 창 활성화·앞 창 없음: 판이 닫히지 않음 ({w.IsVisible})", w.IsVisible);
             own.Close();
         }
         // 넘김 측정 동안은 감시자를 완전히 멈춤
@@ -141,7 +144,17 @@ internal static partial class Program
             Check($"{page}: 첫 프레임 모두 50ms 안 (가장 큰 {(firsts.Count > 0 ? firsts[^1] : -1)}ms), 가장 긴 간격 기준선 {baseGap}ms + 15 안 (가운데 {(gaps.Count > 0 ? gaps[gaps.Count / 2] : -1)}ms)",
                 firsts.Count == 5 && firsts[^1] <= 50 && gaps[gaps.Count / 2] <= baseGap + 15);
         }
-        w.Close();
+        {
+            var watch = panelType.GetField("_watch", Any)!.GetValue(w)!;
+            watch.GetType().GetField("_running", Any)!.SetValue(watch, true);
+            var normal = new Window { Left = -4000, Top = 600, Width = 50, Height = 50, ShowActivated = false, ShowInTaskbar = false, WindowStyle = WindowStyle.None };
+            normal.Show();
+            watch.GetType().GetMethod("OnWindowActivated", Any)!.Invoke(watch, new object?[] { null, new System.Windows.Interop.WindowInteropHelper(normal).Handle });
+            Pump(400);
+            Check($"앞으로 오는 몽독 창(검색 창 같은) 활성화: 판이 닫힘 ({!w.IsVisible})", !w.IsVisible);
+            normal.Close();
+        }
+        if (w.IsVisible) w.Close();
         Pump(300);
         foreach (var kind in new[] { "ControlCenter", "Wifi", "Bluetooth", "Calendar", "Battery", "Tray" })
         {
