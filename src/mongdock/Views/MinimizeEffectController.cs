@@ -284,7 +284,8 @@ internal sealed class MinimizeEffectController : IDisposable
             var clock = Stopwatch.StartNew();
             long handedOffAt = -1;
             int endFrames = 0;
-            void Draw(double t)
+            long fadeFrom = -1;
+            void Draw(double t, double fade = 1)
             {
                 double p = MinimizeMotion.Path(t, restore);
                 bool genie = shape == MinimizeEffect.Genie;
@@ -307,7 +308,7 @@ internal sealed class MinimizeEffectController : IDisposable
                         dwFlags = DWM_TNP_RECTDESTINATION | DWM_TNP_RECTSOURCE | DWM_TNP_OPACITY | DWM_TNP_VISIBLE,
                         rcDestination = new RECT((int)Math.Round(dst.Left), (int)Math.Round(dst.Top), (int)Math.Round(dst.Right), (int)Math.Round(dst.Bottom)),
                         rcSource = new RECT((int)crop.Left, (int)Math.Round(crop.Top + crop.Height * v0), (int)crop.Right, (int)Math.Round(crop.Top + crop.Height * v1)),
-                        opacity = (byte)Math.Round(255 * Math.Clamp(opacity, 0, 1)),
+                        opacity = (byte)Math.Round(255 * Math.Clamp(opacity * fade, 0, 1)),
                         fVisible = true,
                     };
                     DwmUpdateThumbnailProperties(_thumbs[i], ref props);
@@ -332,14 +333,24 @@ internal sealed class MinimizeEffectController : IDisposable
                 }
                 if (handedOffAt >= 0 && !IsIconic(source) && DwmQueryThumbnailSourceSize(_thumbs[0], out var live) == 0 && live.cx > 0 && live.cy > 0)
                     crop = SourceCrop(source, live, from);
-                Draw(t);
-                if (t < 1) return;
-                if (restore && handedOffAt >= 0)
+                if (fadeFrom >= 0)
                 {
-                    // 진짜 창이 그려질 시간: 넘긴 뒤 60ms 이상, 그리고 끝 모습으로 2프레임 더 (넘긴 뒤 최대 260ms)
-                    endFrames++;
-                    long since = clock.ElapsedMilliseconds - handedOffAt;
-                    if ((since < 60 || endFrames < 3) && since < 260) return;
+                    // 끝 크로스페이드 (#27): 진짜 창이 이미 제자리에 있고, 덮개만 CrossfadeMs 동안 흐리게 걷어 냄 — 한 번에 치우면 그림자·둥근 모서리·다시 그리기가 툭 바뀌어 보임
+                    double f = 1 - (clock.ElapsedMilliseconds - fadeFrom) / (double)CrossfadeMs;
+                    if (f > 0) { Draw(1, f * f); return; } // 끝으로 갈수록 빨리 옅어짐 — 프레임이 드문 원격 화면에서도 마지막에 남는 값이 작게 (리뷰)
+                }
+                else
+                {
+                    Draw(t);
+                    if (t < 1) return;
+                    if (restore && handedOffAt >= 0)
+                    {
+                        // 진짜 창이 그려질 시간: 넘긴 뒤 60ms 이상, 그리고 끝 모습으로 2프레임 더 (넘긴 뒤 최대 260ms) — 그다음 크로스페이드
+                        endFrames++;
+                        long since = clock.ElapsedMilliseconds - handedOffAt;
+                        if ((since < 60 || endFrames < 3) && since < 260) return;
+                        if (Anim.Enabled) { fadeFrom = clock.ElapsedMilliseconds; return; }
+                    }
                 }
                 if (_frame is not null) { CompositionTarget.Rendering -= _frame; _frame = null; }
                 Stop();
@@ -351,6 +362,9 @@ internal sealed class MinimizeEffectController : IDisposable
 
         /// <summary>되살리기에서 진짜 창을 되살리는 시간 비율 (그때 썸네일은 창 자리와 1~3px 차이).</summary>
         private const double HandoffAt = 0.85;
+
+        /// <summary>되살리기 끝에 덮개를 흐리게 걷어 내는 시간 (ms).</summary>
+        private const int CrossfadeMs = 120;
 
         /// <summary>
         /// 썸네일 원본에서 창의 보이는 부분 (보이지 않는 크기 조절 테두리 빼기). 창이 떠 있으면 GetWindowRect 와 DWM 테두리 사각형으로 정확히,
