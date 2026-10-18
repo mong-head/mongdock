@@ -769,6 +769,7 @@ internal static class Program
         settings.Current.Dock.Theme = theme == "dark" ? DockTheme.Dark : DockTheme.Light;
         Mongdock.ViewModels.UiTheme.Apply(settings.Current);
         var w = (Window)type.GetConstructor(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance, new[] { typeof(AppServices) })!.Invoke(new object[] { services });
+        w.WindowStartupLocation = WindowStartupLocation.Manual; // SettingsWindow 는 CenterScreen — 처음 보일 때 Left/Top 을 무시하고 화면 가운데에 뜸
         w.Left = -20000; w.Top = -20000; w.ShowActivated = false;
         w.Show();
         var pageType = type.GetNestedType("Page", System.Reflection.BindingFlags.NonPublic)!;

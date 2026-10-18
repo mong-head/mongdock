@@ -22,7 +22,6 @@ public sealed class MediaHost
 
     private readonly string _pipeName;
     private readonly int _parentPid;
-    private readonly Action _quit;
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
     private readonly object _sendGate = new();
     private NamedPipeClientStream? _pipe;
@@ -38,7 +37,6 @@ public sealed class MediaHost
     {
         _pipeName = pipeName;
         _parentPid = parentPid;
-        _quit = quit;
     }
 
     /// <summary>UI 스레드에서: 파이프 연결 → 미디어 서비스 시작 → 읽기·부모 지켜보기 스레드.</summary>
@@ -103,16 +101,16 @@ public sealed class MediaHost
             }
         }
         catch { }
-        _dispatcher.BeginInvoke(Quit); // 파이프가 끊김 = 본체가 끝났거나 다시 띄우는 중
+        Environment.Exit(0); // 파이프가 끊김 = 본체가 끝났거나 다시 띄우는 중 — UI 스레드가 멈춰 있어도 바로 끝남 (리뷰: 고아 도우미)
     }
 
     private void WatchParent()
     {
         IntPtr h = OpenProcess(SYNCHRONIZE, false, (uint)_parentPid);
-        if (h == IntPtr.Zero) { _dispatcher.BeginInvoke(Quit); return; }
+        if (h == IntPtr.Zero) Environment.Exit(0);
         try { WaitForSingleObject(h, INFINITE); }
         finally { CloseHandle(h); }
-        _dispatcher.BeginInvoke(Quit);
+        Environment.Exit(0); // 본체가 끝남 — UI 스레드를 거치지 않고 바로
     }
 
     /// <summary>지금 상태 한 줄 (UI 스레드). 썸네일은 바뀌었을 때만 PNG 로.</summary>

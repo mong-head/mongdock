@@ -118,7 +118,14 @@ public static class CrashReporter
     /// <summary>정상 종료 (OnExit 끝).</summary>
     public static void EndSession()
     {
-        try { File.Delete(SessionPath); }
+        // 내 세션 표시일 때만 지움 — 언어 바꾼 뒤 --relaunch 처럼 새 몽독이 이미 자기 표시를 썼으면 그대로 둠 (리뷰)
+        try
+        {
+            if (!File.Exists(SessionPath)) return;
+            using (var doc = JsonDocument.Parse(File.ReadAllText(SessionPath)))
+                if (doc.RootElement.TryGetProperty("pid", out var p) && p.GetInt32() != Environment.ProcessId) return;
+            File.Delete(SessionPath);
+        }
         catch { }
     }
 

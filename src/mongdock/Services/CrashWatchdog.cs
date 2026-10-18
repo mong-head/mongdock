@@ -31,7 +31,7 @@ internal static class CrashWatchdog
         catch (Exception ex) { Log.Warn($"갑자기 꺼짐 대비: 윈도우 다시 시작 등록 실패 {ex.Message}"); }
         try
         {
-            var p = Process.Start(new ProcessStartInfo(Environment.ProcessPath!, $"{WatchArg} {Environment.ProcessId}") { UseShellExecute = false, CreateNoWindow = true });
+            using var p = Process.Start(new ProcessStartInfo(Environment.ProcessPath!, $"{WatchArg} {Environment.ProcessId}") { UseShellExecute = false, CreateNoWindow = true });
             Log.Info($"갑자기 꺼짐 대비: 감시 프로세스 시작 (pid {p?.Id})");
         }
         catch (Exception ex) { Log.Warn($"갑자기 꺼짐 대비: 감시 프로세스 시작 실패 {ex.GetType().Name} {ex.Message}"); }
@@ -92,7 +92,11 @@ internal static class CrashWatchdog
     }
 
     /// <summary>크래시 종료 코드: NTSTATUS 오류(0xC…: 접근 위반·힙 손상·스택 넘침), .NET 처리 안 된 예외(0xE0434352), FailFast(0x80131623).</summary>
-    internal static bool IsCrashCode(uint code) => code >= 0xC0000000 || code == 0xE0434352 || code == 0x80131623;
+    internal static bool IsCrashCode(uint code) => code is
+        0xC0000005 /* 접근 위반 */ or 0xC0000374 /* 힙 손상 */ or 0xC00000FD /* 스택 넘침 */ or 0xC0000409 /* 스택 버퍼 넘침·fail-fast */
+        or 0xC000001D /* 잘못된 명령 */ or 0xC0000006 /* 페이지 읽기 오류 */ or 0xC0000017 /* 메모리 없음 */
+        or 0xE0434352 /* .NET 처리 안 된 예외 */ or 0x80131623 /* .NET FailFast */;
+    // 빼는 것: 0xFFFFFFFF(.NET Process.Kill·Stop-Process -Force 의 TerminateProcess(-1)), 0xC000013A(Ctrl+C), 1(작업 관리자) — 강제 종료라 다시 켜지 않음 (리뷰)
 
     private static List<DateTime> ReadRestarts()
     {

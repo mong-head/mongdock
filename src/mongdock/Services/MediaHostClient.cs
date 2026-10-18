@@ -99,6 +99,7 @@ public sealed class MediaHostClient : IMediaService, IDisposable
             try { h.Kill(); } catch { }
         };
         _aliveTimer.Start();
+        Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
         Launch();
     }
 
@@ -109,11 +110,17 @@ public sealed class MediaHostClient : IMediaService, IDisposable
         _generation++; // 큐에 남은 옛 연결의 상태·쓰기 설정을 무시 (리뷰)
         _restartTimer?.Stop();
         _aliveTimer?.Stop();
+        Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         Shutdown(kill: true);
         Reset();
     }
 
     public void Dispose() => Stop();
+
+    private void OnPowerModeChanged(object? sender, Microsoft.Win32.PowerModeChangedEventArgs e)
+    {
+        if (e.Mode == Microsoft.Win32.PowerModes.Resume) _lastLineAt = DateTime.UtcNow; // 리뷰: 절전 시간을 응답 없음으로 세지 않게
+    }
 
     private void Launch()
     {
