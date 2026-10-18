@@ -55,10 +55,32 @@ internal static partial class Program
         };
         iconWin.Show();
 
-        var child = Process.Start(new ProcessStartInfo(Environment.ProcessPath!, "--testwindow") { UseShellExecute = false })!;
+        // 시험 창: 보통은 몽독 시험 창(WPF), --electron 이면 Electron 앱 창 (#27 — 사용자 "빠방"은 Claude 앱 같은 Electron 창).
+        // Electron 은 VS Code 를 임시 사용자 폴더로 따로 띄움 (사용자 VS Code·설정은 안 건드림, 끝나면 그 프로세스들만 닫음)
+        bool electron = Environment.GetCommandLineArgs().Contains("--electron");
+        string? electronData = null;
+        Process child;
         IntPtr hwnd = IntPtr.Zero;
-        for (int i = 0; i < 100 && hwnd == IntPtr.Zero; i++) { Pump(100); hwnd = FindWindow(null, TestWindowTitle); }
-        Check("시험 창 뜸 (다른 프로세스)", hwnd != IntPtr.Zero);
+        if (electron)
+        {
+            string code = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Programs\Microsoft VS Code\Code.exe");
+            electronData = Path.Combine(Path.GetTempPath(), "mongdock-electron-" + Guid.NewGuid().ToString("N")[..8]);
+            Directory.CreateDirectory(electronData);
+            var before = new HashSet<IntPtr>(TopWindowsOfClass("Chrome_WidgetWin_1"));
+            child = Process.Start(new ProcessStartInfo(code, $"--user-data-dir \"{electronData}\" --extensions-dir \"{Path.Combine(electronData, "ext")}\" --disable-extensions --new-window --skip-welcome --skip-release-notes") { UseShellExecute = false })!;
+            for (int i = 0; i < 300 && hwnd == IntPtr.Zero; i++)
+            {
+                Pump(100);
+                hwnd = TopWindowsOfClass("Chrome_WidgetWin_1").FirstOrDefault(h => !before.Contains(h) && IsWindowVisible(h) && WindowTitle(h).Contains("Visual Studio Code"));
+            }
+            Pump(2500); // 첫 화면 그리기가 끝나게
+        }
+        else
+        {
+            child = Process.Start(new ProcessStartInfo(Environment.ProcessPath!, "--testwindow") { UseShellExecute = false })!;
+            for (int i = 0; i < 100 && hwnd == IntPtr.Zero; i++) { Pump(100); hwnd = FindWindow(null, TestWindowTitle); }
+        }
+        Check($"시험 창 뜸 (다른 프로세스{(electron ? ", Electron = VS Code 임시 창" : "")})", hwnd != IntPtr.Zero);
         object? controller = null;
         try
         {
@@ -129,7 +151,7 @@ internal static partial class Program
                 Pump(900);
                 freeze.SetValue(null, 0.9);
                 hook = restoreHook.GetValue(null) as Func<IntPtr, Action, bool>;
-                bool animatedEnd = hook?.Invoke(hwnd, () => { ShowWindowAsync(hwnd, 9); SetForegroundWindow(hwnd); }) == true;
+                bool animatedEnd = hook?.Invoke(hwnd, () => ShowWindowAsync(hwnd, 9)) == true;
                 Pump(400);
                 Check($"{name}: 90% 에서 진짜 창은 덮개 밑에서 이미 되살아남 (최소화 {IsIconic(hwnd)})", animatedEnd && !IsIconic(hwnd));
                 frames.Add(("되살리기 90% (넘긴 뒤)", Grab(crop)));
@@ -147,7 +169,7 @@ internal static partial class Program
                 string flick = RestoreFlicker(name, wr, () =>
                 {
                     var h2 = restoreHook.GetValue(null) as Func<IntPtr, Action, bool>;
-                    if (h2?.Invoke(hwnd, () => { ShowWindowAsync(hwnd, 9); SetForegroundWindow(hwnd); }) != true) ShowWindowAsync(hwnd, 9);
+                    if (h2?.Invoke(hwnd, () => ShowWindowAsync(hwnd, 9)) != true) ShowWindowAsync(hwnd, 9);
                 }, outDir, out bool flickered);
                 Check(flick, !flickered);
                 rows.Add((name, frames));
@@ -189,10 +211,20 @@ internal static partial class Program
         {
             mecType.GetProperty("FreezeAtForTest", Any)!.SetValue(null, null);
             if (controller is IDisposable d) d.Dispose();
-            try { if (!child.HasExited) { child.CloseMainWindow(); if (!child.WaitForExit(3000)) child.Kill(); } } catch { }
+            if (electron)
+            {
+                // 임시 VS Code 만 닫음 (그 사용자 폴더로 뜬 프로세스 묶음) → 임시 폴더 지움
+                if (hwnd != IntPtr.Zero) { GetWindowThreadProcessId(hwnd, out uint epid); try { Process.Start(new ProcessStartInfo("taskkill", $"/PID {epid} /T /F") { UseShellExecute = false, CreateNoWindow = true })?.WaitForExit(5000); } catch { } }
+                try { Process.Start(new ProcessStartInfo("taskkill", $"/PID {child.Id} /T /F") { UseShellExecute = false, CreateNoWindow = true })?.WaitForExit(5000); } catch { }
+                Pump(1000);
+                try { if (electronData is not null) Directory.Delete(electronData, true); } catch { }
+            }
+            else
+                try { if (!child.HasExited) { child.CloseMainWindow(); if (!child.WaitForExit(3000)) child.Kill(); } } catch { }
             iconWin.Close();
             Pump(300);
-            Check($"끝: 윈도우 애니메이션 시작 값 그대로 ({SysAnimation()} = {sysOriginal}), 시험 창 닫힘 {child.HasExited}", SysAnimation() == sysOriginal && child.HasExited);
+            bool closed = electron ? hwnd == IntPtr.Zero || !IsWindow(hwnd) : child.HasExited;
+            Check($"끝: 윈도우 애니메이션 시작 값 그대로 ({SysAnimation()} = {sysOriginal}), 시험 창 닫힘 {closed}", SysAnimation() == sysOriginal && closed);
         }
     }
 
@@ -258,10 +290,14 @@ internal static partial class Program
         File.WriteAllLines(Path.Combine(outDir, $"restore-flicker-{name}.csv"), frames.Select(x => $"{x.T - at},{string.Join(",", x.V.Select(v => v.ToString("0.0")))}"));
         if (during.Count < 3) { flickered = true; return $"{name}: 깜빡임 — 프레임이 {during.Count}개뿐"; }
         var end = during[^1].V;
+        // 첫 변화 = 누른 뒤 창 자리 밝기가 처음 바뀐 프레임 (덮개 첫 프레임 또는 실제 창)
+        var beforeV = frames.Where(x => x.T < at).Select(x => x.V).LastOrDefault() ?? during[0].V;
+        var firstChange = during.FirstOrDefault(x => Enumerable.Range(0, boxes.Length).Any(k => Math.Abs(x.V[k] - beforeV[k]) > 3));
+        long firstMs = firstChange.V is null ? -1 : firstChange.T - at;
         int arrived = during.FindIndex(x => Enumerable.Range(0, boxes.Length).All(k => Math.Abs(x.V[k] - end[k]) < 4));
         var after = arrived < 0 ? new List<(long T, double[] V)>() : during.Skip(arrived).Where(x => Enumerable.Range(0, boxes.Length).Any(k => Math.Abs(x.V[k] - end[k]) > 10)).ToList();
         flickered = arrived < 0 || after.Count > 0;
-        return $"{name}: 되살리기 끝 깜빡임 없음 (프레임 {during.Count}개, 끝 모습에 닿음 {(arrived < 0 ? "없음" : $"{during[arrived].T - at}ms")}, 그 뒤 벗어난 프레임 {after.Count}개{(after.Count > 0 ? ": " + string.Join(" ", after.Select(x => $"{x.T - at}ms")) : "")})";
+        return $"{name}: 되살리기 끝 깜빡임 없음 (누른 뒤 첫 변화 {firstMs}ms, 프레임 {during.Count}개, 끝 모습에 닿음 {(arrived < 0 ? "없음" : $"{during[arrived].T - at}ms")}, 그 뒤 벗어난 프레임 {after.Count}개{(after.Count > 0 ? ": " + string.Join(" ", after.Select(x => $"{x.T - at}ms")) : "")})";
     }
 
     private static void SaveMinimizeSheet(string path, List<(string Name, List<(string Label, byte[] Px)> Frames)> rows, int w, int h)
@@ -308,4 +344,19 @@ internal static partial class Program
     [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+    private delegate bool EnumProc(IntPtr h, IntPtr l);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(EnumProc f, IntPtr l);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr h, System.Text.StringBuilder s, int n);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);
+
+    private static List<IntPtr> TopWindowsOfClass(string cls)
+    {
+        var list = new List<IntPtr>();
+        EnumWindows((h, _) => { var sb = new System.Text.StringBuilder(256); GetClassName(h, sb, 256); if (sb.ToString() == cls) list.Add(h); return true; }, IntPtr.Zero);
+        return list;
+    }
+
+    private static string WindowTitle(IntPtr h) { var sb = new System.Text.StringBuilder(256); GetWindowText(h, sb, 256); return sb.ToString(); }
 }
