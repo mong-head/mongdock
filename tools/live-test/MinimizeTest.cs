@@ -228,6 +228,172 @@ internal static partial class Program
         }
     }
 
+    /// <summary>마지막 RestoreFlicker 숫자: 누른 뒤 첫 변화 ms, 끝 모습에 닿은 ms, 그 뒤 벗어난 프레임 수, 끝 모습에서 가장 크게 벗어난 밝기.</summary>
+    private static (long FirstMs, long ArriveMs, int Flashes, double MaxDev) LastFlicker;
+
+    /// <summary>
+    /// --flashmatrix [--electron] [--newdesktop] (#27 「되살리기 끝 번쩍임」 화면 측정): 같은 시험 창을 조건마다 3번씩 최소화 → 되살리기 하며
+    /// DXGI 로 창 자리 밝기를 프레임마다 재서, 끝 모습에 닿은 뒤 다시 벗어나는 프레임(번쩍임)을 셈.
+    /// 조건: A 효과 끔(윈도우 애니메이션 켬) · B 효과 끔 + 윈도우 애니메이션 끔 · C 차분하게 · D 지니 — 모두 「되살리기만」(활성화 없음),
+    /// 그리고 A2·D2 = 같은 조건 + 되살린 뒤 SetForegroundWindow(앞으로 가져오기, 성공 여부 기록).
+    /// 실제 마우스·키 입력 없음(--newdesktop 만 몽독 「새 데스크톱」과 같은 Ctrl+Win+D·Ctrl+Win+F4 를 보냄). 윈도우 애니메이션 설정은 시작 값으로 되돌림.
+    /// </summary>
+    private static void FlashMatrix(AppServices services, SettingsService settings, Rect work, string outDir)
+    {
+        var asm = typeof(Mongdock.App).Assembly;
+        var mecType = asm.GetType("Mongdock.Views.MinimizeEffectController")!;
+        bool? sysOriginal = SysAnimation();
+        bool electron = Environment.GetCommandLineArgs().Contains("--electron");
+        bool newDesktop = Environment.GetCommandLineArgs().Contains("--newdesktop");
+        Console.WriteLine($"윈도우 애니메이션 시작 값 {sysOriginal}, 대상 {(electron ? "VS Code 임시 창(Electron)" : "몽독 시험 창(WPF)")}, 새 데스크톱 {newDesktop}");
+        Guid? madeDesktop = null;
+        if (newDesktop)
+        {
+            var vds = typeof(VirtualDesktopService);
+            List<Guid> Ids() => (List<Guid>)vds.GetMethod("ReadDesktopIds", Any)!.Invoke(null, null)!;
+            var before = Ids();
+            var task = (Task<bool>)vds.GetMethod("NewAsync", Any)!.Invoke(null, null)!;
+            while (!task.IsCompleted) Pump(50);
+            if (task.Result)
+            {
+                Pump(1200);
+                madeDesktop = Ids().FirstOrDefault(g => !before.Contains(g));
+                Console.WriteLine($"  시험용 데스크톱 {(madeDesktop is { } g && g != Guid.Empty ? "만듦" : "못 만듦")}");
+            }
+        }
+        // 시험 창
+        string? electronData = null;
+        Process child;
+        IntPtr hwnd = IntPtr.Zero;
+        if (electron)
+        {
+            string code = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Programs\Microsoft VS Code\Code.exe");
+            electronData = Path.Combine(Path.GetTempPath(), "mongdock-electron-" + Guid.NewGuid().ToString("N")[..8]);
+            Directory.CreateDirectory(electronData);
+            var before = new HashSet<IntPtr>(TopWindowsOfClass("Chrome_WidgetWin_1"));
+            child = Process.Start(new ProcessStartInfo(code, $"--user-data-dir \"{electronData}\" --extensions-dir \"{Path.Combine(electronData, "ext")}\" --disable-extensions --new-window --skip-welcome --skip-release-notes") { UseShellExecute = false })!;
+            for (int i = 0; i < 300 && hwnd == IntPtr.Zero; i++)
+            {
+                Pump(100);
+                hwnd = TopWindowsOfClass("Chrome_WidgetWin_1").FirstOrDefault(h => !before.Contains(h) && IsWindowVisible(h) && WindowTitle(h).Contains("Visual Studio Code"));
+            }
+            Pump(3000);
+        }
+        else
+        {
+            child = Process.Start(new ProcessStartInfo(Environment.ProcessPath!, "--testwindow") { UseShellExecute = false })!;
+            for (int i = 0; i < 100 && hwnd == IntPtr.Zero; i++) { Pump(100); hwnd = FindWindow(null, TestWindowTitle); }
+            Pump(800);
+        }
+        Check("시험 창 뜸", hwnd != IntPtr.Zero);
+        object? controller = null;
+        var lines = new List<string>();
+        try
+        {
+            if (hwnd == IntPtr.Zero) return;
+            GetWindowRect(hwnd, out RECTL wr);
+            double scale = Monitors.GetPrimary().Scale;
+            var iconPx = new Rect((work.Left + work.Width / 2 - 28) * scale, (work.Bottom - 70) * scale, 56 * scale, 56 * scale);
+            var restoreHook = typeof(AppLauncher).GetProperty("AnimatedRestore", Any)!;
+
+            void Run(string label, Action restore)
+            {
+                var flashes = new List<int>();
+                var devs = new List<double>();
+                var firsts = new List<long>();
+                int fgOk = 0, fgTried = 0;
+                for (int k = 0; k < 3; k++)
+                {
+                    ShowWindowAsync(hwnd, 6 /* SW_MINIMIZE */);
+                    Pump(1200);
+                    _fgResult = null;
+                    RestoreFlicker($"{label}-{k + 1}", wr, restore, outDir, out _);
+                    flashes.Add(LastFlicker.Flashes);
+                    devs.Add(LastFlicker.MaxDev);
+                    firsts.Add(LastFlicker.FirstMs);
+                    if (_fgResult is { } r) { fgTried++; if (r) fgOk++; }
+                    if (IsIconic(hwnd)) { ShowWindowAsync(hwnd, 9); Pump(600); }
+                    Pump(400);
+                }
+                string line = $"{label}: 번쩍임 프레임 {string.Join("/", flashes)} (가장 크게 벗어난 밝기 {string.Join("/", devs.Select(d => d.ToString("0")))}), 누른 뒤 첫 변화 {string.Join("/", firsts)}ms{(fgTried > 0 ? $", 앞으로 가져오기 성공 {fgOk}/{fgTried}" : "")}";
+                Console.WriteLine("  정보  " + line);
+                Results.Add("정보  " + line);
+                lines.Add(line);
+            }
+            Action restoreOnly = () => ShowWindowAsync(hwnd, 9);
+            Action restoreAndActivate = () =>
+            {
+                ShowWindowAsync(hwnd, 9);
+                SetForegroundWindow(hwnd);
+                var h = hwnd;
+                _ = System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(async () => { await Task.Delay(300); _fgResult = GetForegroundWindow() == h; });
+            };
+
+            // A·A2: 효과 끔, 윈도우 애니메이션 켬 (시작 값이 켜짐일 때)
+            SetSysAnimation(true);
+            Run("A 효과 끔 (윈도우 애니메이션 켬)", restoreOnly);
+            Run("A2 효과 끔 + 앞으로 가져오기", restoreAndActivate);
+            // B: 효과 끔 + 윈도우 애니메이션 끔
+            SetSysAnimation(false);
+            Run("B 효과 끔 + 윈도우 애니메이션 끔", restoreOnly);
+            // C·D·D2: 몽독 효과 (컨트롤러가 윈도우 애니메이션을 끄고 기록, 끝에 되돌림)
+            SetSysAnimation(sysOriginal ?? true);
+            settings.Current.Dock.MinimizeSpeed = MinimizeSpeed.Normal;
+            settings.Current.Dock.MinimizeEffect = MinimizeEffect.Settle;
+            settings.Save();
+            controller = mecType.GetConstructors()[0].Invoke(new object[] { services, (Func<IntPtr, Rect?>)(_ => iconPx), (Func<DockEdge>)(() => DockEdge.Bottom) });
+            Pump(1500);
+            Action viaEffect(Action inner) => () =>
+            {
+                var hook = restoreHook.GetValue(null) as Func<IntPtr, Action, bool>;
+                if (hook?.Invoke(hwnd, inner) != true) inner();
+            };
+            Run("C 차분하게", viaEffect(restoreOnly));
+            settings.Current.Dock.MinimizeEffect = MinimizeEffect.Genie;
+            settings.Save();
+            Pump(300);
+            Run("D 지니", viaEffect(restoreOnly));
+            Run("D2 지니 + 앞으로 가져오기", viaEffect(restoreAndActivate));
+            ((IDisposable)controller).Dispose();
+            controller = null;
+            File.WriteAllLines(Path.Combine(outDir, "flash-matrix.txt"), lines);
+        }
+        finally
+        {
+            if (controller is IDisposable d) d.Dispose();
+            SetSysAnimation(sysOriginal ?? true);
+            if (electron)
+            {
+                if (hwnd != IntPtr.Zero) { GetWindowThreadProcessId(hwnd, out uint epid); try { Process.Start(new ProcessStartInfo("taskkill", $"/PID {epid} /T /F") { UseShellExecute = false, CreateNoWindow = true })?.WaitForExit(5000); } catch { } }
+                try { Process.Start(new ProcessStartInfo("taskkill", $"/PID {child.Id} /T /F") { UseShellExecute = false, CreateNoWindow = true })?.WaitForExit(5000); } catch { }
+                Pump(1000);
+                try { if (electronData is not null) Directory.Delete(electronData, true); } catch { }
+            }
+            else try { if (!child.HasExited) { child.CloseMainWindow(); if (!child.WaitForExit(3000)) child.Kill(); } } catch { }
+            if (madeDesktop is { } md && md != Guid.Empty)
+            {
+                Pump(500);
+                var ct = (Task<bool>)typeof(VirtualDesktopService).GetMethod("CloseCurrentIfAsync", Any)!.Invoke(null, new object[] { md })!;
+                while (!ct.IsCompleted) Pump(50);
+                bool closed = ct.Result;
+                Pump(800);
+                Console.WriteLine($"  시험용 데스크톱 닫음 {closed}");
+            }
+            Pump(300);
+            Check($"끝: 윈도우 애니메이션 시작 값 그대로 ({SysAnimation()} = {sysOriginal})", SysAnimation() == sysOriginal);
+        }
+    }
+
+    private static bool? _fgResult;
+
+    /// <summary>윈도우 「최소화·최대화 애니메이션」을 이번 로그온 동안만 바꿈 (파일에 쓰지 않음 — SPIF_SENDCHANGE 만).</summary>
+    private static void SetSysAnimation(bool on)
+    {
+        var info = new ANIMATIONINFO { cbSize = (uint)Marshal.SizeOf<ANIMATIONINFO>(), iMinAnimate = on ? 1 : 0 };
+        SystemParametersInfo(0x0049 /* SPI_SETANIMATION */, info.cbSize, ref info, 0x02 /* SPIF_SENDCHANGE */);
+    }
+
+
     /// <summary>--cloaktest (#27): 몽독이 다른 프로세스 창을 DWM 으로 가릴 수 있는지 (화면 밖 시험 창, 입력 없음).</summary>
     private static int CloakTest()
     {
@@ -297,6 +463,8 @@ internal static partial class Program
         int arrived = during.FindIndex(x => Enumerable.Range(0, boxes.Length).All(k => Math.Abs(x.V[k] - end[k]) < 4));
         var after = arrived < 0 ? new List<(long T, double[] V)>() : during.Skip(arrived).Where(x => Enumerable.Range(0, boxes.Length).Any(k => Math.Abs(x.V[k] - end[k]) > 10)).ToList();
         flickered = arrived < 0 || after.Count > 0;
+        double maxDev = arrived < 0 ? 0 : during.Skip(arrived).Max(x => Enumerable.Range(0, boxes.Length).Max(k => Math.Abs(x.V[k] - end[k])));
+        LastFlicker = (firstMs, arrived < 0 ? -1 : during[arrived].T - at, after.Count, maxDev);
         return $"{name}: 되살리기 끝 깜빡임 없음 (누른 뒤 첫 변화 {firstMs}ms, 프레임 {during.Count}개, 끝 모습에 닿음 {(arrived < 0 ? "없음" : $"{during[arrived].T - at}ms")}, 그 뒤 벗어난 프레임 {after.Count}개{(after.Count > 0 ? ": " + string.Join(" ", after.Select(x => $"{x.T - at}ms")) : "")})";
     }
 
