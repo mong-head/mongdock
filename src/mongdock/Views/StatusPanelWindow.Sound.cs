@@ -10,8 +10,8 @@ namespace Mongdock.Views;
 
 /// <summary>
 /// 소리 판 (0.8.2 정리, #21): 출력과 입력을 같은 모양으로.
-/// - 출력: 제목 + 켜기 스위치(음소거) → 볼륨 막대 → 지금 소리 내는 앱 1~2개 막대 → 「앱별 볼륨 n개 ›」 → 「출력 장치: 이름 ›」.
-/// - 입력: 제목 + 켜기 스위치(마이크 음소거) → 음량 막대 + 레벨 점 → 「입력 장치: 이름 ›」.
+/// - 소리(출력): 제목 + 켜기 스위치(음소거) → 볼륨 막대 → 지금 소리 내는 앱 1~2개 막대 → 「앱별 볼륨 n개 ›」 → 「스피커: 이름 ›」.
+/// - 마이크(입력): 제목 + 켜기 스위치(마이크 음소거) → 음량 막대 + 레벨 점 → 「마이크: 이름 ›」.
 /// - 스위치를 끄면 그 아래 내용 대신 「음소거됨」 한 줄. 재생 중 카드는 늘 보임.
 /// - 장치 목록·모든 앱 볼륨은 판 안에서 옆으로 넘어가는 세부 화면(‹ 뒤로, Esc·← 로도). 세부 화면은 내용만큼 높이(아래가 비지 않게)이고
 ///   넘어갈 때 판 높이가 180ms 동안 부드럽게 바뀜. 화면보다 길면 판 전체가 스크롤.
@@ -31,8 +31,38 @@ internal sealed partial class StatusPanelWindow
 
     internal void OpenSoundPageForTest(string page) => _openSoundPageForTest?.Invoke(page);
 
+    /// <summary>시험용: 움직임과 함께 세부 화면 열기 (실제로 누를 때와 같은 길).</summary>
+    private Action<string>? _openSoundPageAnimatedForTest;
+    internal void OpenSoundPageAnimatedForTest(string page) => _openSoundPageAnimatedForTest?.Invoke(page);
+
+    /// <summary>마지막 넘김의 첫 프레임까지(ms)·가장 긴 프레임 간격(ms)·프레임 수 (#21 넘김 끊김 — 로그에도 남김).</summary>
+    internal static (long FirstMs, long MaxGapMs, int Frames)? LastSoundTransition { get; private set; }
+
+    /// <summary>넘김을 누른 순간부터 300ms 동안 화면 그리기 간격을 잼 (CompositionTarget.Rendering).</summary>
+    private static void WatchSoundTransition(string what)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        long first = -1, last = 0, maxGap = 0;
+        int frames = 0;
+        EventHandler? tick = null;
+        tick = (_, _) =>
+        {
+            long now = sw.ElapsedMilliseconds;
+            if (first < 0) first = now;
+            else maxGap = Math.Max(maxGap, now - last);
+            last = now;
+            frames++;
+            if (now < 300) return;
+            CompositionTarget.Rendering -= tick;
+            LastSoundTransition = (first, maxGap, frames);
+            Log.Info($"소리 판 넘김({what}): 첫 프레임 {first}ms, 가장 긴 간격 {maxGap}ms, 300ms 동안 프레임 {frames}개");
+        };
+        CompositionTarget.Rendering += tick;
+    }
+
     /// <summary>시험용: 판 높이 움직임을 "도는 중"으로 두고 끝내기를 기다림 (움직이는 도중 목록이 바뀌는 경우 재현). null 이면 보통.</summary>
     internal static bool HoldHeightAnimationForTest { get; set; }
+
 
     /// <summary>시험용: 붙잡아 둔 높이 움직임을 끝냄.</summary>
     private Action? _finishHeightForTest;
@@ -86,7 +116,7 @@ internal sealed partial class StatusPanelWindow
             return Task.FromResult(true);
         }, null);
         outSwitch.ToolTip = Loc.T("소리 켜기/끄기");
-        main.Children.Add(HeaderRow(Loc.IsKorean ? "출력" : Loc.T("소리 출력"), outSwitch)); // 「입력」처럼 한국어 키가 다른 곳에도 쓰여 여기만 따로
+        main.Children.Add(HeaderRow(Loc.T("소리"), outSwitch)); // 용어 (사용자 결정, 0.8.2): 출력 → 소리, 입력 → 마이크
         var outBody = new StackPanel();
         var outMuted = MutedLine();
         main.Children.Add(outBody);
@@ -115,7 +145,7 @@ internal sealed partial class StatusPanelWindow
             return Task.FromResult(true);
         }, null);
         inSwitch.ToolTip = Loc.T("마이크 켜기/끄기");
-        inSection.Children.Add(HeaderRow(Loc.IsKorean ? "입력" : Loc.T("소리 입력"), inSwitch)); // 같은 한국어 키 "입력" 이 윈도우 설정 페이지(Typing)에도 쓰여 여기만 따로
+        inSection.Children.Add(HeaderRow(Loc.T("마이크"), inSwitch));
         var inBody = new StackPanel();
         var inMuted = MutedLine();
         inSection.Children.Add(inBody);
@@ -163,8 +193,14 @@ internal sealed partial class StatusPanelWindow
         MongScroll.Apply(detailScroll, _p);
         if (TryFindResource("OverlayScrollViewer") is Style overlay) detailScroll.Style = overlay;
         detail.Children.Add(detailScroll);
+        // 세부 화면 내용은 판이 열려 있는 동안 늘 만들어 둠 (#21 넘김 끊김: 넘기는 순간 줄·아이콘을 만들거나 녹음 앱을 읽지 않게)
         var allApps = new AppRows();
-        var devices = new StackPanel();
+        var outDevices = new StackPanel();
+        var inDevices = new StackPanel();
+        string outSignature = "", inSignature = "";
+        // 입력 장치별 녹음 중인 앱 ("사용 중: Discord") — 오디오 세션을 읽으므로 스레드 풀에서, 끝나면 입력 장치 줄만 다시
+        Dictionary<string, string> inUse = new();
+        bool readingUse = false;
 
 
         IReadOnlyList<AppVolume> apps = Array.Empty<AppVolume>();
@@ -225,55 +261,66 @@ internal sealed partial class StatusPanelWindow
         }
         // 세부 화면이 열려 있는 동안 내용이 바뀌면(장치 추가 등) 높이를 바로 맞춤
         detailBody.SizeChanged += (_, _) => FitDetail();
-        string devSignature = "";
-
+        // 넘길 땐 미리 만든 내용을 바꿔 끼우기만
         void FillDetail()
         {
-            if (page == SoundPage.Apps)
-            {
-                if (!ReferenceEquals(detailBody.Children.Count == 1 ? detailBody.Children[0] : null, allApps.Host))
-                {
-                    detailBody.Children.Clear();
-                    detailBody.Children.Add(allApps.Host);
-                }
-                ApplyAppRows(allApps, apps);
-                return;
-            }
-            if (page is SoundPage.Output or SoundPage.Input)
-            {
-                if (!ReferenceEquals(detailBody.Children.Count == 1 ? detailBody.Children[0] : null, devices))
-                {
-                    detailBody.Children.Clear();
-                    detailBody.Children.Add(devices);
-                    devSignature = "";
-                }
-                FillDevices();
-            }
+            UIElement want = page switch { SoundPage.Apps => allApps.Host, SoundPage.Output => outDevices, _ => inDevices };
+            if (detailBody.Children.Count == 1 && ReferenceEquals(detailBody.Children[0], want)) return;
+            detailBody.Children.Clear();
+            detailBody.Children.Add(want);
         }
 
+        // 장치 줄 (장치 목록은 StatusService 가 몽독이 켜져 있는 동안 들고 있고 장치 바뀜 알림으로만 다시 읽음 — 여기선 바뀐 것만 다시 그림)
         void FillDevices()
         {
-            bool output = page == SoundPage.Output;
-            var list = output ? st.OutputDevices ?? Array.Empty<AudioDevice>() : VisibleInputs();
-            var inUse = output ? new Dictionary<string, string>() : InputUsageByDevice();
-            string sig = page + "#" + string.Join("|", list.Select(d => $"{d.Id}:{d.IsDefault}:{d.Name}:{d.Kind}:{(inUse.TryGetValue(d.Id, out var u) ? u : "")}"));
-            if (sig == devSignature) return;
-            devSignature = sig;
-            devices.Children.Clear();
-            foreach (var d in list)
+            var outs = st.OutputDevices ?? Array.Empty<AudioDevice>();
+            string os = string.Join("|", outs.Select(d => $"{d.Id}:{d.IsDefault}:{d.Name}:{d.Kind}"));
+            if (os != outSignature)
             {
-                var id = d.Id;
-                if (output)
-                    devices.Children.Add(DeviceRow(DeviceGlyph(d.Kind), d.IsDefault, d.Name, null, d.IsDefault ? null : () => st.SetDefaultOutput(id)));
-                else
+                outDevices.Children.Clear();
+                foreach (var d in outs)
                 {
+                    var id = d.Id;
+                    outDevices.Children.Add(DeviceRow(DeviceGlyph(d.Kind), d.IsDefault, d.Name, null, d.IsDefault ? null : () => st.SetDefaultOutput(id)));
+                }
+                if (outs.Count == 0) outDevices.Children.Add(Sub(Loc.T("재생 장치 없음")));
+                outSignature = os;
+            }
+            var ins = VisibleInputs();
+            string isig = string.Join("|", ins.Select(d => $"{d.Id}:{d.IsDefault}:{d.Name}:{d.Kind}:{(inUse.TryGetValue(d.Id, out var u) ? u : "")}"));
+            if (isig != inSignature)
+            {
+                inDevices.Children.Clear();
+                foreach (var d in ins)
+                {
+                    var id = d.Id;
                     // 장치마다 지금 녹음 중인 앱 ("사용 중: Discord") — 막대는 기본 장치만 바꾸므로, 앱이 다른 마이크를 쓰면 알 수 있게
                     string? sub = inUse.TryGetValue(d.Id, out var used) ? Loc.T("사용 중: ") + used
                         : d.Kind == AudioDeviceKind.Loopback ? Loc.T("재생 소리 녹음") : null;
-                    devices.Children.Add(DeviceRow(InputGlyph(d.Kind), d.IsDefault, d.Name, sub, d.IsDefault ? null : () => st.SetDefaultInput(id)));
+                    inDevices.Children.Add(DeviceRow(InputGlyph(d.Kind), d.IsDefault, d.Name, sub, d.IsDefault ? null : () => st.SetDefaultInput(id)));
                 }
+                if (ins.Count == 0) inDevices.Children.Add(Sub(Loc.T("입력 장치 없음")));
+                inSignature = isig;
             }
-            if (list.Count == 0) devices.Children.Add(Sub(output ? Loc.T("재생 장치 없음") : Loc.T("입력 장치 없음")));
+        }
+
+        async void ReadInputUse()
+        {
+            if (readingUse || _closed) return;
+            readingUse = true;
+            try
+            {
+                var use = await Task.Run(InputUsageByDevice);
+                _ = Dispatcher.BeginInvoke(() =>
+                {
+                    if (_closed) return;
+                    inUse = use;
+                    FillDevices();
+                    FitDetail();
+                });
+            }
+            catch (Exception ex) { Log.Warn($"입력 장치 사용 앱 읽기 실패: {ex.GetType().Name}"); }
+            finally { readingUse = false; }
         }
 
         void Slide(TranslateTransform t, double from, double to, Action? done = null)
@@ -292,12 +339,13 @@ internal sealed partial class StatusPanelWindow
 
         void Open(SoundPage p, bool animate)
         {
+            if (animate) WatchSoundTransition(p.ToString());
             page = p;
             detailTitle.Text = p switch
             {
                 SoundPage.Apps => Loc.T("앱별 볼륨"),
-                SoundPage.Output => Loc.T("출력 장치"),
-                _ => Loc.T("입력 장치"),
+                SoundPage.Output => Loc.T("스피커 고르기"),
+                _ => Loc.T("마이크 고르기"),
             };
             double fromHeight = host.ActualHeight > 0 ? host.ActualHeight : main.ActualHeight;
             detail.Visibility = Visibility.Visible;
@@ -347,6 +395,11 @@ internal sealed partial class StatusPanelWindow
         go = p => Open(p, animate: true);
         backButton.Click += (_, _) => Back();
         _back = Back;
+        _openSoundPageAnimatedForTest = name =>
+        {
+            if (Enum.TryParse<SoundPage>(name, out var p) && p != SoundPage.None) Open(p, animate: true);
+            else Back();
+        };
         _openSoundPageForTest = name =>
         {
             if (Enum.TryParse<SoundPage>(name, out var p) && p != SoundPage.None) Open(p, animate: false);
@@ -368,11 +421,8 @@ internal sealed partial class StatusPanelWindow
             ApplyAppRows(topApps, list.Where(a => a.Active && !a.System).Take(2).ToList());
             appsNav.Text.Text = Loc.F($"앱별 볼륨 {list.Count}개");
             appsNav.Button.Visibility = list.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-            if (page == SoundPage.Apps)
-            {
-                ApplyAppRows(allApps, list);
-                FitDetail();
-            }
+            ApplyAppRows(allApps, list); // 세부 화면도 미리 (넘길 때 만들지 않게)
+            if (page == SoundPage.Apps) FitDetail();
         }
         bool reading = false, appsFixed = false;
         async void ReadApps()
@@ -401,7 +451,7 @@ internal sealed partial class StatusPanelWindow
             if (!slider.IsDragging) slider.Value = st.Volume;
             var outs = st.OutputDevices ?? Array.Empty<AudioDevice>();
             var outDefault = outs.FirstOrDefault(d => d.IsDefault);
-            outNav.Text.Text = outDefault is null ? Loc.T("재생 장치 없음") : Loc.F($"출력 장치: {outDefault.Name}");
+            outNav.Text.Text = outDefault is null ? Loc.T("재생 장치 없음") : Loc.F($"스피커: {outDefault.Name}");
             // 입력
             var ins = st.InputDevices ?? Array.Empty<AudioDevice>();
             bool anyInput = ins.Any(d => d.Kind != AudioDeviceKind.Loopback);
@@ -415,13 +465,11 @@ internal sealed partial class StatusPanelWindow
             if (!inSlider.IsDragging) inSlider.Value = st.InputVolume;
             meterOn(anyInput && st.HasInput && !inOff && IsLoaded);
             var inDefault = ins.FirstOrDefault(d => d.IsDefault);
-            inNav.Text.Text = inDefault is null ? Loc.T("입력 장치 없음") : Loc.F($"입력 장치: {inDefault.Name}");
+            inNav.Text.Text = inDefault is null ? Loc.T("입력 장치 없음") : Loc.F($"마이크: {inDefault.Name}");
             // 세부 화면
-            if (page is SoundPage.Output or SoundPage.Input)
-            {
-                FillDevices();
-                FitDetail();
-            }
+            FillDevices();
+            if (page is SoundPage.Output or SoundPage.Input) FitDetail();
+            if (anyInput) ReadInputUse();
             ReadApps();
         });
         return host;

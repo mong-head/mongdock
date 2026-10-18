@@ -89,6 +89,12 @@ internal static partial class Program
             File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
             return _fail == 0 ? 0 : 1;
         }
+        if (Array.IndexOf(args, "--soundpanel") >= 0)
+        {
+            SoundPanelRun(services, outDir);
+            File.WriteAllLines(Path.Combine(outDir, "results.txt"), Results);
+            return _fail == 0 ? 0 : 1;
+        }
         if (Array.IndexOf(args, "--minimize") >= 0)
         {
             MinimizeRun(services, settings, work, outDir);

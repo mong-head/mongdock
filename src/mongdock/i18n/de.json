@@ -1525,5 +1525,9 @@
  "앱별 볼륨 {0}개": "App-Lautstärken ({0})",
  "출력 장치: {0}": "Ausgabe: {0}",
  "입력 장치: {0}": "Eingabe: {0}",
- "음소거됨": "Stumm"
+ "음소거됨": "Stumm",
+ "스피커: {0}": "Lautsprecher: {0}",
+ "마이크: {0}": "Mikrofon: {0}",
+ "스피커 고르기": "Lautsprecher wählen",
+ "마이크 고르기": "Mikrofon wählen"
 }

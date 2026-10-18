@@ -1525,5 +1525,9 @@
  "앱별 볼륨 {0}개": "App volumes ({0})",
  "출력 장치: {0}": "Output: {0}",
  "입력 장치: {0}": "Input: {0}",
- "음소거됨": "Muted"
+ "음소거됨": "Muted",
+ "스피커: {0}": "Speaker: {0}",
+ "마이크: {0}": "Microphone: {0}",
+ "스피커 고르기": "Choose speaker",
+ "마이크 고르기": "Choose microphone"
 }
