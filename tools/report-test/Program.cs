@@ -440,6 +440,7 @@ internal static class Program
             {
                 var w = new ReportWindow(settings)
                 {
+                    WindowStartupLocation = WindowStartupLocation.Manual, // CenterScreen 이면 화면 가운데에 뜸
                     Left = -20000,
                     Top = -20000,
                     ShowActivated = false,
@@ -2446,7 +2447,8 @@ internal static class Program
         Check("글자만 → 그림 아님", ScreenClip.FromDataObject(new DataObject(DataFormats.UnicodeText, "hello")) is null);
 
         // 2) 신고 창 붙여넣기
-        var w = new ReportWindow(new Settings()) { Left = -20000, Top = -20000, ShowActivated = false };
+        // WindowStartupLocation 을 Manual 로 — ReportWindow 는 CenterScreen 이라 처음 보일 때 Left/Top 을 무시하고 화면 가운데에 뜸 (2026-10-19 화면 밖 지킴이가 잡음)
+        var w = new ReportWindow(new Settings()) { WindowStartupLocation = WindowStartupLocation.Manual, Left = -20000, Top = -20000, ShowActivated = false };
         w.Show();
         var paste = typeof(ReportWindow).GetMethod("PasteAttachments", Any)!;
         var list = (System.Collections.IList)typeof(ReportWindow).GetField("_attachments", Any)!.GetValue(w)!;
