@@ -13,10 +13,12 @@ namespace TestShared;
 /// </summary>
 internal static class OffscreenGuard
 {
-    private const string LogPath = @"C:\dev\mongdock-tmp\onscreen-guard.log";
+    private const string LogPath = @"C:\dev\mongdock-tmp\onscreen-guard.log"; // 실제로 화면에 나타났던 창 (있으면 안 됨)
+    private const string BlockedLogPath = @"C:\dev\mongdock-tmp\onscreen-blocked.log"; // 나타나기 전에 막은 창 (고칠 목록)
     private static WinEventProc? _proc;
     private static HookProc? _cbt;
-    private static IntPtr _showHook, _moveHook, _cbtHook;
+    private static IntPtr _showHook, _moveHook, _cbtHook, _cwpHook;
+    private static HookProc? _cwp;
     private static int _moved;
     [ThreadStatic] private static bool _inside;
 
@@ -32,6 +34,50 @@ internal static class OffscreenGuard
         _moveHook = SetWinEventHook(EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE, IntPtr.Zero, _proc, pid, 0, WINEVENT_OUTOFCONTEXT);
         _cbt = OnCbt;
         _cbtHook = SetWindowsHookEx(WH_CBT, _cbt, IntPtr.Zero, GetCurrentThreadId());
+        // 나타나기 전에 막기: 이 스레드 최상위 창의 WM_WINDOWPOSCHANGING 에서 모니터 안 자리면 그 자리에서 x 를 -40000 쪽으로 바꿈 → 한 프레임도 안 비침
+        _cwp = OnCallWndProc;
+        _cwpHook = SetWindowsHookEx(WH_CALLWNDPROC, _cwp, IntPtr.Zero, GetCurrentThreadId());
+    }
+
+    private static readonly HashSet<IntPtr> Blocked = new();
+
+    private static IntPtr OnCallWndProc(int code, IntPtr wParam, IntPtr lParam)
+    {
+        if (code >= 0 && lParam != IntPtr.Zero)
+        {
+            try
+            {
+                var c = Marshal.PtrToStructure<CWPSTRUCT>(lParam);
+                if (c.message == WM_WINDOWPOSCHANGING && c.lParam != IntPtr.Zero && GetAncestor(c.hwnd, GA_ROOT) == c.hwnd)
+                {
+                    var wp = Marshal.PtrToStructure<WINDOWPOS>(c.lParam);
+                    if (GetWindowRect(c.hwnd, out RECT cur))
+                    {
+                        bool noMove = (wp.flags & SWP_NOMOVE) != 0, noSize = (wp.flags & SWP_NOSIZE) != 0;
+                        int x = noMove ? cur.Left : wp.x, y = noMove ? cur.Top : wp.y;
+                        int cx = noSize ? cur.Right - cur.Left : wp.cx, cy = noSize ? cur.Bottom - cur.Top : wp.cy;
+                        var r = new RECT { Left = x, Top = y, Right = x + cx, Bottom = y + cy };
+                        if (cx > 0 && cy > 0 && OnAnyMonitor(r))
+                        {
+                            wp.x = x - 40000; wp.y = y;
+                            wp.flags &= ~SWP_NOMOVE;
+                            Marshal.StructureToPtr(wp, c.lParam, false);
+                            if (Blocked.Add(c.hwnd)) Record("막음(나타나기 전)", c.hwnd, r);
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+        return CallNextHookEx(_cwpHook, code, wParam, lParam);
+    }
+
+    private static void Record(string what, IntPtr hwnd, RECT r)
+    {
+        var cls = new StringBuilder(128); GetClassName(hwnd, cls, cls.Capacity);
+        var title = new StringBuilder(256); GetWindowText(hwnd, title, title.Capacity);
+        string line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {what} 화면 안 자리 → 밖으로: 제목 '{title}' 클래스 {cls} 자리 ({r.Left},{r.Top})-({r.Right},{r.Bottom}) | {Process.GetCurrentProcess().ProcessName} {string.Join(' ', Environment.GetCommandLineArgs().Skip(1))}";
+        try { File.AppendAllText(BlockedLogPath, line + Environment.NewLine, Encoding.UTF8); } catch { }
     }
 
     private static void OnEvent(IntPtr hook, uint ev, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)
@@ -74,7 +120,10 @@ internal static class OffscreenGuard
 
     private const uint EVENT_OBJECT_SHOW = 0x8002, EVENT_OBJECT_LOCATIONCHANGE = 0x800B, WINEVENT_OUTOFCONTEXT = 0;
     private const uint GA_ROOT = 2, SWP_NOSIZE = 0x1, SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10;
-    private const int WH_CBT = 5, HCBT_ACTIVATE = 5;
+    private const int WH_CBT = 5, HCBT_ACTIVATE = 5, WH_CALLWNDPROC = 4;
+    private const uint WM_WINDOWPOSCHANGING = 0x46, SWP_NOMOVE = 0x2;
+    [StructLayout(LayoutKind.Sequential)] private struct CWPSTRUCT { public IntPtr lParam, wParam; public uint message; public IntPtr hwnd; }
+    [StructLayout(LayoutKind.Sequential)] private struct WINDOWPOS { public IntPtr hwnd, hwndInsertAfter; public int x, y, cx, cy; public uint flags; }
     [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left, Top, Right, Bottom; }
     private delegate void WinEventProc(IntPtr hook, uint ev, IntPtr hwnd, int idObject, int idChild, uint thread, uint time);
     private delegate IntPtr HookProc(int code, IntPtr wParam, IntPtr lParam);
