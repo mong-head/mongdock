@@ -29,6 +29,7 @@ internal static partial class Program
     {
         if (args.Length == 0) { Console.WriteLine("live-test OUT [--idle 초] [--new] | live-test --demo [횟수] [간격초]"); return 2; }
         if (args[0] == "--testwindow") return TestWindowMain(); // --minimize 의 시험 창 (다른 프로세스)
+        if (args[0] == "--cloaktest") return CloakTest(); // #27 다른 프로세스 창 가리기 가능한지
         if (args[0] == "--demo") return Demo(args.Length > 1 ? int.Parse(args[1]) : 3, args.Length > 2 ? int.Parse(args[2]) : 12);
         string outDir = Path.GetFullPath(args[0]);
         Directory.CreateDirectory(outDir);

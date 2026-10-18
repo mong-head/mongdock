@@ -29,7 +29,8 @@ internal static partial class Program
         for (int i = 0; i < 6; i++)
             grid.Children.Add(new Border { Height = 14, Width = 560 - i * 60, CornerRadius = new CornerRadius(7), Background = new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)), VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(40, 40 + i * 28, 0, 0) });
         var work = SystemParameters.WorkArea;
-        var w = new Window { Title = TestWindowTitle, Width = 900, Height = 540, Left = work.Left + (work.Width - 900) / 2, Top = work.Top + 110, Content = grid, WindowStartupLocation = WindowStartupLocation.Manual, ShowActivated = false };
+        bool offscreen = Environment.GetCommandLineArgs().Contains("--offscreen");
+        var w = new Window { Title = TestWindowTitle, Width = 900, Height = 540, Left = offscreen ? -4000 : work.Left + (work.Width - 900) / 2, Top = work.Top + 110, Content = grid, WindowStartupLocation = WindowStartupLocation.Manual, ShowActivated = false };
         app.Run(w);
         return 0;
     }
@@ -194,6 +195,25 @@ internal static partial class Program
             Check($"끝: 윈도우 애니메이션 시작 값 그대로 ({SysAnimation()} = {sysOriginal}), 시험 창 닫힘 {child.HasExited}", SysAnimation() == sysOriginal && child.HasExited);
         }
     }
+
+    /// <summary>--cloaktest (#27): 몽독이 다른 프로세스 창을 DWM 으로 가릴 수 있는지 (화면 밖 시험 창, 입력 없음).</summary>
+    private static int CloakTest()
+    {
+        var child = Process.Start(new ProcessStartInfo(Environment.ProcessPath!, "--testwindow --offscreen") { UseShellExecute = false })!;
+        IntPtr hwnd = IntPtr.Zero;
+        for (int i = 0; i < 100 && hwnd == IntPtr.Zero; i++) { System.Threading.Thread.Sleep(100); hwnd = FindWindow(null, TestWindowTitle); }
+        int one = 1, v = 0;
+        int hr = hwnd == IntPtr.Zero ? -1 : DwmSetWindowAttribute(hwnd, 13 /* DWMWA_CLOAK */, ref one, 4);
+        int hr2 = hwnd == IntPtr.Zero ? -1 : DwmGetWindowAttributeInt(hwnd, 14 /* DWMWA_CLOAKED */, out v, 4);
+        Console.WriteLine($"창 0x{hwnd.ToInt64():X}: 다른 프로세스에서 DWMWA_CLOAK hr=0x{hr:X8}, 가려짐 hr=0x{hr2:X8} 값={v}");
+        int zero = 0;
+        if (hwnd != IntPtr.Zero) DwmSetWindowAttribute(hwnd, 13, ref zero, 4);
+        try { child.Kill(); } catch { }
+        return 0;
+    }
+
+    [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr h, int a, ref int v, int s);
+    [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")] private static extern int DwmGetWindowAttributeInt(IntPtr h, int a, out int v, int s);
 
     /// <summary>
     /// 되살리기 동안 화면 프레임마다(DXGI) 창 안 네 곳의 밝기를 재서: 끝 값(마지막 프레임)에 닿은 뒤 10 넘게 벗어나는 프레임 = 깜빡임.

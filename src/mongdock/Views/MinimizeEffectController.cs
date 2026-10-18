@@ -286,8 +286,15 @@ internal sealed class MinimizeEffectController : IDisposable
                 }
             }
             Draw(0); // 첫 모습을 바로 (최소화되어 창이 사라진 순간과 첫 프레임 사이에 빈 화면이 없게)
+            long firstFrameAt = -1;
             _frame = (_, _) =>
             {
+                // 덮개 첫 프레임이 늦으면 로그 (#27 되살릴 때 "빠방" — 실기기에서 원인 가르기)
+                if (firstFrameAt < 0)
+                {
+                    firstFrameAt = clock.ElapsedMilliseconds;
+                    if (firstFrameAt > 40) Log.Info($"창 {(restore ? "되살리기" : "최소화")} 효과: 덮개 첫 프레임 {firstFrameAt}ms ({shape})");
+                }
                 double t = FreezeAtForTest ?? Math.Min(1, clock.ElapsedMilliseconds / (double)duration);
                 // 되살리기: 끝나기 전에 진짜 창을 덮개 밑에서 먼저 되살림 → 그 뒤로는 썸네일이 되살아난 창의 실제 모습 (원본 크기를 다시 읽음)
                 if (restore && handedOffAt < 0 && t >= HandoffAt)
