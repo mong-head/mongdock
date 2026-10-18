@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Mongdock.Models;
 using Mongdock.Services;
 
@@ -70,7 +71,23 @@ internal sealed class MinimizeEffectController : IDisposable
         }
         bool turnedOff = WindowAnimationSetting.TurnOff();
         Hook();
+        WarmOverlay();
         return turnedOff;
+    }
+
+    /// <summary>
+    /// 덮개 창을 미리 만들어 한 번 그려 두고 숨김 (#27 독 클릭 되살리기 "빠방"): 처음 효과 때 창 만들기·첫 그리기(지니 약 38ms)가
+    /// 첫 프레임을 늦추지 않게. 한가할 때(ApplicationIdle) 한 번만.
+    /// </summary>
+    private void WarmOverlay()
+    {
+        if (_overlay is not null || Application.Current?.Dispatcher is not { } d) return;
+        d.BeginInvoke(() =>
+        {
+            if (_disposed || _overlay is not null || Effect == MinimizeEffect.Off) return;
+            try { (_overlay = new OverlayWindow(_services)).Warm(); }
+            catch (Exception ex) { Log.Warn($"최소화 효과 덮개 미리 만들기 실패: {ex.GetType().Name}"); }
+        }, DispatcherPriority.ApplicationIdle);
     }
 
     private void Hook()
@@ -232,6 +249,17 @@ internal sealed class MinimizeEffectController : IDisposable
         /// 진짜 창이 그려질 시간(넘긴 뒤 60ms 이상 + 화면 2프레임)을 기다렸다가 덮개를 치움 — 덮개 그림 → 진짜 창이 한 번에 바뀜.
         /// 썸네일 원본은 창의 보이지 않는 테두리(왼·오른·아래 약 8px, 최대화면 위도)를 빼고 잘라 써서 끝 모습이 진짜 창과 같은 자리·크기.
         /// </summary>
+        /// <summary>미리 만들기: 핸들을 만들고 화면 밖 작은 크기로 한 번 보였다 숨겨 첫 그리기를 끝내 둠.</summary>
+        public void Warm()
+        {
+            new WindowInteropHelper(this).EnsureHandle();
+            Native.User32.SetWindowPos(_hwnd, IntPtr.Zero, -32000, -32000, 1, 1, Native.User32.SWP_NOZORDER | Native.User32.SWP_NOACTIVATE);
+            _bounds = new Rect(-32000, -32000, 1, 1);
+            Show();
+            UpdateLayout();
+            Hide();
+        }
+
         public bool Run(IntPtr source, Rect monitorPx, Rect from, Rect to, MinimizeEffect shape, DockEdge edge, bool restore, int duration, Action? onDone)
         {
             Stop();
