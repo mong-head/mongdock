@@ -46,6 +46,9 @@ internal sealed class MinimizeEffectController : IDisposable
     /// <summary>시험용(실제 창 프레임 사진): 값이 있으면 그 시간 비율(0~1)에 멈춰 있음, null 로 돌리면 이어서 끝남.</summary>
     internal static double? FreezeAtForTest { get; set; }
 
+    /// <summary>시험용: 마지막 되살리기의 끝 장면 붙잡기 (#27) — 그림 찍는 데 든 ms, 그림이 보인 ms(찍은 뒤 → 치움)와 프레임 수, 기다린 기준 ms. 못 찍었으면 null.</summary>
+    internal static (long CaptureMs, long ShownMs, int ShownFrames, int HoldMs)? LastStillForTest { get; private set; }
+
     public MinimizeEffectController(AppServices services, Func<IntPtr, Rect?> iconRect, Func<DockEdge> edge)
     {
         _services = services;
@@ -222,8 +225,15 @@ internal sealed class MinimizeEffectController : IDisposable
         private Action? _onDone;
         private Rect _bounds;
 
+        /// <summary>끝 장면 붙잡기 (#27): 넘겨주기 직전 덮개 모습을 찍은 그림 한 장 — 썸네일을 숨긴 뒤 진짜 창이 다시 그려질 때까지 이걸 보임.</summary>
+        private readonly System.Windows.Controls.Image _still = new() { Stretch = Stretch.Fill, IsHitTestVisible = false, Visibility = Visibility.Collapsed, SnapsToDevicePixels = true };
+
         public OverlayWindow(AppServices services)
         {
+            var canvas = new System.Windows.Controls.Canvas { IsHitTestVisible = false };
+            RenderOptions.SetBitmapScalingMode(_still, BitmapScalingMode.NearestNeighbor); // 찍은 픽셀 1:1 — 배율 150% 에서도 흐려지지 않게
+            canvas.Children.Add(_still);
+            Content = canvas;
             WindowStyle = WindowStyle.None;
             AllowsTransparency = true;
             Background = Brushes.Transparent;
@@ -285,10 +295,20 @@ internal sealed class MinimizeEffectController : IDisposable
             long handedOffAt = -1;
             int endFrames = 0;
             long fadeFrom = -1;
+            // 끝 장면 붙잡기 (#27): Electron(크롬 계열) 창은 되살아난 직후 약 50ms 빈 배경만 내보내고, 실시간 썸네일이 그걸 그대로 비춰 끝에 번쩍임 (화면 측정: 효과 끔 0, 켬 5~7프레임).
+            // 넘겨주기 직전 덮개 모습을 그림 한 장으로 찍어 깔고 → 2프레임 뒤(그림이 화면에 나온 뒤) 썸네일을 숨기고 진짜 창을 되살림 → 다시 그릴 시간을 기다렸다가 그림을 흐리게 걷어 냄.
+            int stillFrames = 0; // 0 = 그림 없음, 1~ = 그림을 깐 뒤 지난 프레임
+            Rect stillFrom = default, stillTo = default, drawn = Rect.Empty;
+            bool cleared = false;
+            double pStill = 0;
+            long stillAt = -1, captureMs = 0;
+            bool chromium = IsChromiumFamily(source);
+            int holdMs = chromium ? ChromiumHoldMs : 60;
             void Draw(double t, double fade = 1)
             {
                 double p = MinimizeMotion.Path(t, restore);
                 bool genie = shape == MinimizeEffect.Genie;
+                drawn = Rect.Empty;
                 for (int i = 0; i < _thumbs.Count; i++)
                 {
                     double v0 = genie ? (double)i / _thumbs.Count : 0, v1 = genie ? (double)(i + 1) / _thumbs.Count : 1;
@@ -312,7 +332,21 @@ internal sealed class MinimizeEffectController : IDisposable
                         fVisible = true,
                     };
                     DwmUpdateThumbnailProperties(_thumbs[i], ref props);
+                    if (props.opacity > 0) drawn.Union(dst);
                 }
+            }
+            // 붙잡은 그림: 찍은 자리에서 창 자리까지 남은 길을 같은 속도로 (지니 띠는 이때 이미 거의 네모)
+            void DrawStill(double t, double fade = 1)
+            {
+                double k = pStill <= 0 ? 1 : Math.Clamp(1 - MinimizeMotion.Path(t, restore) / pStill, 0, 1);
+                var r = new Rect(stillFrom.X + (stillTo.X - stillFrom.X) * k, stillFrom.Y + (stillTo.Y - stillFrom.Y) * k,
+                    stillFrom.Width + (stillTo.Width - stillFrom.Width) * k, stillFrom.Height + (stillTo.Height - stillFrom.Height) * k);
+                var dpi = VisualTreeHelper.GetDpi(this);
+                System.Windows.Controls.Canvas.SetLeft(_still, r.X / dpi.DpiScaleX);
+                System.Windows.Controls.Canvas.SetTop(_still, r.Y / dpi.DpiScaleY);
+                _still.Width = Math.Max(1, r.Width / dpi.DpiScaleX);
+                _still.Height = Math.Max(1, r.Height / dpi.DpiScaleY);
+                _still.Opacity = Math.Clamp(fade, 0, 1);
             }
             Draw(0); // 첫 모습을 바로 (최소화되어 창이 사라진 순간과 첫 프레임 사이에 빈 화면이 없게)
             long firstFrameAt = -1;
@@ -328,29 +362,59 @@ internal sealed class MinimizeEffectController : IDisposable
                 // 되살리기: 끝나기 전에 진짜 창을 덮개 밑에서 먼저 되살림 → 그 뒤로는 썸네일이 되살아난 창의 실제 모습 (원본 크기를 다시 읽음)
                 if (restore && handedOffAt < 0 && t >= HandoffAt)
                 {
-                    handedOffAt = clock.ElapsedMilliseconds;
-                    Finish();
+                    // 크롬 계열만 (빈 화면 문제가 거기만 있음 — 다른 앱은 화면 찍기 위험 없이 이전 그대로, 리뷰)
+                    if (stillFrames == 0 && chromium && Anim.Enabled && FreezeAtForTest is null && TryCaptureStill(drawn, out captureMs, out var area))
+                    {
+                        stillFrames = 1;
+                        stillAt = clock.ElapsedMilliseconds;
+                        // 찍은 픽셀 자리 그대로 놓고, 창 자리도 같은 만큼 넓혀 따라감 (늘어남·밀림 없게)
+                        stillFrom = area;
+                        stillTo = new Rect(local.X - (drawn.X - area.X), local.Y - (drawn.Y - area.Y),
+                            local.Width + (area.Width - drawn.Width), local.Height + (area.Height - drawn.Height));
+                        pStill = MinimizeMotion.Path(t, restore);
+                        DrawStill(t);
+                    }
+                    // 그림이 화면에 나올 때까지 2프레임 그리고 33ms 이상 (겹 창 그리기가 UI 프레임보다 늦을 수 있음) — 그동안은 썸네일(아직 최소화 상태 모습)이 위에 그대로
+                    else if (stillFrames > 0 && (stillFrames < 3 || clock.ElapsedMilliseconds - stillAt < 33)) stillFrames++;
+                    else
+                    {
+                        if (stillFrames > 0) HideThumbs();
+                        handedOffAt = clock.ElapsedMilliseconds;
+                        Finish();
+                    }
                 }
-                if (handedOffAt >= 0 && !IsIconic(source) && DwmQueryThumbnailSourceSize(_thumbs[0], out var live) == 0 && live.cx > 0 && live.cy > 0)
+                else if (stillFrames > 0) stillFrames++;
+                if (stillFrames == 0 && handedOffAt >= 0 && !IsIconic(source) && DwmQueryThumbnailSourceSize(_thumbs[0], out var live) == 0 && live.cx > 0 && live.cy > 0)
                     crop = SourceCrop(source, live, from);
                 if (fadeFrom >= 0)
                 {
                     // 끝 크로스페이드 (#27): 진짜 창이 이미 제자리에 있고, 덮개만 CrossfadeMs 동안 흐리게 걷어 냄 — 한 번에 치우면 그림자·둥근 모서리·다시 그리기가 툭 바뀌어 보임
                     double f = 1 - (clock.ElapsedMilliseconds - fadeFrom) / (double)CrossfadeMs;
-                    if (f > 0) { Draw(1, f * f); return; } // 끝으로 갈수록 빨리 옅어짐 — 프레임이 드문 원격 화면에서도 마지막에 남는 값이 작게 (리뷰)
+                    if (f > 0) { if (handedOffAt >= 0 && stillFrames > 0) DrawStill(1, f * f); else Draw(1, f * f); return; } // 끝으로 갈수록 빨리 옅어짐 — 프레임이 드문 원격 화면에서도 마지막에 남는 값이 작게 (리뷰)
                 }
                 else
                 {
-                    Draw(t);
+                    if (handedOffAt >= 0 && stillFrames > 0) DrawStill(t); else Draw(t);
                     if (t < 1) return;
+                    if (stillFrames > 0 && handedOffAt < 0) return; // 짧은 효과: 그림을 깔고 기다리는 중에 시간이 끝나도 넘기기·붙잡기를 거침 (리뷰)
                     if (restore && handedOffAt >= 0)
                     {
-                        // 진짜 창이 그려질 시간: 넘긴 뒤 60ms 이상, 그리고 끝 모습으로 2프레임 더 (넘긴 뒤 최대 260ms) — 그다음 크로스페이드
+                        // 진짜 창이 그려질 시간: 넘긴 뒤 hold 이상(그림을 붙잡았으면 크롬 계열 150 · 그 밖 60), 그리고 끝 모습으로 2프레임 더 — 그다음 크로스페이드.
+                        // 넘긴 뒤 최대: 그림을 붙잡았으면 MaxStillMs, 아니면 260ms — 넘으면 그냥 걷어 냄
                         endFrames++;
                         long since = clock.ElapsedMilliseconds - handedOffAt;
-                        if ((since < 60 || endFrames < 3) && since < 260) return;
+                        int hold = stillFrames > 0 ? holdMs : 60;
+                        if ((since < hold || endFrames < 3) && since < (stillFrames > 0 ? MaxStillMs : 260)) return;
                         if (Anim.Enabled) { fadeFrom = clock.ElapsedMilliseconds; return; }
                     }
+                }
+                if (stillAt >= 0 && !cleared)
+                {
+                    // 그림을 먼저 지우고 한 프레임 그린 뒤 숨김 — 숨긴 겹 창에 그림이 남아 다음에 보일 때 한 프레임 비치지 않게 (리뷰)
+                    LastStillForTest = (captureMs, clock.ElapsedMilliseconds - stillAt, stillFrames, holdMs);
+                    ClearStill();
+                    cleared = true;
+                    return;
                 }
                 if (_frame is not null) { CompositionTarget.Rendering -= _frame; _frame = null; }
                 Stop();
@@ -365,6 +429,82 @@ internal sealed class MinimizeEffectController : IDisposable
 
         /// <summary>되살리기 끝에 덮개를 흐리게 걷어 내는 시간 (ms).</summary>
         private const int CrossfadeMs = 120;
+
+        /// <summary>크롬 계열 창: 되살린 뒤 붙잡은 그림을 두는 시간 (ms) — 측정한 빈 화면 약 50~65ms + 여유.</summary>
+        private const int ChromiumHoldMs = 150;
+
+        /// <summary>붙잡은 그림을 두는 최대 시간 (넘긴 뒤 ms) — 넘으면 그냥 걷어 냄.</summary>
+        private const int MaxStillMs = 200;
+
+        private static bool IsChromiumFamily(IntPtr hwnd)
+        {
+            var sb = new System.Text.StringBuilder(64);
+            return GetClassName(hwnd, sb, sb.Capacity) > 0 && sb.ToString().StartsWith("Chrome_WidgetWin", StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// 덮개가 지금 화면에 보이는 자리(<paramref name="localPx"/>, 덮개 안 물리 픽셀)를 화면에서 찍어 _still 에 깜 (아직 썸네일 밑이라 안 보임).
+        /// 화면 DC 복사라 덮개(겹 창)·썸네일이 합쳐진 모습 그대로. GDI 비트맵은 바로 지우고, 그림은 덮개를 치울 때 놓음.
+        /// </summary>
+        private bool TryCaptureStill(Rect localPx, out long ms, out Rect area)
+        {
+            ms = 0;
+            area = Rect.Empty;
+            if (localPx.IsEmpty) return false;
+            double l = Math.Floor(localPx.Left), tp = Math.Floor(localPx.Top);
+            area = Rect.Intersect(new Rect(l, tp, Math.Ceiling(localPx.Right) - l, Math.Ceiling(localPx.Bottom) - tp),
+                new Rect(0, 0, _bounds.Width, _bounds.Height));
+            if (area.IsEmpty || area.Width < 2 || area.Height < 2) return false;
+            var sw = Stopwatch.StartNew();
+            int x = (int)(area.X + _bounds.X), y = (int)(area.Y + _bounds.Y), w = (int)area.Width, h = (int)area.Height;
+            IntPtr screen = GetDC(IntPtr.Zero), mem = IntPtr.Zero, bmp = IntPtr.Zero, old = IntPtr.Zero;
+            try
+            {
+                if (screen == IntPtr.Zero) return false;
+                mem = CreateCompatibleDC(screen);
+                bmp = CreateCompatibleBitmap(screen, w, h);
+                if (mem == IntPtr.Zero || bmp == IntPtr.Zero) return false;
+                old = SelectObject(mem, bmp);
+                if (!BitBlt(mem, 0, 0, w, h, screen, x, y, 0x00CC0020 /* SRCCOPY */)) return false;
+                SelectObject(mem, old);
+                old = IntPtr.Zero;
+                var src = Imaging.CreateBitmapSourceFromHBitmap(bmp, IntPtr.Zero, Int32Rect.Empty, System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+                src.Freeze();
+                _still.Source = src;
+                _still.Visibility = Visibility.Visible;
+                ms = sw.ElapsedMilliseconds;
+                if (ms > 30) Log.Info($"창 되살리기 효과: 끝 장면 찍기 {ms}ms ({w}x{h})");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"창 되살리기 효과: 끝 장면 찍기 실패 {ex.GetType().Name} {ex.Message}");
+                return false;
+            }
+            finally
+            {
+                if (old != IntPtr.Zero) SelectObject(mem, old);
+                if (bmp != IntPtr.Zero) DeleteObject(bmp);
+                if (mem != IntPtr.Zero) DeleteDC(mem);
+                if (screen != IntPtr.Zero) ReleaseDC(IntPtr.Zero, screen);
+            }
+        }
+
+        private void HideThumbs()
+        {
+            foreach (var t in _thumbs)
+            {
+                var props = new DWM_THUMBNAIL_PROPERTIES { dwFlags = DWM_TNP_VISIBLE, fVisible = false };
+                DwmUpdateThumbnailProperties(t, ref props);
+            }
+        }
+
+        /// <summary>붙잡은 그림을 놓음 (참조를 끊어 메모리가 바로 풀리게).</summary>
+        private void ClearStill()
+        {
+            _still.Source = null;
+            _still.Visibility = Visibility.Collapsed;
+        }
 
         /// <summary>
         /// 썸네일 원본에서 창의 보이는 부분 (보이지 않는 크기 조절 테두리 빼기). 창이 떠 있으면 GetWindowRect 와 DWM 테두리 사각형으로 정확히,
@@ -403,6 +543,7 @@ internal sealed class MinimizeEffectController : IDisposable
             Finish(); // 중간에 끊겨도 창은 꼭 되살림
             foreach (var t in _thumbs) DwmUnregisterThumbnail(t);
             _thumbs.Clear();
+            ClearStill();
         }
 
         protected override void OnClosed(EventArgs e)
@@ -490,6 +631,15 @@ internal sealed class MinimizeEffectController : IDisposable
     [DllImport("dwmapi.dll")] private static extern int DwmQueryThumbnailSourceSize(IntPtr thumb, out SIZE size);
     [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int max);
+    [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
+    [DllImport("gdi32.dll")] private static extern IntPtr CreateCompatibleDC(IntPtr dc);
+    [DllImport("gdi32.dll")] private static extern IntPtr CreateCompatibleBitmap(IntPtr dc, int w, int h);
+    [DllImport("gdi32.dll")] private static extern IntPtr SelectObject(IntPtr dc, IntPtr obj);
+    [DllImport("gdi32.dll")] private static extern bool BitBlt(IntPtr dst, int x, int y, int w, int h, IntPtr src, int sx, int sy, uint rop);
+    [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr obj);
+    [DllImport("gdi32.dll")] private static extern bool DeleteDC(IntPtr dc);
 }
 
 /// <summary>
