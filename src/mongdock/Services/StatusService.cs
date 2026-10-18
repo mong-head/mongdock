@@ -201,6 +201,7 @@ public sealed partial class StatusService : IStatusService, IDisposable
 
     private void ConnectDefaultDevice()
     {
+        Log.Info("기본 출력 장치 다시 연결");
         DisconnectEndpoint();
         if (_enumerator is null) return;
         IMMDevice? device = null;
@@ -327,11 +328,14 @@ public sealed partial class StatusService : IStatusService, IDisposable
     {
         private readonly StatusService _owner;
         public DeviceCallback(StatusService owner) => _owner = owner;
-        public int OnDeviceStateChanged(string deviceId, int newState) { _owner.QueueDeviceListRefresh(); return 0; }
-        public int OnDeviceAdded(string deviceId) { _owner.QueueDeviceListRefresh(); return 0; }
-        public int OnDeviceRemoved(string deviceId) { _owner.QueueDeviceListRefresh(); return 0; }
+        // 장치 알림을 한 줄씩 남김 (#37 — 블루투스 헤드폰 연결·기본 장치 바뀜 무렵 크래시, 직전에 무엇이 왔는지 보려고)
+        public int OnDeviceStateChanged(string deviceId, int newState) { Log.Info($"소리 장치 알림: 상태 {newState} {Short(deviceId)}"); _owner.QueueDeviceListRefresh(); return 0; }
+        public int OnDeviceAdded(string deviceId) { Log.Info($"소리 장치 알림: 추가 {Short(deviceId)}"); _owner.QueueDeviceListRefresh(); return 0; }
+        public int OnDeviceRemoved(string deviceId) { Log.Info($"소리 장치 알림: 제거 {Short(deviceId)}"); _owner.QueueDeviceListRefresh(); return 0; }
+        private static string Short(string? id) => id is null ? "(없음)" : id.Length > 12 ? "…" + id[^12..] : id;
         public int OnDefaultDeviceChanged(int flow, int role, string? defaultDeviceId)
         {
+            Log.Info($"소리 장치 알림: 기본 장치 바뀜 (흐름 {flow}, 역할 {role}) {Short(defaultDeviceId)}");
             if (flow == CoreAudio.eRender && role == CoreAudio.eMultimedia)
             {
                 _owner.QueueReconnect();
