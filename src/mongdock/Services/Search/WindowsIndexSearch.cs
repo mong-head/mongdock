@@ -11,14 +11,16 @@ public enum FileCategory { Folder, Document, Media, Other }
 /// <param name="Path">실제 파일 시스템 경로(System.ItemUrl) — 열기·폴더에서 보기·아이콘용.</param>
 /// <param name="DisplayPath">화면 표시용 경로(System.ItemPathDisplay). 한국어 윈도우는 "C:\사용자\…\다운로드" 처럼 현지화돼
 /// 실제 경로가 아님 — 이걸로 탐색기를 열면 경로를 못 찾고 홈이 열린다.</param>
-public sealed record IndexedFile(string Path, string Name, FileCategory Category, string DisplayPath);
+public sealed record IndexedFile(string Path, string Name, FileCategory Category, string DisplayPath, DateTime Modified = default);
 
 /// <summary>
 /// 윈도우 검색 색인(Windows Search, SystemIndex)에서 파일 이름으로 찾기.
 /// NuGet 없이 윈도우 내장 ADO(ADODB.Connection, Search.CollatorDSO 공급자)를 late-bound(dynamic)로 사용.
 /// - 이름 일치: CONTAINS(System.FileName, '"단어*"') = 단어 앞부분 일치(색인 사용, 수십 ms).
 ///   한 건도 없으면 LIKE '%q%'(부분 일치, 느릴 수 있음)로 한 번 더 — 2글자 이상일 때만.
-/// - 카테고리마다 따로 TOP N 쿼리 (흔한 종류가 다른 종류를 밀어내지 않게), 최근 수정순.
+/// - 카테고리마다 따로 쿼리 (흔한 종류가 다른 종류를 밀어내지 않게). 후보를 넉넉히(50개) 받고 이름이 검색어와 똑같은 것은 따로 한 번 더 물어
+///   반드시 넣은 뒤 <see cref="Rank"/> 로 연관도 순(이름 일치 정도 → 얕은 곳 → 최근, 개발·숨김 폴더는 아래)으로 줄 세워 N 개.
+///   (검색 이슈: 최근 수정순 TOP 5 만 받아 바탕 화면의 「PE」 폴더가 venvs·site-packages 폴더에 밀려 빠졌음)
 /// - 색인 서비스(WSearch)가 꺼져 있거나 쿼리가 실패하면 빈 결과 + 로그 (호출 쪽은 카테고리만 생략).
 /// 쿼리는 백그라운드 스레드에서만 호출 (ADO 공급자는 Both 스레딩 모델이라 MTA 스레드 풀에서 동작).
 /// </summary>
@@ -32,7 +34,7 @@ public static class WindowsIndexSearch
 
     /// <summary>
     /// 이름에 query 가 들어간 파일·폴더. categories 에 든 분류만, 분류마다 최대 maxPerCategory 개.
-    /// 결과 순서 = 분류 순서(폴더·문서·미디어·기타) → 최근 수정순.
+    /// 결과 순서 = 분류 순서(폴더·문서·미디어·기타) → 연관도 순(<see cref="Rank"/>).
     /// </summary>
     public static async Task<IReadOnlyList<IndexedFile>> SearchAsync(string query, IReadOnlyList<string> folders,
         IReadOnlyCollection<FileCategory> categories, int maxPerCategory, CancellationToken ct)
@@ -79,10 +81,15 @@ public static class WindowsIndexSearch
             string? contains = ContainsClause(query);
             if (contains is not null)
             {
+                // 이름이 검색어와 똑같은 것 (최근 수정순 후보 밖에 있어도 꼭 들어가게) — 색인 같음 비교라 빠름
+                string exact = ExactNameClause(query);
+                List<IndexedFile> exactHits = Query(conn, $"{scope} AND {exact}", 20, null);
                 foreach (var cat in Ordered(categories))
                 {
                     ct.ThrowIfCancellationRequested();
-                    results.AddRange((List<IndexedFile>)Query(conn, $"{scope} AND {contains} AND {CategoryClause(cat)}", max, cat));
+                    var found = (List<IndexedFile>)Query(conn, $"{scope} AND {contains} AND {CategoryClause(cat)}", CandidateCount, cat);
+                    found.AddRange(exactHits.Where(e => e.Category == cat && !found.Any(f => string.Equals(f.Path, e.Path, StringComparison.OrdinalIgnoreCase))));
+                    results.AddRange(Rank(query, found).Take(max));
                 }
             }
             // 단어 앞부분으로 하나도 못 찾았으면 부분 일치로 (예 "보고" → "주간보고서")
@@ -92,9 +99,9 @@ public static class WindowsIndexSearch
             {
                 ct.ThrowIfCancellationRequested();
                 string like = $"System.FileName LIKE '%{EscapeLike(query)}%'";
-                List<IndexedFile> found = Query(conn, $"{scope} AND {like}", max * 4, null);
+                List<IndexedFile> found = Query(conn, $"{scope} AND {like}", CandidateCount, null);
                 foreach (var cat in Ordered(categories))
-                    results.AddRange(found.Where(f => f.Category == cat).Take(max));
+                    results.AddRange(Rank(query, found.Where(f => f.Category == cat)).Take(max));
             }
             _lastError = null;
             return results;
@@ -121,7 +128,7 @@ public static class WindowsIndexSearch
     /// <summary>cat 이 null 이면 System.ItemType·System.Kind 를 같이 받아 분류.</summary>
     private static List<IndexedFile> Query(dynamic conn, string where, int max, FileCategory? cat)
     {
-        string sql = $"SELECT TOP {Math.Clamp(max, 1, 50)} System.ItemPathDisplay, System.ItemNameDisplay, System.ItemType, System.Kind, System.ItemUrl FROM SystemIndex WHERE {where} ORDER BY System.DateModified DESC";
+        string sql = $"SELECT TOP {Math.Clamp(max, 1, CandidateCount)} System.ItemPathDisplay, System.ItemNameDisplay, System.ItemType, System.Kind, System.ItemUrl, System.DateModified FROM SystemIndex WHERE {where} ORDER BY System.DateModified DESC";
         var list = new List<IndexedFile>();
         dynamic? rs = null;
         try
@@ -139,7 +146,8 @@ public static class WindowsIndexSearch
                 if (!string.IsNullOrEmpty(path))
                 {
                     FileCategory c = cat ?? Classify(rs.Fields.Item(2).Value as string, Kinds((object?)rs.Fields.Item(3).Value));
-                    list.Add(new IndexedFile(path, string.IsNullOrEmpty(name) ? Path.GetFileName(path) : name, c, display ?? path));
+                    DateTime modified = rs.Fields.Item(5).Value is DateTime dt ? dt : default;
+                    list.Add(new IndexedFile(path, string.IsNullOrEmpty(name) ? Path.GetFileName(path) : name, c, display ?? path, modified));
                 }
                 rs.MoveNext();
             }
@@ -187,7 +195,124 @@ public static class WindowsIndexSearch
         return FileCategory.Other;
     }
 
+    // ───────────────────────── 연관도 순 ─────────────────────────
+
+    /// <summary>분류마다 색인에서 받는 후보 수 (그중 연관도 순 앞의 N 개를 보임).</summary>
+    private const int CandidateCount = 50;
+
+    /// <summary>개발·숨김 폴더 (경로에 있으면 맨 아래로): 가상 환경·패키지·캐시·도구 폴더.</summary>
+    private static readonly HashSet<string> DevSegments = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "node_modules", "site-packages", "dist-packages", "__pycache__", "venv", "venvs", "anaconda3", "miniconda3",
+        "AppData", "third_party", "_vendor",
+    };
+
+    /// <summary>시험용: 사용자 폴더·바탕 화면 등 기준 폴더를 바꿔 끼움.</summary>
+    internal static Func<IReadOnlyList<string>>? RootsForTest { get; set; }
+
+    /// <summary>얕은 곳 판단의 기준 폴더 (긴 것부터): 바탕 화면(OneDrive 로 옮겨졌으면 그곳)·문서·다운로드·OneDrive·사용자 폴더.</summary>
+    private static IReadOnlyList<string> Roots()
+    {
+        if (RootsForTest is { } t) return t();
+        string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var list = new List<string>
+        {
+            Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            Path.Combine(profile, "Downloads"),
+            Environment.GetEnvironmentVariable("OneDrive") ?? "",
+            profile,
+        };
+        return list.Where(x => !string.IsNullOrEmpty(x)).Select(x => x.TrimEnd('\\')).Distinct(StringComparer.OrdinalIgnoreCase).OrderByDescending(x => x.Length).ToList();
+    }
+
+    /// <summary>
+    /// 연관도 순: ① 개발·숨김 폴더(가상 환경·site-packages·node_modules·. 으로 시작하는 폴더 등) 아래로 ② 이름 일치 — 똑같음 &gt; 검색어로 시작 &gt;
+    /// 단어 시작 &gt; 중간 포함 ③ 얕은 곳(바탕 화면·문서·다운로드·사용자 폴더 바로 아래일수록 앞) ④ 최근 수정.
+    /// </summary>
+    internal static IEnumerable<IndexedFile> Rank(string query, IEnumerable<IndexedFile> items)
+    {
+        var roots = Roots();
+        string q = query.Trim();
+        return items
+            .GroupBy(f => f.Path, StringComparer.OrdinalIgnoreCase).Select(g => g.First())
+            .Select(f => (f, dev: IsDevPath(f.Path, roots), match: NameMatch(f.Name, q), depth: Depth(f.Path, roots)))
+            .OrderBy(x => x.dev)
+            .ThenBy(x => x.match)
+            .ThenBy(x => x.depth)
+            .ThenByDescending(x => x.f.Modified)
+            .Select(x => x.f);
+    }
+
+    /// <summary>0 똑같음(확장자 빼고도) · 1 검색어로 시작 · 2 단어 시작(공백·기호 뒤, 한글↔영문·숫자 바뀜, 소문자 뒤 대문자) · 3 중간 포함 · 4 그 밖(여러 낱말).</summary>
+    internal static int NameMatch(string name, string query)
+    {
+        if (query.Length == 0) return 4;
+        var cmp = StringComparison.CurrentCultureIgnoreCase;
+        if (name.Equals(query, cmp) || Path.GetFileNameWithoutExtension(name).Equals(query, cmp)) return 0;
+        if (name.StartsWith(query, cmp)) return 1;
+        int best = 4;
+        for (int i = name.IndexOf(query, cmp); i >= 0; i = i + 1 < name.Length ? name.IndexOf(query, i + 1, cmp) : -1)
+        {
+            if (i == 0 || IsWordStart(name, i)) return 2;
+            best = 3;
+        }
+        return best;
+    }
+
+    private static bool IsWordStart(string s, int i)
+    {
+        char a = s[i - 1], b = s[i];
+        if (!char.IsLetterOrDigit(a)) return true;
+        if (char.IsDigit(a) != char.IsDigit(b)) return true;
+        bool ha = a >= '\uAC00' && a <= '\uD7A3', hb = b >= '\uAC00' && b <= '\uD7A3';
+        if (ha != hb) return true; // 한글 ↔ 영문
+        return char.IsLower(a) && char.IsUpper(b);
+    }
+
+    /// <summary>경로(기준 폴더 아래 부분)에 개발·숨김 폴더가 있는지.</summary>
+    internal static bool IsDevPath(string path, IReadOnlyList<string> roots)
+    {
+        string rel = Relative(path, roots, out _);
+        var segs = rel.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+        for (int i = 0; i < segs.Length - 1; i++) // 마지막(그 항목 자신)은 빼고 위 폴더만
+        {
+            string g = segs[i];
+            if (g.StartsWith('.') || DevSegments.Contains(g) || g.EndsWith(".dist-info", StringComparison.OrdinalIgnoreCase) || g.EndsWith(".egg-info", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>기준 폴더에서 몇 단계 아래 폴더 안에 있는지 (바로 아래 = 0). 기준 폴더 밖이면 크게.</summary>
+    internal static int Depth(string path, IReadOnlyList<string> roots)
+    {
+        string rel = Relative(path, roots, out bool inRoot);
+        if (!inRoot) return 9;
+        int segs = rel.Split('\\', StringSplitOptions.RemoveEmptyEntries).Length;
+        return Math.Min(8, Math.Max(0, segs - 1));
+    }
+
+    private static string Relative(string path, IReadOnlyList<string> roots, out bool inRoot)
+    {
+        foreach (var r in roots)
+            if (path.Length > r.Length && path.StartsWith(r, StringComparison.OrdinalIgnoreCase) && path[r.Length] == '\\')
+            {
+                inRoot = true;
+                return path[(r.Length + 1)..];
+            }
+        inRoot = false;
+        return path;
+    }
+
     // ───────────────────────── SQL 조각 (인젝션 방지) ─────────────────────────
+
+    /// <summary>이름이 검색어와 똑같음 (확장자가 있는 파일은 ItemNameDisplay 가 확장자 없이 오는 경우도).</summary>
+    private static string ExactNameClause(string query)
+    {
+        string q = EscapeString(query.Trim());
+        return $"(System.FileName = '{q}' OR System.ItemNameDisplay = '{q}')";
+    }
 
     /// <summary>System.Kind 는 여러 값 속성 — "= 'x'" 는 값 중 하나라도 x 면 참. 폴더는 ItemType 으로 구분 (압축 파일도 Kind=folder 라서).</summary>
     private static string CategoryClause(FileCategory cat) => cat switch

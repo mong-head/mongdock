@@ -201,6 +201,7 @@ internal sealed class SpotlightWindow : Window
             RenderTransform = _highlightShift,
         };
         _listHost = new Grid { Margin = new Thickness(8, 6, 8, 8) };
+        _list.LayoutUpdated += (_, _) => RealignHighlight();
         _listHost.Children.Add(_highlight);
         _listHost.Children.Add(_list);
         // 결과가 많으면 최대 높이(모니터 높이 55%, 표시할 때 계산) + 얇은 스크롤바 (Themes/Controls.xaml ThinScrollBar)
@@ -756,7 +757,7 @@ internal sealed class SpotlightWindow : Window
         _selected = index;
         if (index >= 0 && index < _results.Count)
         {
-            double y = _results[index].Top;
+            double y = RowY(index);
             _highlight.Visibility = Visibility.Visible;
             if (animate && previous >= 0 && previous < _results.Count && Anim.Enabled)
                 _highlightShift.BeginAnimation(TranslateTransform.YProperty, Anim.To(y, 90, Anim.EaseOut));
@@ -772,6 +773,30 @@ internal sealed class SpotlightWindow : Window
         }
         ApplyRowColors(index);
         if (ensureVisible && index >= 0 && index < _results.Count) EnsureVisible(index);
+    }
+
+    /// <summary>
+    /// 행의 실제 자리(목록 안 y). 배치가 끝났으면 그려진 자리, 아니면 계산한 자리(Result.Top) — 배율에서 머리글 높이가 픽셀로 반올림돼
+    /// 계산값이 머리글마다 조금씩 어긋나고, 배치 전 값이 남으면 호버 띠가 줄 사이에 걸쳐 보였음 (검색 이슈 ③).
+    /// </summary>
+    private double RowY(int index)
+    {
+        var r = _results[index];
+        if (r.Row.IsArrangeValid && _list.IsArrangeValid && r.Row.ActualHeight > 0)
+        {
+            try { return r.Row.TranslatePoint(new Point(0, 0), _listHost).Y; }
+            catch (InvalidOperationException) { /* 아직 같은 트리가 아님 */ }
+        }
+        return r.Top;
+    }
+
+    /// <summary>목록 배치가 바뀌면(결과 추가·아이콘·글꼴) 띠를 지금 선택 행의 실제 자리로 다시 (움직임 없이).</summary>
+    private void RealignHighlight()
+    {
+        if (_selected < 0 || _selected >= _results.Count || _highlight.Visibility != Visibility.Visible) return;
+        if (_highlightShift.HasAnimatedProperties) return; // 미끄러지는 중이면 그대로 (끝 값은 새로 잰 자리)
+        double y = RowY(_selected);
+        if (Math.Abs(_highlightShift.Y - y) > 0.25) _highlightShift.Y = y;
     }
 
     /// <summary>선택 행(index)만 강조 글자색, 나머지는 보통.</summary>
@@ -802,8 +827,9 @@ internal sealed class SpotlightWindow : Window
         }
         var r = _results[index];
         double padTop = _listHost.Margin.Top;
-        double top = padTop + r.Top - (r.FirstInSection ? HeaderHeight : 0);
-        double bottom = padTop + r.Top + RowHeight + (index == _results.Count - 1 ? _listHost.Margin.Bottom : 0);
+        double rowY = RowY(index);
+        double top = padTop + rowY - (r.FirstInSection ? HeaderHeight : 0);
+        double bottom = padTop + rowY + RowHeight + (index == _results.Count - 1 ? _listHost.Margin.Bottom : 0);
         if (index == 0) top = 0;
         double offset = _scroll.VerticalOffset, viewport = _scroll.ViewportHeight;
         if (top < offset) _scroll.ScrollToVerticalOffset(top);

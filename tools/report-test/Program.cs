@@ -223,6 +223,24 @@ internal static class Program
         if (volAt >= 0) return VolumeCheck(volAt + 1 < args.Length ? args[volAt + 1] : null); // 0.8 앱별 볼륨·볼륨 표시 (#21) — 실제 볼륨은 안 바꿈
         if (Array.IndexOf(args, "--clipcheck") >= 0) return ClipCheck(); // 0.6.3 문제 신고 영역 캡처·붙여넣기 (#13) — 실제 캡처 도구·클립보드는 안 건드림
         if (Array.IndexOf(args, "--profilecheck") >= 0) return ProfileCheck(); // 0.6.1 루틴 브라우저 계정·탐색기 창 (화면·실제 실행 없음)
+        if (Array.IndexOf(args, "--spotrows") >= 0) return SpotRowsCheck(); // 검색 이슈 ③: 호버 띠 자리 = 줄 자리 (화면 없음)
+        if (Array.IndexOf(args, "--searchrank") >= 0) return SearchRankCheck(); // 검색 이슈 ①②: 연관도 순 (색인 없이 예시 목록)
+        int sdAt = Array.IndexOf(args, "--searchdiag");
+        if (sdAt >= 0 && sdAt + 2 < args.Length)
+        {
+            // 점검(읽기만, 검색 이슈): 윈도우 검색 색인에 검색어로 폴더를 물어 5개(지금 판)·50개 결과를 파일로 — 사용자 PC 안에만
+            string q = args[sdAt + 1];
+            var folders = new List<string> { Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) };
+            var lines = new List<string>();
+            foreach (int max in new[] { 5, 50 })
+            {
+                var res = Mongdock.Services.Search.WindowsIndexSearch.SearchAsync(q, folders, new[] { Mongdock.Services.Search.FileCategory.Folder }, max, CancellationToken.None).GetAwaiter().GetResult();
+                lines.Add($"== 폴더 최대 {max}개: {res.Count}개");
+                lines.AddRange(res.Select(r => $"  {r.Name} | {r.Path}"));
+            }
+            File.WriteAllLines(args[sdAt + 2], lines);
+            return 0;
+        }
         if (Array.IndexOf(args, "--audiosessions") >= 0)
         {
             // 점검(읽기만, #21): 재생 장치마다 오디오 세션 전부 + 소리 판 앱 목록 — 앱 볼륨에 앱이 빠질 때 원인 찾기
@@ -2261,6 +2279,109 @@ internal static class Program
                 store.Any(r => r.VersionText == "0.8.1") && store.Any(r => r.VersionText == "0.8.2") && store.Any(r => r.VersionText == "0.8.0"));
         }
         Console.WriteLine(bad == 0 ? "볼륨 점검: 모두 통과" : $"볼륨 점검: 실패 {bad}개");
+        return bad == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// 검색 창 결과 줄 (검색 이슈 ③): 앱·폴더(경로 부제)·문서·웹 머리글/구분선이 섞인 목록을 그려 각 줄의 실제 자리와
+    /// 호버 띠가 쓰는 자리(Result.Top)가 같은지. 화면에 띄우지 않음.
+    /// </summary>
+    private static int SpotRowsCheck()
+    {
+        var app = new Mongdock.App();
+        Mongdock.Loc.Init(_lang);
+        app.InitializeComponent();
+        app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        var settings = new SettingsService();
+        Mongdock.ViewModels.UiTheme.Apply(settings.Current);
+        Mongdock.ViewModels.UiFonts.Apply(settings.Current);
+        var tracker = new WindowTracker();
+        var launcher = new AppLauncher(tracker);
+        var services = new AppServices(settings, tracker, launcher, new IconService(), new DesktopWindowService(), new VirtualDesktopService(),
+            new ShellActions(), new ImeService(), new StatusService(), new MediaService(), new AppMenuService(settings), new StartupService(),
+            new NotificationService(tracker, launcher), new TrayIconService(), new CalendarFeedService(settings));
+        var spot = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.SpotlightWindow")!;
+        var w = (Window)spot.GetConstructors(Any)[0].Invoke(new object[] { services });
+        Mongdock.ViewModels.SpotlightItem Item(Mongdock.ViewModels.SpotlightCategory c, string title, string? sub, bool path = false, bool reveal = false) => new()
+        {
+            Category = c, Key = c + title, Title = title, Subtitle = sub, SubtitleIsPath = path, Glyph = "\uE8B7",
+            Execute = () => { }, Reveal = reveal ? () => { } : null,
+        };
+        var sections = new List<Mongdock.ViewModels.SpotlightSection>
+        {
+            new(Mongdock.ViewModels.SpotlightCategory.Apps, "앱", new[] { Item(Mongdock.ViewModels.SpotlightCategory.Apps, "PowerPoint", null) }),
+            new(Mongdock.ViewModels.SpotlightCategory.Folders, "폴더", new[]
+            {
+                Item(Mongdock.ViewModels.SpotlightCategory.Folders, "PE", @"C:\Users\melon\OneDrive\바탕 화면", true, true),
+                Item(Mongdock.ViewModels.SpotlightCategory.Folders, "PE", @"C:\Users\melon\OneDrive\바탕 화면\대화백업", true, true),
+                Item(Mongdock.ViewModels.SpotlightCategory.Folders, "3.3 마PE", @"C:\Users\melon\OneDrive\바탕 화면\PE\07_웹하드\1. 기필반 심화반 기술사 공유폴더", true, true),
+            }),
+            new(Mongdock.ViewModels.SpotlightCategory.Documents, "문서", new[] { Item(Mongdock.ViewModels.SpotlightCategory.Documents, "PE 정리.docx", @"C:\Users\melon\Documents", true, true) }),
+            new(Mongdock.ViewModels.SpotlightCategory.Fallback, null, new[] { Item(Mongdock.ViewModels.SpotlightCategory.Fallback, "웹에서 'PE' 검색", null) }),
+        };
+        spot.GetMethod("BuildRows", Any)!.Invoke(w, new object[] { sections });
+        var content = (FrameworkElement)w.Content;
+        content.Measure(new Size(640, double.PositiveInfinity));
+        content.Arrange(new Rect(content.DesiredSize));
+        content.UpdateLayout();
+        var listHost = (FrameworkElement)spot.GetField("_listHost", Any)!.GetValue(w)!;
+        var results = (System.Collections.IList)spot.GetField("_results", Any)!.GetValue(w)!;
+        int bad = 0;
+        foreach (var r in results)
+        {
+            var row = (FrameworkElement)r.GetType().GetField("Row")!.GetValue(r)!;
+            double top = (double)r.GetType().GetField("Top")!.GetValue(r)!;
+            double actual = row.TranslatePoint(new Point(0, 0), listHost).Y;
+            // 호버 띠: 그 줄을 고르면(움직임 없이) 띠가 놓이는 자리
+            spot.GetMethod("Select", Any)!.Invoke(w, new object[] { results.IndexOf(r), false, false });
+            top = ((TranslateTransform)spot.GetField("_highlightShift", Any)!.GetValue(w)!).Y;
+            string title = ((Mongdock.ViewModels.SpotlightItem)r.GetType().GetField("Item")!.GetValue(r)!).Title;
+            bool ok = Math.Abs(actual - top) < 0.5 && Math.Abs(row.ActualHeight - 44) < 0.5;
+            if (!ok) bad++;
+            Console.WriteLine($"  {(ok ? "통과" : "실패")}  줄 '{title}': 호버 띠 자리 {top:0.0}, 실제 {actual:0.0}, 높이 {row.ActualHeight:0.0}");
+        }
+        w.Close();
+        Console.WriteLine(bad == 0 ? "검색 줄 점검: 모두 통과" : $"검색 줄 점검: 실패 {bad}개");
+        return bad == 0 ? 0 : 1;
+    }
+
+    /// <summary>검색 이슈 ①②: 사용자 캡처와 같은 「PE」 폴더 후보(최근 수정순)를 연관도 순으로 줄 세워 앞 5개 확인.</summary>
+    private static int SearchRankCheck()
+    {
+        var ws = typeof(Mongdock.Services.Search.WindowsIndexSearch);
+        ws.GetProperty("RootsForTest", Any)!.SetValue(null, (Func<IReadOnlyList<string>>)(() => new[]
+        {
+            @"C:\Users\melon\OneDrive\바탕 화면", @"C:\Users\melon\Documents", @"C:\Users\melon\Downloads", @"C:\Users\melon\OneDrive", @"C:\Users\melon",
+        }));
+        var t0 = new DateTime(2026, 10, 1);
+        Mongdock.Services.Search.IndexedFile F(string path, int ageDays) => new(path, System.IO.Path.GetFileName(path), Mongdock.Services.Search.FileCategory.Folder, path, t0.AddDays(-ageDays));
+        // 최근 수정순(색인이 주는 순서) — 바탕 화면 PE 는 18번째
+        var candidates = new List<Mongdock.Services.Search.IndexedFile>
+        {
+            F(@"C:\Users\melon\OneDrive\바탕 화면\PE\.claude\skills\pe-law-watch", 0),
+            F(@"C:\Users\melon\OneDrive\바탕 화면\대화백업\PE", 1),
+            F(@"C:\Users\melon\OneDrive\바탕 화면\PE\07_웹하드\1. 기필반 심화반 기술사 공유폴더\3.3 마PE", 2),
+            F(@"C:\Users\melon\venvs\thesis\Lib\site-packages\peewee-4.5.2.dist-info", 3),
+            F(@"C:\Users\melon\venvs\thesis\Lib\site-packages\peewee-stubs", 4),
+            F(@"C:\Users\melon\venvs\thesis\Lib\site-packages\pandas\tests\scalar\period", 5),
+            F(@"C:\Users\melon\OneDrive\바탕 화면\PE", 18),
+            F(@"C:\Users\melon\OneDrive\바탕 화면\PE\07_웹하드\1. 기필반 심화반 기술사 공유폴더\2. 심화반 기필반 서브노트\14. 쏭뿌리PE 서브노트", 19),
+            F(@"C:\Users\melon\Saved Games\Pentiment", 23),
+            F(@"C:\Users\melon\anaconda3\Library\include\LIEF\PE", 50),
+        };
+        var ranked = ((IEnumerable<Mongdock.Services.Search.IndexedFile>)ws.GetMethod("Rank", Any)!.Invoke(null, new object[] { "PE", candidates })!).ToList();
+        ws.GetProperty("RootsForTest", Any)!.SetValue(null, null);
+        int bad = 0;
+        void C(string what, bool ok) { Console.WriteLine($"  {(ok ? "통과" : "실패")}  {what}"); if (!ok) bad++; }
+        Console.WriteLine("  정보  순서: " + string.Join(" / ", ranked.Select(r => r.Path.Replace(@"C:\Users\melon\", ""))));
+        C(@"1번째 = 바탕 화면\PE (이름 같음, 바탕 화면 바로 아래)", ranked[0].Path.EndsWith(@"바탕 화면\PE"));
+        C(@"2번째 = 대화백업\PE (이름 같음, 한 단계 아래)", ranked[1].Path.EndsWith(@"대화백업\PE"));
+        C(@"앞 5개에 바탕 화면\PE 가 들어감 (예전엔 18번째라 빠짐)", ranked.Take(5).Any(r => r.Path.EndsWith(@"바탕 화면\PE")));
+        C("venvs·site-packages·.claude·anaconda3 안 폴더는 모두 뒤로", ranked.TakeWhile(r => !r.Path.Contains("site-packages") && !r.Path.Contains(@"\.claude\") && !r.Path.Contains("anaconda3")).Count() == ranked.Count(r => !r.Path.Contains("site-packages") && !r.Path.Contains(@"\.claude\") && !r.Path.Contains("anaconda3")));
+        int M(string n, string q) => (int)ws.GetMethod("NameMatch", Any)!.Invoke(null, new object[] { n, q })!;
+        C($"이름 일치: PE=0 {M("PE", "PE")}, PE 정리.docx(확장자 빼고 아님)=1 {M("PE 정리.docx", "PE")}, 3.3 마PE=2 {M("3.3 마PE", "PE")}, Pentiment=1 {M("Pentiment", "PE")}, sleepe=3 {M("sleepe", "pe")}",
+            M("PE", "PE") == 0 && M("PE.docx", "PE") == 0 && M("PE 정리.docx", "PE") == 1 && M("3.3 마PE", "PE") == 2 && M("Pentiment", "PE") == 1 && M("sleepe", "pe") == 3);
+        Console.WriteLine(bad == 0 ? "검색 순서 점검: 모두 통과" : $"검색 순서 점검: 실패 {bad}개");
         return bad == 0 ? 0 : 1;
     }
 
