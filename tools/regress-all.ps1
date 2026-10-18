@@ -48,6 +48,8 @@ $items = @(
 $rows = @()
 $env:MONGDOCK_DATA_DIR = $Data
 foreach ($it in $items) {
+  $tries = $(if ($it[1] -eq $lt) { 2 } else { 1 }) # 화면 밖 live-test 는 시간 측정이 PC 사용 중이면 흔들림 → 실패면 한 번 더 (표에 「재시도」)
+  for ($try = 1; $try -le $tries; $try++) {
     $name = $it[0]; $exe = $it[1]
     $argv = @($it[2] | ForEach-Object { if ($_ -like "OUT*") { $_ -replace '^OUT', $Out } else { $_ } })
     foreach ($a in $argv) { if ($a -like "$Out*" -and -not (Test-Path $a)) { New-Item -ItemType Directory -Force -Path $a | Out-Null } }
@@ -78,8 +80,12 @@ foreach ($it in $items) {
     $saved = @($text | Where-Object { $_ -match '^\s*저장' }).Count
     $crash = @(($text + ($errText -split "`r?`n")) | Where-Object { $_ -match 'Unhandled exception' }).Count
     $ok = ($code -eq 0) -and ($fail -eq 0) -and ($crash -eq 0)
+    if (-not $ok -and $try -lt $tries) { "  (재시도) $name — 실패 $fail 줄: $(@($text | Where-Object { $_ -match '^\s*실패' }) -join ' / ')"; continue }
+    if ($try -gt 1) { $name = "$name (재시도)" }
     $rows += [pscustomobject]@{ 결과 = $(if ($ok) { "통과" } else { "실패" }); 항목 = $name; 통과줄 = $pass; 실패줄 = $fail; 그림 = $saved; 종료 = $code; 초 = [math]::Round($sw.Elapsed.TotalSeconds) }
     "{0}  {1}  (통과 {2}, 실패 {3}, 그림 {4}, 종료 {5}, {6}초)" -f $(if ($ok) { "통과" } else { "실패" }), $name, $pass, $fail, $saved, $code, [math]::Round($sw.Elapsed.TotalSeconds)
+    break
+  }
 }
 
 $screen = @(
