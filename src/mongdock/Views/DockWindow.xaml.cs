@@ -131,6 +131,7 @@ public partial class DockWindow : Window
         RoutineService.Changed += OnRoutinesChanged;
         RoutineTriggers.FocusChanged += OnRoutineFocusChanged;
         _subscribed = true;
+        StartHeal(); // 절전·잠금 뒤 다시 맞춤 + 5초 확인 (#35)
 
         ApplyAll();
     }
@@ -144,6 +145,7 @@ public partial class DockWindow : Window
         _folders?.Dispose();
         _recycle?.Dispose();
         _pollTimer.Stop();
+        StopHeal();
         _launchTimer?.Stop();
         UnhookRender();
         if (_subscribed)
