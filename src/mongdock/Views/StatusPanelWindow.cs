@@ -413,7 +413,7 @@ internal sealed partial class StatusPanelWindow : Window
     {
         var b = new Button
         {
-            Style = (Style)FindStyle("CardLinkButton"),
+            Style = (Style)FindStyle("PanelRowButton"),
             Content = new TextBlock { Text = text, FontSize = 15 },
             Foreground = _p.Text,
             Padding = new Thickness(6, 4 + TouchSupport.RowPad, 6, 4 + TouchSupport.RowPad), // 터치 장치면 행 +4
@@ -543,7 +543,7 @@ internal sealed partial class StatusPanelWindow : Window
 
         var b = new Button
         {
-            Style = (Style)FindStyle("CardLinkButton"),
+            Style = (Style)FindStyle("PanelRowButton"),
             Content = dock,
             Foreground = _p.Text,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,

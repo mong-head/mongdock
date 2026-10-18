@@ -98,9 +98,10 @@ internal sealed partial class StatusPanelWindow
     {
         var st = _services.Status;
         // 두 화면을 같은 칸에 겹쳐 두고 옆으로 밀어 넘김. 첫 화면은 넘어간 뒤에도 자리를 지켜 판 높이를 정함
-        var host = new Grid { ClipToBounds = true };
-        var main = new StackPanel();
-        var detail = new DockPanel { LastChildFill = true, Visibility = Visibility.Collapsed, VerticalAlignment = VerticalAlignment.Top };
+        // 자르는 칸은 좌우로 8px 넓게 (줄 버튼의 호버 바탕이 좌우 -6px 밖까지 그려져 잘리면 각진 네모로 보임 — 0.8.2 사용자)
+        var host = new Grid { ClipToBounds = true, Margin = new Thickness(-8, 0, -8, 0) };
+        var main = new StackPanel { Margin = new Thickness(8, 0, 8, 0) };
+        var detail = new DockPanel { LastChildFill = true, Visibility = Visibility.Collapsed, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(8, 0, 8, 0) };
         var mainShift = new TranslateTransform();
         var detailShift = new TranslateTransform();
         main.RenderTransform = mainShift;
@@ -495,7 +496,7 @@ internal sealed partial class StatusPanelWindow
         dock.Children.Add(text);
         var b = new Button
         {
-            Style = (Style)FindStyle("CardLinkButton"),
+            Style = (Style)FindStyle("PanelRowButton"),
             Content = dock,
             Foreground = _p.Text,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,

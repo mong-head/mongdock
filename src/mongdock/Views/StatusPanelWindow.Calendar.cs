@@ -540,7 +540,7 @@ internal sealed partial class StatusPanelWindow
 
         var button = new Button
         {
-            Style = (Style)FindStyle("CardLinkButton"),
+            Style = (Style)FindStyle("PanelRowButton"),
             Foreground = _p.Text,
             Padding = new Thickness(4, 3, 4, 3),
             Margin = new Thickness(-4, 0, -4, 0),

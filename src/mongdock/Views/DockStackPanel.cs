@@ -593,7 +593,7 @@ internal abstract class DockStackPanel : Window
     {
         var link = new Button
         {
-            Style = (Style)Application.Current.FindResource("CardLinkButton"),
+            Style = (Style)Application.Current.FindResource("PanelRowButton"),
             Foreground = P.SoftAccentText,
             Padding = new Thickness(6, 6, 6, 4),
             HorizontalAlignment = HorizontalAlignment.Center,

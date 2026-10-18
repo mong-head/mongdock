@@ -541,7 +541,7 @@ internal sealed class NotificationListView : Border
     {
         var b = new Button
         {
-            Style = (Style)Application.Current.FindResource("CardLinkButton"),
+            Style = (Style)Application.Current.FindResource("PanelRowButton"),
             Content = new TextBlock { Text = text, FontSize = 12 },
             Foreground = _p.SubText,
             Padding = new Thickness(6, 2, 6, 2),

@@ -1884,6 +1884,54 @@ internal static class Program
                 Check($"소리 판 {_lang} {theme}: 첫 화면 높이 {shots[0].Size.Height:0} — 세부 화면은 내용만큼 ({string.Join("/", shots.Skip(2).Select(x => x.Size.Height.ToString("0")))}, 아래가 비지 않음)",
                     shots.Skip(2).All(x => x.Size.Height < shots[0].Size.Height - 40));
                 foreach (var w in opened) w.Close();
+                // 호버 전후 (0.8.2): 「사운드 설정…」·「스피커: … ›」 줄에 마우스를 올린 모습 — 예전(CardLinkButton, 넘김 칸에 잘려 각짐) / 지금(PanelRowButton 회보라 둥근 바탕)
+                {
+                    var hoverShots = new List<System.Windows.Media.Imaging.BitmapSource>();
+                    foreach (var styleKey in new[] { "CardLinkButton", "PanelRowButton" })
+                    {
+                        var w = (Window)panelType.GetConstructors(Any)[0].Invoke(new object[] { services with { Status = FakeSound(false) }, Enum.Parse(kindType, "Volume"), palette, 0 });
+                        panelType.GetMethod("RefreshForScene", Any)!.Invoke(w, null);
+                        ((Delegate)panelType.GetField("_applyAppVolumeForTest", Any)!.GetValue(w)!).DynamicInvoke(AppVolumeService.List());
+                        var content = (FrameworkElement)w.Content;
+                        content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                        content.Arrange(new Rect(content.DesiredSize));
+                        content.UpdateLayout();
+                        var host = Descendants(content).OfType<System.Windows.Controls.Grid>().First(g => g.ClipToBounds);
+                        if (styleKey == "CardLinkButton") { host.Margin = new Thickness(0); foreach (var c in host.Children.OfType<FrameworkElement>()) c.Margin = new Thickness(0); } // 예전 자리
+                        var rows = Descendants(content).OfType<System.Windows.Controls.Button>()
+                            .Where(b => Descendants(b).OfType<System.Windows.Controls.TextBlock>().Any(t => t.Text == Mongdock.Loc.T("사운드 설정…") || t.Text.StartsWith(Mongdock.Loc.T("스피커: {0}").Split('{')[0], StringComparison.Ordinal))).ToList();
+                        foreach (var b in rows)
+                        {
+                            b.Style = (Style)Application.Current.FindResource(styleKey);
+                            b.ApplyTemplate();
+                        }
+                        content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                        content.Arrange(new Rect(content.DesiredSize));
+                        content.UpdateLayout();
+                        foreach (var b in rows)
+                            if (b.Template.FindName("Hover", b) is FrameworkElement hv) hv.Opacity = styleKey == "CardLinkButton" ? 0.1 : 1;
+                        content.UpdateLayout();
+                        var sz = content.DesiredSize;
+                        var rtbH = new RenderTargetBitmap((int)Math.Ceiling(sz.Width), (int)Math.Ceiling(sz.Height), 96, 96, PixelFormats.Pbgra32);
+                        var dvH = new DrawingVisual();
+                        using (var dc = dvH.RenderOpen())
+                        {
+                            dc.DrawRectangle(new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x14, 0x16, 0x1C) : Color.FromRgb(0xE9, 0xEC, 0xF4)), null, new Rect(sz));
+                            dc.DrawRectangle(new VisualBrush(content) { ViewboxUnits = BrushMappingMode.Absolute, Viewbox = new Rect(sz), Stretch = Stretch.None }, null, new Rect(sz));
+                        }
+                        rtbH.Render(dvH);
+                        rtbH.Freeze();
+                        hoverShots.Add(rtbH);
+                        Check($"호버 그림 {theme} {styleKey}: 줄 {rows.Count}개", rows.Count >= 2);
+                        w.Close();
+                    }
+                    var pair = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
+                    foreach (var b in hoverShots) pair.Children.Add(new System.Windows.Controls.Image { Source = b, Width = b.PixelWidth, Height = b.PixelHeight, Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Top });
+                    pair.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                    pair.Arrange(new Rect(pair.DesiredSize));
+                    pair.UpdateLayout();
+                    SaveVisual(pair, pair.DesiredSize, theme, Path.Combine(dir, $"sound-panel-hover-{_lang}-{theme}.png"));
+                }
                 // 목록이 늦게 채워짐 (#21 0.8.2 설치본: 출력 장치 세부 화면이 가끔 셋째 줄이 잘리고 스크롤): 1개로 연 뒤 3개가 오면 판 높이가 따라와 스크롤이 없어야
                 foreach (var pageName in new[] { "Output", "Input", "Apps" })
                 {

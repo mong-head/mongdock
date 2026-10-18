@@ -128,6 +128,54 @@
         </Setter>
     </Style>
 
+    <!-- 판(상태 판·제어 센터·달력·알림·트레이·쌓기 판) 안의 누를 수 있는 줄 (0.8.2): 마우스를 올리면 몽독 메뉴와 같은
+         회보라(Menu.Accent = PanelTint) 둥근 바탕, 글자는 보통 색 그대로. 누르면 한 단계 진하게(글자색 6%). -->
+    <Storyboard x:Key="RowHoverIn">
+        <DoubleAnimation Storyboard.TargetName="Hover" Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.09" />
+    </Storyboard>
+    <Style x:Key="PanelRowButton" TargetType="Button">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="Padding" Value="8,5" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid Background="Transparent">
+                        <Border x:Name="Hover" Background="{DynamicResource Menu.Accent}" CornerRadius="7" Opacity="0" />
+                        <Border x:Name="Bg" Background="{TemplateBinding Foreground}" CornerRadius="7" Opacity="0" />
+                        <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True" />
+                                <Condition Binding="{Binding Path=(SystemParameters.ClientAreaAnimation)}" Value="True" />
+                            </MultiDataTrigger.Conditions>
+                            <MultiDataTrigger.EnterActions>
+                                <BeginStoryboard Storyboard="{StaticResource RowHoverIn}" />
+                            </MultiDataTrigger.EnterActions>
+                            <MultiDataTrigger.ExitActions>
+                                <BeginStoryboard Storyboard="{StaticResource HoverOut}" />
+                            </MultiDataTrigger.ExitActions>
+                        </MultiDataTrigger>
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True" />
+                                <Condition Binding="{Binding Path=(SystemParameters.ClientAreaAnimation)}" Value="False" />
+                            </MultiDataTrigger.Conditions>
+                            <Setter TargetName="Hover" Property="Opacity" Value="1" />
+                        </MultiDataTrigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bg" Property="Opacity" Value="0.06" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- 상태 카드: 둥근 아이콘 토글 (음소거 등). Background = 켜짐 색, Foreground = 글리프 색 -->
     <Style x:Key="CardRoundButton" TargetType="Button">
         <Setter Property="Focusable" Value="False" />
