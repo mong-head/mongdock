@@ -14,7 +14,13 @@ public static class Log
     public static string LogDirectory { get; } =
         Path.Combine(AppInfo.DataDirectory, "logs");
 
-    public static string LogPath { get; } = Path.Combine(LogDirectory, AppInfo.Name + ".log");
+    public static string LogPath { get; private set; } = Path.Combine(LogDirectory, AppInfo.Name + ".log");
+
+    /// <summary>이 프로세스는 다른 로그 파일에 씀 (미디어 도우미 = mongdock-media.log). 첫 줄을 쓰기 전에.</summary>
+    public static void UseFile(string fileName) => LogPath = Path.Combine(LogDirectory, fileName);
+
+    /// <summary>이 프로세스의 줄 앞에 붙는 표시 (미디어 도우미 프로세스 = 「미디어 도우미: 」). 본체는 빈 값.</summary>
+    public static string Tag { get; set; } = "";
 
     public static void Info(string message) => Write("INFO ", message, null);
 
@@ -28,7 +34,7 @@ public static class Log
         sb.Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)) // 불기·다른 구분자 문화권에서도 같은 형식 (사용 통계 오류 세기가 읽음)
           .Append(' ').Append(level)
           .Append(" [").Append(Environment.CurrentManagedThreadId).Append("] ")
-          .Append(message);
+          .Append(Tag).Append(message);
         if (ex is not null) sb.AppendLine().Append(ex);
         sb.AppendLine();
         string line = sb.ToString();

@@ -41,6 +41,7 @@ public partial class App : Application
     private const string ExitEventName = @"Local\mongdock.Exit";
     private EventWaitHandle? _exitEvent;
     private bool _watchdog;
+    private bool _helperProcess;
     private RegisteredWaitHandle? _exitWait;
 
     /// <summary>화면 언어를 가장 먼저 정함 — 정적 목록(둘러보기 문구 등)이 만들어지기 전에 (Loc).</summary>
@@ -54,6 +55,17 @@ public partial class App : Application
         // 회사 인증 프록시(NTLM/Kerberos): 업데이트·캘린더·메뉴 규칙 요청이 로그인한 윈도우 계정으로 인증하게
         try { System.Net.Http.HttpClient.DefaultProxy.Credentials = System.Net.CredentialCache.DefaultCredentials; }
         catch (Exception ex) { Log.Warn($"프록시 자격 증명 설정 실패: {ex.Message}"); }
+
+        // 미디어 세션 도우미 (#37): 창 없이 미디어 세션만 다루고 파이프로 본체에 상태를 보냄 — 여기서 죽어도 본체는 그대로
+        int mediaAt = Array.FindIndex(e.Args, a => string.Equals(a, MediaHost.Arg, StringComparison.OrdinalIgnoreCase));
+        if (mediaAt >= 0)
+        {
+            _helperProcess = true;
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            if (mediaAt + 2 >= e.Args.Length || !int.TryParse(e.Args[mediaAt + 2], out int parentPid)) { Shutdown(); return; }
+            new MediaHost(e.Args[mediaAt + 1], parentPid, () => Dispatcher.BeginInvoke(Shutdown)).Start();
+            return;
+        }
 
         // 감시 프로세스 (#36): 창 없이 몽독이 끝나기를 기다렸다가, 갑자기 꺼졌으면 작업 표시줄을 되돌리고 다시 켬
         int watchAt = Array.FindIndex(e.Args, a => string.Equals(a, CrashWatchdog.WatchArg, StringComparison.OrdinalIgnoreCase));
@@ -188,7 +200,8 @@ public partial class App : Application
             new ShellActions(),
             new ImeService(),
             new StatusService(),
-            new MediaService(),
+            // 미디어 세션은 도우미 프로세스에서 (#37). MONGDOCK_MEDIA_INPROC=1 이면 예전처럼 본체 안에서
+            Environment.GetEnvironmentVariable("MONGDOCK_MEDIA_INPROC") == "1" ? new MediaService() : new MediaHostClient(),
             new AppMenuService(settings),
             startup,
             new NotificationService(tracker, launcher),
@@ -465,7 +478,7 @@ public partial class App : Application
     protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
     {
         Log.Info($"윈도우 세션 끝 ({e.ReasonSessionEnding})");
-        if (_watchdog) { base.OnSessionEnding(e); Shutdown(); return; } // 감시 프로세스: 로그오프·종료를 막지 않고 바로 끝남
+        if (_watchdog || _helperProcess) { base.OnSessionEnding(e); Shutdown(); return; } // 감시·미디어 도우미 프로세스: 로그오프·종료를 막지 않고 바로 끝남
         if (_sessionStarted) CrashReporter.MarkExiting();
         base.OnSessionEnding(e);
     }
