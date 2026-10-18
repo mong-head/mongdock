@@ -54,6 +54,9 @@ internal static partial class Program
         Environment.SetEnvironmentVariable("MONGDOCK_DATA_DIR", data); // AppInfo 를 건드리기 전에
         Console.WriteLine($"시험 데이터 폴더: {data}");
 
+        // 화면 밖 지킴이: (창을 만들기 전에) 화면 밖 시험(regress-all 의 --soundpanel·--overlaytiming, 밤 시험)에서만 — 화면을 일부러 쓰는 측정은 제외
+        if (new[] { "--soundpanel", "--overlaytiming", "--mediasoak", "--mediahost" }.Any(a => Array.IndexOf(args, a) >= 0))
+            TestShared.OffscreenGuard.Install();
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         foreach (var name in new[] { "Themes/Controls.xaml", "Themes/Menus.xaml" })
             app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri($"pack://application:,,,/mongdock;component/{name}") });

@@ -20,6 +20,8 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // 화면 밖 지킴이: report-test 는 그림만 그림 — 화면 안에 창이 나타나면 밖으로 옮기고 기록, 포커스는 못 가져감
+        TestShared.OffscreenGuard.Install();
         // --focuscheck: 몽독 시작 순서대로 FocusRing.Init 을 먼저 부른 뒤 메뉴·버튼을 만들어도 터지지 않는지 (2026-10-13 설치 직후 MenuItem 정적 생성자 충돌)
         if (Array.IndexOf(args, "--focuscheck") >= 0)
         {

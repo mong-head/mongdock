@@ -15,6 +15,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="../report-test/OffscreenGuard.cs" Link="OffscreenGuard.cs" />
     <ProjectReference Include="..\..\src\mongdock\mongdock.csproj" />
   </ItemGroup>
 
