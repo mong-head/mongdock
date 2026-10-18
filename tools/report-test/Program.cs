@@ -749,6 +749,15 @@ internal static class Program
         {
             go.Invoke(w, new[] { page });
             if (page.ToString() == "Hotkeys") HotkeyPageStates(w, settings); // 0.6: 켠 키·경고·막힘·겹침·키 받는 중을 한 장에
+            bool expandShot = Environment.GetEnvironmentVariable("SETTINGS_EXPANDED") == "1";
+            if (expandShot)
+            {
+                // 0.8.2 펼치기 줄: 튀기기 켬 + 「앱마다 고르기」 펼침 + 페이지마다 세부 설정 펼침
+                settings.Current.Notifications.BounceOnNotify = true;
+                type.GetField("_bounceAppsOpen", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.SetValue(w, true);
+                var adv = type.GetField("_advancedOpen", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(w)!;
+                adv.GetType().GetMethod("Add")!.Invoke(adv, new[] { page });
+            }
             // GoToPage 는 한 박자 늦게 다시 그림 → 바로 다시 그리게
             rebuild.Invoke(w, null);
             w.UpdateLayout(); // 디스패처를 돌리지 않음 — 돌리면 App.OnStartup 이 실행돼 (실행 중인 몽독이 있으면) 앱이 종료됨
@@ -771,7 +780,7 @@ internal static class Program
             rtb.Render(dv);
             var enc = new PngBitmapEncoder();
             enc.Frames.Add(BitmapFrame.Create(rtb));
-            string path = Path.Combine(dir, $"settings-{_lang}-{theme}-{page.ToString()!.ToLowerInvariant()}.png");
+            string path = Path.Combine(dir, $"settings-{_lang}-{theme}-{page.ToString()!.ToLowerInvariant()}{(expandShot ? "-open" : "")}.png");
             using (var fs = File.Create(path)) enc.Save(fs);
             Console.WriteLine($"  저장  {path}");
             if (Convert.ToInt32(page) == 0 && w.Content is FrameworkElement whole && whole.ActualWidth > 0)

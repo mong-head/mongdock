@@ -762,27 +762,23 @@ internal sealed partial class SettingsWindow : Window
         {
             bounce.Add(Row(Loc.T("숨은 독도 잠깐 꺼내기"), Loc.T("독 자동 숨김 중이면 잠깐 나왔다가 2.5초 뒤 다시 숨어요. 끄면 숨은 동안엔 알림 점만 남아요."),
                 Toggle(n.BouncePeekHidden, on => Commit(() => N().BouncePeekHidden = on))));
-            bounce.Add(BounceAppsRow());
+            bounce.AddRange(BounceAppsRows());
         }
         body.Children.Add(Group(bounce.ToArray()));
     }
 
     private bool _bounceAppsOpen;
 
-    /// <summary>"앱마다 고르기 ▸": 독에 고정한 앱 + 지금 실행 중인 앱마다 스위치 (기본 켬).</summary>
-    private UIElement BounceAppsRow()
+    /// <summary>「앱마다 고르기 ›」 펼치기 줄 + (펼치면) 독에 고정한 앱 + 지금 실행 중인 앱마다 스위치 (기본 켬) — 같은 카드 안.</summary>
+    private List<UIElement> BounceAppsRows()
     {
-        var box = new StackPanel();
-        var head = new TextBlock
+        var result = new List<UIElement>
         {
-            Text = (_bounceAppsOpen ? "▾  " : "▸  ") + Loc.T("앱마다 고르기"),
-            Foreground = _p.SoftAccentText,
-            Cursor = System.Windows.Input.Cursors.Hand,
-            Margin = new Thickness(0, 2, 0, 2),
+            ExpandRow(Loc.T("앱마다 고르기"), _bounceAppsOpen, null, () => { _bounceAppsOpen = !_bounceAppsOpen; Commit(() => { }, rebuild: true); }),
         };
-        head.MouseLeftButtonUp += (_, _) => { _bounceAppsOpen = !_bounceAppsOpen; Commit(() => { }, rebuild: true); };
-        box.Children.Add(head);
-        if (!_bounceAppsOpen) return box;
+        if (!_bounceAppsOpen) return result;
+        var box = new StackPanel { Margin = new Thickness(0, 4, 0, 4) };
+        result.Add(box);
         var apps = new List<(string Key, string Name)>();
         foreach (var pin in _services.Settings.Current.Pins)
             if (DockWindow.BounceKey(pin) is { } k && apps.All(a => a.Key != k))
@@ -793,7 +789,7 @@ internal sealed partial class SettingsWindow : Window
         var off = _services.Settings.Current.Notifications.BounceOff;
         foreach (var (key, name) in apps)
         {
-            var line = new DockPanel { Margin = new Thickness(18, 3, 0, 3), LastChildFill = true };
+            var line = new DockPanel { Margin = new Thickness(28, 4, 14, 4), LastChildFill = true };
             var t = Toggle(!off.Contains(key, StringComparer.OrdinalIgnoreCase), on => Commit(() =>
             {
                 var list = _services.Settings.Current.Notifications.BounceOff;
@@ -805,7 +801,9 @@ internal sealed partial class SettingsWindow : Window
             line.Children.Add(new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis });
             box.Children.Add(line);
         }
-        return box;
+        if (apps.Count == 0)
+            box.Children.Add(new TextBlock { Text = Loc.T("독에 고정했거나 실행 중인 앱이 있으면 여기서 앱마다 고를 수 있어요."), FontSize = 12, Foreground = _p.SubText, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(28, 4, 14, 4) });
+        return result;
     }
 
     // ───────────────────────── 페이지: 캘린더 ─────────────────────────

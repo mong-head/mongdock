@@ -1529,5 +1529,6 @@
  "스피커: {0}": "Speaker: {0}",
  "마이크: {0}": "Microphone: {0}",
  "스피커 고르기": "Choose speaker",
- "마이크 고르기": "Choose microphone"
+ "마이크 고르기": "Choose microphone",
+ "독에 고정했거나 실행 중인 앱이 있으면 여기서 앱마다 고를 수 있어요.": "Apps pinned to the dock or running now appear here so you can choose for each."
 }

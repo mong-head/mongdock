@@ -17,39 +17,56 @@ internal sealed partial class SettingsWindow
     {
         if (rows.Count == 0) return;
         bool open = _advancedOpen.Contains(_page);
-        var header = new StackPanel { Orientation = Orientation.Horizontal };
-        header.Children.Add(new TextBlock
-        {
-            Text = open ? "" : "", // ChevronDown / ChevronRight
-            FontFamily = (FontFamily)FindResource("IconFont"),
-            FontSize = 10,
-            Foreground = _p.SubText,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 1, 8, 0),
-        });
-        header.Children.Add(new TextBlock { Text = Loc.T("세부 설정"), FontWeight = FontWeights.SemiBold, Foreground = _p.SubText });
-        if (!open)
-            header.Children.Add(new TextBlock { Text = Loc.F($"  {rows.Count}개"), FontSize = 12, Foreground = _p.Disabled, VerticalAlignment = VerticalAlignment.Center });
-        var toggle = new Button
-        {
-            Style = (Style)FindResource("CardLinkButton"),
-            Foreground = _p.Text,
-            Padding = new Thickness(4, 5, 8, 5),
-            Margin = new Thickness(0, 4, 0, 6),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Content = header,
-        };
         var page = _page;
-        toggle.Click += (_, _) =>
+        // 0.8.2: 다른 펼치기 줄과 같은 모양 — 카드 안 한 줄(「세부 설정  n개 ›」), 누르면 같은 카드 안에서 펼침
+        var toggle = ExpandRow(Loc.T("세부 설정"), open, open ? null : Loc.F($"{rows.Count}개"), () =>
         {
             if (!_advancedOpen.Remove(page)) _advancedOpen.Add(page);
             QueueRebuild();
             if (!_advancedOpen.Contains(page)) return;
             // 펼친 내용이 보이게 (다시 그린 뒤)
             ScrollToWhenReady(() => _scroll?.Content is Panel p ? p.Children.OfType<FrameworkElement>().LastOrDefault() : null);
+        });
+        var all = new List<UIElement> { toggle };
+        if (open) all.AddRange(rows);
+        body.Children.Add(Group(all.ToArray()));
+    }
+
+    /// <summary>
+    /// 펼치기 줄 (설정 전체 공통, 0.8.2): 다른 줄과 같은 높이·안쪽 여백, 보통 글자색 제목, 오른쪽 끝에 [옅은 보조 글] + › (접힘) / ⌄ (펼침).
+    /// 줄 전체를 누르면 펼치고 접음. 펼친 내용은 같은 카드 안 아래 줄들로 (Group 이 구분선을 넣음).
+    /// </summary>
+    private Button ExpandRow(string title, bool open, string? hint, Action toggle)
+    {
+        var grid = new Grid { MinHeight = 44, Margin = new Thickness(14, 7, 14, 7) };
+        grid.ColumnDefinitions.Add(new ColumnDefinition());
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.Children.Add(new TextBlock { Text = title, Foreground = _p.Text, VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap });
+        var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 0, 0) };
+        if (!string.IsNullOrEmpty(hint))
+            right.Children.Add(new TextBlock { Text = hint, FontSize = 12, Foreground = _p.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) });
+        right.Children.Add(new TextBlock
+        {
+            Text = open ? "\uE70D" : "\uE76C", // ChevronDown / ChevronRight
+            FontFamily = (FontFamily)FindResource("IconFont"),
+            FontSize = 11,
+            Foreground = _p.SubText,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        Grid.SetColumn(right, 1);
+        grid.Children.Add(right);
+        var b = new Button
+        {
+            Style = (Style)FindResource("CardLinkButton"),
+            Foreground = _p.Text,
+            Padding = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Content = grid,
         };
-        body.Children.Add(toggle);
-        if (open) body.Children.Add(Group(rows.ToArray()));
+        System.Windows.Automation.AutomationProperties.SetName(b, title);
+        b.Click += (_, _) => toggle();
+        return b;
     }
 }
 

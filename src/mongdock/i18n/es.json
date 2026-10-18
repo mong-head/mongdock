@@ -1529,5 +1529,6 @@
  "스피커: {0}": "Altavoz: {0}",
  "마이크: {0}": "Micrófono: {0}",
  "스피커 고르기": "Elegir altavoz",
- "마이크 고르기": "Elegir micrófono"
+ "마이크 고르기": "Elegir micrófono",
+ "독에 고정했거나 실행 중인 앱이 있으면 여기서 앱마다 고를 수 있어요.": "Las apps ancladas al dock o en ejecución aparecen aquí para elegir una por una."
 }
