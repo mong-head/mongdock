@@ -139,20 +139,29 @@ public sealed class VirtualDesktopService : IVirtualDesktopService, IDisposable
     internal static Task<bool> JumpByActivatingAsync(IntPtr hwnd, int target) => RunGatedAsync($"jump to {target}", async () =>
     {
         if (target <= 0 || !User32.IsWindow(hwnd)) return false;
-        if (Read().Current == target) return true;
+        // 도착 = 창이 지금 데스크톱에 보임 (창 기준 — 레지스트리의 "지금 데스크톱" 값이 늦거나 틀려도 속지 않게, 새 이슈: 다른 데스크톱 탐색기 창이 반응 없음)
+        if (ArrivedWith(hwnd, target))
+        {
+            Log.Info($"데스크톱 {target}: 창이 이미 지금 데스크톱에 있음");
+            return true;
+        }
         AppLauncher.ActivateWindow(hwnd);
         for (int i = 0; i < 8; i++)
         {
             await Task.Delay(75);
-            if (Read().Current == target)
+            if (ArrivedWith(hwnd, target))
             {
                 Log.Info($"가상 데스크톱 {target} 로 바로 감 (창 활성화)");
                 return true;
             }
         }
-        Log.Info($"창 활성화로 데스크톱 {target} 에 가지 않음 (지금 {Read().Current}) → 키 방식");
+        Log.Info($"창 활성화로 데스크톱 {target} 에 가지 않음 (지금 {Read().Current}, 창 보임 {VirtualDesktopHelper.IsOnCurrentDesktop(hwnd)}) → 키 방식");
         return false;
     });
+
+    /// <summary>창이 지금 데스크톱에 보이면 도착 (창 기준이 모르면 레지스트리 번호로).</summary>
+    private static bool ArrivedWith(IntPtr hwnd, int target) =>
+        VirtualDesktopHelper.IsOnCurrentDesktop(hwnd) is { } on ? on : Read().Current == target;
 
     /// <summary>창이 있는 데스크톱으로: 먼저 창 활성화로 바로, 안 되면 키로 한 칸씩 (#16). 도착하면 true.</summary>
     internal static async Task<bool> GoToAsync(IntPtr hwnd, int target) =>

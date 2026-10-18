@@ -165,10 +165,14 @@ public sealed class AppLauncher : IAppLauncher
     public void Activate(IntPtr hwnd)
     {
         if (hwnd == IntPtr.Zero || !User32.IsWindow(hwnd)) return;
-        if (VirtualDesktopHelper.IsOnCurrentDesktop(hwnd) == false)
+        var on = VirtualDesktopHelper.IsOnCurrentDesktop(hwnd);
+        if (on == false)
             _ = SwitchDesktopThenActivateAsync(hwnd);
         else
+        {
+            if (on is null) Log.Info($"창 0x{hwnd.ToInt64():X} 의 데스크톱을 알 수 없음 → 바로 활성화");
             ActivateWindow(hwnd);
+        }
     }
 
     /// <summary>
@@ -180,6 +184,7 @@ public sealed class AppLauncher : IAppLauncher
         try
         {
             int target = VirtualDesktopHelper.GetDesktopIndex(hwnd, VirtualDesktopService.ReadDesktopIds());
+            Log.Info($"다른 데스크톱 창 0x{hwnd.ToInt64():X} → 데스크톱 {target} (지금 {VirtualDesktopService.Read().Current})");
             if (target <= 0)
             {
                 Log.Warn("창의 데스크톱 번호를 알 수 없음 → 바로 활성화 시도");
@@ -192,6 +197,13 @@ public sealed class AppLauncher : IAppLauncher
                 return;
             }
             ActivateWindow(hwnd);
+            // 마지막 확인: 그래도 창이 지금 데스크톱에 없으면(탐색기 창 등) 키로 한 번 더
+            await Task.Delay(150);
+            if (VirtualDesktopHelper.IsOnCurrentDesktop(hwnd) == false)
+            {
+                Log.Warn($"활성화 뒤에도 창 0x{hwnd.ToInt64():X} 가 다른 데스크톱 → 키로 데스크톱 {target} 이동 후 다시");
+                if (await VirtualDesktopService.MoveToAsync(target)) ActivateWindow(hwnd);
+            }
         }
         catch (Exception ex)
         {
