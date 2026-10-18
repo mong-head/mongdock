@@ -5,6 +5,7 @@ using Mongdock.Services;
 
 namespace LiveTest;
 
+
 /// <summary>
 /// --soundpanel (#21 넘김 끊김): 실제 소리 판을 화면 밖(왼쪽 -4000)에 띄워 세부 화면 넘김을 움직임과 함께 5번씩 해 보고
 /// 첫 프레임까지·가장 긴 프레임 간격을 잼 (판의 로그와 같은 값). 사용자 화면에는 아무것도 안 보이고 입력도 없음.
@@ -29,9 +30,57 @@ internal static partial class Program
         w.ShowActivated = false;
         var sw = Stopwatch.StartNew();
         w.Show();
-        Pump(300);
-        // 화면 밖 판이라 다른 창이 앞에 오거나 사용자가 다른 곳을 눌러도 닫히지 않게 바깥 클릭 감시를 멈춤
-        panelType.GetField("_watch", Any)!.GetValue(w)!.GetType().GetMethod("Stop")!.Invoke(panelType.GetField("_watch", Any)!.GetValue(w), null);
+        // 실제 마우스 훅에서 떼고(사용자가 PC 를 써도 닫히지 않게) 「켜져 있음」만 남겨, 아래에서 넣어 주는 자리만 받게
+        {
+            var watch0 = panelType.GetField("_watch", Any)!.GetValue(w)!;
+            Pump(300);
+            watch0.GetType().GetMethod("Stop")!.Invoke(watch0, null);
+            watch0.GetType().GetField("_running", Any)!.SetValue(watch0, true);
+        }
+        Pump(1500); // 앱 목록이 채워져 판이 다 커질 때까지
+        // 회귀 재현 (0.8.2 설치본: 「앱별 볼륨 ›」을 누르면 판이 닫힘): 감시자를 켠 채로 각 › 줄 가운데를 누른 것처럼(감시자에 그 자리 전달 → 버튼 Click)
+        {
+            var watch = panelType.GetField("_watch", Any)!.GetValue(w)!;
+            var down = watch.GetType().GetMethod("OnGlobalMouseDown", Any)!;
+            var startedAt = watch.GetType().GetField("_startedAt", Any)!;
+            foreach (var label in new[] { "앱별 볼륨", "스피커:", "마이크:" })
+            {
+                var btn = Descendants(w).OfType<System.Windows.Controls.Button>().FirstOrDefault(b => Descendants(b).OfType<System.Windows.Controls.TextBlock>().Any(tb => tb.Text.StartsWith(label, StringComparison.Ordinal)));
+                Console.WriteLine($"  정보  '{label}' 줄 {(btn is null ? "없음" : $"보임 {btn.IsVisible}")}, 판 보임 {w.IsVisible}");
+                if (btn is null || !btn.IsVisible)
+                {
+                    // 마이크가 꺼져 있으면(이 PC 설정) 「마이크:」 줄 대신 「음소거됨」 — 실패 아님
+                    bool micOff = label == "마이크:" && services.Status.InputMuted;
+                    Check($"› 줄 '{label}' 찾음{(micOff ? " (마이크 꺼짐이라 없음)" : "")}", micOff);
+                    continue;
+                }
+                var center = btn.PointToScreen(new Point(btn.ActualWidth / 2, btn.ActualHeight / 2));
+                var dip = PresentationSource.FromVisual(btn)!.CompositionTarget!.TransformFromDevice.Transform(center);
+                startedAt.SetValue(watch, Environment.TickCount64 - 10_000); // 연 직후 무시 시간 지남
+                down.Invoke(watch, new object?[] { null, (Point?)dip });
+                Pump(50);
+                bool openAfterDown = w.IsVisible;
+                btn.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                Pump(500);
+                Check($"'{label} ›' 누름: 판이 닫히지 않음 (누른 순간 {openAfterDown}, 넘긴 뒤 {w.IsVisible})", openAfterDown && w.IsVisible);
+                if (!w.IsVisible) return;
+                panelType.GetMethod("OpenSoundPageForTest", Any)!.Invoke(w, new object[] { "None" });
+                Pump(500);
+            }
+        }
+        // 몽독 자신의 창이 앞으로 와도(덮개·툴팁·이름표 등) 판이 닫히지 않음
+        {
+            var watch = panelType.GetField("_watch", Any)!.GetValue(w)!;
+            var act = watch.GetType().GetMethod("OnWindowActivated", Any)!;
+            var own = new Window { Left = -4000, Top = 500, Width = 50, Height = 50, ShowActivated = false, ShowInTaskbar = false, WindowStyle = WindowStyle.None };
+            own.Show();
+            act.Invoke(watch, new object?[] { null, new System.Windows.Interop.WindowInteropHelper(own).Handle });
+            Pump(300);
+            Check($"몽독 창 활성화: 판이 닫히지 않음 ({w.IsVisible})", w.IsVisible);
+            own.Close();
+        }
+        // 넘김 측정 동안은 감시자를 완전히 멈춤
+        panelType.GetField("_watch", Any)!.GetValue(w)!.GetType().GetField("_running", Any)!.SetValue(panelType.GetField("_watch", Any)!.GetValue(w), false);
         Pump(1700); // 판이 뜨고 앱 목록을 읽어 채울 시간
         var cpuOpen = Process.GetCurrentProcess().TotalProcessorTime - cpu0;
         GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
@@ -94,5 +143,19 @@ internal static partial class Program
         }
         w.Close();
         Pump(300);
+        foreach (var kind in new[] { "ControlCenter", "Wifi", "Bluetooth", "Calendar", "Battery", "Tray" })
+        {
+            var p2 = (Window)panelType.GetConstructors(Any)[0].Invoke(new object[] { services, Enum.Parse(kindType, kind), palette, 0 });
+            p2.Left = -4000; p2.Top = 100; p2.ShowActivated = false;
+            p2.Show();
+            var watch2 = panelType.GetField("_watch", Any)!.GetValue(p2)!;
+            Pump(150);
+            watch2.GetType().GetMethod("Stop")!.Invoke(watch2, null);
+            Pump(1500);
+            var card = (FrameworkElement)panelType.GetField("_card", Any)!.GetValue(p2)!;
+            Check($"짧은 확인: {kind} 판 열림·2초 버팀 (보임 {p2.IsVisible}, 카드 {card.ActualWidth:0}×{card.ActualHeight:0})", p2.IsVisible && card.ActualHeight > (kind == "Tray" ? 10 : 40)); // 트레이 판은 아이콘이 없으면 작음
+            p2.Close();
+            Pump(200);
+        }
     }
 }

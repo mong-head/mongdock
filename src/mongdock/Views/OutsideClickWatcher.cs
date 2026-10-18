@@ -32,6 +32,9 @@ internal sealed class OutsideClickWatcher
     /// <summary>활성화돼도 닫지 않을 창 (패널 자기 자신 — 열면서 Activate 하는 창).</summary>
     public IntPtr IgnoreHwnd { get; set; }
 
+    /// <summary>몽독 자신의 창이 활성화돼도 닫지 않음 (상태 판 — 바깥 클릭은 마우스로 따로 잡음).</summary>
+    public bool IgnoreOwnWindows { get; set; }
+
     /// <summary>열린 뒤 이 시간 안의 다른 창 활성화는 무시 (누른 쪽이 포커스를 잠깐 다시 가져가는 것). 0 = 없음.</summary>
     public long ActivationGraceMs { get; set; }
 
@@ -68,6 +71,13 @@ internal sealed class OutsideClickWatcher
     private void OnWindowActivated(object? sender, IntPtr hwnd)
     {
         if (hwnd != IntPtr.Zero && hwnd == IgnoreHwnd) return;
+        // 몽독 자신의 창(판 자신·최소화 효과 덮개·툴팁·이름표 등)이 앞으로 와도 닫지 않음 — 바깥 클릭은 마우스 쪽이 따로 잡음
+        // (0.8.2 설치본: 소리 판 「앱별 볼륨 ›」을 누르면 판이 닫힘 — 같은 프로세스 창 활성화가 의심)
+        if (IgnoreOwnWindows && hwnd != IntPtr.Zero && IsOwnProcess(hwnd))
+        {
+            if (LogName is not null && _running) Log.Info($"{LogName}: 몽독 창 활성화 무시 (0x{hwnd.ToInt64():X})");
+            return;
+        }
         if (_running && Environment.TickCount64 - _startedAt < ActivationGraceMs)
         {
             if (LogName is not null) Log.Info($"{LogName}: 열린 직후 다른 창 활성화 무시 ({ProcessOf(hwnd)})");
@@ -79,6 +89,12 @@ internal sealed class OutsideClickWatcher
             return;
         }
         Fire(LogName is null ? null : Loc.F($"다른 창 활성화 ({ProcessOf(hwnd)})"));
+    }
+
+    private static bool IsOwnProcess(IntPtr hwnd)
+    {
+        Native.User32.GetWindowThreadProcessId(hwnd, out uint pid);
+        return pid == (uint)Environment.ProcessId;
     }
 
     private static string ProcessOf(IntPtr hwnd)
