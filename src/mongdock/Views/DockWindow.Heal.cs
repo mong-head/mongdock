@@ -13,6 +13,8 @@ namespace Mongdock.Views;
 public partial class DockWindow
 {
     private DispatcherTimer? _healTimer;
+    private int _fullscreenStaleTicks;
+    private long _dpiHealAt = long.MinValue / 2;
 
     private void StartHeal()
     {
@@ -54,15 +56,29 @@ public partial class DockWindow
         }
     }
 
+    /// <summary>원인을 좁히기 위한 상태 한 줄 (깨어남 때마다).</summary>
+    private string Diagnose()
+    {
+        double dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this).DpiScaleX;
+        return $"숨김 {_hide:0.##}→{_hideTo:0.##}, 창 숨김 {_windowsHidden}, 보임 {IsVisible}, 불투명 {Opacity:0.##}, 맨 위 {Topmost}, 커서 확인 {_pollTimer.IsEnabled}, 전체 화면 {_fullscreen}, "
+             + $"배율 창 {dpi:0.##}/모니터 {_monitor.Scale:0.##}, 모니터 {_monitor.DeviceName} {_screen}, 위치 {Left:0},{Top:0}, "
+             + $"막힘 끌기 {_dragArmed}/{AnyItemDrag} 메뉴 {PanelBorder.ContextMenu?.IsOpen == true} 대화 {_dialogOpen} 창 고르기 {_picker != null} 폴더 판 {_folderPanel != null}";
+    }
+
     /// <summary>남은 상태 고치기. quietIfFine 이면 고칠 게 없을 때 아무것도 안 함(5초 확인).</summary>
     private void Heal(string why, bool quietIfFine)
     {
         if (_closed || !IsLoaded || !DockActive) return;
         try
         {
-            // ① 전체 화면으로 숨었는데 지금은 전체 화면 앱이 없음 (끝 알림을 놓침 — 깨어날 때 모니터 이름이 바뀌는 경우 등)
-            if (_fullscreen && !_services.DesktopWindows.IsFullscreenOn(_monitor.DeviceName))
+            if (!quietIfFine) Log.Info($"독 상태 ({why}): {Diagnose()}");
+            // ① 전체 화면으로 숨었는데 지금은 전체 화면 앱이 없음 (끝 알림을 놓침 — 깨어날 때 모니터 이름이 바뀌는 경우 등).
+            //    5초 확인은 두 번 연속일 때만 (모니터 이름이 바뀌는 순간 전체 화면 판정이 디바운스로 잠깐 옛 이름 → 독이 전체 화면 위로 깜빡이지 않게, 리뷰)
+            bool stale = _fullscreen && !_services.DesktopWindows.IsFullscreenOn(_monitor.DeviceName);
+            _fullscreenStaleTicks = stale ? _fullscreenStaleTicks + 1 : 0;
+            if (stale && (!quietIfFine || _fullscreenStaleTicks >= 2))
             {
+                _fullscreenStaleTicks = 0;
                 Log.Warn($"독: 전체 화면으로 숨은 채 남아 있었음 ({why}, 모니터 {_monitor.DeviceName}) → 다시 보이게");
                 OnFullscreenChanged(this, false);
                 return;
@@ -75,14 +91,19 @@ public partial class DockWindow
                 ApplyMode(initial: true);
                 return;
             }
-            if (quietIfFine) return;
-            // 깨어남·잠금 해제: 고칠 게 안 보여도 화면 크기를 다시 읽고 자동 숨김이면 깨끗한 숨김 상태로 (옛 좌표로 미끄러지던 중이었을 수 있음)
-            OnDisplayChanged(this, EventArgs.Empty);
-            if (!_fullscreen && _layout.Mode == DockMode.AutoHide && _hideTo >= 1)
+            // ③ 창 배율이 모니터 배율과 다름 (깨어날 때 WM_DPICHANGED 를 놓치면 좌표가 옛 배율로 계산돼 독이 화면 밖에 놓일 수 있음 — 리뷰)
+            double dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this).DpiScaleX;
+            // 계속 어긋나는 환경에서 5초마다 다시 적용(흔들림)하지 않게 1분에 한 번까지
+            bool dpiOff = Math.Abs(dpi - _monitor.Scale) > 0.01 && Environment.TickCount64 - _dpiHealAt > 60_000;
+            if (dpiOff)
             {
-                Place();
-                ApplyMode(initial: true);
+                _dpiHealAt = Environment.TickCount64;
+                Log.Warn($"독: 창 배율 {dpi:0.##} ≠ 모니터 배율 {_monitor.Scale:0.##} ({why}) → 설정 다시 적용");
             }
+            if (quietIfFine && !dpiOff) return;
+            // 깨어남·잠금 해제(또는 배율 어긋남): 「독 보이기」를 껐다 켤 때와 같은 설정 전체 다시 적용 (화면 크기·위치·자동 숨김 깨끗한 숨김 상태)
+            if (!_fullscreen && (_layout.Mode != DockMode.AutoHide || _hideTo >= 1 || dpiOff))
+                ApplyAll();
         }
         catch (Exception ex) { Log.Warn($"독 다시 맞추기 실패 ({why}): {ex.GetType().Name} {ex.Message}"); }
     }

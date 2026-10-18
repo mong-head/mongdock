@@ -549,7 +549,8 @@ internal sealed partial class StatusPanelWindow : Window
     {
         var (name, driver) = SplitDeviceName(full);
         if (driver is null) return name;
-        string[] generic = { Loc.T("스피커"), Loc.T("마이크"), Loc.T("헤드폰"), Loc.T("헤드셋"), "Speakers", "Microphone", "Headphones", "Headset" };
+        // 장치 이름은 윈도우 언어를 따르므로 몽독 언어와 상관없이 한국어·영어 원문도 (리뷰)
+        string[] generic = { Loc.T("스피커"), Loc.T("마이크"), Loc.T("헤드폰"), Loc.T("헤드셋"), "스피커", "마이크", "헤드폰", "헤드셋", "Speakers", "Microphone", "Headphones", "Headset" };
         return generic.Any(g => string.Equals(g, name, StringComparison.OrdinalIgnoreCase)) ? $"{name} ({driver})" : name;
     }
 
@@ -559,7 +560,9 @@ internal sealed partial class StatusPanelWindow : Window
         var (name, driver) = SplitDeviceName(fullName);
         string? second = driver is null ? sub : sub is null ? driver : driver + " · " + sub;
         var b = DeviceRow(glyph, on, name, second, onClick);
-        if (onClick != null) b.ToolTip = fullName;
+        b.ToolTip = fullName;
+        // 지금 쓰는 장치(누를 수 없는 줄)도 전체 이름이 보이게 — 맞춤 판정만 켜고 누름은 그대로 없음 (리뷰)
+        b.IsHitTestVisible = true;
         return b;
     }
 
@@ -575,7 +578,6 @@ internal sealed partial class StatusPanelWindow : Window
         if (!string.IsNullOrEmpty(sub))
         {
             var s = Sub(sub, 12.5);
-            s.TextTrimming = TextTrimming.CharacterEllipsis;
             if (subBrush != null)
             {
                 s.Foreground = subBrush;
