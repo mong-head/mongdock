@@ -430,8 +430,8 @@ internal sealed class MinimizeEffectController : IDisposable
         /// <summary>되살리기 끝에 덮개를 흐리게 걷어 내는 시간 (ms).</summary>
         private const int CrossfadeMs = 120;
 
-        /// <summary>크롬 계열 창: 되살린 뒤 붙잡은 그림을 두는 시간 (ms) — 측정한 빈 화면 약 50~65ms + 여유.</summary>
-        private const int ChromiumHoldMs = 150;
+        /// <summary>크롬 계열 창: 되살린 뒤 붙잡은 그림을 두는 시간 (ms) — 측정한 빈 화면 약 50~65ms + 여유. 150 이면 끝 멈춤이 약 0.35초라 100 으로(약 0.3초, 10-20 PM·사용자 확인용).</summary>
+        private const int ChromiumHoldMs = 100;
 
         /// <summary>붙잡은 그림을 두는 최대 시간 (넘긴 뒤 ms) — 넘으면 그냥 걷어 냄.</summary>
         private const int MaxStillMs = 200;
