@@ -63,6 +63,9 @@ public sealed class MediaHost
         _media = new MediaService();
         _media.Changed += (_, _) => Send();
         _media.PlayingChanged += (_, _) => Send();
+        // 부모 감시·파이프 읽기를 먼저 — 첫 상태 쓰기가 본체가 안 읽어 막혀도(본체가 멈춤) 본체가 끝나면 도우미도 끝나게 (2026-10-19 업데이트 경로 시험)
+        new Thread(ReadCommands) { IsBackground = true, Name = "media host read" }.Start();
+        new Thread(WatchParent) { IsBackground = true, Name = "media host parent" }.Start();
         _media.Start();
         // 재생 중이면 5초마다 위치를 다시 보냄 (본체는 그 사이를 시간으로 이어 셈)
         _tick = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(5) };
@@ -73,8 +76,6 @@ public sealed class MediaHost
         _alive.Start();
         _tick.Start();
         Send();
-        new Thread(ReadCommands) { IsBackground = true, Name = "media host read" }.Start();
-        new Thread(WatchParent) { IsBackground = true, Name = "media host parent" }.Start();
     }
 
     private void ReadCommands()
