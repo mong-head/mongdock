@@ -3,7 +3,7 @@
   "versions": [
     {
       "version": "0.8.3",
-      "date": "2026-10-19",
+      "date": "2026-10-20",
       "entries": [
         {
           "kind": "fix",
@@ -21,11 +21,6 @@
       "version": "0.8.2",
       "date": "2026-10-18",
       "entries": [
-        {
-          "kind": "fix",
-          "text": "창 최소화 효과로 독에서 창을 다시 열 때 끝에서 깜빡이던 문제를 고쳤어요(세 효과 모두).",
-          "text_en": "Fixed a flicker at the end when a window opens back out of the dock with the minimize effect."
-        },
         {
           "kind": "fix",
           "text": "상단바 소리 판의 앱 볼륨에 크롬·엣지·디스코드처럼 소리를 따로 된 프로세스가 내는 앱이 빠지던 문제를 고쳤어요.",
