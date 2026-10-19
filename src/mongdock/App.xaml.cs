@@ -42,6 +42,13 @@ public partial class App : Application
     private EventWaitHandle? _exitEvent;
     private bool _watchdog;
     private bool _helperProcess;
+
+    /// <summary>
+    /// 감시·미디어 도우미가 살아 있는 동안 잡는 표시 (설치 프로그램이 이것까지 사라질 때까지 기다림 — 본체가 끝난 직후 자식이 아직 mongdock.exe 를 잡고 있어
+    /// 업데이트·제거의 파일 교체와 부딪히지 않게, 2026-10-19 업데이트 경로 시험). 여러 자식이 같은 이름으로 열어도 됨.
+    /// </summary>
+    internal const string HelperMarkName = @"Local\mongdock.Helper";
+    private static Mutex? _helperMark;
     private RegisteredWaitHandle? _exitWait;
 
     /// <summary>화면 언어를 가장 먼저 정함 — 정적 목록(둘러보기 문구 등)이 만들어지기 전에 (Loc).</summary>
@@ -61,6 +68,7 @@ public partial class App : Application
         if (mediaAt >= 0)
         {
             _helperProcess = true;
+            _helperMark = new Mutex(false, HelperMarkName);
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
             if (mediaAt + 2 >= e.Args.Length || !int.TryParse(e.Args[mediaAt + 2], out int parentPid)) { Shutdown(); return; }
             new MediaHost(e.Args[mediaAt + 1], parentPid, () => Dispatcher.BeginInvoke(Shutdown)).Start();
@@ -72,6 +80,7 @@ public partial class App : Application
         if (watchAt >= 0)
         {
             _watchdog = true;
+            _helperMark = new Mutex(false, HelperMarkName);
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
             if (watchAt + 1 >= e.Args.Length || !int.TryParse(e.Args[watchAt + 1], out int watchPid)) { Shutdown(); return; }
             // 기다리기는 백그라운드 스레드에서 — UI 스레드가 메시지를 계속 받아야 윈도우 로그오프·종료를 막지 않음 (리뷰: 응답 없는 창)

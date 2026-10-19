@@ -101,16 +101,16 @@ public sealed class MediaHost
             }
         }
         catch { }
-        Environment.Exit(0); // 파이프가 끊김 = 본체가 끝났거나 다시 띄우는 중 — UI 스레드가 멈춰 있어도 바로 끝남 (리뷰: 고아 도우미)
+        ExitNow(); // 파이프가 끊김 = 본체가 끝났거나 다시 띄우는 중 — UI 스레드가 멈춰 있어도 바로 끝남 (리뷰: 고아 도우미)
     }
 
     private void WatchParent()
     {
         IntPtr h = OpenProcess(SYNCHRONIZE, false, (uint)_parentPid);
-        if (h == IntPtr.Zero) Environment.Exit(0);
+        if (h == IntPtr.Zero) ExitNow();
         try { WaitForSingleObject(h, INFINITE); }
         finally { CloseHandle(h); }
-        Environment.Exit(0); // 본체가 끝남 — UI 스레드를 거치지 않고 바로
+        ExitNow(); // 본체가 끝남 — UI 스레드를 거치지 않고 바로
     }
 
     /// <summary>지금 상태 한 줄 (UI 스레드). 썸네일은 바뀌었을 때만 PNG 로.</summary>
@@ -178,10 +178,17 @@ public sealed class MediaHost
     {
         if (Interlocked.Exchange(ref _quitting, 1) != 0) return;
         try { _tick?.Stop(); _alive?.Stop(); } catch { }
-        Environment.Exit(0);
+        ExitNow();
     }
 
     private const uint SYNCHRONIZE = 0x00100000, INFINITE = 0xFFFFFFFF, WER_FAULT_REPORTING_NO_UI = 0x20;
+    /// <summary>
+    /// 바로 끝냄 — Environment.Exit 는 종료 처리기(WPF)에서 걸려 부모가 죽은 뒤에도 도우미가 남았음(2026-10-19 업데이트 경로 시험: 10초 넘게 안 끝나 exe 덮어쓰기·폴더 지우기 실패).
+    /// 도우미는 지킬 상태가 없어 TerminateProcess 로 끝내도 됨 (미디어 세션 해제도 윈도우가 함).
+    /// </summary>
+    private static void ExitNow() => TerminateProcess(GetCurrentProcess(), 0);
+    [DllImport("kernel32.dll")] private static extern bool TerminateProcess(IntPtr process, uint code);
+    [DllImport("kernel32.dll")] private static extern IntPtr GetCurrentProcess();
     [DllImport("kernel32.dll")] private static extern int WerSetFlags(uint flags);
     [DllImport("kernel32.dll")] private static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
     [DllImport("kernel32.dll")] private static extern uint WaitForSingleObject(IntPtr handle, uint ms);

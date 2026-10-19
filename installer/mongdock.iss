@@ -134,6 +134,8 @@ const
   RunKey = 'Software\Microsoft\Windows\CurrentVersion\Run';
   ExitEventName = 'Local\mongdock.Exit';
   InstanceMutexName = 'Local\mongdock.SingleInstance';
+  { 0.8.3: 감시(--watchdog)·미디어 도우미(--media-host) 자식이 살아 있는 동안 잡는 표시 — 본체가 끝나도 이것까지 사라져야 파일을 바꿈 }
+  HelperMutexName = 'Local\mongdock.Helper';
   EVENT_MODIFY_STATE = $0002;
   SYNCHRONIZE = $00100000;
   SW_SHOWNA = 8;
@@ -158,15 +160,20 @@ function MultiByteToWideChar(CodePage: Cardinal; dwFlags: DWORD; lpMultiByteStr:
 function ExpandEnvironmentStrings(lpSrc: String; lpDst: String; nSize: DWORD): DWORD;
   external 'ExpandEnvironmentStringsW@kernel32.dll stdcall';
 
-{ mongdock 이 실행 중인지: 단일 인스턴스 뮤텍스가 있으면 실행 중 (프로세스가 끝나면 뮤텍스도 사라진다) }
-function IsMongdockRunning(): Boolean;
+{ mongdock 이 실행 중인지: 단일 인스턴스 뮤텍스 또는 자식(감시·미디어 도우미) 표시가 있으면 실행 중 (프로세스가 끝나면 뮤텍스도 사라진다) }
+function MutexExists(Name: String): Boolean;
 var
   H: THandle;
 begin
-  H := OpenMutex(SYNCHRONIZE, False, InstanceMutexName);
+  H := OpenMutex(SYNCHRONIZE, False, Name);
   Result := H <> 0;
   if Result then
     CloseHandle(H);
+end;
+
+function IsMongdockRunning(): Boolean;
+begin
+  Result := MutexExists(InstanceMutexName) or MutexExists(HelperMutexName);
 end;
 
 function WaitForExit(TimeoutMs: Integer): Boolean;
