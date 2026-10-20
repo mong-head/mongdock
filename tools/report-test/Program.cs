@@ -2419,9 +2419,9 @@ internal static class Program
     }
 
     /// <summary>
-    /// --idlehide (#39): CursorIdle 판정만 가짜 커서 위치(DIP)와 시각으로 — 창·실제 커서·입력 없음.
-    /// 5초 정지면 숨김(4.999초는 아님) · 1px 움직이면 처음부터 · 독 밖이면 안 숨김 · 이름표/아이콘 위면 안 숨김(풀린 뒤 다시 5초) ·
-    /// 숨긴 자리에 그대로면 다시 안 나옴, 1px 움직이면 풀림 · 커서가 모니터 밖(null)이면 안 숨김. 독 위치(아래·왼쪽·오른쪽)와 모니터는 좌표만 다름.
+    /// --idlehide (#39): CursorIdle 판정과 화면 끝 밀기 방향만 가짜 커서 위치(DIP)·시각·이동량으로 — 창·실제 커서·입력·Raw Input 등록 없음.
+    /// 5초 정지면 숨김(4.999초는 아님) · 1px 움직이면 처음부터 · 독 밖이면 안 숨김 · 아이콘 위·이름표가 떠 있어도 숨김(사용자 결정, 예외는 DockWindow 가 판정을 쉬는 메뉴 등) ·
+    /// 숨긴 자리에 그대로면 다시 안 나옴, 1px 움직이거나 독 쪽으로 밀면 풀림 · 풀린 뒤·Reset 뒤엔 다시 5초 · 커서가 모니터 밖(null)이면 안 숨김.
     /// </summary>
     private static int IdleHideCheck()
     {
@@ -2431,57 +2431,67 @@ internal static class Program
         long idle = (long)t.GetField("IdleMs", Any)!.GetValue(null)!;
         Ok($"정지 시간 5초 ({idle}ms)", idle == 5000);
         object New() => Activator.CreateInstance(t, true)!;
-        bool Hide(object o, Point? c, bool inside, bool blocked, long now) => (bool)t.GetMethod("ShouldHide", Any)!.Invoke(o, new object?[] { c, inside, blocked, now })!;
-        bool Hold(object o, Point? c) => (bool)t.GetMethod("HoldsHidden", Any)!.Invoke(o, new object?[] { c })!;
-        // 독 위치마다 커서 자리 (1920x1080 DIP, 둘째 모니터는 x 1920~): 아래 가운데·오른쪽 끝·왼쪽 끝·둘째 모니터 오른쪽 끝
-        var spots = new (string Name, Point P)[] { ("아래", new Point(960, 1079)), ("오른쪽", new Point(1919, 540)), ("왼쪽", new Point(0, 540)), ("둘째 모니터 오른쪽", new Point(3839, 600)) };
+        bool Hide(object o, Point? c, bool inside, long now) => (bool)t.GetMethod("ShouldHide", Any)!.Invoke(o, new object?[] { c, inside, now })!;
+        bool Hold(object o, Point? c, bool pushed = false) => (bool)t.GetMethod("HoldsHidden", Any)!.Invoke(o, new object?[] { c, pushed })!;
+        object HiddenAt(Point p) { var o = New(); for (long ms = 0; ms <= 5000; ms += 60) Hide(o, p, true, ms); Hide(o, p, true, 5060); return o; }
+        // 독 위치마다 커서 자리 (1920x1080 DIP, 둘째 모니터는 x 1920~): 아래 가운데·오른쪽 끝·왼쪽 끝·위 끝·둘째 모니터 오른쪽 끝
+        var spots = new (string Name, Point P)[] { ("아래", new Point(960, 1079)), ("오른쪽", new Point(1919, 540)), ("왼쪽", new Point(0, 540)), ("위", new Point(960, 0)), ("둘째 모니터 오른쪽", new Point(3839, 600)) };
         foreach (var (name, p) in spots)
         {
             var o = New();
             bool early = false, hid = false;
             for (long ms = 0; ms <= 6000; ms += 60)
             {
-                bool h = Hide(o, p, true, false, 1000 + ms);
+                bool h = Hide(o, p, true, 1000 + ms);
                 if (h && ms < 5000) early = true;
                 if (h) { hid = true; break; }
             }
             Ok($"{name}: 5초 전엔 안 숨고 5초에 숨음", hid && !early);
             Ok($"{name}: 숨긴 자리에 그대로면 다시 안 나옴", Hold(o, p));
             Ok($"{name}: 1px 움직이면 풀림 (가장자리 규칙대로 다시 나옴)", !Hold(o, new Point(p.X, p.Y - 1)) && !Hold(o, p));
-            // 풀린 뒤 다시 나온 독: 커서가 새 자리에 그대로여도 다음 틱에 바로 숨지 않고 다시 5초를 기다림 (리뷰 1번)
+            // 풀린 뒤 다시 나온 독: 커서가 새 자리에 그대로여도 다음 틱에 바로 숨지 않고 다시 5초를 기다림
             var q = new Point(p.X, p.Y - 1); long back = -1;
-            for (long ms = 6060; ms <= 13000; ms += 60) if (Hide(o, q, true, false, 1000 + ms)) { back = ms; break; }
+            for (long ms = 6060; ms <= 13000; ms += 60) if (Hide(o, q, true, 1000 + ms)) { back = ms; break; }
             Ok($"{name}: 풀린 다음 틱엔 안 숨고 다시 5초 뒤에 숨음 ({back}ms)", back >= 6060 + 5000 - 60);
+            var o2 = HiddenAt(p);
+            Ok($"{name}: 같은 자리라도 독 쪽으로 밀면 풀림 (화면 끝 밀기)", Hold(o2, p) && !Hold(o2, p, pushed: true) && !Hold(o2, p));
+            bool hid2 = false;
+            for (long ms = 6000; ms <= 10900; ms += 60) hid2 |= Hide(o2, p, true, ms);
+            Ok($"{name}: 밀어서 나온 뒤엔 같은 자리여도 다시 5초를 기다림", !hid2);
         }
         {
             var o = New(); var p = new Point(960, 1079); bool hid = false;
-            for (long ms = 0; ms <= 6000; ms += 60) Hide(o, p, true, false, ms); // 5초가 넘게 멈춰 있다가 (메뉴가 열려 판정을 쉬던 동안 등)
-            t.GetMethod("Reset", Any)!.Invoke(o, new object[] { 6000L });       // 메뉴가 닫히거나 독이 다시 나타남
-            for (long ms = 6060; ms <= 10900; ms += 60) hid |= Hide(o, p, true, false, ms);
+            for (long ms = 0; ms <= 6000; ms += 60) Hide(o, p, true, ms); // 5초가 넘게 멈춰 있다가 (메뉴가 열려 판정을 쉬던 동안 등)
+            t.GetMethod("Reset", Any)!.Invoke(o, new object[] { 6000L });  // 메뉴가 닫히거나 독이 다시 나타남
+            for (long ms = 6060; ms <= 10900; ms += 60) hid |= Hide(o, p, true, ms);
             Ok("메뉴가 닫히거나 독이 다시 나온 직후엔 바로 안 숨음 (다시 5초)", !hid);
         }
         {
             var o = New(); var p = new Point(960, 1079); bool hid = false;
-            for (long ms = 0; ms <= 8000; ms += 60) { var c = ms % 1200 == 0 ? new Point(960 + (ms / 1200 % 2), 1079) : p; hid |= Hide(o, c, true, false, ms); }
+            for (long ms = 0; ms <= 8000; ms += 60) { var c = ms % 1200 == 0 ? new Point(960 + (ms / 1200 % 2), 1079) : p; hid |= Hide(o, c, true, ms); }
             Ok("1.2초마다 1px 움직이면 8초가 지나도 안 숨음", !hid);
         }
         {
             var o = New(); bool hid = false;
-            for (long ms = 0; ms <= 8000; ms += 60) hid |= Hide(o, new Point(500, 500), false, false, ms);
+            for (long ms = 0; ms <= 8000; ms += 60) hid |= Hide(o, new Point(500, 500), false, ms);
             Ok("독 밖에서 멈춰 있으면 이 규칙으로는 안 숨음 (평소 0.5초 숨김이 맡음)", !hid);
         }
         {
-            var o = New(); var p = new Point(960, 1079); bool hidBlocked = false, hidAfter = false; long hidAt = -1;
-            for (long ms = 0; ms <= 6000; ms += 60) hidBlocked |= Hide(o, p, true, true, ms);
-            for (long ms = 6060; ms <= 12000; ms += 60) { if (Hide(o, p, true, false, ms)) { hidAfter = true; hidAt = ms; break; } }
-            Ok("이름표가 떠 있거나 아이콘 위면 안 숨음", !hidBlocked);
-            Ok($"이름표가 사라진 뒤에는 다시 5초 지나야 숨음 ({hidAt}ms)", hidAfter && hidAt >= 6060 + 5000 - 60);
-        }
-        {
             var o = New(); bool hid = false;
-            for (long ms = 0; ms <= 8000; ms += 60) hid |= Hide(o, null, true, false, ms);
+            for (long ms = 0; ms <= 8000; ms += 60) hid |= Hide(o, null, true, ms);
             Ok("커서가 독 모니터 밖(null)이면 안 숨음", !hid);
             Ok("커서 정지로 숨긴 적이 없으면 다시 나오는 걸 막지 않음", !Hold(New(), new Point(960, 1079)));
+        }
+        // 화면 끝 밀기: 마우스 장치의 상대 이동 한 번이 독 쪽(화면 바깥)으로 미는 양 (DockWindow 는 합이 PushCounts 이상이면 밀었다고 봄)
+        {
+            var w = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.EdgePushWatch")!;
+            int need = (int)w.GetField("PushCounts", Any)!.GetValue(null)!;
+            int Toward(Mongdock.Models.DockEdge e, int dx, int dy) => (int)w.GetMethod("TowardDock", Any)!.Invoke(null, new object[] { e, dx, dy })!;
+            Ok($"밀기 기준 {need}카운트 (센서 떨림 한두 칸은 무시)", need == 3);
+            Ok("아래 독: 아래로 밀면 셈, 위·옆은 안 셈", Toward(Mongdock.Models.DockEdge.Bottom, 0, 4) == 4 && Toward(Mongdock.Models.DockEdge.Bottom, 0, -4) == 0 && Toward(Mongdock.Models.DockEdge.Bottom, 5, 0) == 0);
+            Ok("오른쪽 독: 오른쪽으로 밀면 셈, 왼쪽은 안 셈", Toward(Mongdock.Models.DockEdge.Right, 3, 1) == 3 && Toward(Mongdock.Models.DockEdge.Right, -3, 0) == 0);
+            Ok("왼쪽 독: 왼쪽으로 밀면 셈", Toward(Mongdock.Models.DockEdge.Left, -2, 0) == 2 && Toward(Mongdock.Models.DockEdge.Left, 2, 0) == 0);
+            Ok("위 독: 위로 밀면 셈", Toward(Mongdock.Models.DockEdge.Top, 0, -6) == 6 && Toward(Mongdock.Models.DockEdge.Top, 0, 6) == 0);
         }
         Console.WriteLine(bad == 0 ? "  모두 통과" : $"  실패 {bad}개");
         return bad == 0 ? 0 : 1;
