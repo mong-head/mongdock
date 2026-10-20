@@ -181,10 +181,19 @@ public sealed class ReportWindow : Window
         _contact.MaxLength = 254;
         _contact.TextChanged += (_, _) => UpdateForm();
         var contactGrid = new Grid();
-        _contactPlaceholder = Placeholder(Loc.T("적으면 답장을 메일로 보내 드려요"), multiLine: false);
+        _contactPlaceholder = Placeholder(Loc.T("메일 주소 (선택)"), multiLine: false);
         contactGrid.Children.Add(_contactPlaceholder);
         contactGrid.Children.Add(_contact);
         body.Children.Add(InputBox(contactGrid));
+        // 메일 주소를 어디에 쓰는지 (#40 사용자 제안) — 칸 바로 아래 회색 작은 글씨
+        body.Children.Add(new TextBlock
+        {
+            Text = Loc.T("적어 주시면 확인했을 때와 고쳐졌을 때 메일로 알려 드려요. 답장에만 써요."),
+            FontSize = 11.5,
+            Foreground = _p.SubText,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(2, 4, 0, 0),
+        });
         _contactError = new TextBlock
         {
             Text = Loc.T("이메일 형식을 확인해 주세요."),
