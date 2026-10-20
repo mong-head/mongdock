@@ -44,11 +44,11 @@ internal sealed class CursorIdle
         if (_hiddenAt is not Point h) return false;
         if (cursor is Point c && c == h) return true;
         _hiddenAt = null;
-        _last = cursor;
+        _last = null; // 풀린 다음 판정에서 정지 시간을 처음부터 (옛 정지 시각으로 다음 틱에 바로 다시 숨지 않게)
         return false;
     }
 
-    /// <summary>다른 이유로 숨거나 나타날 때 (가장자리 진입·설정 바뀜 등) — 지난 정지 기록을 버림.</summary>
+    /// <summary>독이 나타날 때와 판정을 쉬는 동안 (메뉴·끌기·폴더 판·peek·둘러보기) — 지난 정지 기록을 버림. 닫힌 뒤엔 다시 5초를 기다림.</summary>
     public void Reset(long now)
     {
         _last = null;

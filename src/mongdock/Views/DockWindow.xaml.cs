@@ -634,12 +634,14 @@ public partial class DockWindow : Window
         {
             if (_hideTo >= 1) SetHidden(false, animate: false);
             _lastInsideTicks = Environment.TickCount64;
+            _cursorIdle.Reset(_lastInsideTicks);
             return;
         }
         bool menuOpen = PanelBorder.ContextMenu?.IsOpen == true;
         if (_dragArmed || AnyItemDrag || menuOpen || _dialogOpen || _picker != null || _folderPanel != null)
         {
             _lastInsideTicks = Environment.TickCount64;
+            _cursorIdle.Reset(_lastInsideTicks); // 닫힌 직후 바로 숨지 않게 — 정지 5초를 처음부터
             return;
         }
 
@@ -669,7 +671,7 @@ public partial class DockWindow : Window
             return;
         }
 
-        if (Environment.TickCount64 < _peekUntil) return; // 알림으로 잠깐 꺼낸 독 (#27) — 튄 뒤 1.5초까지는 숨기지 않음
+        if (Environment.TickCount64 < _peekUntil) { _cursorIdle.Reset(Environment.TickCount64); return; } // 알림으로 잠깐 꺼낸 독 (#27) — 튄 뒤 1.5초까지는 숨기지 않음
         var inside = _shownRect;
         inside.Inflate(4, 4);
         // 터치를 뗀 뒤엔 커서가 독 위에 남아 있어도 바깥으로 봄 (진짜 마우스가 움직이면 다시 판정)
@@ -722,6 +724,7 @@ public partial class DockWindow : Window
     private void SetHidden(bool hidden, bool animate)
     {
         double target = hidden ? 1 : 0;
+        if (!hidden) _cursorIdle.Reset(Environment.TickCount64); // 어느 경로로 나타나든 정지 기록·붙잡기를 버림 (#39)
         animate &= Anim.Enabled; // 시스템 애니메이션 끔·가벼운 모드면 미끄러지지 않고 바로
         if (!animate)
         {

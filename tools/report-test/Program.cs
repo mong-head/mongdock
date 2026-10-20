@@ -2448,6 +2448,17 @@ internal static class Program
             Ok($"{name}: 5초 전엔 안 숨고 5초에 숨음", hid && !early);
             Ok($"{name}: 숨긴 자리에 그대로면 다시 안 나옴", Hold(o, p));
             Ok($"{name}: 1px 움직이면 풀림 (가장자리 규칙대로 다시 나옴)", !Hold(o, new Point(p.X, p.Y - 1)) && !Hold(o, p));
+            // 풀린 뒤 다시 나온 독: 커서가 새 자리에 그대로여도 다음 틱에 바로 숨지 않고 다시 5초를 기다림 (리뷰 1번)
+            var q = new Point(p.X, p.Y - 1); long back = -1;
+            for (long ms = 6060; ms <= 13000; ms += 60) if (Hide(o, q, true, false, 1000 + ms)) { back = ms; break; }
+            Ok($"{name}: 풀린 다음 틱엔 안 숨고 다시 5초 뒤에 숨음 ({back}ms)", back >= 6060 + 5000 - 60);
+        }
+        {
+            var o = New(); var p = new Point(960, 1079); bool hid = false;
+            for (long ms = 0; ms <= 6000; ms += 60) Hide(o, p, true, false, ms); // 5초가 넘게 멈춰 있다가 (메뉴가 열려 판정을 쉬던 동안 등)
+            t.GetMethod("Reset", Any)!.Invoke(o, new object[] { 6000L });       // 메뉴가 닫히거나 독이 다시 나타남
+            for (long ms = 6060; ms <= 10900; ms += 60) hid |= Hide(o, p, true, false, ms);
+            Ok("메뉴가 닫히거나 독이 다시 나온 직후엔 바로 안 숨음 (다시 5초)", !hid);
         }
         {
             var o = New(); var p = new Point(960, 1079); bool hid = false;

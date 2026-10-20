@@ -7,8 +7,8 @@
       "entries": [
         {
           "kind": "improvement",
-          "text": "자동 숨김 독을 꺼낸 채 마우스를 5초 동안 움직이지 않으면 독이 다시 숨어요. 영상을 볼 때 편해요. 마우스를 조금만 움직이면 다시 나와요.",
-          "text_en": "An auto-hidden dock now hides again when the mouse stays still on it for 5 seconds, handy while watching videos. Move the mouse a little and it comes back."
+          "text": "자동 숨김 독을 꺼낸 채 마우스를 5초 동안 움직이지 않으면 독이 다시 숨어요. 영상을 볼 때 편해요. 마우스를 움직여 화면 가장자리에 대면 다시 나와요.",
+          "text_en": "An auto-hidden dock now hides again when the mouse stays still on it for 5 seconds, handy while watching videos. Move the mouse to the screen edge and it comes back."
         },
         {
           "kind": "fix",
