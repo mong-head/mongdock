@@ -273,6 +273,7 @@ public partial class DockWindow : Window
         if (fullscreen)
         {
             _pollTimer.Stop(); // 전체 화면 동안은 트리거 확인 불필요 (끝나면 ApplyMode 가 다시 시작)
+            ResetCursorIdle(); // 폴링이 멈추므로 화면 끝 밀기 감시(마우스 이동 메시지)도 여기서 끔 (#39)
             StopSlide();
             _hide = _hideTo = 1;
             HideWindows();
@@ -325,6 +326,7 @@ public partial class DockWindow : Window
     {
         _inactive = true;
         _pollTimer.Stop();
+        ResetCursorIdle(); // 화면 끝 밀기 감시도 끔 (#39)
         StopSlide();
         _hide = _hideTo = 1;
         if (PanelBorder.ContextMenu?.IsOpen == true) PanelBorder.ContextMenu.IsOpen = false;

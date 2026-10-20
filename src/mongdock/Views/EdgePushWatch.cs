@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
 using Mongdock.Models;
+using Mongdock.Native;
 using Mongdock.Services;
 
 namespace Mongdock.Views;
@@ -23,7 +24,7 @@ internal sealed class EdgePushWatch : IDisposable
 
     private HwndSource? _sink;
     private IntPtr _buf; // WM_INPUT 읽기 칸 (붙잡아 둔 동안 마우스 이동마다 쓰므로 한 번만 잡음)
-    private bool _armed;
+    private bool _armed, _failed;
     private DockEdge _edge;
     private int _sum;
 
@@ -33,29 +34,36 @@ internal sealed class EdgePushWatch : IDisposable
     /// <summary>붙잡아 둔 동안 매 틱. 처음 한 번만 등록하고 밀기 합계를 0부터.</summary>
     public void Arm(DockEdge edge)
     {
-        if (_armed && edge == _edge) return;
+        if (_failed || (_armed && edge == _edge)) return; // 실패했으면 이번 붙잡힘 동안은 다시 시도·로그하지 않음 (Disarm 에서 풂)
         _edge = edge;
         _sum = 0;
         if (_armed) return;
         try
         {
-            _sink ??= new HwndSource(new HwndSourceParameters("mongdock.EdgePush") { ParentWindow = new IntPtr(-3), WindowStyle = 0 }); // HWND_MESSAGE
+            _sink ??= new HwndSource(new HwndSourceParameters("mongdock.EdgePush") { ParentWindow = TrayApi.HWND_MESSAGE, WindowStyle = 0 });
             _sink.AddHook(WndProc);
             var rid = new RAWINPUTDEVICE { usUsagePage = 1, usUsage = 2, dwFlags = RIDEV_INPUTSINK, hwndTarget = _sink.Handle };
             _armed = RegisterRawInputDevices(new[] { rid }, 1, Marshal.SizeOf<RAWINPUTDEVICE>());
             if (!_armed)
             {
+                _failed = true;
                 _sink.RemoveHook(WndProc);
                 Log.Info($"독: 화면 끝 밀기 감시 등록 실패 {Marshal.GetLastWin32Error()} — 커서를 움직여야 다시 나옴");
             }
         }
-        catch (Exception ex) { Log.Info($"독: 화면 끝 밀기 감시 안 됨: {ex.Message}"); }
+        catch (Exception ex)
+        {
+            _failed = true;
+            _sink?.RemoveHook(WndProc);
+            Log.Info($"독: 화면 끝 밀기 감시 안 됨: {ex.Message}");
+        }
     }
 
     /// <summary>풀릴 때·독이 나타날 때·창이 닫힐 때. 등록을 지워 마우스 이동 메시지를 더 받지 않음.</summary>
     public void Disarm()
     {
         _sum = 0;
+        _failed = false;
         if (!_armed) return;
         _armed = false;
         var rid = new RAWINPUTDEVICE { usUsagePage = 1, usUsage = 2, dwFlags = RIDEV_REMOVE, hwndTarget = IntPtr.Zero };
