@@ -223,6 +223,7 @@ internal static class Program
         if (Array.IndexOf(args, "--appbarcheck") >= 0) return AppBarCheck(); // 0.6.2 모니터 여러 대 작업 표시줄 깜빡임 — 자리 같으면 안 알림·고리 끊김 (실제 AppBar 등록 없음)
         int volAt = Array.FindIndex(args, a => a == "--volumecheck");
         if (volAt >= 0) return VolumeCheck(volAt + 1 < args.Length ? args[volAt + 1] : null); // 0.8 앱별 볼륨·볼륨 표시 (#21) — 실제 볼륨은 안 바꿈
+        if (Array.IndexOf(args, "--idlehide") >= 0) return IdleHideCheck(); // #39 자동 숨김 독: 커서 정지 5초면 숨김 (가짜 커서·시각, 창·입력 없음)
         if (Array.IndexOf(args, "--clipcheck") >= 0) return ClipCheck(); // 0.6.3 문제 신고 영역 캡처·붙여넣기 (#13) — 실제 캡처 도구·클립보드는 안 건드림
         if (Array.IndexOf(args, "--profilecheck") >= 0) return ProfileCheck(); // 0.6.1 루틴 브라우저 계정·탐색기 창 (화면·실제 실행 없음)
         if (Array.IndexOf(args, "--explorerlog") >= 0)
@@ -2415,6 +2416,64 @@ internal static class Program
         enc.Frames.Add(BitmapFrame.Create(rtb));
         using (var fs = File.Create(path)) enc.Save(fs);
         Console.WriteLine($"  저장  {path}");
+    }
+
+    /// <summary>
+    /// --idlehide (#39): CursorIdle 판정만 가짜 커서 위치(DIP)와 시각으로 — 창·실제 커서·입력 없음.
+    /// 5초 정지면 숨김(4.999초는 아님) · 1px 움직이면 처음부터 · 독 밖이면 안 숨김 · 이름표/아이콘 위면 안 숨김(풀린 뒤 다시 5초) ·
+    /// 숨긴 자리에 그대로면 다시 안 나옴, 1px 움직이면 풀림 · 커서가 모니터 밖(null)이면 안 숨김. 독 위치(아래·왼쪽·오른쪽)와 모니터는 좌표만 다름.
+    /// </summary>
+    private static int IdleHideCheck()
+    {
+        int bad = 0;
+        void Ok(string what, bool ok) { Console.WriteLine($"  {(ok ? "통과" : "실패")}  {what}"); if (!ok) bad++; }
+        var t = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.CursorIdle")!;
+        long idle = (long)t.GetField("IdleMs", Any)!.GetValue(null)!;
+        Ok($"정지 시간 5초 ({idle}ms)", idle == 5000);
+        object New() => Activator.CreateInstance(t, true)!;
+        bool Hide(object o, Point? c, bool inside, bool blocked, long now) => (bool)t.GetMethod("ShouldHide", Any)!.Invoke(o, new object?[] { c, inside, blocked, now })!;
+        bool Hold(object o, Point? c) => (bool)t.GetMethod("HoldsHidden", Any)!.Invoke(o, new object?[] { c })!;
+        // 독 위치마다 커서 자리 (1920x1080 DIP, 둘째 모니터는 x 1920~): 아래 가운데·오른쪽 끝·왼쪽 끝·둘째 모니터 오른쪽 끝
+        var spots = new (string Name, Point P)[] { ("아래", new Point(960, 1079)), ("오른쪽", new Point(1919, 540)), ("왼쪽", new Point(0, 540)), ("둘째 모니터 오른쪽", new Point(3839, 600)) };
+        foreach (var (name, p) in spots)
+        {
+            var o = New();
+            bool early = false, hid = false;
+            for (long ms = 0; ms <= 6000; ms += 60)
+            {
+                bool h = Hide(o, p, true, false, 1000 + ms);
+                if (h && ms < 5000) early = true;
+                if (h) { hid = true; break; }
+            }
+            Ok($"{name}: 5초 전엔 안 숨고 5초에 숨음", hid && !early);
+            Ok($"{name}: 숨긴 자리에 그대로면 다시 안 나옴", Hold(o, p));
+            Ok($"{name}: 1px 움직이면 풀림 (가장자리 규칙대로 다시 나옴)", !Hold(o, new Point(p.X, p.Y - 1)) && !Hold(o, p));
+        }
+        {
+            var o = New(); var p = new Point(960, 1079); bool hid = false;
+            for (long ms = 0; ms <= 8000; ms += 60) { var c = ms % 1200 == 0 ? new Point(960 + (ms / 1200 % 2), 1079) : p; hid |= Hide(o, c, true, false, ms); }
+            Ok("1.2초마다 1px 움직이면 8초가 지나도 안 숨음", !hid);
+        }
+        {
+            var o = New(); bool hid = false;
+            for (long ms = 0; ms <= 8000; ms += 60) hid |= Hide(o, new Point(500, 500), false, false, ms);
+            Ok("독 밖에서 멈춰 있으면 이 규칙으로는 안 숨음 (평소 0.5초 숨김이 맡음)", !hid);
+        }
+        {
+            var o = New(); var p = new Point(960, 1079); bool hidBlocked = false, hidAfter = false; long hidAt = -1;
+            for (long ms = 0; ms <= 6000; ms += 60) hidBlocked |= Hide(o, p, true, true, ms);
+            for (long ms = 6060; ms <= 12000; ms += 60) { if (Hide(o, p, true, false, ms)) { hidAfter = true; hidAt = ms; break; } }
+            Ok("이름표가 떠 있거나 아이콘 위면 안 숨음", !hidBlocked);
+            Ok($"이름표가 사라진 뒤에는 다시 5초 지나야 숨음 ({hidAt}ms)", hidAfter && hidAt >= 6060 + 5000 - 60);
+        }
+        {
+            var o = New(); bool hid = false;
+            for (long ms = 0; ms <= 8000; ms += 60) hid |= Hide(o, null, true, false, ms);
+            Ok("커서가 독 모니터 밖(null)이면 안 숨음", !hid);
+            Ok("커서 정지로 숨긴 적이 없으면 다시 나오는 걸 막지 않음", !Hold(New(), new Point(960, 1079)));
+        }
+        Console.WriteLine(bad == 0 ? "  모두 통과" : $"  실패 {bad}개");
+        return bad == 0 ? 0 : 1;
     }
 
     private static int ClipCheck()

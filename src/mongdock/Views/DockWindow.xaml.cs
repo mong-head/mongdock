@@ -59,6 +59,7 @@ public partial class DockWindow : Window
     private bool _sliding;
     private bool _windowsHidden;
     private long _lastInsideTicks;
+    private readonly CursorIdle _cursorIdle = new(); // 커서 정지 5초면 숨김 (#39)
     private bool _fullscreen;
     private bool _dialogOpen;
 
@@ -661,6 +662,8 @@ public partial class DockWindow : Window
 
         if (_hideTo >= 1)
         {
+            // 커서 정지로 숨긴 자리에 커서가 그대로면 가장자리라도 다시 꺼내지 않음 — 조금이라도 움직이면 평소 규칙 (#39)
+            if (_cursorIdle.HoldsHidden(cursor)) return;
             // 독 모니터 밖(null)이면 트리거 판정 안 함
             if (cursor is Point c && InTriggerZone(c)) SetHidden(false, animate: true);
             return;
@@ -670,10 +673,30 @@ public partial class DockWindow : Window
         var inside = _shownRect;
         inside.Inflate(4, 4);
         // 터치를 뗀 뒤엔 커서가 독 위에 남아 있어도 바깥으로 봄 (진짜 마우스가 움직이면 다시 판정)
-        if (!TouchReleasedAt(cursor) && ((cursor is Point p && inside.Contains(p)) || IsMouseOver))
+        bool insideDock = (cursor is Point p && inside.Contains(p)) || IsMouseOver;
+        // 커서가 독 영역 안에서 5초 동안 한 픽셀도 안 움직이면 숨김 (#39 영상 볼 때) — 이름표가 떠 있거나 아이콘 위면 그대로 (메뉴·미리 보기·끌기는 위에서 이미 빠짐)
+        if (_cursorIdle.ShouldHide(cursor, insideDock, blocked: _label is { IsVisible: true } || CursorOverItem(), Environment.TickCount64))
+        {
+            Log.Info("독: 커서가 5초 동안 안 움직여 숨김");
+            SetHidden(true, animate: true);
+            return;
+        }
+        if (!TouchReleasedAt(cursor) && insideDock)
             _lastInsideTicks = Environment.TickCount64;
         else if (Environment.TickCount64 - _lastInsideTicks > Math.Max(0, _services.Settings.Current.Dock.AutoHideDelayMs))
             SetHidden(true, animate: true);
+    }
+
+    /// <summary>커서가 독 아이콘 위인지 (WPF 가 아는 마우스 아래 요소에서 위로 DockItemView 를 찾음).</summary>
+    private static bool CursorOverItem()
+    {
+        DependencyObject? d = Mouse.DirectlyOver as DependencyObject;
+        for (int i = 0; d is not null && i < 64; i++)
+        {
+            if (d is DockItemView) return true;
+            d = d is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(d) : LogicalTreeHelper.GetParent(d);
+        }
+        return false;
     }
 
     /// <summary>커서가 독 가장자리 2px 이내 + 패널 길이 범위(±여유)에 있는지.</summary>

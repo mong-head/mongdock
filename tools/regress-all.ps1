@@ -29,6 +29,7 @@ $items = @(
     @("볼륨·소리 판·최소화 효과", $rt, @("--volumecheck", "OUT\volume")),
     @("시작 순서 (포커스 링)", $rt, @("--focuscheck")),
     @("단축키", $rt, @("--hotkeycheck")),
+    @("자동 숨김 독 커서 정지 (#39)", $rt, @("--idlehide")),
     @("라이선스·스토어", $rt, @("--license")),
     @("검색 줄 자리", $rt, @("--spotrows")),
     @("검색 순서", $rt, @("--searchrank")),

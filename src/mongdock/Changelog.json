@@ -2,6 +2,27 @@
   "_comment": "mongdock 변경 내역 단일 원본. 앱(설정 → 변경 내역, 새로운 기능 코치마크)과 build-release.ps1(GitHub 릴리스 노트)이 함께 읽는다. 최신 버전을 맨 위에. kind = feature | improvement | fix. edition = store | direct (그 판에서만 보임 — 버전 또는 항목에, 없으면 두 판 모두). coach 가 있는 feature 는 업데이트 후 상단바·독 위 말풍선으로 소개(anchor = Center|Dock|Logo|AppName|Desktops|Tray|Search|Clock, condition = topBar|trayIcons|spotlight|banners|dock|appMenus, 없으면 항상). major = 그 버전의 주요 업데이트(버전당 1~4개, 오랜만에 업데이트한 사람·변경 내역 맨 위·릴리스 노트 \"이번 버전 핵심\"에 씀), headline = 그 버전 한 줄 요약. body 의 {hotkey} 는 실제 검색 단축키 문구로 바뀜.",
   "versions": [
     {
+      "version": "0.8.4",
+      "date": "2026-10-21",
+      "entries": [
+        {
+          "kind": "improvement",
+          "text": "자동 숨김 독을 꺼낸 채 마우스를 5초 동안 움직이지 않으면 독이 다시 숨어요. 영상을 볼 때 편해요. 마우스를 조금만 움직이면 다시 나와요.",
+          "text_en": "An auto-hidden dock now hides again when the mouse stays still on it for 5 seconds, handy while watching videos. Move the mouse a little and it comes back."
+        },
+        {
+          "kind": "fix",
+          "text": "절전에서 깨어난 뒤 자동 숨김 독이 나타나지 않던 문제를 고쳤어요.",
+          "text_en": "Fixed the auto-hidden dock sometimes not appearing after waking from sleep."
+        },
+        {
+          "kind": "fix",
+          "text": "소리 판의 스피커·마이크 고르기에서 긴 장치 이름이 잘리던 문제를 고쳤어요. 드라이버 이름은 둘째 줄에 보여요.",
+          "text_en": "Long device names in the sound panel's speaker and microphone lists are no longer cut off; the driver name shows on a second line."
+        }
+      ]
+    },
+    {
       "version": "0.8.3",
       "date": "2026-10-20",
       "entries": [
