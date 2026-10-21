@@ -43,13 +43,15 @@ internal static class WindowAnimationSetting
     /// 몽독이 꺼질 때는 <c>wait</c> 로 끝날 때까지 기다림.
     /// </summary>
     private static Task _tail = Task.CompletedTask;
-    private static bool? _pending;
+    /// <summary>적용 중인 값: -1 없음, 0 끔, 1 켬. 백그라운드 작업은 잠금 없이(Interlocked) 비움 — Gate 를 쥔 채 기다리는 종료 경로와 맞물리지 않게 (리뷰: 3초 대기).</summary>
+    private static int _pending = -1;
 
     /// <summary>지금 윈도우 최소화·최대화 애니메이션이 켜져 있는지 (모르면 null). 적용 중인 값이 있으면 그 값.</summary>
     public static bool? Get()
     {
         if (SystemForTest is { } t) return t.Get();
-        if (_pending is bool p) return p;
+        int pending = Volatile.Read(ref _pending);
+        if (pending >= 0) return pending == 1;
         var info = new AnimationInfo { cbSize = (uint)Marshal.SizeOf<AnimationInfo>() };
         return SystemParametersInfo(SPI_GETANIMATION, info.cbSize, ref info, 0) ? info.iMinAnimate != 0 : null;
     }
@@ -57,7 +59,8 @@ internal static class WindowAnimationSetting
     private static void Set(bool on, bool wait)
     {
         if (SystemForTest is { } t) { t.Set(on); return; }
-        _pending = on;
+        int want = on ? 1 : 0;
+        Volatile.Write(ref _pending, want);
         var task = _tail = _tail.ContinueWith(_ =>
         {
             var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -65,7 +68,7 @@ internal static class WindowAnimationSetting
             if (!SystemParametersInfo(SPI_SETANIMATION, info.cbSize, ref info, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE))
                 Log.Warn($"윈도우 최소화 애니메이션 바꾸기 실패 (켜기={on}, 오류 {Marshal.GetLastWin32Error()})");
             if (sw.ElapsedMilliseconds > 300) Log.Info($"윈도우 최소화 애니메이션 바꾸기 {sw.ElapsedMilliseconds}ms (모든 창에 알림, 백그라운드)");
-            lock (Gate) if (_pending == on) _pending = null;
+            Interlocked.CompareExchange(ref _pending, -1, want);
         }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
         if (wait)
         {
@@ -98,7 +101,11 @@ internal static class WindowAnimationSetting
     {
         lock (Gate)
         {
-            if (!HasRecord) return;
+            if (!HasRecord)
+            {
+                if (wait) Flush(); // 바로 앞의 되돌림(기다리지 않음)이 아직 적용 중일 수 있음 — 종료 전에 끝까지 (리뷰)
+                return;
+            }
             bool? original = ReadRecord();
             if (original == true && Get() == false)
             {

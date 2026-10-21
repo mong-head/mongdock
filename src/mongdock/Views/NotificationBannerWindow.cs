@@ -93,6 +93,8 @@ internal sealed class NotificationBannerWindow : Window
             Show(item, null, null);
         }
 
+        private readonly Dictionary<string, DateTime> _skipLogged = new(StringComparer.OrdinalIgnoreCase);
+
         public bool Show(NotificationItem item, ImageSource? icon, Action? onClick,
             IReadOnlyList<BannerButton>? buttons = null, TimeSpan? life = null, Action? onIgnored = null, bool ignoreBannerSetting = false)
         {
@@ -104,7 +106,16 @@ internal sealed class NotificationBannerWindow : Window
                 // 전체 화면 앱(게임·동영상) 위에는 띄우지 않음 — 윈도우도 이때는 토스트를 숨김
                 if (_services.DesktopWindows.IsFullscreenOn(monitor.IsPrimary ? "" : monitor.DeviceName)) return false;
                 // 영상을 보는 중(재생 중인 앱의 창이 앞)이면 전체 화면이 아니어도 띄우지 않음 — 알림 센터에만 (사용자 결정 10-21)
-                if (MediaFocus.Watching(_services)) { Log.Info($"알림 배너 생략: 영상·음악 재생 중인 창이 앞 ({item.Aumid})"); return false; }
+                // 몽독이 직접 띄우는 안내(배터리 부족·업데이트·루틴 질문 등, ignoreBannerSetting)는 알림 센터에 안 남으므로 그대로 띄움 (리뷰)
+                if (!ignoreBannerSetting && MediaFocus.Watching(_services))
+                {
+                    if (!_skipLogged.TryGetValue(item.Aumid ?? "", out var last) || DateTime.UtcNow - last > TimeSpan.FromMinutes(1))
+                    {
+                        _skipLogged[item.Aumid ?? ""] = DateTime.UtcNow;
+                        Log.Info($"알림 배너 생략: 재생 중인 앱의 창이 앞 ({item.Aumid}) — 같은 앱은 1분에 한 줄");
+                    }
+                    return false;
+                }
 
                 if (_window is null || _window._closed)
                 {

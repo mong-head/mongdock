@@ -12,8 +12,8 @@
         },
         {
           "kind": "improvement",
-          "text": "영상이나 음악을 재생 중인 창을 보고 있을 때는 알림 배너와 독 아이콘 튀기기가 나오지 않아요. 알림은 알림 센터에 쌓여요.",
-          "text_en": "While you're looking at a window that is playing video or music, notification banners and dock icon bounces stay out of the way. Notifications still collect in the notification center."
+          "text": "영상이나 음악을 재생 중인 앱의 창이 앞에 있으면 알림 배너와 독 아이콘 튀기기가 나오지 않아요. 알림은 알림 센터에 쌓여요.",
+          "text_en": "While a window of an app that is playing video or music is in front, notification banners and dock icon bounces stay out of the way. Notifications still collect in the notification center."
         },
         {
           "kind": "fix",
