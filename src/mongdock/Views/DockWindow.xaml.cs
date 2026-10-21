@@ -90,6 +90,10 @@ public partial class DockWindow : Window
         Root.MouseLeave += OnRootMouseLeave;
 
         // 빈 영역/구분선 드래그 → 독 이동
+        // 누르기·떼기·휠은 커서가 그대로여도 쓰는 중 → 커서 정지 5초를 처음부터 (#39, 터치도 마우스 이벤트로 옴)
+        PreviewMouseDown += (_, _) => _cursorIdle.NoteActivity(Environment.TickCount64);
+        PreviewMouseUp += (_, _) => _cursorIdle.NoteActivity(Environment.TickCount64);
+        PreviewMouseWheel += (_, _) => _cursorIdle.NoteActivity(Environment.TickCount64);
         PanelBorder.MouseLeftButtonDown += OnPanelMouseDown;
         Root.MouseLeftButtonDown += OnRootMouseDown; // 패널 밖으로 튀어나온 확대 아이콘을 누른 것 (패널 처리가 먼저 — Handled 면 건너뜀)
         PanelBorder.MouseMove += OnPanelMouseMove;

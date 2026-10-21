@@ -40,6 +40,9 @@ internal sealed class CursorIdle
         return true;
     }
 
+    /// <summary>독 위에서 누르거나 떼거나 휠을 굴림 — 커서는 그대로여도 쓰는 중이므로 정지 시간을 처음부터 (0.8.4 화면 확인: 아이콘을 연달아 누르는 중에 숨었음).</summary>
+    public void NoteActivity(long now) => _since = now;
+
     /// <summary>커서 정지로 숨겨 두고 있는지 (화면 끝 밀기 감시를 켤지).</summary>
     public bool Holding => _hiddenAt is not null;
 

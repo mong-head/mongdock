@@ -2482,6 +2482,17 @@ internal static class Program
             Ok("커서가 독 모니터 밖(null)이면 안 숨음", !hid);
             Ok("커서 정지로 숨긴 적이 없으면 다시 나오는 걸 막지 않음", !Hold(New(), new Point(960, 1079)));
         }
+        {
+            // 0.8.4 화면 확인: 커서를 그대로 둔 채 아이콘을 연달아 누르는 중에 숨었음 → 누르기·휠마다 처음부터
+            var o = New(); var p = new Point(960, 1060); bool hid = false; long hidAt = -1;
+            var note = t.GetMethod("NoteActivity", Any)!;
+            for (long ms = 0; ms <= 15000; ms += 60)
+            {
+                if (ms is 4020 or 7980) note.Invoke(o, new object[] { ms }); // 4초·8초쯤 클릭
+                if (Hide(o, p, true, ms)) { hid = true; hidAt = ms; break; }
+            }
+            Ok($"독을 누르면 커서가 그대로여도 다시 5초 (마지막 클릭 7.98초 → {hidAt}ms 에 숨음)", hid && hidAt >= 7980 + 5000 && hidAt <= 7980 + 5000 + 60);
+        }
         // 화면 끝 밀기: 마우스 장치의 상대 이동 한 번이 독 쪽(화면 바깥)으로 미는 양 (DockWindow 는 합이 PushCounts 이상이면 밀었다고 봄)
         {
             var w = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.EdgePushWatch")!;
