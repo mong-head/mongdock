@@ -31,7 +31,7 @@ internal sealed class MinimizeEffectController : IDisposable
     private readonly Func<IntPtr, Rect?> _iconRect;
     private readonly Func<DockEdge> _edge;
     private WinEventProc? _proc;
-    private IntPtr _hook;
+    private IntPtr _hook, _noteHook, _moveHook;
     private OverlayWindow? _overlay;
     private bool _disposed;
 
@@ -101,6 +101,10 @@ internal sealed class MinimizeEffectController : IDisposable
         if (_hook != IntPtr.Zero) return;
         _proc = OnEvent;
         _hook = SetWinEventHook(EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MINIMIZESTART, IntPtr.Zero, _proc, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+        // 보이는 자리 기록 (#27 스냅 회귀): 앞으로 올 때·끌어 옮기기가 끝날 때 — 최소화 훅은 창이 이미 내려간 뒤 올 때가 있어 그때는 자리를 못 읽음
+        _noteHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, _proc, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+        _moveHook = SetWinEventHook(EVENT_SYSTEM_MOVESIZEEND, EVENT_SYSTEM_MOVESIZEEND, IntPtr.Zero, _proc, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+        AppLauncher.BeforeMinimize = NoteVisible; // 몽독이 최소화할 때는 부르기 직전(창이 아직 떠 있을 때) 기록
         Log.Info(_hook != IntPtr.Zero ? $"창 최소화 효과 켬 ({Effect})" : "창 최소화 훅 실패");
     }
 
@@ -108,16 +112,42 @@ internal sealed class MinimizeEffectController : IDisposable
     {
         if (_hook == IntPtr.Zero) return;
         UnhookWinEvent(_hook);
-        _hook = IntPtr.Zero;
+        if (_noteHook != IntPtr.Zero) UnhookWinEvent(_noteHook);
+        if (_moveHook != IntPtr.Zero) UnhookWinEvent(_moveHook);
+        _hook = _noteHook = _moveHook = IntPtr.Zero;
         _proc = null;
+        AppLauncher.BeforeMinimize = null;
+        lock (RememberLock) Remembered.Clear();
         Log.Info("창 최소화 효과 끔");
     }
 
     private void OnEvent(IntPtr hook, uint ev, IntPtr hwnd, int idObject, int idChild, uint thread, uint time)
     {
         if (idObject != 0 || hwnd == IntPtr.Zero || _disposed) return;
-        try { Play(hwnd); }
+        try
+        {
+            if (ev == EVENT_SYSTEM_MINIMIZESTART) Play(hwnd);
+            else NoteVisible(hwnd);
+        }
         catch (Exception ex) { Log.Warn($"창 최소화 효과 실패: {ex.GetType().Name} {ex.Message}"); }
+    }
+
+    /// <summary>
+    /// 창이 떠 있을 때 보이는 자리(DWM 사각형)와 썸네일 오프셋을 기억 (#27). 최소화된 창·화면 밖·작은 창은 건너뜀 — 짐작한 값은 절대 기억하지 않음
+    /// (0.8.4 1cb39c2 회귀: 늦게 온 최소화 훅이 스냅 전 자리 짐작을 「기억」으로 저장 → 반반 스냅 창이 반대쪽으로 갔다가 돌아옴).
+    /// </summary>
+    internal static void NoteVisible(IntPtr hwnd)
+    {
+        try
+        {
+            if (hwnd == IntPtr.Zero || IsIconic(hwnd) || !IsWindowVisible(hwnd)) return;
+            lock (RememberLock)
+            {
+                if (!TryWindowRect(hwnd, out var rect, out var offset, consume: false) || LastRectSource != "DWM") return;
+                Remember(hwnd, rect, offset);
+            }
+        }
+        catch { }
     }
 
     /// <summary>윈도우 「애니메이션 효과」가 꺼져 있거나 절전 모드 → 짧은 흐려짐만.</summary>
@@ -149,8 +179,14 @@ internal sealed class MinimizeEffectController : IDisposable
 
     private bool Start(IntPtr hwnd, bool restore, Action? onDone)
     {
-        if (!TryWindowRect(hwnd, out var from, out var offset)) return false;
-        if (!restore) Remember(hwnd, from, offset);
+        // 최소화: 기억을 지우지 않고 읽기만, 그리고 DWM 으로 읽은 진짜 자리만 기억 (훅이 늦어 짐작이면 앞서 기록한 자리를 그대로 둠)
+        Rect from;
+        Point offset;
+        lock (RememberLock)
+        {
+            if (!TryWindowRect(hwnd, out from, out offset, consume: restore)) return false;
+            if (!restore && LastRectSource == "DWM") Remember(hwnd, from, offset);
+        }
         var monitor = MonitorFor(from);
         var bounds = monitor.BoundsRect;
         var edge = _edge();
@@ -191,6 +227,9 @@ internal sealed class MinimizeEffectController : IDisposable
 
     private const int RememberMax = 64;
 
+    /// <summary>Remembered·LastRectSource 잠금 — 루틴의 최소화(BeforeMinimize)가 UI 스레드 밖에서 올 수 있음.</summary>
+    private static readonly object RememberLock = new();
+
     private static void Remember(IntPtr hwnd, Rect visible, Point offset)
     {
         var wp = new WINDOWPLACEMENT { length = Marshal.SizeOf<WINDOWPLACEMENT>() };
@@ -208,7 +247,7 @@ internal sealed class MinimizeEffectController : IDisposable
     /// ② 없으면 되살릴 자리 어림 — 최대화였으면 모니터 작업 영역, 아니면 저장된 창 자리에서 보이지 않는 테두리(왼·오른·아래)를 뺌.
     /// <paramref name="offset"/> = 창 사각형 왼쪽 위 → 보이는 사각형 왼쪽 위 (썸네일 rcSource 는 창 사각형 기준이라 그만큼 밀어 잘라야 함, #27).
     /// </summary>
-    private static bool TryWindowRect(IntPtr hwnd, out Rect rect, out Point offset)
+    private static bool TryWindowRect(IntPtr hwnd, out Rect rect, out Point offset, bool consume = true)
     {
         rect = default;
         offset = default;
@@ -223,7 +262,7 @@ internal sealed class MinimizeEffectController : IDisposable
         if (!GetWindowPlacement(hwnd, ref wp)) return false;
         bool toMax = (wp.flags & WPF_RESTORETOMAXIMIZED) != 0;
         // 기억값: 보통 창이고 저장된 창 자리·그 모니터 작업 영역이 그대로일 때만 (최대화는 지금의 작업 영역이 곧 끝 자리 — 독·상단바·배율이 바뀌었을 수 있음, 리뷰)
-        if (Remembered.Remove(hwnd, out var seen) && !toMax && !seen.Maximized && seen.Normal.Equals(wp.rcNormalPosition)
+        if ((consume ? Remembered.Remove(hwnd, out var seen) : Remembered.TryGetValue(hwnd, out seen)) && !toMax && !seen.Maximized && seen.Normal.Equals(wp.rcNormalPosition)
             && seen.Work.Equals(MonitorFor(seen.Visible).WorkRect) && seen.Visible.Width > 60 && seen.Visible.Height > 40)
         {
             rect = seen.Visible;
@@ -683,6 +722,7 @@ internal sealed class MinimizeEffectController : IDisposable
 
     // ───────────────────────── Win32 ─────────────────────────
 
+    private const uint EVENT_SYSTEM_FOREGROUND = 0x0003, EVENT_SYSTEM_MOVESIZEEND = 0x000B;
     private const uint EVENT_SYSTEM_MINIMIZESTART = 0x0016, WINEVENT_OUTOFCONTEXT = 0x0000, WINEVENT_SKIPOWNPROCESS = 0x0002;
     private const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
     private const int WPF_RESTORETOMAXIMIZED = 0x0002;
@@ -732,6 +772,7 @@ internal sealed class MinimizeEffectController : IDisposable
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int max);
     [DllImport("user32.dll")] private static extern bool IsZoomed(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern int GetSystemMetricsForDpi(int index, uint dpi);
     private const int SM_CXBORDER = 5, SM_CXSIZEFRAME = 32, SM_CXPADDEDBORDER = 92;
     private const long WS_THICKFRAME = 0x00040000;

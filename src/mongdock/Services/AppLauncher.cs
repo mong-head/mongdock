@@ -217,6 +217,14 @@ public sealed class AppLauncher : IAppLauncher
     /// </summary>
     internal static Func<IntPtr, Action, bool>? AnimatedRestore { get; set; }
 
+    /// <summary>몽독이 창을 최소화하기 직전 (창이 아직 떠 있음) — 최소화 효과가 보이는 자리를 기록함 (#27, MinimizeEffectController.NoteVisible).</summary>
+    internal static Action<IntPtr>? BeforeMinimize { get; set; }
+
+    internal static void NoteBeforeMinimize(IntPtr hwnd)
+    {
+        try { BeforeMinimize?.Invoke(hwnd); } catch { }
+    }
+
     /// <summary>창을 앞으로 (최소화면 복원). AppMenuService 등 다른 서비스도 사용. 실패 시 false.</summary>
     internal static bool ActivateWindow(IntPtr hwnd)
     {
@@ -325,6 +333,7 @@ public sealed class AppLauncher : IAppLauncher
             if (fg == IntPtr.Zero) fg = _tracker.ForegroundWindow; // 전환 중 등 일시적으로 0 일 때
             if (fg == hwnd && !User32.IsIconic(hwnd) && VirtualDesktopHelper.IsOnCurrentDesktop(hwnd) != false)
             {
+                NoteBeforeMinimize(hwnd);
                 User32.ShowWindowAsync(hwnd, User32.SW_MINIMIZE);
                 return;
             }
@@ -385,6 +394,7 @@ public sealed class AppLauncher : IAppLauncher
         try
         {
             if (hwnd == IntPtr.Zero || !User32.IsWindow(hwnd)) return;
+            NoteBeforeMinimize(hwnd);
             User32.ShowWindowAsync(hwnd, User32.SW_MINIMIZE);
         }
         catch (Exception ex)

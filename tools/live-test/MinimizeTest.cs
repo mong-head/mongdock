@@ -312,6 +312,8 @@ internal static partial class Program
             var iconPx = new Rect((work.Left + work.Width / 2 - 28) * scale, (work.Bottom - 70) * scale, 56 * scale, 56 * scale);
             var restoreHook = typeof(AppLauncher).GetProperty("AnimatedRestore", Any)!;
 
+            bool viaDock = false; // true: 독 클릭처럼 최소화 직전에 AppLauncher.NoteBeforeMinimize (보이는 자리 기록, #27 스냅 회귀)
+            var noteBefore = typeof(AppLauncher).GetMethod("NoteBeforeMinimize", Any)!;
             void Run(string label, Action restore)
             {
                 var flashes = new List<int>();
@@ -324,6 +326,7 @@ internal static partial class Program
                 int fgOk = 0, fgTried = 0;
                 for (int k = 0; k < 3; k++)
                 {
+                    if (viaDock) noteBefore.Invoke(null, new object[] { hwnd });
                     ShowWindowAsync(hwnd, 6 /* SW_MINIMIZE */);
                     Pump(1200);
                     _fgResult = null;
@@ -385,6 +388,25 @@ internal static partial class Program
             Run("D3 지니 · 최대화 창", viaEffect(restoreOnly));
             ShowWindowAsync(hwnd, 9 /* SW_RESTORE */);
             Pump(800);
+            // F: 작업 영역 왼쪽 반·오른쪽 반 (스냅 자리 흉내 — 진짜 스냅 상태는 키 입력 없이 못 만듦), 독처럼 최소화 직전 기록 → 끝 자리 차이 0~1px 이어야 함
+            {
+                var pm = Monitors.GetPrimary();
+                var wa = new Rect(pm.WorkArea.X * pm.Scale, pm.WorkArea.Y * pm.Scale, pm.WorkArea.Width * pm.Scale, pm.WorkArea.Height * pm.Scale); // 물리 px
+                int half = (int)(wa.Width / 2), hh = (int)wa.Height;
+                viaDock = true;
+                foreach (var (fl, fx) in new[] { ("F 왼쪽 반", (int)wa.Left), ("F2 오른쪽 반", (int)wa.Left + half) })
+                {
+                    // 보이는 자리가 반쪽이 되도록 창 사각형은 보이지 않는 테두리만큼 넓게 (보통 창의 스냅과 같은 모양)
+                    double inv = (double)mecType.GetMethod("InvisibleBorder", Any)!.Invoke(null, new object[] { hwnd })!;
+                    SetWindowPos(hwnd, IntPtr.Zero, (int)(fx - inv), (int)wa.Top, (int)(half + 2 * inv), (int)(hh + inv), 0x0014 /* NOZORDER|NOACTIVATE */);
+                    Pump(1000);
+                    GetWindowRect(hwnd, out wr);
+                    Run(fl, viaEffect(restoreOnly));
+                }
+                viaDock = false;
+                ShowWindowAsync(hwnd, 9 /* SW_RESTORE */);
+                Pump(600);
+            }
             // E: 붙잡은 그림이 보이는 동안 vs 걷힌 뒤 내용 차이 (#27 사용자: 다 켜진 뒤 잠시 창이 움직이는 느낌) — 픽셀 이동량
             GetWindowRect(hwnd, out wr);
             for (int k = 0; k < 3; k++) lines.Add(ContentShift($"E 내용 비교-{k + 1}", hwnd, wr, viaEffect(restoreOnly), outDir));
@@ -451,6 +473,8 @@ internal static partial class Program
     }
 
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr h, int a, ref int v, int s);
+    [DllImport("user32.dll", EntryPoint = "SetWindowPos")] private static extern bool SetWindowPosF(IntPtr h, IntPtr after, int x, int y, int w, int hgt, uint flags);
+    private static bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int w, int hgt, uint flags) => SetWindowPosF(h, after, x, y, w, hgt, flags);
     [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")] private static extern int DwmGetWindowAttributeInt(IntPtr h, int a, out int v, int s);
 
     /// <summary>E 내용 비교용 페이지: 글줄·가는 선·색 막대 (흰 바탕만이면 이동을 잴 수 없음).</summary>

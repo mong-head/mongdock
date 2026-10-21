@@ -770,6 +770,7 @@ internal static class RoutineService
             var mode = item.Placement?.Mode ?? RoutinePlacementMode.Keep;
             if (mode == RoutinePlacementMode.Min)
             {
+                AppLauncher.NoteBeforeMinimize(hwnd);
                 User32.ShowWindowAsync(hwnd, User32.SW_MINIMIZE);
                 return;
             }
