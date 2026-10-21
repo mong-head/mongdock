@@ -388,6 +388,12 @@ internal static partial class Program
             // E: 붙잡은 그림이 보이는 동안 vs 걷힌 뒤 내용 차이 (#27 사용자: 다 켜진 뒤 잠시 창이 움직이는 느낌) — 픽셀 이동량
             GetWindowRect(hwnd, out wr);
             for (int k = 0; k < 3; k++) lines.Add(ContentShift($"E 내용 비교-{k + 1}", hwnd, wr, viaEffect(restoreOnly), outDir));
+            ShowWindowAsync(hwnd, 3 /* SW_MAXIMIZE */);
+            Pump(1500);
+            GetWindowRect(hwnd, out wr);
+            for (int k = 0; k < 2; k++) lines.Add(ContentShift($"E2 최대화 내용 비교-{k + 1}", hwnd, wr, viaEffect(restoreOnly), outDir));
+            ShowWindowAsync(hwnd, 9 /* SW_RESTORE */);
+            Pump(800);
             ((IDisposable)controller).Dispose();
             controller = null;
             File.WriteAllLines(Path.Combine(outDir, "flash-matrix.txt"), lines);

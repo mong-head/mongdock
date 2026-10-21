@@ -51,7 +51,7 @@ internal static partial class Program
                     double first = -1;
                     EventHandler h = (_, _) => { if (first < 0) first = sw.Elapsed.TotalMilliseconds; };
                     CompositionTarget.Rendering += h;
-                    bool ok = (bool)run.Invoke(overlay, new object?[] { hwnd, monitorPx, from, to, shape, DockEdge.Bottom, true, 240, (Action)(() => { }) })!;
+                    bool ok = (bool)run.Invoke(overlay, new object?[] { hwnd, monitorPx, from, new Point(0, 0), to, shape, DockEdge.Bottom, true, 240, (Action)(() => { }) })!;
                     double sync = sw.Elapsed.TotalMilliseconds;
                     Pump(600);
                     CompositionTarget.Rendering -= h;

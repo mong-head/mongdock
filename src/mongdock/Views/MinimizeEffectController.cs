@@ -149,8 +149,8 @@ internal sealed class MinimizeEffectController : IDisposable
 
     private bool Start(IntPtr hwnd, bool restore, Action? onDone)
     {
-        if (!TryWindowRect(hwnd, out var from)) return false;
-        if (!restore) Remember(hwnd, from);
+        if (!TryWindowRect(hwnd, out var from, out var offset)) return false;
+        if (!restore) Remember(hwnd, from, offset);
         var monitor = MonitorFor(from);
         var bounds = monitor.BoundsRect;
         var edge = _edge();
@@ -159,7 +159,7 @@ internal sealed class MinimizeEffectController : IDisposable
         LastPlayedForTest = (from, to, shape, restore);
         var overlay = _overlay ??= new OverlayWindow(_services);
         int duration = MinimizeMotion.DurationMs(shape, restore, _services.Settings.Current.Dock.MinimizeSpeed);
-        return overlay.Run(hwnd, new Rect(bounds.Left, bounds.Top, bounds.Right - bounds.Left, bounds.Bottom - bounds.Top), from, to, shape, edge, restore, duration, onDone);
+        return overlay.Run(hwnd, new Rect(bounds.Left, bounds.Top, bounds.Right - bounds.Left, bounds.Bottom - bounds.Top), from, offset, to, shape, edge, restore, duration, onDone);
     }
 
     /// <summary>사각형(물리 픽셀) 가운데가 있는 모니터 (없으면 주 모니터).</summary>
@@ -184,14 +184,14 @@ internal sealed class MinimizeEffectController : IDisposable
     /// 최소화 순간(아직 DWM 값이 있음)의 보이는 자리와 그때의 저장된 창 자리·최대화 여부를 기억해 두고, 되살릴 때 저장된 창 자리가 그대로면 그 자리로 끝냄.
     /// UI 스레드에서만 씀. 창이 많아지면 없어진 창부터 지움.
     /// </summary>
-    private static readonly Dictionary<IntPtr, (Rect Visible, RECT Normal, bool Maximized, Native.RECT Work)> Remembered = new();
+    private static readonly Dictionary<IntPtr, (Rect Visible, Point Offset, RECT Normal, bool Maximized, Native.RECT Work)> Remembered = new();
 
     /// <summary>마지막으로 구한 창 자리의 출처 — DWM(떠 있음) / 기억(최소화 때 본 자리) / 어림 (#27 진단 줄·flashmatrix).</summary>
     internal static string LastRectSource { get; private set; } = "";
 
     private const int RememberMax = 64;
 
-    private static void Remember(IntPtr hwnd, Rect visible)
+    private static void Remember(IntPtr hwnd, Rect visible, Point offset)
     {
         var wp = new WINDOWPLACEMENT { length = Marshal.SizeOf<WINDOWPLACEMENT>() };
         if (!GetWindowPlacement(hwnd, ref wp)) return;
@@ -200,19 +200,22 @@ internal sealed class MinimizeEffectController : IDisposable
             foreach (var gone in Remembered.Keys.Where(h => !IsWindow(h)).ToList()) Remembered.Remove(gone);
             if (Remembered.Count >= RememberMax) Remembered.Clear();
         }
-        Remembered[hwnd] = (visible, wp.rcNormalPosition, IsZoomed(hwnd), MonitorFor(visible).WorkRect);
+        Remembered[hwnd] = (visible, offset, wp.rcNormalPosition, IsZoomed(hwnd), MonitorFor(visible).WorkRect);
     }
 
     /// <summary>
     /// 최소화 직전 창 자리 (물리 픽셀): 떠 있으면 DWM 테두리 사각형. 이미 최소화됐으면 ① 최소화할 때 기억한 자리(저장된 창 자리·최대화가 그대로일 때)
     /// ② 없으면 되살릴 자리 어림 — 최대화였으면 모니터 작업 영역, 아니면 저장된 창 자리에서 보이지 않는 테두리(왼·오른·아래)를 뺌.
+    /// <paramref name="offset"/> = 창 사각형 왼쪽 위 → 보이는 사각형 왼쪽 위 (썸네일 rcSource 는 창 사각형 기준이라 그만큼 밀어 잘라야 함, #27).
     /// </summary>
-    private static bool TryWindowRect(IntPtr hwnd, out Rect rect)
+    private static bool TryWindowRect(IntPtr hwnd, out Rect rect, out Point offset)
     {
         rect = default;
+        offset = default;
         if (DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, out RECT r, Marshal.SizeOf<RECT>()) == 0 && r.Left > -30000 && r.Right - r.Left > 60 && r.Bottom - r.Top > 40)
         {
             rect = new Rect(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top);
+            if (GetWindowRect(hwnd, out var wr)) offset = new Point(Math.Max(0, r.Left - wr.Left), Math.Max(0, r.Top - wr.Top));
             LastRectSource = "DWM";
             return true;
         }
@@ -224,6 +227,7 @@ internal sealed class MinimizeEffectController : IDisposable
             && seen.Work.Equals(MonitorFor(seen.Visible).WorkRect) && seen.Visible.Width > 60 && seen.Visible.Height > 40)
         {
             rect = seen.Visible;
+            offset = seen.Offset;
             LastRectSource = "기억";
             return true;
         }
@@ -233,8 +237,11 @@ internal sealed class MinimizeEffectController : IDisposable
         var m = MonitorFor(guess);
         if (toMax)
         {
+            // 최대화 창은 작업 영역보다 사방으로 (보이지 않는 테두리 + 보이는 1px) 만큼 큼 — 125% 9px (이 PC 측정)
             var w = m.WorkRect;
             rect = new Rect(w.Left, w.Top, w.Right - w.Left, w.Bottom - w.Top);
+            double over = InvisibleBorder(hwnd) > 0 ? InvisibleBorderAt(WindowDpi(hwnd)) + GetSystemMetricsForDpi(SM_CXBORDER, WindowDpi(hwnd)) : 0;
+            offset = new Point(over, over);
         }
         else
         {
@@ -242,6 +249,7 @@ internal sealed class MinimizeEffectController : IDisposable
             var w = m.WorkRect;
             var b = m.BoundsRect;
             double inv = InvisibleBorder(hwnd);
+            offset = new Point(inv, 0);
             rect = new Rect(guess.X + (w.Left - b.Left) + inv, guess.Y + (w.Top - b.Top), Math.Max(1, guess.Width - 2 * inv), Math.Max(1, guess.Height - inv));
         }
         return rect.Width > 60 && rect.Height > 40;
@@ -254,10 +262,10 @@ internal sealed class MinimizeEffectController : IDisposable
     internal static double InvisibleBorder(IntPtr hwnd)
     {
         if ((Native.User32.GetWindowLong(hwnd, Native.User32.GWL_STYLE) & WS_THICKFRAME) == 0) return 0;
-        uint dpi = GetDpiForWindow(hwnd);
-        if (dpi == 0) dpi = 96;
-        return InvisibleBorderAt(dpi);
+        return InvisibleBorderAt(WindowDpi(hwnd));
     }
+
+    private static uint WindowDpi(IntPtr hwnd) { uint dpi = GetDpiForWindow(hwnd); return dpi == 0 ? 96 : dpi; }
 
     internal static double InvisibleBorderAt(uint dpi) =>
         Math.Max(0, GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi) - GetSystemMetricsForDpi(SM_CXBORDER, dpi));
@@ -329,7 +337,7 @@ internal sealed class MinimizeEffectController : IDisposable
             Hide();
         }
 
-        public bool Run(IntPtr source, Rect monitorPx, Rect from, Rect to, MinimizeEffect shape, DockEdge edge, bool restore, int duration, Action? onDone)
+        public bool Run(IntPtr source, Rect monitorPx, Rect from, Point offset, Rect to, MinimizeEffect shape, DockEdge edge, bool restore, int duration, Action? onDone)
         {
             Stop();
             if (_hwnd == IntPtr.Zero) new WindowInteropHelper(this).EnsureHandle();
@@ -346,7 +354,7 @@ internal sealed class MinimizeEffectController : IDisposable
                 _thumbs.Add(t);
             }
             if (DwmQueryThumbnailSourceSize(_thumbs[0], out var src) != 0 || src.cx <= 0 || src.cy <= 0) { Stop(); Hide(); return false; }
-            var crop = SourceCrop(source, src, from);
+            var crop = SourceCrop(source, src, from, offset);
             var local = new Rect(from.X - monitorPx.X, from.Y - monitorPx.Y, from.Width, from.Height);
             var target = new Rect(to.X - monitorPx.X, to.Y - monitorPx.Y, to.Width, to.Height);
             _onDone = onDone;
@@ -444,7 +452,7 @@ internal sealed class MinimizeEffectController : IDisposable
                 }
                 else if (stillFrames > 0) stillFrames++;
                 if (stillFrames == 0 && handedOffAt >= 0 && !IsIconic(source) && DwmQueryThumbnailSourceSize(_thumbs[0], out var live) == 0 && live.cx > 0 && live.cy > 0)
-                    crop = SourceCrop(source, live, from);
+                    crop = SourceCrop(source, live, from, offset);
                 if (fadeFrom >= 0)
                 {
                     // 끝 크로스페이드 (#27): 진짜 창이 이미 제자리에 있고, 덮개만 CrossfadeMs 동안 흐리게 걷어 냄 — 한 번에 치우면 그림자·둥근 모서리·다시 그리기가 툭 바뀌어 보임
@@ -603,24 +611,18 @@ internal sealed class MinimizeEffectController : IDisposable
         }
 
         /// <summary>
-        /// 썸네일 원본에서 창의 보이는 부분 (보이지 않는 크기 조절 테두리 빼기). 창이 떠 있으면 GetWindowRect 와 DWM 테두리 사각형으로 정확히,
-        /// 최소화 중이면 원본 크기와 보이는 크기 차이로 어림: 좌우 같은 폭, 위는 최대화(위아래 차이가 좌우 합만큼)일 때만.
+        /// 썸네일 원본에서 창의 보이는 부분. rcSource 는 창 사각형(보이지 않는 테두리 포함) 왼쪽 위 기준인데, 이 PC(Windows 11)의 DwmQueryThumbnailSourceSize 는
+        /// 보이는 크기(DWM 사각형)를 돌려줌 — 원본 크기만 보고 (0,0)부터 자르면 왼쪽 투명 테두리가 들어와 내용이 8px(125%) 밀림
+        /// (#27 화면 측정: 붙잡은 그림 ↔ 진짜 창 이동 (−8,0), 사용자 「다 켜진 뒤 잠시 움직이는 느낌」).
+        /// → 창이 떠 있으면 GetWindowRect·DWM 사각형으로 (테두리 왼·위, 보이는 폭·높이), 최소화 중이면 최소화 때 본/어림한 오프셋 + 보이는 크기.
         /// </summary>
-        private static Rect SourceCrop(IntPtr source, SIZE src, Rect visible)
+        private static Rect SourceCrop(IntPtr source, SIZE src, Rect visible, Point offset)
         {
             if (!IsIconic(source) && GetWindowRect(source, out var wr)
-                && DwmGetWindowAttribute(source, DWMWA_EXTENDED_FRAME_BOUNDS, out RECT fb, Marshal.SizeOf<RECT>()) == 0)
-            {
-                double l = Math.Max(0, fb.Left - wr.Left), t = Math.Max(0, fb.Top - wr.Top);
-                double r = Math.Max(0, wr.Right - fb.Right), b = Math.Max(0, wr.Bottom - fb.Bottom);
-                if (l + r < src.cx && t + b < src.cy) return new Rect(l, t, src.cx - l - r, src.cy - t - b);
-            }
-            double mx = Math.Max(0, (src.cx - visible.Width) / 2);
-            double extraY = Math.Max(0, src.cy - visible.Height);
-            double top = mx > 0 && extraY >= 2 * mx - 1 ? mx : 0;
-            double bottom = Math.Max(0, extraY - top);
-            if (2 * mx >= src.cx || top + bottom >= src.cy) return new Rect(0, 0, src.cx, src.cy);
-            return new Rect(mx, top, src.cx - 2 * mx, src.cy - top - bottom);
+                && DwmGetWindowAttribute(source, DWMWA_EXTENDED_FRAME_BOUNDS, out RECT fb, Marshal.SizeOf<RECT>()) == 0 && fb.Right > fb.Left && fb.Bottom > fb.Top)
+                return new Rect(Math.Max(0, fb.Left - wr.Left), Math.Max(0, fb.Top - wr.Top), fb.Right - fb.Left, fb.Bottom - fb.Top);
+            if (visible.Width < 1 || visible.Height < 1 || src.cx <= 0 || src.cy <= 0) return new Rect(0, 0, Math.Max(1, src.cx), Math.Max(1, src.cy));
+            return new Rect(Math.Max(0, offset.X), Math.Max(0, offset.Y), visible.Width, visible.Height);
         }
 
         /// <summary>기다리던 되살리기를 부름 (있었으면 true).</summary>
