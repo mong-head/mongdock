@@ -322,6 +322,7 @@ internal static partial class Program
                 var stills = new List<string>();
                 var stillProp = mecType.GetProperty("LastStillForTest", Any)!;
                 var endProp = mecType.GetProperty("LastEndMismatchForTest", Any)!; // #27 끝 자리 차이 (진짜 창 − 효과 끝)
+                var retargetRun = mecType.GetProperty("LastRetargetForTest", Any)!; // 안전망이 끝 자리를 다시 맞췄는지
                 var ends = new List<string>();
                 int fgOk = 0, fgTried = 0;
                 for (int k = 0; k < 3; k++)
@@ -332,10 +333,11 @@ internal static partial class Program
                     _fgResult = null;
                     stillProp.SetValue(null, null);
                     endProp.SetValue(null, null);
+                    retargetRun.SetValue(null, null);
                     RestoreFlicker($"{label}-{k + 1}", wr, restore, outDir, out _);
                     flashes.Add(LastFlicker.Flashes);
                     stills.Add(stillProp.GetValue(null) is ITuple st ? $"{st[1]}ms·{st[2]}프레임(찍기 {st[0]}ms, 기준 {st[3]})" : "없음");
-                    ends.Add(endProp.GetValue(null) as string ?? "없음");
+                    ends.Add((endProp.GetValue(null) as string ?? "없음") + (retargetRun.GetValue(null) is string rt ? $" · 다시 맞춤 {rt}" : ""));
                     devs.Add(LastFlicker.MaxDev);
                     firsts.Add(LastFlicker.FirstMs);
                     if (_fgResult is { } r) { fgTried++; if (r) fgOk++; }

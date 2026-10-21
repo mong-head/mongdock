@@ -408,6 +408,13 @@ internal sealed class MinimizeEffectController : IDisposable
             var startFrom = from; // 진단 줄의 「어림 대비」는 처음 잡은 끝 자리와 비교
             string rectSource = LastRectSource; // Start 가 방금 정한 출처 (같은 UI 스레드에서 바로 이어 부름 — 그 뒤 FOREGROUND 기록이 전역 값을 바꿔도 이걸 씀, 리뷰)
             bool retargeted = false;
+            RECT lastReal = default; // 안전망: 두 프레임 연속 같은 DWM 사각형일 때만 믿음 (되살아나는 첫 프레임엔 최대화 창의 넘친 테두리 9px 가 섞여 나올 수 있음 — 측정 D3)
+            bool Stable(RECT r)
+            {
+                bool same = r.Left == lastReal.Left && r.Top == lastReal.Top && r.Right == lastReal.Right && r.Bottom == lastReal.Bottom;
+                lastReal = r;
+                return same;
+            }
             var target = new Rect(to.X - monitorPx.X, to.Y - monitorPx.Y, to.Width, to.Height);
             _onDone = onDone;
             var clock = Stopwatch.StartNew();
@@ -507,14 +514,16 @@ internal sealed class MinimizeEffectController : IDisposable
                 // 남은 길과 붙잡은 그림은 진짜 자리로 감. 맞으면(1px 이하) 아무것도 안 바꿈.
                 if (restore && handedOffAt >= 0 && !retargeted && !IsIconic(source)
                     && DwmGetWindowAttribute(source, DWMWA_EXTENDED_FRAME_BOUNDS, out RECT real, Marshal.SizeOf<RECT>()) == 0
-                    && real.Left > -30000 && real.Right - real.Left > 60 && real.Bottom - real.Top > 40)
+                    && real.Left > -30000 && real.Right - real.Left > 60 && real.Bottom - real.Top > 40
+                    && Stable(real))
                 {
                     retargeted = true;
                     var realLocal = new Rect(real.Left - monitorPx.X, real.Top - monitorPx.Y, real.Right - real.Left, real.Bottom - real.Top);
                     double dx = realLocal.X - local.X, dy = realLocal.Y - local.Y, dw = realLocal.Width - local.Width, dh = realLocal.Height - local.Height;
                     if (Math.Max(Math.Max(Math.Abs(dx), Math.Abs(dy)), Math.Max(Math.Abs(dw), Math.Abs(dh))) > 1)
                     {
-                        if (stillFrames > 0) stillTo = new Rect(stillTo.X + dx, stillTo.Y + dy, Math.Max(1, stillTo.Width + dw), Math.Max(1, stillTo.Height + dh));
+                        // 붙잡은 그림은 진짜 사각형에 그대로 (틀린 자리가 화면 밖이면 찍은 그림이 잘려 있어 상대 이동으로는 모자람 — 측정 G)
+                        if (stillFrames > 0) stillTo = realLocal;
                         local = realLocal;
                         from = new Rect(real.Left, real.Top, realLocal.Width, realLocal.Height);
                         if (GetWindowRect(source, out var rw)) offset = new Point(Math.Max(0, real.Left - rw.Left), Math.Max(0, real.Top - rw.Top));
