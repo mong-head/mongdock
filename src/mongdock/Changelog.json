@@ -12,8 +12,8 @@
         },
         {
           "kind": "improvement",
-          "text": "영상을 재생 중인 앱의 창이 화면을 거의 다 덮고 있으면 알림 배너와 독 아이콘 튀기기가 나오지 않아요. 알림은 알림 센터에 쌓여요.",
-          "text_en": "While a window of an app that is playing video fills almost the whole screen, notification banners and dock icon bounces stay out of the way. Notifications still collect in the notification center."
+          "text": "재생 중인 앱(영상·음악)의 창이 화면을 거의 다 덮고 있으면 알림 배너와 독 아이콘 튀기기가 나오지 않아요. 알림은 알림 센터에 쌓여요.",
+          "text_en": "While a window of an app that is playing video or music fills almost the whole screen, notification banners and dock icon bounces stay out of the way. Notifications still collect in the notification center."
         },
         {
           "kind": "fix",

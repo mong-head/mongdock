@@ -16,23 +16,15 @@ internal static class MediaFocus
     /// <summary>작업 영역을 이만큼 이상 덮으면 「화면을 거의 다 덮음」.</summary>
     internal const double CoverRatio = 0.9;
 
-    /// <summary>시험용: 앞 창·재생 앱을 바꿔 끼움.</summary>
-    internal static Func<(AppWindowInfo? Foreground, IReadOnlyList<string> Playing)>? StateForTest { get; set; }
-
     public static bool Watching(AppServices services)
     {
         try
         {
-            AppWindowInfo? fg;
-            IReadOnlyList<string> playing;
-            if (StateForTest is { } t) (fg, playing) = t();
-            else
-            {
-                playing = services.Media.PlayingApps;
-                if (playing.Count == 0) return false;
-                var hwnd = services.Windows.ForegroundWindow;
-                fg = hwnd == IntPtr.Zero ? null : services.Windows.Windows.FirstOrDefault(w => w.Hwnd == hwnd);
-            }
+            var playing = services.Media.PlayingApps;
+            if (playing.Count == 0) return false;
+            var hwnd = services.Windows.ForegroundWindow;
+            var fg = hwnd == IntPtr.Zero ? null : services.Windows.Windows.FirstOrDefault(w => w.Hwnd == hwnd);
+            // 한계(리뷰): 미디어 세션엔 탭·창 구분이 없어, 같은 브라우저의 다른 탭이 재생 중이어도 최대화한 그 브라우저 창이면 생략됨
             return Plays(fg, playing) && CoversScreen(fg!.Hwnd);
         }
         catch { return false; }

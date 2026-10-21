@@ -105,14 +105,14 @@ internal sealed class NotificationBannerWindow : Window
                 var monitor = Monitors.FromHwnd(_services.Windows.ForegroundWindow);
                 // 전체 화면 앱(게임·동영상) 위에는 띄우지 않음 — 윈도우도 이때는 토스트를 숨김
                 if (_services.DesktopWindows.IsFullscreenOn(monitor.IsPrimary ? "" : monitor.DeviceName)) return false;
-                // 영상을 보는 중(재생 중인 앱의 창이 앞)이면 전체 화면이 아니어도 띄우지 않음 — 알림 센터에만 (사용자 결정 10-21)
+                // 영상을 보는 중(재생 중인 앱의 창이 앞에 있고 화면을 거의 다 덮음)이면 전체 화면이 아니어도 띄우지 않음 — 알림 센터에만 (사용자 결정 10-21)
                 // 몽독이 직접 띄우는 안내(배터리 부족·업데이트·루틴 질문 등, ignoreBannerSetting)는 알림 센터에 안 남으므로 그대로 띄움 (리뷰)
                 if (!ignoreBannerSetting && MediaFocus.Watching(_services))
                 {
                     if (!_skipLogged.TryGetValue(item.Aumid ?? "", out var last) || DateTime.UtcNow - last > TimeSpan.FromMinutes(1))
                     {
                         _skipLogged[item.Aumid ?? ""] = DateTime.UtcNow;
-                        Log.Info($"알림 배너 생략: 재생 중인 앱의 창이 앞 ({item.Aumid}) — 같은 앱은 1분에 한 줄");
+                        Log.Info($"알림 배너 생략: 재생 중인 앱의 창이 화면을 거의 다 덮음 ({item.Aumid}) — 같은 앱은 1분에 한 줄");
                     }
                     return false;
                 }
