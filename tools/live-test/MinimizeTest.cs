@@ -277,7 +277,9 @@ internal static partial class Program
             if (edge)
             {
                 string msedge = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"Microsoft\Edge\Application\msedge.exe");
-                child = Process.Start(new ProcessStartInfo(msedge, $"--user-data-dir=\"{electronData}\" --no-first-run --no-default-browser-check --disable-extensions --disable-sync --new-window about:blank") { UseShellExecute = false })!;
+                string page = Path.Combine(electronData, "page27.html");
+                File.WriteAllText(page, ContentPage());
+                child = Process.Start(new ProcessStartInfo(msedge, $"--user-data-dir=\"{electronData}\" --no-first-run --no-default-browser-check --disable-extensions --disable-sync --new-window \"{new Uri(page).AbsoluteUri}\"") { UseShellExecute = false })!;
                 titleHas = "Edge";
             }
             else
@@ -383,6 +385,9 @@ internal static partial class Program
             Run("D3 지니 · 최대화 창", viaEffect(restoreOnly));
             ShowWindowAsync(hwnd, 9 /* SW_RESTORE */);
             Pump(800);
+            // E: 붙잡은 그림이 보이는 동안 vs 걷힌 뒤 내용 차이 (#27 사용자: 다 켜진 뒤 잠시 창이 움직이는 느낌) — 픽셀 이동량
+            GetWindowRect(hwnd, out wr);
+            for (int k = 0; k < 3; k++) lines.Add(ContentShift($"E 내용 비교-{k + 1}", hwnd, wr, viaEffect(restoreOnly), outDir));
             ((IDisposable)controller).Dispose();
             controller = null;
             File.WriteAllLines(Path.Combine(outDir, "flash-matrix.txt"), lines);
@@ -441,6 +446,74 @@ internal static partial class Program
 
     [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr h, int a, ref int v, int s);
     [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")] private static extern int DwmGetWindowAttributeInt(IntPtr h, int a, out int v, int s);
+
+    /// <summary>E 내용 비교용 페이지: 글줄·가는 선·색 막대 (흰 바탕만이면 이동을 잴 수 없음).</summary>
+    private static string ContentPage()
+    {
+        var sb = new System.Text.StringBuilder("<!doctype html><meta charset=utf-8><title>mongdock 27</title><body style='margin:0;font:15px Segoe UI;background:#fff'>");
+        for (int i = 0; i < 60; i++)
+            sb.Append($"<div style='height:24px;border-bottom:1px solid #ccc;display:flex;align-items:center'><span style='width:{40 + i * 7 % 300}px;height:10px;background:hsl({i * 37 % 360},60%,55%);margin:0 12px'></span>줄 {i} — 몽독 최소화 되살리기 내용 비교 abcdefghijklmnopqrstuvwxyz 0123456789</div>");
+        return sb.Append("</body>").ToString();
+    }
+
+    /// <summary>
+    /// 화면을 세 번 찍어 비교 (물리 px, 창 안쪽 가운데 부분): ① 최소화 전 ② 되살린 뒤 붙잡은 그림이 보일 때(효과 시작 +520ms) ③ 걷힌 뒤(+1400ms).
+    /// 각 쌍의 「제자리 평균 차이」와 「가장 잘 맞는 이동(dx,dy)과 그때 차이」 — 내용이 밀렸으면 이동이 0 이 아니고, 다시 그려 바뀌었으면 이동해도 차이가 남음. PNG 도 남김.
+    /// </summary>
+    private static string ContentShift(string name, IntPtr hwnd, RECTL wr, Action restore, string outDir)
+    {
+        double scale = Monitors.GetPrimary().Scale;
+        var area = new Rect((wr.Left + 60) / scale, (wr.Top + 120) / scale, Math.Max(200, wr.Right - wr.Left - 120) / scale, Math.Max(200, wr.Bottom - wr.Top - 200) / scale);
+        int w = (int)(area.Width * scale), h = (int)(area.Height * scale);
+        var before = Grab(area);
+        ShowWindowAsync(hwnd, 6 /* SW_MINIMIZE */);
+        Pump(1200);
+        var sw = Stopwatch.StartNew();
+        restore();
+        while (sw.ElapsedMilliseconds < 520) Pump(5);
+        var still = Grab(area);
+        while (sw.ElapsedMilliseconds < 1400) Pump(20);
+        var after = Grab(area);
+        if (IsIconic(hwnd)) { ShowWindowAsync(hwnd, 9); Pump(600); }
+        Pump(400);
+        foreach (var (tag, px) in new[] { ("before", before), ("still", still), ("after", after) })
+        {
+            var bmp = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgra32, null, px, w * 4);
+            var enc = new PngBitmapEncoder();
+            enc.Frames.Add(BitmapFrame.Create(bmp));
+            using var fs = File.Create(Path.Combine(outDir, $"content27-{name}-{tag}.png"));
+            enc.Save(fs);
+        }
+        var stillProp = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.MinimizeEffectController")!.GetProperty("LastStillForTest", Any)!;
+        string held = stillProp.GetValue(null) is ITuple st ? $"{st[1]}ms" : "없음";
+        string line = $"{name}: 그림↔걷힌 뒤 {Compare(still, after, w, h)} · 최소화 전↔걷힌 뒤 {Compare(before, after, w, h)} · 최소화 전↔그림 {Compare(before, still, w, h)} (붙잡은 그림 {held})";
+        Console.WriteLine("  정보  " + line);
+        Results.Add("정보  " + line);
+        return line;
+    }
+
+    /// <summary>두 장면(BGRA) 회색 비교: 제자리 평균 차이, ±16px 안에서 가장 잘 맞는 이동과 그때 평균 차이 (4px 간격으로 표본).</summary>
+    private static string Compare(byte[] a, byte[] b, int w, int h)
+    {
+        double Gray(byte[] p, int x, int y) { int i = (y * w + x) * 4; return 0.114 * p[i] + 0.587 * p[i + 1] + 0.299 * p[i + 2]; }
+        const int R = 16, Step = 4;
+        double Sad(int dx, int dy)
+        {
+            double sum = 0; int n = 0;
+            for (int y = R; y < h - R; y += Step)
+                for (int x = R; x < w - R; x += Step) { sum += Math.Abs(Gray(a, x, y) - Gray(b, x + dx, y + dy)); n++; }
+            return n == 0 ? 0 : sum / n;
+        }
+        double zero = Sad(0, 0), best = zero; int bx = 0, by = 0;
+        for (int dy = -R; dy <= R; dy++)
+            for (int dx = -R; dx <= R; dx++)
+            {
+                if (dx == 0 && dy == 0) continue;
+                double v = Sad(dx, dy);
+                if (v < best - 0.05) { best = v; bx = dx; by = dy; }
+            }
+        return $"제자리 {zero:0.00}, 가장 잘 맞는 이동 ({bx},{by}) {best:0.00}";
+    }
 
     /// <summary>
     /// 되살리기 동안 화면 프레임마다(DXGI) 창 안 네 곳의 밝기를 재서: 끝 값(마지막 프레임)에 닿은 뒤 10 넘게 벗어나는 프레임 = 깜빡임.
