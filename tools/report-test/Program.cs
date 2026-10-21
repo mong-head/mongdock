@@ -2132,7 +2132,9 @@ internal static class Program
             // 영상 보는 중 (사용자 결정 10-21): 재생 중인 앱의 창이 앞이면 배너·독 튀기기 안 함 — 맞춤 판정만 (가짜 창·재생 앱)
             {
                 var mf = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.MediaFocus")!;
-                var watch = mf.GetMethod("Watching", Any, new[] { typeof(Mongdock.Models.AppWindowInfo), typeof(IReadOnlyList<string>) })!;
+                var watch = mf.GetMethod("Plays", Any)!;
+                var covers = mf.GetMethod("Covers", Any)!;
+                bool Cov(bool zoomed, Rect win, Rect work) => (bool)covers.Invoke(null, new object[] { zoomed, win, work })!;
                 bool W(Mongdock.Models.AppWindowInfo? fg, params string[] playing) => (bool)watch.Invoke(null, new object?[] { fg, playing })!;
                 var chrome = new Mongdock.Models.AppWindowInfo(new IntPtr(0x100), "Netflix - Chrome", @"C:\Program Files\Google\Chrome\Application\chrome.exe", null, false);
                 var netflixApp = new Mongdock.Models.AppWindowInfo(new IntPtr(0x200), "Netflix", @"C:\Program Files\WindowsApps\Netflix\Netflix.exe", "4DF9E0F8.Netflix_mcm4njqhnhss8!Netflix.App", false);
@@ -2142,6 +2144,13 @@ internal static class Program
                 Check("다른 앱이 앞(노션) + 크롬 재생 → 배너 그대로", !W(notion, "Chrome"));
                 Check("크롬이 앞 + 다른 앱(Spotify)만 재생 → 배너 그대로", !W(chrome, "Spotify.exe"));
                 Check("재생 없음·앞 창 모름 → 배너 그대로", !W(chrome) && !W(null, "Chrome"));
+                // 범위 B (사용자 10-22): 그 창이 최대화됐거나 작업 영역을 90% 이상 덮을 때만
+                var work = new Rect(0, 32, 1920, 1048);
+                Check("최대화된 창 → 화면을 덮음", Cov(true, new Rect(0, 32, 1920, 1048), work));
+                Check("최대화 아님, 작업 영역 꽉 참(크기 맞춘 창) → 덮음", Cov(false, new Rect(0, 32, 1920, 1048), work));
+                Check("화면 반쪽 창 → 안 덮음 (배너 그대로)", !Cov(false, new Rect(0, 32, 960, 1048), work));
+                Check("작은 창 1200x800 → 안 덮음", !Cov(false, new Rect(300, 100, 1200, 800), work));
+                Check("거의 다(1900x1000, 94%) → 덮음", Cov(false, new Rect(10, 40, 1900, 1000), work));
             }
             // 0.8.4 감춤 (사용자 10-21): 감춘 동안 0.8 「창 최소화 효과」 안내 카드([켜기])가 다시 생기지 않게
             {
