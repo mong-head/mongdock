@@ -460,6 +460,7 @@ public sealed class AppMenuService : IAppMenuService, IDisposable
                         Log.Warn($"WM_COMMAND 전송 실패 id={cmd.Id} err={Marshal.GetLastWin32Error()}");
                     break;
                 case WindowAction act:
+                    if (act.SysCommand == MenuApi.SC_MINIMIZE) AppLauncher.NoteBeforeMinimize(hwnd); // 최소화 효과가 보이는 자리를 기록 (#27)
                     if (!User32.PostMessage(hwnd, MenuApi.WM_SYSCOMMAND, new IntPtr(act.SysCommand), IntPtr.Zero))
                         Log.Warn($"창 동작 '{act.Name}' 전송 실패 err={Marshal.GetLastWin32Error()}");
                     break;

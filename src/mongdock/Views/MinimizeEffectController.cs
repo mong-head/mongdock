@@ -102,6 +102,7 @@ internal sealed class MinimizeEffectController : IDisposable
     private void Hook()
     {
         if (_hook != IntPtr.Zero) return;
+        Unhook(); // 지난번에 첫 훅만 실패했으면 남은 두 훅을 먼저 걷음 (중복·옛 대리자 호출 방지, 리뷰)
         _proc = OnEvent;
         _hook = SetWinEventHook(EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MINIMIZESTART, IntPtr.Zero, _proc, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
         // 보이는 자리 기록 (#27 스냅 회귀): 앞으로 올 때·끌어 옮기기가 끝날 때 — 최소화 훅은 창이 이미 내려간 뒤 올 때가 있어 그때는 자리를 못 읽음
@@ -113,8 +114,8 @@ internal sealed class MinimizeEffectController : IDisposable
 
     private void Unhook()
     {
-        if (_hook == IntPtr.Zero) return;
-        UnhookWinEvent(_hook);
+        if (_hook == IntPtr.Zero && _noteHook == IntPtr.Zero && _moveHook == IntPtr.Zero) return;
+        if (_hook != IntPtr.Zero) UnhookWinEvent(_hook);
         if (_noteHook != IntPtr.Zero) UnhookWinEvent(_noteHook);
         if (_moveHook != IntPtr.Zero) UnhookWinEvent(_moveHook);
         _hook = _noteHook = _moveHook = IntPtr.Zero;
@@ -144,6 +145,9 @@ internal sealed class MinimizeEffectController : IDisposable
         try
         {
             if (hwnd == IntPtr.Zero || IsIconic(hwnd) || !IsWindowVisible(hwnd)) return;
+            // 최소화할 수 있는 앱 창만 (소유자 없음, 도구 창 아님, 최소화 단추 있음) — 작업 표시줄·시작 메뉴·대화 상자로 기억이 차지 않게 (리뷰)
+            long style = Native.User32.GetWindowLong(hwnd, Native.User32.GWL_STYLE), exStyle = Native.User32.GetWindowLong(hwnd, Native.User32.GWL_EXSTYLE);
+            if (GetWindow(hwnd, GW_OWNER) != IntPtr.Zero || (exStyle & WS_EX_TOOLWINDOW) != 0 || (style & WS_MINIMIZEBOX) == 0) return;
             lock (RememberLock)
             {
                 if (!TryWindowRect(hwnd, out var rect, out var offset, consume: false) || LastRectSource != "DWM") return;
@@ -239,7 +243,10 @@ internal sealed class MinimizeEffectController : IDisposable
         if (!GetWindowPlacement(hwnd, ref wp)) return;
         if (Remembered.Count >= RememberMax && !Remembered.ContainsKey(hwnd))
         {
+            // 닫힌 창 → 지금 최소화돼 있지 않은 창(다시 앞으로 오면 또 기록됨) 순으로 지움 — 최소화해 둔 창의 기억은 되도록 남김 (리뷰)
             foreach (var gone in Remembered.Keys.Where(h => !IsWindow(h)).ToList()) Remembered.Remove(gone);
+            if (Remembered.Count >= RememberMax)
+                foreach (var up in Remembered.Keys.Where(h => !IsIconic(h)).ToList()) Remembered.Remove(up);
             if (Remembered.Count >= RememberMax) Remembered.Clear();
         }
         Remembered[hwnd] = (visible, offset, wp.rcNormalPosition, IsZoomed(hwnd), MonitorFor(visible).WorkRect);
@@ -399,7 +406,7 @@ internal sealed class MinimizeEffectController : IDisposable
             var crop = SourceCrop(source, src, from, offset);
             var local = new Rect(from.X - monitorPx.X, from.Y - monitorPx.Y, from.Width, from.Height);
             var startFrom = from; // 진단 줄의 「어림 대비」는 처음 잡은 끝 자리와 비교
-            string rectSource = LastRectSource;
+            string rectSource = LastRectSource; // Start 가 방금 정한 출처 (같은 UI 스레드에서 바로 이어 부름 — 그 뒤 FOREGROUND 기록이 전역 값을 바꿔도 이걸 씀, 리뷰)
             bool retargeted = false;
             var target = new Rect(to.X - monitorPx.X, to.Y - monitorPx.Y, to.Width, to.Height);
             _onDone = onDone;
@@ -536,7 +543,7 @@ internal sealed class MinimizeEffectController : IDisposable
                         long since = clock.ElapsedMilliseconds - handedOffAt;
                         int hold = stillFrames > 0 ? holdMs : 60;
                         if ((since < hold || endFrames < 3) && since < (stillFrames > 0 ? MaxStillMs : 260)) return;
-                        LogEndMismatch(source, startFrom, stillFrames > 0 ? stillTo : drawn, crop, src, chromium, stillFrames > 0);
+                        LogEndMismatch(source, startFrom, rectSource, stillFrames > 0 ? stillTo : drawn, crop, src, chromium, stillFrames > 0);
                         if (Anim.Enabled) { fadeFrom = clock.ElapsedMilliseconds; return; }
                     }
                 }
@@ -573,7 +580,7 @@ internal sealed class MinimizeEffectController : IDisposable
         /// 되살아난 진짜 창의 DWM 테두리 사각형과 ① 덮개가 실제로 끝난 사각형(붙잡은 그림이면 그림이 놓인 자리, 아니면 썸네일) ② 되살릴 자리 어림(from)을 비교해
         /// 어느 쪽이든 1px 넘게 다르면 한 줄. 썸네일 원본 크기·잘라 쓴 영역, 그림의 DIP 자리·크기(배율 반올림), 최대화·배율도 같이 (물리 px).
         /// </summary>
-        private void LogEndMismatch(IntPtr source, Rect from, Rect shownLocal, Rect crop, SIZE src, bool chromium, bool still)
+        private void LogEndMismatch(IntPtr source, Rect from, string rectSource, Rect shownLocal, Rect crop, SIZE src, bool chromium, bool still)
         {
             try
             {
@@ -586,7 +593,7 @@ internal sealed class MinimizeEffectController : IDisposable
                     return $"왼 {l:0.#} 위 {t:0.#} 오른 {rr:0.#} 아래 {b:0.#}";
                 }
                 string vsShown = Diff(fb, shown, out double m1), vsFrom = Diff(fb, from, out double m2);
-                LastEndMismatchForTest = $"[{LastRectSource}] 덮개 끝 대비 {vsShown} · 어림 대비 {vsFrom}";
+                LastEndMismatchForTest = $"[{rectSource}] 덮개 끝 대비 {vsShown} · 어림 대비 {vsFrom}";
                 if (Math.Max(m1, m2) <= 1) return;
                 var dpi = VisualTreeHelper.GetDpi(this);
                 string stillDip = still
@@ -599,7 +606,7 @@ internal sealed class MinimizeEffectController : IDisposable
                     + $" | 덮개 끝 ({shown.Left:0.#},{shown.Top:0.#})-({shown.Right:0.#},{shown.Bottom:0.#}) · 어림 ({from.Left:0},{from.Top:0})-({from.Right:0},{from.Bottom:0})"
                     + $" · DWM 테두리 ({fb.Left},{fb.Top})-({fb.Right},{fb.Bottom}) · 창 사각형 ({wr.Left},{wr.Top})-({wr.Right},{wr.Bottom})"
                     + $" · 썸네일 원본 {src.cx}x{src.cy} 자름 ({crop.Left:0},{crop.Top:0})-({crop.Right:0},{crop.Bottom:0}){stillDip}"
-                    + $" · 끝 자리 출처 {LastRectSource} · 최대화 {IsZoomed(source)} · 창 배율 {GetDpiForWindow(source) * 100 / 96}% · 덮개 배율 {dpi.DpiScaleX * 100:0}% · {sb} · 크롬 계열 {chromium} · 그림 붙잡음 {still}");
+                    + $" · 끝 자리 출처 {rectSource} · 최대화 {IsZoomed(source)} · 창 배율 {GetDpiForWindow(source) * 100 / 96}% · 덮개 배율 {dpi.DpiScaleX * 100:0}% · {sb} · 크롬 계열 {chromium} · 그림 붙잡음 {still}");
             }
             catch { }
         }
@@ -798,6 +805,9 @@ internal sealed class MinimizeEffectController : IDisposable
     [DllImport("user32.dll")] private static extern bool IsZoomed(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr hwnd, uint cmd);
+    private const uint GW_OWNER = 4;
+    private const long WS_EX_TOOLWINDOW = 0x00000080, WS_MINIMIZEBOX = 0x00020000;
     [DllImport("user32.dll")] private static extern int GetSystemMetricsForDpi(int index, uint dpi);
     private const int SM_CXBORDER = 5, SM_CXSIZEFRAME = 32, SM_CXPADDEDBORDER = 92;
     private const long WS_THICKFRAME = 0x00040000;
