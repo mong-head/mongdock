@@ -21,9 +21,9 @@
           "text_en": "Long device names in the sound panel's speaker and microphone lists are no longer cut off; the driver name shows on a second line."
         },
         {
-          "kind": "fix",
-          "text": "독에서 최소화한 창을 다시 열 때 끝에 화면이 번쩍이던 문제와, 최대화하지 않은 창이 살짝 커졌다가 줄어드는 것처럼 보이던 문제를 고쳤어요. 크롬·노션 같은 앱에서 잘 보였어요.",
-          "text_en": "Fixed a flash at the end of reopening a minimized window from the dock, and non-maximized windows looking slightly bigger and then shrinking. It showed most in apps like Chrome and Notion."
+          "kind": "improvement",
+          "text": "창 최소화 효과는 앱에 따라 끝 모습이 어긋나 다듬는 동안 잠시 빼 두었어요. 켜 두셨다면 윈도우 기본 최소화 효과로 돌아가요.",
+          "text_en": "The window minimize effect is taken out for now while we polish how it ends in some apps. If you had it on, Windows' own minimize animation is back."
         }
       ]
     },
@@ -96,8 +96,8 @@
     {
       "version": "0.8.0",
       "date": "2026-10-18",
-      "headline": "앱별 볼륨 · 창 최소화 효과",
-      "headline_en": "Per-app volume · Minimize effect",
+      "headline": "앱별 볼륨",
+      "headline_en": "Per-app volume",
       "entries": [
         {
           "kind": "feature",
@@ -120,17 +120,8 @@
         },
         {
           "kind": "feature",
-          "major": true,
-          "text": "창을 최소화하면 독 쪽으로 자연스럽게 들어가고 독에서 열면 거꾸로 나오는 효과를 켤 수 있어요 — 차분하게·아이콘으로·지니, 속도도 골라요(설정 → 독).",
-          "text_en": "Turn on a minimize effect that sends windows toward the dock and back out when you open them from it: Calm, Into icon or Genie, at the speed you like (Settings → Dock).",
-          "coach": {
-            "key": "minimize",
-            "anchor": "Center",
-            "title": "창이 독으로 살며시",
-            "title_en": "Windows that settle into the dock",
-            "body": "창을 최소화하면 조금 작아지며 독 쪽으로 내려앉고, 독에서 열면 거꾸로 나와요. 설정 → 독에서 「아이콘으로」·「지니」와 속도도 고를 수 있어요. 켜 두는 동안 윈도우 최소화 효과는 꺼지고, 끄면 되돌려요.",
-            "body_en": "Minimized windows shrink a little and settle toward the dock, then come back the same way when you open them from the dock. You can switch to Into icon or Genie and pick the speed in Settings → Dock. While it's on, the Windows minimize animation is off and comes back when you turn this off."
-          }
+          "text": "창을 최소화하면 독 쪽으로 들어가고 독에서 열면 거꾸로 나오는 효과를 넣었어요 (0.8.4에서 다듬는 동안 잠시 뺐어요).",
+          "text_en": "Added an effect that sends minimized windows toward the dock and back out (taken out for now in 0.8.4 while we polish it)."
         },
         {
           "kind": "feature",

@@ -22,6 +22,12 @@ namespace Mongdock.Views;
 /// </summary>
 internal sealed class MinimizeEffectController : IDisposable
 {
+    /// <summary>
+    /// 사용자에게 보이는지 (0.8.4, 사용자 결정 2026-10-21: 끝 장면이 앱마다 어긋나 다듬는 동안 감춤 — #27 보관). false 면 설정 항목·0.8 안내 카드가 없고,
+    /// 켜 두었던 사람도 시작할 때 끔으로 바뀌어 윈도우 기본 최소화 애니메이션이 돌아옴. 코드는 그대로 둠 (다시 켤 때 true).
+    /// </summary>
+    internal static readonly bool Available = false;
+
     private const int GenieStrips = 24;
 
     /// <summary>아이콘으로 끝 흐림: 썸네일 5장의 어긋남 방향 (가운데 + 네 방향).</summary>

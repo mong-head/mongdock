@@ -245,6 +245,13 @@ public partial class App : Application
         SyncTopBars();
         _tray = new TrayController(_services);
         _hotkeys = new HotkeyController(_services, RunHotkey);
+        // 창 최소화 효과를 감춘 동안(0.8.4)은 켜 두었던 사람도 끔으로 — 아래 컨트롤러가 끔을 보고 윈도우 애니메이션을 되돌림
+        if (!MinimizeEffectController.Available && _services.Settings.Current.Dock.MinimizeEffect != Models.MinimizeEffect.Off)
+        {
+            Log.Info($"창 최소화 효과 감춤 (0.8.4): {_services.Settings.Current.Dock.MinimizeEffect} → 끔, 윈도우 기본 애니메이션으로");
+            _services.Settings.Current.Dock.MinimizeEffect = Models.MinimizeEffect.Off;
+            _services.Settings.Save();
+        }
         // 창 최소화 효과 (#20): 켜 두면 윈도우 최소화 애니메이션을 끄고 몽독 효과, 끄면(또는 이전 실행이 갑자기 꺼졌으면) 되돌림
         _minimize = new MinimizeEffectController(_services, h => _dock?.IconScreenRectFor(h), () => _dock?.EdgeForEffects ?? Models.DockEdge.Bottom);
         _banners = NotificationBannerWindow.Attach(_services);
