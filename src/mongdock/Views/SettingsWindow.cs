@@ -165,9 +165,12 @@ internal sealed partial class SettingsWindow : Window
         try { change(); }
         catch (Exception ex) { Log.Error("설정 변경 실패", ex); }
         _selfSave = true;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         try { _services.Settings.Save(); }
         catch (Exception ex) { Log.Error("설정 저장 실패", ex); }
         finally { _selfSave = false; }
+        // 저장하면 독·상단바·효과가 UI 스레드에서 다시 적용됨 — 느린 토글을 찾기 위해 150ms 넘으면 한 줄 (사용자 10-21: 설정 바꿀 때 느림)
+        if (sw.ElapsedMilliseconds > 150) Log.Info($"설정 적용 {sw.ElapsedMilliseconds}ms (저장 + 다시 적용)");
         UiFonts.Apply(_services.Settings.Current);
         // 독 테마(시스템/밝게/어둡게)가 바뀌면 이 창 색도 따라감
         if (rebuild || UiTheme.IsLight(_services.Settings.Current) != _p.IsLight) QueueRebuild();

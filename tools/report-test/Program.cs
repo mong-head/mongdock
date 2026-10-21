@@ -2128,7 +2128,13 @@ internal static class Program
             string statePath = (string)was.GetProperty("StatePath", Any)!.GetValue(null)!;
             if (File.Exists(statePath)) File.Delete(statePath);
             bool TurnOff() => (bool)was.GetMethod("TurnOff", Any)!.Invoke(null, null)!;
-            void Restore(string why) => was.GetMethod("Restore", Any)!.Invoke(null, new object[] { why });
+            void Restore(string why) => was.GetMethod("Restore", Any)!.Invoke(null, new object[] { why, false });
+            // 0.8.4 감춤 (사용자 10-21): 감춘 동안 0.8 「창 최소화 효과」 안내 카드([켜기])가 다시 생기지 않게
+            {
+                bool available = (bool)typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.MinimizeEffectController")!.GetField("Available", Any)!.GetValue(null)!;
+                bool card = Mongdock.Services.WhatsNew.Releases.Any(x => string.Equals(x.Key, "minimize", StringComparison.OrdinalIgnoreCase));
+                Check($"최소화 효과 감춤: 보임 {available}, 안내 카드 {card} (감춘 동안 카드 없음)", available || !card);
+            }
             bool ByMong() => (bool)was.GetProperty("TurnedOffByMongdock", Any)!.GetValue(null)!;
             Check($"켜기 → 윈도우 효과 끔 {TurnOff()}, 기록 {File.Exists(statePath)}, 몽독이 끈 상태 {ByMong()}", !sysOn && File.Exists(statePath) && ByMong());
             Check("다시 켜기 → 그대로(이미 꺼짐), 기록 유지", !TurnOff() && !sysOn && File.Exists(statePath));

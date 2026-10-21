@@ -37,20 +37,46 @@ internal static class WindowAnimationSetting
         get { lock (Gate) return HasRecord && ReadRecord() == true && Get() == false; }
     }
 
-    /// <summary>지금 윈도우 최소화·최대화 애니메이션이 켜져 있는지 (모르면 null).</summary>
+    /// <summary>
+    /// 바꾸기는 백그라운드에서 차례로 (사용자 10-21: 설정에서 효과를 바꿀 때 1초 넘게 멈춤 — SPIF_SENDCHANGE 가 모든 최상위 창에 WM_SETTINGCHANGE 를
+    /// 보내고 답을 기다림). 아직 적용 중인 값은 <see cref="_pending"/> 로 기억해 Get 이 그 값을 돌려줌 (끔 → 곧바로 되돌림이 옛 값을 읽지 않게).
+    /// 몽독이 꺼질 때는 <c>wait</c> 로 끝날 때까지 기다림.
+    /// </summary>
+    private static Task _tail = Task.CompletedTask;
+    private static bool? _pending;
+
+    /// <summary>지금 윈도우 최소화·최대화 애니메이션이 켜져 있는지 (모르면 null). 적용 중인 값이 있으면 그 값.</summary>
     public static bool? Get()
     {
         if (SystemForTest is { } t) return t.Get();
+        if (_pending is bool p) return p;
         var info = new AnimationInfo { cbSize = (uint)Marshal.SizeOf<AnimationInfo>() };
         return SystemParametersInfo(SPI_GETANIMATION, info.cbSize, ref info, 0) ? info.iMinAnimate != 0 : null;
     }
 
-    private static void Set(bool on)
+    private static void Set(bool on, bool wait)
     {
         if (SystemForTest is { } t) { t.Set(on); return; }
-        var info = new AnimationInfo { cbSize = (uint)Marshal.SizeOf<AnimationInfo>(), iMinAnimate = on ? 1 : 0 };
-        if (!SystemParametersInfo(SPI_SETANIMATION, info.cbSize, ref info, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE))
-            Log.Warn($"윈도우 최소화 애니메이션 바꾸기 실패 (켜기={on}, 오류 {Marshal.GetLastWin32Error()})");
+        _pending = on;
+        var task = _tail = _tail.ContinueWith(_ =>
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var info = new AnimationInfo { cbSize = (uint)Marshal.SizeOf<AnimationInfo>(), iMinAnimate = on ? 1 : 0 };
+            if (!SystemParametersInfo(SPI_SETANIMATION, info.cbSize, ref info, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE))
+                Log.Warn($"윈도우 최소화 애니메이션 바꾸기 실패 (켜기={on}, 오류 {Marshal.GetLastWin32Error()})");
+            if (sw.ElapsedMilliseconds > 300) Log.Info($"윈도우 최소화 애니메이션 바꾸기 {sw.ElapsedMilliseconds}ms (모든 창에 알림, 백그라운드)");
+            lock (Gate) if (_pending == on) _pending = null;
+        }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+        if (wait)
+        {
+            try { task.Wait(3000); } catch { }
+        }
+    }
+
+    /// <summary>적용 중인 바꾸기가 끝날 때까지 (최대 ms) — 몽독 종료 직전.</summary>
+    public static void Flush(int ms = 3000)
+    {
+        try { _tail.Wait(ms); } catch { }
     }
 
     /// <summary>몽독 효과를 쓰는 동안: 원래 값을 기록(이미 있으면 이어 씀)하고 윈도우 효과가 켜져 있으면 끔. 껐으면 true.</summary>
@@ -61,14 +87,14 @@ internal static class WindowAnimationSetting
             if (Get() is not bool on) return false;
             if (!HasRecord) WriteRecord(on);
             if (!on) return false;
-            Set(false);
+            Set(false, wait: false);
             Log.Info("윈도우 최소화·최대화 애니메이션 끔 (몽독 최소화 효과를 쓰는 동안)");
             return true;
         }
     }
 
-    /// <summary>기록이 있으면 원래 값으로 되돌리고 기록을 지움 (원래 켜져 있었고 지금 꺼져 있을 때만 켬).</summary>
-    public static void Restore(string reason)
+    /// <summary>기록이 있으면 원래 값으로 되돌리고 기록을 지움 (원래 켜져 있었고 지금 꺼져 있을 때만 켬). 종료·제거 경로는 wait=true.</summary>
+    public static void Restore(string reason, bool wait = false)
     {
         lock (Gate)
         {
@@ -76,7 +102,7 @@ internal static class WindowAnimationSetting
             bool? original = ReadRecord();
             if (original == true && Get() == false)
             {
-                Set(true);
+                Set(true, wait);
                 Log.Info($"윈도우 최소화·최대화 애니메이션 되돌림 ({reason})");
             }
             try { File.Delete(StatePath); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }

@@ -72,7 +72,8 @@ internal sealed class MinimizeEffectController : IDisposable
         Sync();
     }
 
-    private MinimizeEffect Effect => _services.Settings.Current.Dock.MinimizeEffect;
+    // 감춘 동안은 설정 값과 상관없이 끔 — 「설정 가져오기」·밖에서 고친 settings.json 으로 다시 켜지지 않게 (리뷰)
+    private MinimizeEffect Effect => Available ? _services.Settings.Current.Dock.MinimizeEffect : MinimizeEffect.Off;
 
     /// <summary>설정에 맞춰 훅·윈도우 애니메이션을 켜고 끔. 몽독 효과를 켤 때 윈도우 효과를 껐으면 true.</summary>
     public bool Sync()
@@ -332,7 +333,7 @@ internal sealed class MinimizeEffectController : IDisposable
         Unhook();
         AppLauncher.AnimatedRestore = null;
         _overlay?.Close();
-        WindowAnimationSetting.Restore("몽독 종료");
+        WindowAnimationSetting.Restore("몽독 종료", wait: true);
         if (Instance == this) Instance = null;
     }
 

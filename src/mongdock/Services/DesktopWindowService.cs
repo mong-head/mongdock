@@ -1549,7 +1549,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     /// <summary>몽독 창 최소화 효과(#20)가 꺼 둔 윈도우 최소화 애니메이션을 되돌림 (어느 스레드에서나).</summary>
     private static void RestoreWindowAnimation(string reason)
     {
-        try { WindowAnimationSetting.Restore(reason); }
+        try { WindowAnimationSetting.Restore(reason, wait: true); } // 종료·제거 — 끝날 때까지 기다림
         catch (Exception e) { Log.Error("윈도우 최소화 애니메이션 되돌리기 실패", e); }
     }
 
