@@ -732,6 +732,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
     private void EvaluateFullscreen()
     {
         string? fs = null;
+        string fgWho = "";
         try
         {
             IntPtr fg = User32.GetForegroundWindow();
@@ -740,6 +741,7 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
             {
                 User32.GetWindowThreadProcessId(fg, out uint pid);
                 string cls = User32.GetClassNameOf(fg);
+                fgWho = $"{cls}, pid {pid}";
                 bool shell = cls is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd"
                              || pid == (uint)Environment.ProcessId || IsExplorer(pid);
                 long style = User32.GetWindowLong(fg, User32.GWL_STYLE);
@@ -775,9 +777,24 @@ public sealed class DesktopWindowService : IDesktopWindowService, IDisposable
         if (now - _fullscreenPendingSince.Value < FullscreenDebounce) return;
         _fullscreenPendingSince = null;
         _fullscreenDevice = fs;
-        Log.Info(fs is null ? "전체 화면 앱: False" : $"전체 화면 앱: True ({fs})");
+        // 앞 창을 함께 (사용자 10-21: 넷플릭스 볼 때 True↔False 가 자주 바뀜 — 무엇이 앞으로 와서 바뀌는지)
+        string who = fgWho.Length > 0 ? $" — 앞 창 {fgWho}{ProcessNameOf(fgWho)}" : "";
+        Log.Info(fs is null ? $"전체 화면 앱: False{who}" : $"전체 화면 앱: True ({fs}){who}");
         try { FullscreenAppChanged?.Invoke(this, fs is not null); }
         catch (Exception e) { Log.Error("FullscreenAppChanged 핸들러 예외", e); }
+    }
+
+    /// <summary>"클래스, pid N" 에서 프로세스 이름을 붙임 (로그용, 못 읽으면 빈 문자열).</summary>
+    private static string ProcessNameOf(string who)
+    {
+        try
+        {
+            int at = who.LastIndexOf("pid ", StringComparison.Ordinal);
+            if (at < 0 || !int.TryParse(who[(at + 4)..], out int pid)) return "";
+            using var p = System.Diagnostics.Process.GetProcessById(pid);
+            return $" ({p.ProcessName})";
+        }
+        catch { return ""; }
     }
 
     private static bool SameDevice(string? a, string? b) =>

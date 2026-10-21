@@ -2129,6 +2129,20 @@ internal static class Program
             if (File.Exists(statePath)) File.Delete(statePath);
             bool TurnOff() => (bool)was.GetMethod("TurnOff", Any)!.Invoke(null, null)!;
             void Restore(string why) => was.GetMethod("Restore", Any)!.Invoke(null, new object[] { why, false });
+            // 영상 보는 중 (사용자 결정 10-21): 재생 중인 앱의 창이 앞이면 배너·독 튀기기 안 함 — 맞춤 판정만 (가짜 창·재생 앱)
+            {
+                var mf = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.MediaFocus")!;
+                var watch = mf.GetMethod("Watching", Any, new[] { typeof(Mongdock.Models.AppWindowInfo), typeof(IReadOnlyList<string>) })!;
+                bool W(Mongdock.Models.AppWindowInfo? fg, params string[] playing) => (bool)watch.Invoke(null, new object?[] { fg, playing })!;
+                var chrome = new Mongdock.Models.AppWindowInfo(new IntPtr(0x100), "Netflix - Chrome", @"C:\Program Files\Google\Chrome\Application\chrome.exe", null, false);
+                var netflixApp = new Mongdock.Models.AppWindowInfo(new IntPtr(0x200), "Netflix", @"C:\Program Files\WindowsApps\Netflix\Netflix.exe", "4DF9E0F8.Netflix_mcm4njqhnhss8!Netflix.App", false);
+                var notion = new Mongdock.Models.AppWindowInfo(new IntPtr(0x300), "Notion", @"C:\Users\x\AppData\Local\Programs\Notion\Notion.exe", null, false);
+                Check("영상 보는 중: 크롬이 앞 + 크롬 재생 → 배너·튀기기 안 함", W(chrome, "Chrome"));
+                Check("영상 보는 중: 넷플릭스 앱(AUMID)이 앞 + 그 앱 재생", W(netflixApp, "4DF9E0F8.Netflix_mcm4njqhnhss8!Netflix.App"));
+                Check("다른 앱이 앞(노션) + 크롬 재생 → 배너 그대로", !W(notion, "Chrome"));
+                Check("크롬이 앞 + 다른 앱(Spotify)만 재생 → 배너 그대로", !W(chrome, "Spotify.exe"));
+                Check("재생 없음·앞 창 모름 → 배너 그대로", !W(chrome) && !W(null, "Chrome"));
+            }
             // 0.8.4 감춤 (사용자 10-21): 감춘 동안 0.8 「창 최소화 효과」 안내 카드([켜기])가 다시 생기지 않게
             {
                 bool available = (bool)typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.MinimizeEffectController")!.GetField("Available", Any)!.GetValue(null)!;

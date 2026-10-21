@@ -11,6 +11,11 @@
           "text_en": "An auto-hidden dock now hides again when the mouse stays still on it for 5 seconds, handy while watching videos. Move the mouse to the screen edge, or push once more against the edge, and it comes back."
         },
         {
+          "kind": "improvement",
+          "text": "영상이나 음악을 재생 중인 창을 보고 있을 때는 알림 배너와 독 아이콘 튀기기가 나오지 않아요. 알림은 알림 센터에 쌓여요.",
+          "text_en": "While you're looking at a window that is playing video or music, notification banners and dock icon bounces stay out of the way. Notifications still collect in the notification center."
+        },
+        {
           "kind": "fix",
           "text": "절전에서 깨어난 뒤 자동 숨김 독이 나타나지 않던 문제를 고쳤어요.",
           "text_en": "Fixed the auto-hidden dock sometimes not appearing after waking from sleep."

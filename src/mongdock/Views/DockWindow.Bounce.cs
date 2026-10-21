@@ -45,6 +45,7 @@ public partial class DockWindow
         string? key = BounceKey(item);
         if (key is null || n.BounceOff.Contains(key, StringComparer.OrdinalIgnoreCase)) return;
         if (AppState.Paused || _fullscreen || !DockActive) return;
+        if (MediaFocus.Watching(_services)) return; // 영상 보는 중엔 튀기기·숨은 독 꺼내기 안 함 (사용자 결정 10-21)
         if (RoutineTriggers.DndActive && !RoutineTriggers.AllowedDuringDnd(aumid, appName)) return;
         var fg = _services.Windows.ForegroundWindow;
         if (item.Windows.Any(w => w.Hwnd == fg)) return; // 이미 보고 있음
