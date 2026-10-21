@@ -363,6 +363,13 @@ internal static partial class Program
             Pump(300);
             Run("D 지니", viaEffect(restoreOnly));
             Run("D2 지니 + 앞으로 가져오기", viaEffect(restoreAndActivate));
+            // D3: 최대화 창 (#27 사용자: 보통 창·최대화 둘 다 「커졌다가 크기 조정」) — 되살리면 최대화로 돌아옴
+            ShowWindowAsync(hwnd, 3 /* SW_MAXIMIZE */);
+            Pump(1500);
+            GetWindowRect(hwnd, out wr);
+            Run("D3 지니 · 최대화 창", viaEffect(restoreOnly));
+            ShowWindowAsync(hwnd, 9 /* SW_RESTORE */);
+            Pump(800);
             ((IDisposable)controller).Dispose();
             controller = null;
             File.WriteAllLines(Path.Combine(outDir, "flash-matrix.txt"), lines);

@@ -408,7 +408,7 @@ internal sealed class MinimizeEffectController : IDisposable
                         long since = clock.ElapsedMilliseconds - handedOffAt;
                         int hold = stillFrames > 0 ? holdMs : 60;
                         if ((since < hold || endFrames < 3) && since < (stillFrames > 0 ? MaxStillMs : 260)) return;
-                        LogEndMismatch(source, from, chromium, stillFrames > 0);
+                        LogEndMismatch(source, from, stillFrames > 0 ? stillTo : drawn, crop, src, chromium, stillFrames > 0);
                         if (Anim.Enabled) { fadeFrom = clock.ElapsedMilliseconds; return; }
                     }
                 }
@@ -441,22 +441,37 @@ internal sealed class MinimizeEffectController : IDisposable
         private const int MaxStillMs = 200;
 
         /// <summary>
-        /// #27 「끝에 창이 컸다가 크기가 조정되는 느낌」 원인 가르기: 효과가 끝난 자리(되살릴 자리 어림, 물리 px)와 되살아난 진짜 창의 DWM 테두리 사각형이
-        /// 1px 넘게 다르면 한 줄. 최소화 중엔 DWM 사각형을 못 얻어 창 자리(보이지 않는 테두리 포함)로 어림하므로 그 차이가 보이는지 봄.
+        /// #27 「끝에 창이 컸다가 크기가 조정되는 느낌」 원인 가르기 (보통 창·최대화, 크롬 계열 공통): 진짜 창이 되살아나 덮개를 걷기 직전에
+        /// 되살아난 진짜 창의 DWM 테두리 사각형과 ① 덮개가 실제로 끝난 사각형(붙잡은 그림이면 그림이 놓인 자리, 아니면 썸네일) ② 되살릴 자리 어림(from)을 비교해
+        /// 어느 쪽이든 1px 넘게 다르면 한 줄. 썸네일 원본 크기·잘라 쓴 영역, 그림의 DIP 자리·크기(배율 반올림), 최대화·배율도 같이 (물리 px).
         /// </summary>
-        private static void LogEndMismatch(IntPtr source, Rect from, bool chromium, bool still)
+        private void LogEndMismatch(IntPtr source, Rect from, Rect shownLocal, Rect crop, SIZE src, bool chromium, bool still)
         {
             try
             {
                 if (DwmGetWindowAttribute(source, DWMWA_EXTENDED_FRAME_BOUNDS, out RECT fb, Marshal.SizeOf<RECT>()) != 0 || !GetWindowRect(source, out var wr)) return;
-                double dl = fb.Left - from.Left, dt = fb.Top - from.Top, dr = fb.Right - from.Right, db = fb.Bottom - from.Bottom;
-                LastEndMismatchForTest = $"왼 {dl:0} 위 {dt:0} 오른 {dr:0} 아래 {db:0}";
-                if (Math.Max(Math.Max(Math.Abs(dl), Math.Abs(dt)), Math.Max(Math.Abs(dr), Math.Abs(db))) <= 1) return;
+                var shown = new Rect(shownLocal.X + _bounds.X, shownLocal.Y + _bounds.Y, shownLocal.Width, shownLocal.Height);
+                static string Diff(RECT f, Rect r, out double max)
+                {
+                    double l = f.Left - r.Left, t = f.Top - r.Top, rr = f.Right - r.Right, b = f.Bottom - r.Bottom;
+                    max = Math.Max(Math.Max(Math.Abs(l), Math.Abs(t)), Math.Max(Math.Abs(rr), Math.Abs(b)));
+                    return $"왼 {l:0.#} 위 {t:0.#} 오른 {rr:0.#} 아래 {b:0.#}";
+                }
+                string vsShown = Diff(fb, shown, out double m1), vsFrom = Diff(fb, from, out double m2);
+                LastEndMismatchForTest = $"덮개 끝 대비 {vsShown} · 어림 대비 {vsFrom}";
+                if (Math.Max(m1, m2) <= 1) return;
+                var dpi = VisualTreeHelper.GetDpi(this);
+                string stillDip = still
+                    ? $" · 그림 DIP ({System.Windows.Controls.Canvas.GetLeft(_still):0.##},{System.Windows.Controls.Canvas.GetTop(_still):0.##}) {_still.Width:0.##}x{_still.Height:0.##}"
+                      + $" → px {_still.Width * dpi.DpiScaleX:0.##}x{_still.Height * dpi.DpiScaleY:0.##}, 원본 {(_still.Source as System.Windows.Media.Imaging.BitmapSource)?.PixelWidth}x{(_still.Source as System.Windows.Media.Imaging.BitmapSource)?.PixelHeight}"
+                    : "";
                 var sb = new System.Text.StringBuilder(64);
                 GetClassName(source, sb, sb.Capacity);
-                Log.Info($"창 되살리기 효과: 끝 자리 차이 (진짜 창 − 효과 끝) 왼 {dl:0} 위 {dt:0} 오른 {dr:0} 아래 {db:0} px | 효과 끝 ({from.Left:0},{from.Top:0})-({from.Right:0},{from.Bottom:0})"
+                Log.Info($"창 되살리기 효과: 끝 자리 차이 (진짜 창 − 덮개 끝) {vsShown} · (진짜 창 − 어림) {vsFrom} px"
+                    + $" | 덮개 끝 ({shown.Left:0.#},{shown.Top:0.#})-({shown.Right:0.#},{shown.Bottom:0.#}) · 어림 ({from.Left:0},{from.Top:0})-({from.Right:0},{from.Bottom:0})"
                     + $" · DWM 테두리 ({fb.Left},{fb.Top})-({fb.Right},{fb.Bottom}) · 창 사각형 ({wr.Left},{wr.Top})-({wr.Right},{wr.Bottom})"
-                    + $" · 최대화 {IsZoomed(source)} · 배율 {GetDpiForWindow(source) * 100 / 96}% · {sb} · 크롬 계열 {chromium} · 그림 붙잡음 {still}");
+                    + $" · 썸네일 원본 {src.cx}x{src.cy} 자름 ({crop.Left:0},{crop.Top:0})-({crop.Right:0},{crop.Bottom:0}){stillDip}"
+                    + $" · 최대화 {IsZoomed(source)} · 창 배율 {GetDpiForWindow(source) * 100 / 96}% · 덮개 배율 {dpi.DpiScaleX * 100:0}% · {sb} · 크롬 계열 {chromium} · 그림 붙잡음 {still}");
             }
             catch { }
         }
