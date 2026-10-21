@@ -403,6 +403,40 @@ internal static partial class Program
                     GetWindowRect(hwnd, out wr);
                     Run(fl, viaEffect(restoreOnly));
                 }
+                // G: 기억을 일부러 틀리게 (최소화가 끝난 뒤 기억한 자리를 400px 옮김 — 키보드 스냅 뒤 늦은 훅 같은 경우) → 안전망이 진짜 자리로 다시 맞춰 끝 자리 0~1px 이어야 함
+                {
+                    var remField = mecType.GetField("Remembered", Any)!;
+                    var dict = (System.Collections.IDictionary)remField.GetValue(null)!;
+                    var retargetProp = mecType.GetProperty("LastRetargetForTest", Any)!;
+                    var endP = mecType.GetProperty("LastEndMismatchForTest", Any)!;
+                    var gl = new List<string>();
+                    for (int k = 0; k < 3; k++)
+                    {
+                        noteBefore.Invoke(null, new object[] { hwnd });
+                        ShowWindowAsync(hwnd, 6 /* SW_MINIMIZE */);
+                        Pump(1200);
+                        bool corrupted = false;
+                        if (dict.Contains(hwnd))
+                        {
+                            object v = dict[hwnd]!; // (Rect Visible, Point Offset, RECT Normal, bool Maximized, RECT Work) — 박싱된 복사본의 Item1 을 바꿔 다시 넣음
+                            var f1 = v.GetType().GetField("Item1")!;
+                            var r = (Rect)f1.GetValue(v)!;
+                            f1.SetValue(v, new Rect(r.X - 400, r.Y + 40, r.Width, r.Height));
+                            dict[hwnd] = v;
+                            corrupted = true;
+                        }
+                        retargetProp.SetValue(null, null);
+                        endP.SetValue(null, null);
+                        RestoreFlicker($"G 틀린 기억-{k + 1}", wr, viaEffect(restoreOnly), outDir, out _);
+                        gl.Add($"{(corrupted ? "" : "(기억 없음) ")}번쩍임 {LastFlicker.Flashes}, 다시 맞춤 {retargetProp.GetValue(null) as string ?? "없음"}, 끝 자리 {endP.GetValue(null) as string ?? "없음"}");
+                        if (IsIconic(hwnd)) { ShowWindowAsync(hwnd, 9); Pump(600); }
+                        Pump(400);
+                    }
+                    string gline = "G 틀린 기억(왼쪽으로 400px): " + string.Join(" / ", gl);
+                    Console.WriteLine("  정보  " + gline);
+                    Results.Add("정보  " + gline);
+                    lines.Add(gline);
+                }
                 viaDock = false;
                 ShowWindowAsync(hwnd, 9 /* SW_RESTORE */);
                 Pump(600);

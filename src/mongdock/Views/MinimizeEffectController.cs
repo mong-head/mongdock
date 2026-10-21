@@ -52,6 +52,9 @@ internal sealed class MinimizeEffectController : IDisposable
     /// <summary>마지막 되살리기의 끝 자리 차이 (진짜 창 DWM 테두리 − 효과 끝, 물리 px) — live-test --flashmatrix 가 줄에 붙임 (#27).</summary>
     internal static string? LastEndMismatchForTest { get; private set; }
 
+    /// <summary>마지막 되살리기에서 넘긴 뒤 끝 자리를 진짜 자리로 다시 맞췄으면 그 내용 (안전망, #27) — 안 맞췄으면 null.</summary>
+    internal static string? LastRetargetForTest { get; set; }
+
     public MinimizeEffectController(AppServices services, Func<IntPtr, Rect?> iconRect, Func<DockEdge> edge)
     {
         _services = services;
@@ -395,6 +398,9 @@ internal sealed class MinimizeEffectController : IDisposable
             if (DwmQueryThumbnailSourceSize(_thumbs[0], out var src) != 0 || src.cx <= 0 || src.cy <= 0) { Stop(); Hide(); return false; }
             var crop = SourceCrop(source, src, from, offset);
             var local = new Rect(from.X - monitorPx.X, from.Y - monitorPx.Y, from.Width, from.Height);
+            var startFrom = from; // 진단 줄의 「어림 대비」는 처음 잡은 끝 자리와 비교
+            string rectSource = LastRectSource;
+            bool retargeted = false;
             var target = new Rect(to.X - monitorPx.X, to.Y - monitorPx.Y, to.Width, to.Height);
             _onDone = onDone;
             var clock = Stopwatch.StartNew();
@@ -490,6 +496,25 @@ internal sealed class MinimizeEffectController : IDisposable
                     }
                 }
                 else if (stillFrames > 0) stillFrames++;
+                // 안전망 (#27, PM 10-21): 넘긴 뒤 진짜 창이 떠오르면 그 DWM 사각형으로 끝 자리를 한 번 다시 맞춤 — 기억·어림이 틀려도(키보드 스냅 뒤 늦은 훅 등)
+                // 남은 길과 붙잡은 그림은 진짜 자리로 감. 맞으면(1px 이하) 아무것도 안 바꿈.
+                if (restore && handedOffAt >= 0 && !retargeted && !IsIconic(source)
+                    && DwmGetWindowAttribute(source, DWMWA_EXTENDED_FRAME_BOUNDS, out RECT real, Marshal.SizeOf<RECT>()) == 0
+                    && real.Left > -30000 && real.Right - real.Left > 60 && real.Bottom - real.Top > 40)
+                {
+                    retargeted = true;
+                    var realLocal = new Rect(real.Left - monitorPx.X, real.Top - monitorPx.Y, real.Right - real.Left, real.Bottom - real.Top);
+                    double dx = realLocal.X - local.X, dy = realLocal.Y - local.Y, dw = realLocal.Width - local.Width, dh = realLocal.Height - local.Height;
+                    if (Math.Max(Math.Max(Math.Abs(dx), Math.Abs(dy)), Math.Max(Math.Abs(dw), Math.Abs(dh))) > 1)
+                    {
+                        if (stillFrames > 0) stillTo = new Rect(stillTo.X + dx, stillTo.Y + dy, Math.Max(1, stillTo.Width + dw), Math.Max(1, stillTo.Height + dh));
+                        local = realLocal;
+                        from = new Rect(real.Left, real.Top, realLocal.Width, realLocal.Height);
+                        if (GetWindowRect(source, out var rw)) offset = new Point(Math.Max(0, real.Left - rw.Left), Math.Max(0, real.Top - rw.Top));
+                        LastRetargetForTest = $"{rectSource} → 진짜 자리 (x {dx:+0;-0} y {dy:+0;-0} 폭 {dw:+0;-0} 높이 {dh:+0;-0})";
+                        Log.Info($"창 되살리기 효과: 끝 자리 다시 맞춤 — {LastRetargetForTest}");
+                    }
+                }
                 if (stillFrames == 0 && handedOffAt >= 0 && !IsIconic(source) && DwmQueryThumbnailSourceSize(_thumbs[0], out var live) == 0 && live.cx > 0 && live.cy > 0)
                     crop = SourceCrop(source, live, from, offset);
                 if (fadeFrom >= 0)
@@ -511,7 +536,7 @@ internal sealed class MinimizeEffectController : IDisposable
                         long since = clock.ElapsedMilliseconds - handedOffAt;
                         int hold = stillFrames > 0 ? holdMs : 60;
                         if ((since < hold || endFrames < 3) && since < (stillFrames > 0 ? MaxStillMs : 260)) return;
-                        LogEndMismatch(source, from, stillFrames > 0 ? stillTo : drawn, crop, src, chromium, stillFrames > 0);
+                        LogEndMismatch(source, startFrom, stillFrames > 0 ? stillTo : drawn, crop, src, chromium, stillFrames > 0);
                         if (Anim.Enabled) { fadeFrom = clock.ElapsedMilliseconds; return; }
                     }
                 }
