@@ -244,9 +244,11 @@ internal static partial class Program
         var asm = typeof(Mongdock.App).Assembly;
         var mecType = asm.GetType("Mongdock.Views.MinimizeEffectController")!;
         bool? sysOriginal = SysAnimation();
-        bool electron = Environment.GetCommandLineArgs().Contains("--electron");
+        // --edge: Edge 임시 프로필 창 (크롬 계열 — VS Code 가 업데이트 대기로 「vscode-updating」 잠금을 쥐고 있어 임시 창이 안 뜰 때, 10-21)
+        bool edge = Environment.GetCommandLineArgs().Contains("--edge");
+        bool electron = edge || Environment.GetCommandLineArgs().Contains("--electron");
         bool newDesktop = Environment.GetCommandLineArgs().Contains("--newdesktop");
-        Console.WriteLine($"윈도우 애니메이션 시작 값 {sysOriginal}, 대상 {(electron ? "VS Code 임시 창(Electron)" : "몽독 시험 창(WPF)")}, 새 데스크톱 {newDesktop}");
+        Console.WriteLine($"윈도우 애니메이션 시작 값 {sysOriginal}, 대상 {(edge ? "Edge 임시 창(크롬 계열)" : electron ? "VS Code 임시 창(Electron)" : "몽독 시험 창(WPF)")}, 새 데스크톱 {newDesktop}");
         Guid? madeDesktop = null;
         if (newDesktop)
         {
@@ -268,15 +270,26 @@ internal static partial class Program
         IntPtr hwnd = IntPtr.Zero;
         if (electron)
         {
-            string code = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Programs\Microsoft VS Code\Code.exe");
             electronData = Path.Combine(Path.GetTempPath(), "mongdock-electron-" + Guid.NewGuid().ToString("N")[..8]);
             Directory.CreateDirectory(electronData);
             var before = new HashSet<IntPtr>(TopWindowsOfClass("Chrome_WidgetWin_1"));
-            child = Process.Start(new ProcessStartInfo(code, $"--user-data-dir \"{electronData}\" --extensions-dir \"{Path.Combine(electronData, "ext")}\" --disable-extensions --new-window --skip-welcome --skip-release-notes") { UseShellExecute = false })!;
+            string titleHas;
+            if (edge)
+            {
+                string msedge = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"Microsoft\Edge\Application\msedge.exe");
+                child = Process.Start(new ProcessStartInfo(msedge, $"--user-data-dir=\"{electronData}\" --no-first-run --no-default-browser-check --disable-extensions --disable-sync --new-window about:blank") { UseShellExecute = false })!;
+                titleHas = "Edge";
+            }
+            else
+            {
+                string code = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Programs\Microsoft VS Code\Code.exe");
+                child = Process.Start(new ProcessStartInfo(code, $"--user-data-dir \"{electronData}\" --extensions-dir \"{Path.Combine(electronData, "ext")}\" --disable-extensions --new-window --skip-welcome --skip-release-notes") { UseShellExecute = false })!;
+                titleHas = "Visual Studio Code";
+            }
             for (int i = 0; i < 300 && hwnd == IntPtr.Zero; i++)
             {
                 Pump(100);
-                hwnd = TopWindowsOfClass("Chrome_WidgetWin_1").FirstOrDefault(h => !before.Contains(h) && IsWindowVisible(h) && WindowTitle(h).Contains("Visual Studio Code"));
+                hwnd = TopWindowsOfClass("Chrome_WidgetWin_1").FirstOrDefault(h => !before.Contains(h) && IsWindowVisible(h) && WindowTitle(h).Contains(titleHas));
             }
             Pump(3000);
         }
