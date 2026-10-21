@@ -19,6 +19,11 @@
           "kind": "fix",
           "text": "소리 판의 스피커·마이크 고르기에서 긴 장치 이름이 잘리던 문제를 고쳤어요. 드라이버 이름은 둘째 줄에 보여요.",
           "text_en": "Long device names in the sound panel's speaker and microphone lists are no longer cut off; the driver name shows on a second line."
+        },
+        {
+          "kind": "fix",
+          "text": "독에서 최소화한 창을 다시 열 때 끝에 화면이 번쩍이거나 창이 살짝 커졌다가 줄어드는 것처럼 보이던 문제를 고쳤어요. 크롬·노션 같은 앱에서 잘 보였어요.",
+          "text_en": "Fixed a flash, or the window looking slightly bigger and then shrinking, at the end of reopening a minimized window from the dock. It showed most in apps like Chrome and Notion."
         }
       ]
     },

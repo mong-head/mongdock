@@ -150,6 +150,7 @@ internal sealed class MinimizeEffectController : IDisposable
     private bool Start(IntPtr hwnd, bool restore, Action? onDone)
     {
         if (!TryWindowRect(hwnd, out var from)) return false;
+        if (!restore) Remember(hwnd, from);
         var monitor = MonitorFor(from);
         var bounds = monitor.BoundsRect;
         var edge = _edge();
@@ -177,7 +178,32 @@ internal sealed class MinimizeEffectController : IDisposable
         _ => new Rect((b.Left + b.Right) / 2 - 30, b.Bottom - 70, 60, 60),
     };
 
-    /// <summary>최소화 직전 창 자리 (물리 픽셀): DWM 테두리 사각형, 이미 최소화로 옮겨졌으면 되살릴 자리(최대화였으면 모니터 작업 영역).</summary>
+    /// <summary>
+    /// 최소화할 때 본 창의 보이는 자리 (#27): 최소화 중엔 DWM 테두리 사각형을 못 얻어 저장된 창 자리(보이지 않는 크기 조절 테두리 포함, 화면에 붙인 창이면
+    /// 아예 다른 자리)로 어림하게 됨 → 효과가 진짜 창보다 크게 끝났다가 줄어 보임 (사용자 0.8.4 확인: 노션·Claude·크롬, 보통 창·최대화).
+    /// 최소화 순간(아직 DWM 값이 있음)의 보이는 자리와 그때의 저장된 창 자리·최대화 여부를 기억해 두고, 되살릴 때 저장된 창 자리가 그대로면 그 자리로 끝냄.
+    /// UI 스레드에서만 씀. 창이 많아지면 없어진 창부터 지움.
+    /// </summary>
+    private static readonly Dictionary<IntPtr, (Rect Visible, RECT Normal, bool Maximized)> Remembered = new();
+
+    private const int RememberMax = 64;
+
+    private static void Remember(IntPtr hwnd, Rect visible)
+    {
+        var wp = new WINDOWPLACEMENT { length = Marshal.SizeOf<WINDOWPLACEMENT>() };
+        if (!GetWindowPlacement(hwnd, ref wp)) return;
+        if (Remembered.Count >= RememberMax && !Remembered.ContainsKey(hwnd))
+        {
+            foreach (var gone in Remembered.Keys.Where(h => !IsWindow(h)).ToList()) Remembered.Remove(gone);
+            if (Remembered.Count >= RememberMax) Remembered.Clear();
+        }
+        Remembered[hwnd] = (visible, wp.rcNormalPosition, IsZoomed(hwnd));
+    }
+
+    /// <summary>
+    /// 최소화 직전 창 자리 (물리 픽셀): 떠 있으면 DWM 테두리 사각형. 이미 최소화됐으면 ① 최소화할 때 기억한 자리(저장된 창 자리·최대화가 그대로일 때)
+    /// ② 없으면 되살릴 자리 어림 — 최대화였으면 모니터 작업 영역, 아니면 저장된 창 자리에서 보이지 않는 테두리(왼·오른·아래)를 뺌.
+    /// </summary>
     private static bool TryWindowRect(IntPtr hwnd, out Rect rect)
     {
         rect = default;
@@ -188,23 +214,45 @@ internal sealed class MinimizeEffectController : IDisposable
         }
         var wp = new WINDOWPLACEMENT { length = Marshal.SizeOf<WINDOWPLACEMENT>() };
         if (!GetWindowPlacement(hwnd, ref wp)) return false;
+        bool toMax = (wp.flags & WPF_RESTORETOMAXIMIZED) != 0;
+        if (Remembered.Remove(hwnd, out var seen) && seen.Maximized == toMax && seen.Normal.Equals(wp.rcNormalPosition) && seen.Visible.Width > 60 && seen.Visible.Height > 40)
+        {
+            rect = seen.Visible;
+            return true;
+        }
         var n = wp.rcNormalPosition;
         var guess = new Rect(n.Left, n.Top, Math.Max(1, n.Right - n.Left), Math.Max(1, n.Bottom - n.Top));
         var m = MonitorFor(guess);
-        if ((wp.flags & WPF_RESTORETOMAXIMIZED) != 0)
+        if (toMax)
         {
             var w = m.WorkRect;
             rect = new Rect(w.Left, w.Top, w.Right - w.Left, w.Bottom - w.Top);
         }
         else
         {
-            // 작업 공간 좌표 → 화면 좌표 (작업 영역 왼쪽 위만큼 밀림)
+            // 작업 공간 좌표 → 화면 좌표 (작업 영역 왼쪽 위만큼 밀림), 그리고 보이지 않는 테두리 빼기
             var w = m.WorkRect;
             var b = m.BoundsRect;
-            rect = new Rect(guess.X + (w.Left - b.Left), guess.Y + (w.Top - b.Top), guess.Width, guess.Height);
+            double inv = InvisibleBorder(hwnd);
+            rect = new Rect(guess.X + (w.Left - b.Left) + inv, guess.Y + (w.Top - b.Top), Math.Max(1, guess.Width - 2 * inv), Math.Max(1, guess.Height - inv));
         }
         return rect.Width > 60 && rect.Height > 40;
     }
+
+    /// <summary>
+    /// 크기 조절 창(WS_THICKFRAME)의 보이지 않는 테두리 폭 (물리 px, 왼·오른·아래 — 위는 0): SIZEFRAME + PADDEDBORDER − 보이는 1px 테두리.
+    /// 이 PC 측정과 같음: 100% 7px · 125% 8px (Chrome_WidgetWin_1·탐색기·UWP 틀). 크기 조절이 안 되는 창은 0.
+    /// </summary>
+    internal static double InvisibleBorder(IntPtr hwnd)
+    {
+        if ((Native.User32.GetWindowLong(hwnd, Native.User32.GWL_STYLE) & WS_THICKFRAME) == 0) return 0;
+        uint dpi = GetDpiForWindow(hwnd);
+        if (dpi == 0) dpi = 96;
+        return InvisibleBorderAt(dpi);
+    }
+
+    internal static double InvisibleBorderAt(uint dpi) =>
+        Math.Max(0, GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi) - GetSystemMetricsForDpi(SM_CXBORDER, dpi));
 
     public void Dispose()
     {
@@ -673,6 +721,10 @@ internal sealed class MinimizeEffectController : IDisposable
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int max);
     [DllImport("user32.dll")] private static extern bool IsZoomed(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern int GetSystemMetricsForDpi(int index, uint dpi);
+    private const int SM_CXBORDER = 5, SM_CXSIZEFRAME = 32, SM_CXPADDEDBORDER = 92;
+    private const long WS_THICKFRAME = 0x00040000;
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);

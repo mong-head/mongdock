@@ -2156,6 +2156,9 @@ internal static class Program
             bool Near(Rect a, Rect b) => Math.Abs(a.X - b.X) < 0.5 && Math.Abs(a.Y - b.Y) < 0.5 && Math.Abs(a.Width - b.Width) < 0.5 && Math.Abs(a.Height - b.Height) < 0.5;
             var from = new Rect(300, 150, 1200, 760);
             var icon = new Rect(880, 1000, 64, 64);
+            // #27 최소화된 창의 되살릴 자리 어림: 저장된 창 자리에서 빼는 보이지 않는 테두리 (이 PC 측정 100% 7px · 125% 8px — 크롬 계열·탐색기)
+            double Inv(uint dpi) => (double)mec.GetMethod("InvisibleBorderAt", Any)!.Invoke(null, new object[] { dpi })!;
+            Check($"보이지 않는 테두리: 100% {Inv(96)} · 125% {Inv(120)} · 150% {Inv(144)} px", Inv(96) == 7 && Inv(120) == 8 && Inv(144) > 8);
 
             Check($"시간(보통): 차분하게 {Dur(MinimizeEffect.Settle, false)} · 아이콘으로 {Dur(MinimizeEffect.Scale, false)} · 지니 {Dur(MinimizeEffect.Genie, false)} ms, 되살리기 0.8배",
                 Dur(MinimizeEffect.Settle, false) == 220 && Dur(MinimizeEffect.Scale, false) == 300 && Dur(MinimizeEffect.Genie, false) == 480
