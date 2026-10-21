@@ -184,7 +184,10 @@ internal sealed class MinimizeEffectController : IDisposable
     /// 최소화 순간(아직 DWM 값이 있음)의 보이는 자리와 그때의 저장된 창 자리·최대화 여부를 기억해 두고, 되살릴 때 저장된 창 자리가 그대로면 그 자리로 끝냄.
     /// UI 스레드에서만 씀. 창이 많아지면 없어진 창부터 지움.
     /// </summary>
-    private static readonly Dictionary<IntPtr, (Rect Visible, RECT Normal, bool Maximized)> Remembered = new();
+    private static readonly Dictionary<IntPtr, (Rect Visible, RECT Normal, bool Maximized, Native.RECT Work)> Remembered = new();
+
+    /// <summary>마지막으로 구한 창 자리의 출처 — DWM(떠 있음) / 기억(최소화 때 본 자리) / 어림 (#27 진단 줄·flashmatrix).</summary>
+    internal static string LastRectSource { get; private set; } = "";
 
     private const int RememberMax = 64;
 
@@ -197,7 +200,7 @@ internal sealed class MinimizeEffectController : IDisposable
             foreach (var gone in Remembered.Keys.Where(h => !IsWindow(h)).ToList()) Remembered.Remove(gone);
             if (Remembered.Count >= RememberMax) Remembered.Clear();
         }
-        Remembered[hwnd] = (visible, wp.rcNormalPosition, IsZoomed(hwnd));
+        Remembered[hwnd] = (visible, wp.rcNormalPosition, IsZoomed(hwnd), MonitorFor(visible).WorkRect);
     }
 
     /// <summary>
@@ -210,16 +213,21 @@ internal sealed class MinimizeEffectController : IDisposable
         if (DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, out RECT r, Marshal.SizeOf<RECT>()) == 0 && r.Left > -30000 && r.Right - r.Left > 60 && r.Bottom - r.Top > 40)
         {
             rect = new Rect(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top);
+            LastRectSource = "DWM";
             return true;
         }
         var wp = new WINDOWPLACEMENT { length = Marshal.SizeOf<WINDOWPLACEMENT>() };
         if (!GetWindowPlacement(hwnd, ref wp)) return false;
         bool toMax = (wp.flags & WPF_RESTORETOMAXIMIZED) != 0;
-        if (Remembered.Remove(hwnd, out var seen) && seen.Maximized == toMax && seen.Normal.Equals(wp.rcNormalPosition) && seen.Visible.Width > 60 && seen.Visible.Height > 40)
+        // 기억값: 보통 창이고 저장된 창 자리·그 모니터 작업 영역이 그대로일 때만 (최대화는 지금의 작업 영역이 곧 끝 자리 — 독·상단바·배율이 바뀌었을 수 있음, 리뷰)
+        if (Remembered.Remove(hwnd, out var seen) && !toMax && !seen.Maximized && seen.Normal.Equals(wp.rcNormalPosition)
+            && seen.Work.Equals(MonitorFor(seen.Visible).WorkRect) && seen.Visible.Width > 60 && seen.Visible.Height > 40)
         {
             rect = seen.Visible;
+            LastRectSource = "기억";
             return true;
         }
+        LastRectSource = "어림";
         var n = wp.rcNormalPosition;
         var guess = new Rect(n.Left, n.Top, Math.Max(1, n.Right - n.Left), Math.Max(1, n.Bottom - n.Top));
         var m = MonitorFor(guess);
@@ -506,7 +514,7 @@ internal sealed class MinimizeEffectController : IDisposable
                     return $"왼 {l:0.#} 위 {t:0.#} 오른 {rr:0.#} 아래 {b:0.#}";
                 }
                 string vsShown = Diff(fb, shown, out double m1), vsFrom = Diff(fb, from, out double m2);
-                LastEndMismatchForTest = $"덮개 끝 대비 {vsShown} · 어림 대비 {vsFrom}";
+                LastEndMismatchForTest = $"[{LastRectSource}] 덮개 끝 대비 {vsShown} · 어림 대비 {vsFrom}";
                 if (Math.Max(m1, m2) <= 1) return;
                 var dpi = VisualTreeHelper.GetDpi(this);
                 string stillDip = still
@@ -519,7 +527,7 @@ internal sealed class MinimizeEffectController : IDisposable
                     + $" | 덮개 끝 ({shown.Left:0.#},{shown.Top:0.#})-({shown.Right:0.#},{shown.Bottom:0.#}) · 어림 ({from.Left:0},{from.Top:0})-({from.Right:0},{from.Bottom:0})"
                     + $" · DWM 테두리 ({fb.Left},{fb.Top})-({fb.Right},{fb.Bottom}) · 창 사각형 ({wr.Left},{wr.Top})-({wr.Right},{wr.Bottom})"
                     + $" · 썸네일 원본 {src.cx}x{src.cy} 자름 ({crop.Left:0},{crop.Top:0})-({crop.Right:0},{crop.Bottom:0}){stillDip}"
-                    + $" · 최대화 {IsZoomed(source)} · 창 배율 {GetDpiForWindow(source) * 100 / 96}% · 덮개 배율 {dpi.DpiScaleX * 100:0}% · {sb} · 크롬 계열 {chromium} · 그림 붙잡음 {still}");
+                    + $" · 끝 자리 출처 {LastRectSource} · 최대화 {IsZoomed(source)} · 창 배율 {GetDpiForWindow(source) * 100 / 96}% · 덮개 배율 {dpi.DpiScaleX * 100:0}% · {sb} · 크롬 계열 {chromium} · 그림 붙잡음 {still}");
             }
             catch { }
         }

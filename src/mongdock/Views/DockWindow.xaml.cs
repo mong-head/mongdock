@@ -689,6 +689,8 @@ public partial class DockWindow : Window
         // 터치를 뗀 뒤엔 커서가 독 위에 남아 있어도 바깥으로 봄 (진짜 마우스가 움직이면 다시 판정)
         bool insideDock = (cursor is Point p && inside.Contains(p)) || IsMouseOver;
         // 커서가 독 영역 안에서 5초 동안 한 픽셀도 안 움직이면 숨김 (#39 영상 볼 때) — 아이콘 위·이름표가 떠 있어도 (메뉴·폴더 판·창 고르기·끌기·peek 는 위에서 이미 빠짐)
+        if (Mouse.LeftButton == MouseButtonState.Pressed || Mouse.RightButton == MouseButtonState.Pressed)
+            _cursorIdle.NoteActivity(Environment.TickCount64); // 누른 채 가만히 있는 동안(끌기 시작 전 등)도 쓰는 중 (리뷰)
         if (_cursorIdle.ShouldHide(cursor, insideDock, Environment.TickCount64))
         {
             Log.Info("독: 커서가 5초 동안 안 움직여 숨김");
