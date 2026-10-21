@@ -49,6 +49,9 @@ internal sealed class MinimizeEffectController : IDisposable
     /// <summary>시험용: 마지막 되살리기의 끝 장면 붙잡기 (#27) — 그림 찍는 데 든 ms, 그림이 보인 ms(찍은 뒤 → 치움)와 프레임 수, 기다린 기준 ms. 못 찍었으면 null.</summary>
     internal static (long CaptureMs, long ShownMs, int ShownFrames, int HoldMs)? LastStillForTest { get; private set; }
 
+    /// <summary>마지막 되살리기의 끝 자리 차이 (진짜 창 DWM 테두리 − 효과 끝, 물리 px) — live-test --flashmatrix 가 줄에 붙임 (#27).</summary>
+    internal static string? LastEndMismatchForTest { get; private set; }
+
     public MinimizeEffectController(AppServices services, Func<IntPtr, Rect?> iconRect, Func<DockEdge> edge)
     {
         _services = services;
@@ -405,6 +408,7 @@ internal sealed class MinimizeEffectController : IDisposable
                         long since = clock.ElapsedMilliseconds - handedOffAt;
                         int hold = stillFrames > 0 ? holdMs : 60;
                         if ((since < hold || endFrames < 3) && since < (stillFrames > 0 ? MaxStillMs : 260)) return;
+                        LogEndMismatch(source, from, chromium, stillFrames > 0);
                         if (Anim.Enabled) { fadeFrom = clock.ElapsedMilliseconds; return; }
                     }
                 }
@@ -435,6 +439,27 @@ internal sealed class MinimizeEffectController : IDisposable
 
         /// <summary>붙잡은 그림을 두는 최대 시간 (넘긴 뒤 ms) — 넘으면 그냥 걷어 냄.</summary>
         private const int MaxStillMs = 200;
+
+        /// <summary>
+        /// #27 「끝에 창이 컸다가 크기가 조정되는 느낌」 원인 가르기: 효과가 끝난 자리(되살릴 자리 어림, 물리 px)와 되살아난 진짜 창의 DWM 테두리 사각형이
+        /// 1px 넘게 다르면 한 줄. 최소화 중엔 DWM 사각형을 못 얻어 창 자리(보이지 않는 테두리 포함)로 어림하므로 그 차이가 보이는지 봄.
+        /// </summary>
+        private static void LogEndMismatch(IntPtr source, Rect from, bool chromium, bool still)
+        {
+            try
+            {
+                if (DwmGetWindowAttribute(source, DWMWA_EXTENDED_FRAME_BOUNDS, out RECT fb, Marshal.SizeOf<RECT>()) != 0 || !GetWindowRect(source, out var wr)) return;
+                double dl = fb.Left - from.Left, dt = fb.Top - from.Top, dr = fb.Right - from.Right, db = fb.Bottom - from.Bottom;
+                LastEndMismatchForTest = $"왼 {dl:0} 위 {dt:0} 오른 {dr:0} 아래 {db:0}";
+                if (Math.Max(Math.Max(Math.Abs(dl), Math.Abs(dt)), Math.Max(Math.Abs(dr), Math.Abs(db))) <= 1) return;
+                var sb = new System.Text.StringBuilder(64);
+                GetClassName(source, sb, sb.Capacity);
+                Log.Info($"창 되살리기 효과: 끝 자리 차이 (진짜 창 − 효과 끝) 왼 {dl:0} 위 {dt:0} 오른 {dr:0} 아래 {db:0} px | 효과 끝 ({from.Left:0},{from.Top:0})-({from.Right:0},{from.Bottom:0})"
+                    + $" · DWM 테두리 ({fb.Left},{fb.Top})-({fb.Right},{fb.Bottom}) · 창 사각형 ({wr.Left},{wr.Top})-({wr.Right},{wr.Bottom})"
+                    + $" · 최대화 {IsZoomed(source)} · 배율 {GetDpiForWindow(source) * 100 / 96}% · {sb} · 크롬 계열 {chromium} · 그림 붙잡음 {still}");
+            }
+            catch { }
+        }
 
         private static bool IsChromiumFamily(IntPtr hwnd)
         {
@@ -632,6 +657,8 @@ internal sealed class MinimizeEffectController : IDisposable
     [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int max);
+    [DllImport("user32.dll")] private static extern bool IsZoomed(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hwnd, IntPtr dc);
     [DllImport("gdi32.dll")] private static extern IntPtr CreateCompatibleDC(IntPtr dc);

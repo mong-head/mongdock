@@ -304,6 +304,8 @@ internal static partial class Program
                 var firsts = new List<long>();
                 var stills = new List<string>();
                 var stillProp = mecType.GetProperty("LastStillForTest", Any)!;
+                var endProp = mecType.GetProperty("LastEndMismatchForTest", Any)!; // #27 끝 자리 차이 (진짜 창 − 효과 끝)
+                var ends = new List<string>();
                 int fgOk = 0, fgTried = 0;
                 for (int k = 0; k < 3; k++)
                 {
@@ -311,16 +313,18 @@ internal static partial class Program
                     Pump(1200);
                     _fgResult = null;
                     stillProp.SetValue(null, null);
+                    endProp.SetValue(null, null);
                     RestoreFlicker($"{label}-{k + 1}", wr, restore, outDir, out _);
                     flashes.Add(LastFlicker.Flashes);
                     stills.Add(stillProp.GetValue(null) is ITuple st ? $"{st[1]}ms·{st[2]}프레임(찍기 {st[0]}ms, 기준 {st[3]})" : "없음");
+                    ends.Add(endProp.GetValue(null) as string ?? "없음");
                     devs.Add(LastFlicker.MaxDev);
                     firsts.Add(LastFlicker.FirstMs);
                     if (_fgResult is { } r) { fgTried++; if (r) fgOk++; }
                     if (IsIconic(hwnd)) { ShowWindowAsync(hwnd, 9); Pump(600); }
                     Pump(400);
                 }
-                string line = $"{label}: 번쩍임 프레임 {string.Join("/", flashes)} (가장 크게 벗어난 밝기 {string.Join("/", devs.Select(d => d.ToString("0")))}), 누른 뒤 첫 변화 {string.Join("/", firsts)}ms{(fgTried > 0 ? $", 앞으로 가져오기 성공 {fgOk}/{fgTried}" : "")}, 붙잡은 그림 {string.Join(" / ", stills)}";
+                string line = $"{label}: 번쩍임 프레임 {string.Join("/", flashes)} (가장 크게 벗어난 밝기 {string.Join("/", devs.Select(d => d.ToString("0")))}), 누른 뒤 첫 변화 {string.Join("/", firsts)}ms{(fgTried > 0 ? $", 앞으로 가져오기 성공 {fgOk}/{fgTried}" : "")}, 붙잡은 그림 {string.Join(" / ", stills)}, 끝 자리 차이(진짜 창−효과 끝 px) {string.Join(" / ", ends)}";
                 Console.WriteLine("  정보  " + line);
                 Results.Add("정보  " + line);
                 lines.Add(line);
