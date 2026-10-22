@@ -1540,5 +1540,6 @@
  "Ctrl + Win + ← → 로도 오가요": "También puedes cambiar con Ctrl + Win + ← →",
  "돌아가기": "Volver",
  "새 데스크톱에 열었어요 · {0}": "Abierto en un escritorio nuevo · {0}",
- "데스크톱 {0}로 이동했어요 · {1}": "Cambiado al escritorio {0} · {1}"
+ "데스크톱 {0}로 이동했어요 · {1}": "Cambiado al escritorio {0} · {1}",
+ "데스크톱 {0}로 이동했어요": "Cambiado al escritorio {0}"
 }

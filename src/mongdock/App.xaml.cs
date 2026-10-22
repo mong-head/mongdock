@@ -255,6 +255,7 @@ public partial class App : Application
         // 창 최소화 효과 (#20): 켜 두면 윈도우 최소화 애니메이션을 끄고 몽독 효과, 끄면(또는 이전 실행이 갑자기 꺼졌으면) 되돌림
         _minimize = new MinimizeEffectController(_services, h => _dock?.IconScreenRectFor(h), () => _dock?.EdgeForEffects ?? Models.DockEdge.Bottom);
         _banners = NotificationBannerWindow.Attach(_services);
+        DesktopPill.Attach(_services); // 데스크톱 이동 알약 (#41)
         if (_updates is not null) _updateUi = UpdateUi.Attach(_services, _updates);
         else if (_storeUpdates is not null) _updateUi = UpdateUi.Attach(_services, _storeUpdates);
         _lowBattery = LowBatteryBanner.Attach(_services); // 배터리 20·10·5% 알림 (배너 호스트 다음)

@@ -493,6 +493,10 @@ public sealed class WindowTracker : IWindowTracker, IDisposable
         };
     }
 
+    /// <summary>창의 앱 이름 (AUMID 표시 이름 → 실행 파일 설명 → 파일명 → 창 제목) — 데스크톱 이동 알약 등 (#41).</summary>
+    internal static string DisplayNameOf(AppWindowInfo w) =>
+        (w.Aumid is { Length: > 0 } a ? AppsFolder.GetAppDisplayName(a) : null) ?? FriendlyExeName(w.ProcessPath) ?? w.Title;
+
     private static string? FriendlyExeName(string path)
     {
         if (string.IsNullOrEmpty(path)) return null;

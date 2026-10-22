@@ -20,6 +20,17 @@ internal sealed class DesktopPill : Window
 {
     private const string HintKey = "desktop-pill";
     private static DesktopPill? _current;
+    private static AppServices? _services;
+
+    /// <summary>앱 시작 때 한 번 (서비스 계층의 AppLauncher 가 <see cref="Notify"/> 로 부를 수 있게).</summary>
+    public static void Attach(AppServices services) => _services = services;
+
+    /// <summary>어느 스레드에서나: UI 스레드로 넘겨 알약을 띄움 (Attach 전이면 아무것도 안 함).</summary>
+    public static void Notify(MonitorInfo monitor, string text, int from)
+    {
+        if (_services is not { } s || Application.Current?.Dispatcher is not { } d) return;
+        _ = d.BeginInvoke(() => Show(s, monitor, text, from));
+    }
 
     /// <summary>상단바가 데스크톱 표시를 잠깐 강조 (TopBarWindow 가 구독).</summary>
     public static event EventHandler? Shown;
