@@ -81,15 +81,17 @@ internal sealed class DockItemView : Grid
     }
 
     /// <summary>＋가 보이는 중인지.</summary>
-    public bool PlusVisible => _plus is { Visibility: Visibility.Visible };
+    public bool PlusVisible => _plusShown;
+    private bool _plusShown;
 
     /// <summary>＋ 보이기·숨기기 (0.12초 흐리게).</summary>
     public void ShowPlus(bool show)
     {
-        if (_plus is null || PlusVisible == show) return;
+        if (_plus is null || _plusShown == show) return;
+        _plusShown = show; // 사라지는 0.12초 동안 누르면 앱 클릭 (리뷰 10-23)
         if (show) _plus.Visibility = Visibility.Visible;
         var a = new System.Windows.Media.Animation.DoubleAnimation(show ? 1 : 0, TimeSpan.FromMilliseconds(120));
-        if (!show) a.Completed += (_, _) => { if (_plus.Opacity == 0) _plus.Visibility = Visibility.Collapsed; };
+        if (!show) a.Completed += (_, _) => { if (!_plusShown) _plus.Visibility = Visibility.Collapsed; };
         _plus.BeginAnimation(OpacityProperty, a);
     }
 

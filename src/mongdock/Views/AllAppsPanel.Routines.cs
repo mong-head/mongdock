@@ -191,7 +191,7 @@ internal sealed partial class AllAppsPanel
         });
         text.Children.Add(new TextBlock
         {
-            Text = Loc.T("기본은 새 데스크톱에서 열리고, 끝낼 때 루틴이 연 창만 한 번에 닫아요."),
+            Text = Loc.T("지금 데스크톱이나 새 데스크톱에 펼치고, 닫을 때 루틴이 연 창만 한 번에 닫아요."),
             TextWrapping = TextWrapping.Wrap,
             FontSize = 11.5,
             Foreground = P.SubText,

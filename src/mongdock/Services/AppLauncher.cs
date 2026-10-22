@@ -170,8 +170,7 @@ public sealed class AppLauncher : IAppLauncher
         {
             // 데스크톱 이동 알약 (#41): 앱 이름과 누른 순간의 모니터·데스크톱을 옮기기 전에 잡아 둠
             var w = _tracker.Windows.FirstOrDefault(x => x.Hwnd == hwnd);
-            string name = w is null ? "" : WindowTracker.DisplayNameOf(w);
-            _ = SwitchDesktopThenActivateAsync(hwnd, name, Monitors.FromCursor(), VirtualDesktopService.Read().Current);
+            _ = SwitchDesktopThenActivateAsync(hwnd, w, Monitors.FromCursor(), VirtualDesktopService.Read().Current);
         }
         else
         {
@@ -184,7 +183,7 @@ public sealed class AppLauncher : IAppLauncher
     /// 창이 있는 데스크톱으로 이동(VirtualDesktopService 의 공유 게이트 사용) → 도착하면 활성화.
     /// 이동이 진행 중이거나, 수식키가 눌려 있거나, 도착을 확인하지 못하면 활성화하지 않고 로그만 남김.
     /// </summary>
-    private static async Task SwitchDesktopThenActivateAsync(IntPtr hwnd, string name, MonitorInfo monitor, int from)
+    private static async Task SwitchDesktopThenActivateAsync(IntPtr hwnd, AppWindowInfo? window, MonitorInfo monitor, int from)
     {
         try
         {
@@ -202,7 +201,8 @@ public sealed class AppLauncher : IAppLauncher
                 return;
             }
             ActivateWindow(hwnd);
-            // 몽독이 데스크톱을 옮겼다고 알림 (#41 — 「조용히 옮기지 않기」): "데스크톱 2로 이동했어요 · Claude [← 돌아가기]"
+            // 몽독이 데스크톱을 옮겼다고 알림 (#41 — 「조용히 옮기지 않기」): "데스크톱 2로 이동했어요 · Claude [← 돌아가기]". 이름은 옮긴 뒤에 구함(앱 목록을 읽을 수 있어 느림)
+            string name = window is null ? "" : WindowTracker.DisplayNameOf(window);
             Views.DesktopPill.Notify(monitor, name.Length > 0 ? Loc.F($"데스크톱 {target}로 이동했어요 · {name}") : Loc.F($"데스크톱 {target}로 이동했어요"), from);
             // 마지막 확인: 그래도 창이 지금 데스크톱에 없으면(탐색기 창 등) 키로 한 번 더
             await Task.Delay(150);

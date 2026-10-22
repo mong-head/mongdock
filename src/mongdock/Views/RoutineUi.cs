@@ -55,11 +55,11 @@ internal static class RoutineUi
     /// 루틴 누름 (독·판·메뉴 "열기"·설정 공통): 이번 실행 창이 살아 있으면 새로 열지 않고 그 데스크톱으로 가서 창들을 앞으로,
     /// 여는 중이면 무시, 아니면 새로 엶.
     /// </summary>
-    public static async Task<Click> RunOrFocusAsync(AppServices services, RoutineDef routine)
+    public static async Task<Click> RunOrFocusAsync(AppServices services, RoutineDef routine, bool fromDockIcon = false)
     {
         NewBadges.Used(Badge);
         if (RoutineService.IsRunning(routine.Id))
-            return await RoutineService.FocusRunningAsync(routine.Id) switch
+            return await RoutineService.FocusRunningAsync(routine.Id, canMinimize: fromDockIcon) switch
             {
                 RoutineService.FocusResult.Raised => Click.AlreadyHere,
                 RoutineService.FocusResult.Minimized => Click.Minimized,

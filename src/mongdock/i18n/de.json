@@ -227,7 +227,7 @@
  "기본: ⌃ 안": "Standard: in ⌃",
  "기본값 '자동': 입력 언어가 1개면 Win+Space, 여러 개면 언어 전환과 겹치지 않게 Alt+Space 를 씁니다.": "Standard 'Auto': Win+Leertaste bei einer Eingabesprache, Alt+Leertaste bei mehreren, damit es nicht mit dem Sprachwechsel kollidiert.",
  "기본값 (사용자 폴더)": "Standard (Benutzerordner)",
- "기본은 새 데스크톱에서 열리고, 끝낼 때 루틴이 연 창만 한 번에 닫아요.": "Standardmäßig auf einem neuen Desktop; beim Beenden werden nur die Fenster der Routine geschlossen.",
+ "지금 데스크톱이나 새 데스크톱에 펼치고, 닫을 때 루틴이 연 창만 한 번에 닫아요.": "Öffnet sich auf diesem oder einem neuen Desktop, und beim Schließen werden nur die Fenster der Routine geschlossen.",
  "기타": "Sonstiges",
  "기타 파일": "Weitere Dateien",
  "기호": "Symbol",

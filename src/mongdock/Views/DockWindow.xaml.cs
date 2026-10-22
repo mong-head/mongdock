@@ -1367,7 +1367,7 @@ public partial class DockWindow : Window
     private async Task ClickRoutineAsync(DockItemView? view, RoutineDef routine)
     {
         RoutineUi.Click result;
-        try { result = await RoutineUi.RunOrFocusAsync(_services, routine); }
+        try { result = await RoutineUi.RunOrFocusAsync(_services, routine, fromDockIcon: true); } // 다 앞에 있으면 한꺼번에 최소화는 독 아이콘 누름만 (#41)
         catch (Exception ex)
         {
             Log.Error("루틴 누름 실패", ex);
@@ -1779,7 +1779,7 @@ public partial class DockWindow : Window
             // 크롬·엣지 등은 새 창 인자를 늘 붙여 지금 데스크톱에 (#41 — 인자가 없으면 다른 데스크톱 창에 탭이 붙음)
             menu.Items.Add(Item(Loc.T("새 창 열기"), () =>
             {
-                if (NewWindowApps.NewWindowArg(pin.Target) is not null) _ = NewWindowApps.OpenNewAsync(_services.Windows, pin, Array.Empty<AppWindowInfo>());
+                if (NewWindowApps.NewWindowArg(Environment.ExpandEnvironmentVariables(pin.Target)) is not null) _ = NewWindowApps.OpenNewAsync(_services.Windows, pin, Array.Empty<AppWindowInfo>());
                 else _services.Launcher.Launch(pin);
             }));
             return;

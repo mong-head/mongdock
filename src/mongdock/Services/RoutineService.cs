@@ -63,9 +63,12 @@ internal static class RoutineService
         {
             bool any = false;
             var emptied = new List<string>();
+            lock (Runs) if (Runs.Count == 0) return;
             var all = services.Windows.Windows;
             var ids = VirtualDesktopService.ReadDesktopIds();
             long now = Environment.TickCount64;
+            try
+            {
             lock (Runs)
             {
                 var taken = Runs.Values.SelectMany(r => r.Windows).ToHashSet();
@@ -82,20 +85,23 @@ internal static class RoutineService
                     if (removed && r.HadWindows && r.Windows.Count == 0 && !r.Running) emptied.Add(id);
                 }
             }
+            }
+            catch (Exception ex) { Log.Error("루틴 창 갱신 실패", ex); }
             if (any) RaiseChanged();
             foreach (var id in emptied) _ = AllClosedLaterAsync(id);
         };
     }
 
-    /// <summary>정보를 아직 모르는 루틴 창이면 기억 (앱·창 종류·데스크톱·프로세스). Runs 잠금 안에서.</summary>
+    /// <summary>살아 있는 루틴 창의 정보를 매번 새로 (앱·창 종류·지금 있는 데스크톱·프로세스 — 창을 옮긴 뒤에도 맞게). 빠진 창의 정보는 버림. Runs 잠금 안에서.</summary>
     private static void Remember(RunState r, IReadOnlyList<AppWindowInfo> all, IReadOnlyList<Guid> ids)
     {
+        foreach (var h in r.Meta.Keys.Where(h => !r.Windows.Contains(h)).ToList()) r.Meta.Remove(h);
         foreach (var h in r.Windows)
         {
-            if (r.Meta.ContainsKey(h) || !Alive(h)) continue;
+            if (!Alive(h)) continue;
             var w = all.FirstOrDefault(x => x.Hwnd == h);
             if (w is null || ExeName(w.ProcessPath) is not { } exe || DesktopGuid(w, ids) is not { } d) continue;
-            TrayApi.GetWindowThreadProcessId(h, out uint pid);
+            User32.GetWindowThreadProcessId(h, out uint pid);
             r.Meta[h] = new WinMeta(exe, User32.GetClassNameOf(h), d, pid);
         }
     }
@@ -114,7 +120,7 @@ internal static class RoutineService
         {
             var (m, _, before) = r.Lost[i];
             var c = all.Where(w => !before.Contains(w.Hwnd) && !taken.Contains(w.Hwnd) && Alive(w.Hwnd) && ExeName(w.ProcessPath) == m.Exe && DesktopGuid(w, ids) == m.Desktop
-                && TrayApi.GetWindowThreadProcessId(w.Hwnd, out uint pid) != 0 && pid != m.Pid && User32.GetClassNameOf(w.Hwnd) == m.Class).Take(2).ToList();
+                && User32.GetWindowThreadProcessId(w.Hwnd, out uint pid) != 0 && pid != m.Pid && User32.GetClassNameOf(w.Hwnd) == m.Class).Take(2).ToList();
             if (c.Count != 1) continue;
             var h = c[0].Hwnd;
             r.Windows.Add(h);
@@ -138,7 +144,11 @@ internal static class RoutineService
     {
         await Task.Delay(5000); // 앱이 다시 시작하는 경우(업데이트 등) — 5초 뒤에도 0개면
         bool still;
-        lock (Runs) still = Runs.TryGetValue(id, out var r) && r.HadWindows && r.Windows.Count == 0 && !r.Running;
+        lock (Runs)
+        {
+            still = Runs.TryGetValue(id, out var r) && r.HadWindows && r.Windows.Count == 0 && !r.Running;
+            if (still) r!.Lost.Clear(); // 다 닫힌 뒤 사용자가 같은 앱을 다시 켜도 루틴 창으로 잡지 않음 (앱 다시 시작은 5초 안에 잡힘)
+        }
         if (still) _dispatcher?.BeginInvoke(() => AllClosed?.Invoke(id));
     }
 
@@ -381,7 +391,7 @@ internal static class RoutineService
     /// 이 데스크톱에서 루틴 창이 다 떠 있고(최소화 없음) 맨 앞 창이 루틴 창이면 한꺼번에 최소화 (#41 — 다시 누르면 내려감).
     /// 실행 기록이 없으면 null. UI 스레드에서 부름(COM).
     /// </summary>
-    public static async Task<FocusResult?> FocusRunningAsync(string id)
+    public static async Task<FocusResult?> FocusRunningAsync(string id, bool canMinimize = false)
     {
         var services = _services;
         RunState? state;
@@ -406,7 +416,7 @@ internal static class RoutineService
                 await VirtualDesktopService.MoveToAsync(index);
             await Task.Delay(150);
         }
-        else if (AllInFront(windows))
+        else if (canMinimize && AllInFront(windows, services.Windows.Windows))
         {
             Log.Info($"루틴 다시 누름: 창 {windows.Count}개가 다 앞에 — 한꺼번에 최소화");
             foreach (var w in windows)
@@ -423,7 +433,7 @@ internal static class RoutineService
             if (i > 0) await Task.Delay(40);
         }
         if (here) return FocusResult.Raised;
-        if (index > 0)
+        if (index > 0 && VirtualDesktopService.Read().Current == index) // 이동이 취소됐으면(수식키 등) 알약 없음
         {
             string? name = services.Settings.Current.Routines.FirstOrDefault(r => r.Id == id)?.Name;
             Views.DesktopPill.Notify(monitor, name is { Length: > 0 } ? Loc.F($"데스크톱 {index}로 이동했어요 · {name}") : Loc.F($"데스크톱 {index}로 이동했어요"), cur);
@@ -431,10 +441,29 @@ internal static class RoutineService
         return FocusResult.Moved;
     }
 
-    /// <summary>루틴 창이 모두 이 데스크톱에 최소화 없이 떠 있고 맨 앞 창이 그중 하나 (독은 포커스를 뺏지 않아 누른 뒤에도 그대로).</summary>
-    private static bool AllInFront(List<IntPtr> windows) =>
-        windows.Contains(User32.GetForegroundWindow())
-        && windows.All(w => !User32.IsIconic(w) && VirtualDesktopHelper.IsOnCurrentDesktop(w) != false);
+    /// <summary>
+    /// 루틴 창이 모두 이 데스크톱에 최소화 없이 떠 있고, 맨 앞 창이 그중 하나이고, 다른 앱 창에 가려진 루틴 창이 없음
+    /// (z 순서 위에서부터 보며 루틴 창보다 위에 있는 다른 앱 창과 겹치면 가려진 것). 독은 포커스를 뺏지 않아 누른 뒤에도 맨 앞 창은 그대로.
+    /// </summary>
+    private static bool AllInFront(List<IntPtr> windows, IReadOnlyList<AppWindowInfo> apps)
+    {
+        if (!windows.Contains(User32.GetForegroundWindow())) return false;
+        if (!windows.All(w => !User32.IsIconic(w) && VirtualDesktopHelper.IsOnCurrentDesktop(w) != false)) return false;
+        var pending = windows.ToHashSet();
+        var others = apps.Where(a => a.OnCurrentDesktop && !a.IsMinimized && !pending.Contains(a.Hwnd)).Select(a => a.Hwnd).ToHashSet();
+        var above = new List<RECT>();
+        int guard = 0;
+        for (var h = User32.GetWindow(windows[0], 0 /* GW_HWNDFIRST */); h != IntPtr.Zero && pending.Count > 0 && guard++ < 2000; h = User32.GetWindow(h, 2 /* GW_HWNDNEXT */))
+        {
+            if (!User32.GetWindowRect(h, out var r)) continue;
+            if (pending.Remove(h))
+            {
+                if (above.Any(o => o.Left < r.Right && r.Left < o.Right && o.Top < r.Bottom && r.Top < o.Bottom)) return false;
+            }
+            else if (others.Contains(h) && User32.IsWindowVisible(h)) above.Add(r);
+        }
+        return pending.Count == 0;
+    }
 
     /// <summary>새로 열기 시작했으면 true (전체 화면·여는 중·빈 루틴이면 false).</summary>
     public static bool Run(RoutineDef routine)
@@ -620,7 +649,7 @@ internal static class RoutineService
         int cur = VirtualDesktopService.Read().Current;
         Guid? from = cur > 0 && cur <= ids.Count ? ids[cur - 1] : null;
         bool here = routine.Desktop.Mode == RoutineDesktopMode.Current;
-        if (from is not null && (here || !HasAppWindowsHere(services)))
+        if (here || from is not null && !HasAppWindowsHere(services))
         {
             lock (Runs)
             {

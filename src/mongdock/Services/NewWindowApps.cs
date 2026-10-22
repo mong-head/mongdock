@@ -40,9 +40,11 @@ internal static class NewWindowApps
     /// <summary>이 앱의 실행 파일 (핀이 exe 면 그것, 아니면 첫 창의 프로세스 경로). 스토어 앱(AUMID 만)은 null.</summary>
     internal static string? ExeOf(PinItem? pin, IReadOnlyList<AppWindowInfo> windows)
     {
-        if (pin is { Kind: PinKind.Exe } p && !string.IsNullOrEmpty(p.Target) && p.Target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) return p.Target;
+        if (pin is { Kind: PinKind.Exe } p && !string.IsNullOrEmpty(p.Target) && p.Target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            return Environment.ExpandEnvironmentVariables(p.Target.Trim().Trim('"'));
         var w = windows.FirstOrDefault(x => !string.IsNullOrEmpty(x.ProcessPath));
-        if (w is null || !string.IsNullOrEmpty(w.Aumid) && !string.Equals(ExeName(w.ProcessPath), "explorer", StringComparison.OrdinalIgnoreCase)) return null;
+        // 스토어(패키지) 앱만 뺌 — 크롬·엣지처럼 창에 AUMID 를 붙이는 데스크톱 앱은 그대로 (리뷰 10-23)
+        if (w is null || AppsFolder.IsPackagedAumid(w.Aumid) || AppsFolder.IsWindowsAppsPath(w.ProcessPath)) return null;
         return w.ProcessPath;
     }
 
@@ -54,9 +56,9 @@ internal static class NewWindowApps
         if (exe is null) return false;
         string name = ExeName(exe);
         if (Single.Contains(name)) return false;
+        if (NewWindowArg(exe) is not null) return true; // 새 창 인자를 아는 앱은 배우지 않음 (처음 켤 때 느려서 「한 개만」으로 잘못 배우지 않게)
         string? learned = Learned(name);
         if (learned == "single") return false;
-        if (NewWindowArg(exe) is not null) return true;
         return learned == "multi" || windows.Count >= 2;
     }
 
@@ -69,17 +71,14 @@ internal static class NewWindowApps
         if (exe is null) return false;
         string name = ExeName(exe);
         var before = tracker.Windows.Select(w => w.Hwnd).ToHashSet();
-        try
-        {
-            string arg = NewWindowArg(exe) ?? "";
-            Process.Start(new ProcessStartInfo(name == "explorer" ? "explorer.exe" : exe, arg) { UseShellExecute = true });
-            Log.Info($"독 ＋: 새 창 열기 {name} {arg}");
-        }
-        catch (Exception ex)
-        {
-            Log.Warn($"독 ＋: 실행 실패 {name}: {ex.Message}");
-            return false;
-        }
+        string? known = NewWindowArg(exe);
+        // 핀에 적어 둔 인자(프로필 등)는 그대로, 새 창 인자는 앞에
+        string? pinArgs = pin is { Kind: PinKind.Exe } p && string.Equals(Environment.ExpandEnvironmentVariables(p.Target.Trim().Trim('"')), exe, StringComparison.OrdinalIgnoreCase) ? p.Arguments : null;
+        string arg = string.Join(" ", new[] { known, pinArgs }.Where(a => !string.IsNullOrWhiteSpace(a)));
+        var psi = new ProcessStartInfo(name == "explorer" ? "explorer.exe" : exe, arg) { UseShellExecute = true };
+        if (name != "explorer" && Path.GetDirectoryName(exe) is { Length: > 0 } dir && Directory.Exists(dir)) psi.WorkingDirectory = dir;
+        if (!await StartOnStaAsync(psi)) return false;
+        Log.Info($"독 ＋: 새 창 열기 {name} {known}");
         var sw = Stopwatch.StartNew();
         while (sw.ElapsedMilliseconds < 5000)
         {
@@ -93,9 +92,36 @@ internal static class NewWindowApps
                 return here;
             }
         }
+        if (known is not null)
+        {
+            Log.Info($"독 ＋: {name} 5초 안에 새 창이 없음 (느린 실행일 수 있어 배우지 않음)");
+            return true; // 알약 없음 — 창은 늦게라도 지금 데스크톱에 뜸
+        }
         Learn(name, "single");
         Log.Info($"독 ＋: {name} 5초 안에 새 창이 없음 → 한 개만으로 배움");
         return false;
+    }
+
+    /// <summary>실행은 백그라운드 STA 스레드에서 (AppLauncher 와 같음 — ShellExecute 가 백신·SmartScreen 으로 늦어도 독이 멈추지 않게).</summary>
+    private static Task<bool> StartOnStaAsync(ProcessStartInfo psi)
+    {
+        var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            var t = new Thread(() =>
+            {
+                try { Process.Start(psi)?.Dispose(); done.TrySetResult(true); }
+                catch (Exception ex) { Log.Warn($"독 ＋: 실행 실패 {Path.GetFileName(psi.FileName)}: {ex.GetType().Name}"); done.TrySetResult(false); }
+            }) { IsBackground = true, Name = "mongdock-newwindow" };
+            t.SetApartmentState(ApartmentState.STA);
+            t.Start();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"독 ＋: 실행 스레드 시작 실패 {ex.GetType().Name}");
+            done.TrySetResult(false);
+        }
+        return done.Task;
     }
 
     private static string? Learned(string name)
@@ -117,7 +143,7 @@ internal static class NewWindowApps
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(StorePath)!);
-                File.WriteAllText(StorePath, JsonSerializer.Serialize(_learned));
+                AtomicFile.WriteAllText(StorePath, JsonSerializer.Serialize(_learned));
             }
             catch (Exception ex) { Log.Warn($"독 ＋: 배운 것 저장 실패 {ex.Message}"); }
         }

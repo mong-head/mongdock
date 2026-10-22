@@ -227,7 +227,7 @@
  "기본: ⌃ 안": "Predeterminado: dentro de ⌃",
  "기본값 '자동': 입력 언어가 1개면 Win+Space, 여러 개면 언어 전환과 겹치지 않게 Alt+Space 를 씁니다.": "Valor predeterminado 'Automático': usa Win+Space con un idioma de entrada, o Alt+Space con varios para no chocar con el cambio de idioma.",
  "기본값 (사용자 폴더)": "Predeterminado (carpeta de usuario)",
- "기본은 새 데스크톱에서 열리고, 끝낼 때 루틴이 연 창만 한 번에 닫아요.": "De forma predeterminada se abre en un escritorio nuevo y, al terminar, solo se cierran las ventanas que abrió la rutina.",
+ "지금 데스크톱이나 새 데스크톱에 펼치고, 닫을 때 루틴이 연 창만 한 번에 닫아요.": "Se abre en este escritorio o en uno nuevo, y al cerrarla solo se cierran las ventanas que abrió la rutina.",
  "기타": "Otros",
  "기타 파일": "Otros archivos",
  "기호": "Símbolo",

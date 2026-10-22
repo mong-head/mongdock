@@ -76,11 +76,12 @@ public partial class DockWindow
     {
         if (sender is not DockItemView view || _itemArmed || _dragArmed || _fileDragOver) return;
         // ＋ 누름 = 지금 데스크톱에 새 창 (#41) — 앱 클릭·끌기로 넘어가지 않게 캡처 전에
-        if (view.PlusContains(e.GetPosition(this), this))
+        // (누름 원이 칸보다 조금 커서 이웃 칸이 눌린 것으로 올 수 있음 → 보이는 ＋ 의 아이콘으로 먼저 확인)
+        if ((_plusView ?? view) is { } plusOwner && plusOwner.PlusContains(e.GetPosition(this), this))
         {
             e.Handled = true;
             HidePlus();
-            _ = OpenNewWindowHereAsync(view);
+            _ = OpenNewWindowHereAsync(plusOwner);
             return;
         }
         NotePress(e); // 터치 길게 누르기 판정용 (DockWindow.Touch.cs)

@@ -397,7 +397,9 @@ public sealed class SettingsService : ISettingsService, IDisposable
             r.Items ??= new List<RoutineItem>();
             r.Items.RemoveAll(i => i is null || string.IsNullOrWhiteSpace(i.Target) && string.IsNullOrWhiteSpace(i.Aumid));
             if (r.Items.Count > RoutineDef.MaxItems) r.Items.RemoveRange(RoutineDef.MaxItems, r.Items.Count - RoutineDef.MaxItems);
-            r.Desktop = new RoutineDesktop(); // 데스크톱은 고르지 않음 — 옛 값(지금/N번)은 무시하고 늘 새 데스크톱
+            // 열 곳은 저장한 값 그대로 (#41 — 지금/새). 없앤 번호 고르기(Index)는 새 데스크톱으로
+            r.Desktop ??= new RoutineDesktop { Mode = RoutineDesktopMode.New };
+            if (r.Desktop.Mode is not (RoutineDesktopMode.Current or RoutineDesktopMode.New)) r.Desktop.Mode = RoutineDesktopMode.New;
             r.Name ??= "";
             if (string.IsNullOrWhiteSpace(r.Id) || !routineIds.Add(r.Id)) { r.Id = Guid.NewGuid().ToString("N"); routineIds.Add(r.Id); }
             return false;

@@ -59,7 +59,7 @@ internal sealed class DesktopPill : Window
             pill.Closed += (_, _) => { if (_current == pill) _current = null; };
             pill.PlaceOn(services, monitor);
             Shown?.Invoke(null, EventArgs.Empty);
-            Log.Info($"데스크톱 알약: {text}{(first ? " (첫 안내)" : "")}");
+            Log.Info($"데스크톱 알약 띄움{(first ? " (첫 안내)" : "")}"); // 문구(앱·루틴 이름, 창 제목)는 남기지 않음
         }
         catch (Exception ex) { Log.Warn($"데스크톱 알약 실패: {ex.Message}"); }
     }

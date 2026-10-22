@@ -2451,11 +2451,23 @@ internal static class Program
         Console.WriteLine($"  저장  {path}");
     }
 
-    /// <summary>
-    /// --idlehide (#39): CursorIdle 판정과 화면 끝 밀기 방향만 가짜 커서 위치(DIP)·시각·이동량으로 — 창·실제 커서·입력·Raw Input 등록 없음.
-    /// 5초 정지면 숨김(4.999초는 아님) · 1px 움직이면 처음부터 · 독 밖이면 안 숨김 · 아이콘 위·이름표가 떠 있어도 숨김(사용자 결정, 예외는 DockWindow 가 판정을 쉬는 메뉴 등) ·
-    /// 숨긴 자리에 그대로면 다시 안 나옴, 1px 움직이거나 독 쪽으로 밀면 풀림 · 풀린 뒤·Reset 뒤엔 다시 5초 · 커서가 모니터 밖(null)이면 안 숨김.
-    /// </summary>
+    private static bool RoutineModesKept()
+    {
+        const string json = """
+            { "settingsVersion": 4, "routines": [
+              { "id": "a", "name": "A", "items": [ { "kind": "App", "target": "notepad.exe" } ], "desktop": { "mode": "New" } },
+              { "id": "b", "name": "B", "items": [ { "kind": "App", "target": "notepad.exe" } ], "desktop": { "mode": "Current" } },
+              { "id": "c", "name": "C", "items": [ { "kind": "App", "target": "notepad.exe" } ], "desktop": { "mode": "Index", "index": 2 } },
+              { "id": "d", "name": "D", "items": [ { "kind": "App", "target": "notepad.exe" } ] } ] }
+            """;
+        var t = typeof(Mongdock.App).Assembly.GetType("Mongdock.Services.SettingsService")!;
+        var args = new object?[] { json, null, null };
+        var s = (Mongdock.Models.Settings)t.GetMethod("Deserialize", Any)!.Invoke(null, args)!;
+        var modes = s.Routines.Select(r => r.Desktop.Mode.ToString()).ToList();
+        Console.WriteLine($"        열 곳: {string.Join(", ", modes)}");
+        return string.Join(",", modes) == "New,Current,New,Current";
+    }
+
     /// <summary>--plusrule (#41): NewWindowApps.CanOpenNew·NewWindowArg — 어떤 앱 아이콘에 ＋가 나오는지 (가짜 창, 실행·창 없음).</summary>
     private static int PlusRuleCheck()
     {
@@ -2476,10 +2488,19 @@ internal static class Program
         Ok("모르는 앱 창 2개 → ＋ (여러 창 앱 후보, 누른 뒤 배움)", Can(@"C:\x\someapp2.exe", 2));
         Ok("실행 중 아님(창 0개) → ＋ 없음", !Can(@"C:\x\chrome.exe", 0));
         Ok("스토어 앱(AUMID) → ＋ 없음", !Can(@"C:\Program Files\WindowsApps\x\app.exe", 2, "Pub.App_x!App"));
+        Ok("크롬 창에 AUMID 가 붙어 있어도 → ＋ (스토어 앱만 뺌)", Can(@"C:\Program Files\Google\Chrome\Application\chrome.exe", 1, "Chrome"));
+        Ok("엣지(MSEdge AUMID) → ＋", Can(@"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe", 1, "MSEdge"));
+        // 루틴 열 곳 (#41 리뷰 10-23): 설정을 읽을 때 저장한 값 그대로 — 예전엔 읽을 때마다 기본값으로 덮어씀
+        Ok("루틴 열 곳: new·current 는 그대로, index 는 새 데스크톱, 없으면 기본(지금)", RoutineModesKept());
         Console.WriteLine(bad == 0 ? "  모두 통과" : $"  실패 {bad}개");
         return bad == 0 ? 0 : 1;
     }
 
+    /// <summary>
+    /// --idlehide (#39): CursorIdle 판정과 화면 끝 밀기 방향만 가짜 커서 위치(DIP)·시각·이동량으로 — 창·실제 커서·입력·Raw Input 등록 없음.
+    /// 5초 정지면 숨김(4.999초는 아님) · 1px 움직이면 처음부터 · 독 밖이면 안 숨김 · 아이콘 위·이름표가 떠 있어도 숨김(사용자 결정, 예외는 DockWindow 가 판정을 쉬는 메뉴 등) ·
+    /// 숨긴 자리에 그대로면 다시 안 나옴, 1px 움직이거나 독 쪽으로 밀면 풀림 · 풀린 뒤·Reset 뒤엔 다시 5초 · 커서가 모니터 밖(null)이면 안 숨김.
+    /// </summary>
     private static int IdleHideCheck()
     {
         int bad = 0;

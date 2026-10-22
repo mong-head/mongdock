@@ -1003,15 +1003,18 @@ public partial class TopBarWindow : Window
 
     private void OnRoutinesChanged() => UpdateDesktopIndex();
 
-    /// <summary>"2 / 3" 표시, 첫 데스크톱이면 ‹ 흐리게. 마지막 데스크톱의 › 는 새 데스크톱 만들기.</summary>
-    /// <summary>데스크톱 이동 알약이 뜨면 데스크톱 묶음을 잠깐 강조 (#41) — 연보라 바탕이 1.2초 동안 떴다 사라짐.</summary>
+    private Brush? _pillFlash, _pillOriginal;
+
+    /// <summary>데스크톱 이동 알약이 뜨면 데스크톱 묶음을 잠깐 강조 (#41) — 연보라 바탕이 1.2초 동안 떴다 사라짐. 잇달아 뜨면 처음 바탕으로 돌아감.</summary>
     private void OnDesktopPillShown(object? sender, EventArgs e)
     {
         if (!IsVisible || DesktopButtons.Visibility != Visibility.Visible) return;
-        var original = DesktopButtons.Background;
+        var original = _pillFlash is not null && DesktopButtons.Background == _pillFlash ? _pillOriginal : DesktopButtons.Background;
         var flash = (UiTheme.Palette(_services.Settings.Current).SoftAccent as SolidColorBrush)?.Color is { } c ? new SolidColorBrush(c) { Opacity = 0 } : null;
         if (flash is null) return;
         DesktopButtons.Background = flash;
+        _pillFlash = flash;
+        _pillOriginal = original;
         var a = new DoubleAnimationUsingKeyFrames();
         a.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(150))));
         a.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(900))));
@@ -1020,6 +1023,7 @@ public partial class TopBarWindow : Window
         flash.BeginAnimation(Brush.OpacityProperty, a);
     }
 
+    /// <summary>"2 / 3" 표시, 첫 데스크톱이면 ‹ 흐리게. 마지막 데스크톱의 › 는 새 데스크톱 만들기.</summary>
     private void UpdateDesktopIndex()
     {
         int index = 0, count = 0;
