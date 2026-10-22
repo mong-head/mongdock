@@ -875,6 +875,13 @@ public partial class DockWindow : Window
         var p = e.GetPosition(PanelBorder);
         double along = _layout.IsVertical ? p.Y - PanelBorder.ActualHeight / 2 : p.X - PanelBorder.ActualWidth / 2;
 
+        // ＋ 위에서는 확대를 고정 (#41 — 커서를 ＋로 옮기면 그 아이콘이 작아지며 ＋가 커서에서 도망가지 않게)
+        if (_plusView is { PlusVisible: true } plusView && plusView.PlusContains(e.GetPosition(this), this))
+        {
+            _lastInsideTicks = Environment.TickCount64;
+            _plusHide.Stop();
+            return;
+        }
         // 패널 밖(확대 영역)에서 처음 들어온 건 무시: 확대는 패널에 들어온 뒤부터
         if (_cursorAlong == null && !PanelBorder.IsMouseOver) return;
         _cursorAlong = along;
@@ -892,6 +899,7 @@ public partial class DockWindow : Window
 
     private void ResetMagnification(bool animate = false)
     {
+        HidePlus();
         _cursorAlong = null;
         Root.Background = null;
         if (animate)
@@ -1405,6 +1413,7 @@ public partial class DockWindow : Window
 
     private void OnItemHoverStarted(object? sender, EventArgs e)
     {
+        if (sender is DockItemView pv) ArmPlus(pv);
         if (sender is not DockItemView view || string.IsNullOrEmpty(view.Item.Name)) return;
         if (PanelBorder.ContextMenu?.IsOpen == true || _dragArmed || _itemDragging || _fileDragOver || _hideTo >= 1 || _folderPanel != null) return;
         if (LabelAnchor(view) is not Point anchor) return;
@@ -1436,6 +1445,7 @@ public partial class DockWindow : Window
 
     private void OnItemHoverEnded(object? sender, EventArgs e)
     {
+        if (sender is DockItemView pv && pv == _plusView) DisarmPlus(keepShown: true);
         if (sender == _labelView) _labelView = null;
         _label?.Hide();
     }
@@ -1766,7 +1776,12 @@ public partial class DockWindow : Window
 
         if (profiles.Count == 0)
         {
-            menu.Items.Add(Item(Loc.T("새 창 열기"), () => _services.Launcher.Launch(pin)));
+            // 크롬·엣지 등은 새 창 인자를 늘 붙여 지금 데스크톱에 (#41 — 인자가 없으면 다른 데스크톱 창에 탭이 붙음)
+            menu.Items.Add(Item(Loc.T("새 창 열기"), () =>
+            {
+                if (NewWindowApps.NewWindowArg(pin.Target) is not null) _ = NewWindowApps.OpenNewAsync(_services.Windows, pin, Array.Empty<AppWindowInfo>());
+                else _services.Launcher.Launch(pin);
+            }));
             return;
         }
 

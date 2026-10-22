@@ -28,6 +28,8 @@ internal sealed class DockItemView : Grid
     private readonly ScaleTransform? _scale;
     private readonly Ellipse? _runningDot;
     private readonly Ellipse? _notifyDot;
+    private readonly Border? _plus;
+    private double _plusSize, _plusMargin;
     /// <summary>재생 진행 막대 (#22) 바탕·채움.</summary>
     private readonly System.Windows.Shapes.Path? _soundMark;
     /// <summary>드래그 정렬 중 비켜서기 이동 (독 방향). 레이아웃은 그대로 두고 그림만 옮긴다.</summary>
@@ -76,6 +78,35 @@ internal sealed class DockItemView : Grid
         if (_iconHost is null || _iconHost.ActualWidth <= 0) return Rect.Empty;
         try { return _iconHost.TransformToVisual(relativeTo).TransformBounds(new Rect(_iconHost.RenderSize)); }
         catch (InvalidOperationException) { return Rect.Empty; }
+    }
+
+    /// <summary>＋가 보이는 중인지.</summary>
+    public bool PlusVisible => _plus is { Visibility: Visibility.Visible };
+
+    /// <summary>＋ 보이기·숨기기 (0.12초 흐리게).</summary>
+    public void ShowPlus(bool show)
+    {
+        if (_plus is null || PlusVisible == show) return;
+        if (show) _plus.Visibility = Visibility.Visible;
+        var a = new System.Windows.Media.Animation.DoubleAnimation(show ? 1 : 0, TimeSpan.FromMilliseconds(120));
+        if (!show) a.Completed += (_, _) => { if (_plus.Opacity == 0) _plus.Visibility = Visibility.Collapsed; };
+        _plus.BeginAnimation(OpacityProperty, a);
+    }
+
+    /// <summary>
+    /// p(relativeTo 좌표)가 ＋ 누름 원 안인지 — 그려진 아이콘 사각형(확대 반영)에서 ＋ 중심을 계산, 반지름은 max(12, 보이는 반지름 + 4) DIP.
+    /// </summary>
+    public bool PlusContains(Point p, Visual relativeTo)
+    {
+        if (!PlusVisible) return false;
+        var r = DrawnIconBounds(relativeTo);
+        if (r.IsEmpty || _layout.IconSize <= 0) return false;
+        double s = r.Width / _layout.IconSize;
+        double off = (_plusMargin + _plusSize / 2) * s;
+        double cx = _layout.Edge == DockEdge.Left ? r.Right - off : r.Left + off;
+        double cy = _layout.Edge == DockEdge.Top ? r.Bottom - off : r.Top + off;
+        double radius = Math.Max(12, _plusSize * s / 2 + 4);
+        return (p.X - cx) * (p.X - cx) + (p.Y - cy) * (p.Y - cy) <= radius * radius;
     }
 
     public DockItemView(DockItemViewModel item, DockLayout layout)
@@ -162,6 +193,36 @@ internal sealed class DockItemView : Grid
             Visibility = Visibility.Collapsed,
         };
         iconHost.Children.Add(_notifyDot);
+
+        // ＋ 「지금 데스크톱에 새 창」 (#41): 0.3초 호버하면 보임. 화면 안쪽이면서 알림 점 반대쪽 모서리 (PM 10-22) —
+        // 아래·오른쪽 독 = 위-왼쪽, 왼쪽 독 = 위-오른쪽, 위 독 = 아래-왼쪽. 아이콘과 함께 확대·튀기. 클릭 판정은 DockWindow 가 PlusContains 로.
+        _plusSize = Math.Clamp(icon * 0.3, 14, 18);
+        _plusMargin = icon * 0.04;
+        _plus = new Border
+        {
+            Width = _plusSize,
+            Height = _plusSize,
+            CornerRadius = new CornerRadius(_plusSize / 2),
+            Background = new SolidColorBrush(Color.FromArgb(0xF2, 0xFF, 0xFF, 0xFF)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0x33, 0x1D, 0x20, 0x30)),
+            BorderThickness = new Thickness(1),
+            VerticalAlignment = layout.Edge == DockEdge.Top ? VerticalAlignment.Bottom : VerticalAlignment.Top,
+            HorizontalAlignment = layout.Edge == DockEdge.Left ? HorizontalAlignment.Right : HorizontalAlignment.Left,
+            Margin = new Thickness(_plusMargin),
+            Visibility = Visibility.Collapsed,
+            Opacity = 0,
+            Child = new TextBlock
+            {
+                Text = "+",
+                FontSize = _plusSize * 0.8,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromRgb(0x8A, 0x7C, 0xE0)),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, -_plusSize * 0.12, 0, 0),
+            },
+        };
+        iconHost.Children.Add(_plus);
         Children.Add(iconHost);
 
         // 실행 중 점: 맥처럼 아이콘 아래(가장자리 쪽) 패딩 안의 작은 원

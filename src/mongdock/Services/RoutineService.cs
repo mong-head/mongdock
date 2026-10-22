@@ -483,14 +483,7 @@ internal static class RoutineService
     internal static string? NewWindowArg(RoutineItem item)
     {
         if (item.Kind != RoutineItemKind.App) return null;
-        return ExeName(item.Target) switch
-        {
-            "chrome" or "msedge" or "whale" or "brave" or "vivaldi" or "opera" => "--new-window",
-            "firefox" => "-new-window",
-            "code" or "cursor" => "-n",
-            "explorer" => "",
-            _ => null,
-        };
+        return NewWindowApps.NewWindowArg(item.Target); // 독 ＋ 와 같은 표 (#41)
     }
 
     /// <summary>앱 항목 실행 인자: 계정 + 새 창(브라우저는 늘, VS Code 류는 켜져 있을 때만, 실행 옵션에 이미 있으면 안 붙임) + 실행 옵션 + 함께 열 것.</summary>

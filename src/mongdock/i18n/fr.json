@@ -1541,5 +1541,6 @@
  "돌아가기": "Revenir",
  "새 데스크톱에 열었어요 · {0}": "Ouvert sur un nouveau bureau · {0}",
  "데스크톱 {0}로 이동했어요 · {1}": "Passé au bureau {0} · {1}",
- "데스크톱 {0}로 이동했어요": "Passé au bureau {0}"
+ "데스크톱 {0}로 이동했어요": "Passé au bureau {0}",
+ "새 창을 열 수 없는 앱이에요 · 아이콘을 누르면 그 창으로 가요": "Cette app ne peut pas ouvrir d'autre fenêtre · cliquez sur l'icône pour y aller"
 }

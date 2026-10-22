@@ -223,6 +223,7 @@ internal static class Program
         if (Array.IndexOf(args, "--appbarcheck") >= 0) return AppBarCheck(); // 0.6.2 모니터 여러 대 작업 표시줄 깜빡임 — 자리 같으면 안 알림·고리 끊김 (실제 AppBar 등록 없음)
         int volAt = Array.FindIndex(args, a => a == "--volumecheck");
         if (volAt >= 0) return VolumeCheck(volAt + 1 < args.Length ? args[volAt + 1] : null); // 0.8 앱별 볼륨·볼륨 표시 (#21) — 실제 볼륨은 안 바꿈
+        if (Array.IndexOf(args, "--plusrule") >= 0) return PlusRuleCheck(); // #41 독 ＋ 「지금 데스크톱에 새 창」 판정 (가짜 창 목록, 실행 없음)
         if (Array.IndexOf(args, "--idlehide") >= 0) return IdleHideCheck(); // #39 자동 숨김 독: 커서 정지 5초면 숨김 (가짜 커서·시각, 창·입력 없음)
         if (Array.IndexOf(args, "--clipcheck") >= 0) return ClipCheck(); // 0.6.3 문제 신고 영역 캡처·붙여넣기 (#13) — 실제 캡처 도구·클립보드는 안 건드림
         if (Array.IndexOf(args, "--profilecheck") >= 0) return ProfileCheck(); // 0.6.1 루틴 브라우저 계정·탐색기 창 (화면·실제 실행 없음)
@@ -2455,6 +2456,30 @@ internal static class Program
     /// 5초 정지면 숨김(4.999초는 아님) · 1px 움직이면 처음부터 · 독 밖이면 안 숨김 · 아이콘 위·이름표가 떠 있어도 숨김(사용자 결정, 예외는 DockWindow 가 판정을 쉬는 메뉴 등) ·
     /// 숨긴 자리에 그대로면 다시 안 나옴, 1px 움직이거나 독 쪽으로 밀면 풀림 · 풀린 뒤·Reset 뒤엔 다시 5초 · 커서가 모니터 밖(null)이면 안 숨김.
     /// </summary>
+    /// <summary>--plusrule (#41): NewWindowApps.CanOpenNew·NewWindowArg — 어떤 앱 아이콘에 ＋가 나오는지 (가짜 창, 실행·창 없음).</summary>
+    private static int PlusRuleCheck()
+    {
+        int bad = 0;
+        void Ok(string what, bool ok) { Console.WriteLine($"  {(ok ? "통과" : "실패")}  {what}"); if (!ok) bad++; }
+        var t = typeof(Mongdock.App).Assembly.GetType("Mongdock.Services.NewWindowApps")!;
+        bool Can(string path, int windows, string? aumid = null)
+        {
+            var list = Enumerable.Range(0, windows).Select(i => new Mongdock.Models.AppWindowInfo(new IntPtr(0x100 + i), "w", path, aumid, false)).ToList();
+            return (bool)t.GetMethod("CanOpenNew", Any)!.Invoke(null, new object?[] { null, (IReadOnlyList<Mongdock.Models.AppWindowInfo>)list })!;
+        }
+        string? Arg(string path) => (string?)t.GetMethod("NewWindowArg", Any)!.Invoke(null, new object?[] { path });
+        Ok("크롬 창 1개 → ＋ (--new-window)", Can(@"C:\Program Files\Google\Chrome\Application\chrome.exe", 1) && Arg("chrome.exe") == "--new-window");
+        Ok("엣지·VS Code·탐색기 → ＋", Can(@"C:\x\msedge.exe", 1) && Can(@"C:\x\Code.exe", 1) && Can(@"C:\Windows\explorer.exe", 1) && Arg("code.exe") == "-n" && Arg("explorer.exe") == "");
+        Ok("카카오톡 창 3개(채팅 창) → ＋ 없음 (한 개만 켜지는 앱)", !Can(@"C:\x\KakaoTalk.exe", 3));
+        Ok("메모장 → ＋ 없음 (다른 데스크톱 창에 탭으로 붙음, 10-22 시험)", !Can(@"C:\Windows\notepad.exe", 2));
+        Ok("모르는 앱 창 1개 → ＋ 없음", !Can(@"C:\x\someapp.exe", 1));
+        Ok("모르는 앱 창 2개 → ＋ (여러 창 앱 후보, 누른 뒤 배움)", Can(@"C:\x\someapp2.exe", 2));
+        Ok("실행 중 아님(창 0개) → ＋ 없음", !Can(@"C:\x\chrome.exe", 0));
+        Ok("스토어 앱(AUMID) → ＋ 없음", !Can(@"C:\Program Files\WindowsApps\x\app.exe", 2, "Pub.App_x!App"));
+        Console.WriteLine(bad == 0 ? "  모두 통과" : $"  실패 {bad}개");
+        return bad == 0 ? 0 : 1;
+    }
+
     private static int IdleHideCheck()
     {
         int bad = 0;

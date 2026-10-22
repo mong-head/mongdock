@@ -30,6 +30,7 @@ $items = @(
     @("시작 순서 (포커스 링)", $rt, @("--focuscheck")),
     @("단축키", $rt, @("--hotkeycheck")),
     @("자동 숨김 독 커서 정지 (#39)", $rt, @("--idlehide")),
+    @("독 ＋ 새 창 판정 (#41)", $rt, @("--plusrule")),
     @("라이선스·스토어", $rt, @("--license")),
     @("검색 줄 자리", $rt, @("--spotrows")),
     @("검색 순서", $rt, @("--searchrank")),

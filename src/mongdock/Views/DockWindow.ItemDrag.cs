@@ -75,6 +75,14 @@ public partial class DockWindow
     private void OnItemPressed(object? sender, MouseButtonEventArgs e)
     {
         if (sender is not DockItemView view || _itemArmed || _dragArmed || _fileDragOver) return;
+        // ＋ 누름 = 지금 데스크톱에 새 창 (#41) — 앱 클릭·끌기로 넘어가지 않게 캡처 전에
+        if (view.PlusContains(e.GetPosition(this), this))
+        {
+            e.Handled = true;
+            HidePlus();
+            _ = OpenNewWindowHereAsync(view);
+            return;
+        }
         NotePress(e); // 터치 길게 누르기 판정용 (DockWindow.Touch.cs)
         _pressView = view;
         _itemPressTicks = Environment.TickCount64;
