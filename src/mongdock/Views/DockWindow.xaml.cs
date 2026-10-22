@@ -59,7 +59,7 @@ public partial class DockWindow : Window
     private bool _sliding;
     private bool _windowsHidden;
     private long _lastInsideTicks;
-    private readonly CursorIdle _cursorIdle = new(); // 커서 정지 5초면 숨김 (#39)
+    private readonly CursorIdle _cursorIdle = new(); // 커서 정지 3초면 숨김 (#39, 0.8.5 에서 5초 → 3초)
     private readonly EdgePushWatch _edgePush = new(); // 커서 정지로 숨긴 동안만: 화면 끝에서 독 쪽으로 밀면 다시 나옴 (#39)
     private bool _fullscreen;
     private bool _dialogOpen;
@@ -90,7 +90,7 @@ public partial class DockWindow : Window
         Root.MouseLeave += OnRootMouseLeave;
 
         // 빈 영역/구분선 드래그 → 독 이동
-        // 누르기·떼기·휠은 커서가 그대로여도 쓰는 중 → 커서 정지 5초를 처음부터 (#39, 터치도 마우스 이벤트로 옴)
+        // 누르기·떼기·휠은 커서가 그대로여도 쓰는 중 → 커서 정지 시간을 처음부터 (#39, 터치도 마우스 이벤트로 옴)
         PreviewMouseDown += (_, _) => _cursorIdle.NoteActivity(Environment.TickCount64);
         PreviewMouseUp += (_, _) => _cursorIdle.NoteActivity(Environment.TickCount64);
         PreviewMouseWheel += (_, _) => _cursorIdle.NoteActivity(Environment.TickCount64);
@@ -649,7 +649,7 @@ public partial class DockWindow : Window
         if (_dragArmed || AnyItemDrag || menuOpen || _dialogOpen || _picker != null || _folderPanel != null)
         {
             _lastInsideTicks = Environment.TickCount64;
-            ResetCursorIdle(); // 닫힌 직후 바로 숨지 않게 — 정지 5초를 처음부터
+            ResetCursorIdle(); // 닫힌 직후 바로 숨지 않게 — 정지 시간을 처음부터
             return;
         }
 
@@ -688,12 +688,12 @@ public partial class DockWindow : Window
         inside.Inflate(4, 4);
         // 터치를 뗀 뒤엔 커서가 독 위에 남아 있어도 바깥으로 봄 (진짜 마우스가 움직이면 다시 판정)
         bool insideDock = (cursor is Point p && inside.Contains(p)) || IsMouseOver;
-        // 커서가 독 영역 안에서 5초 동안 한 픽셀도 안 움직이면 숨김 (#39 영상 볼 때) — 아이콘 위·이름표가 떠 있어도 (메뉴·폴더 판·창 고르기·끌기·peek 는 위에서 이미 빠짐)
+        // 커서가 독 영역 안에서 CursorIdle.IdleMs(3초) 동안 한 픽셀도 안 움직이면 숨김 (#39 영상 볼 때) — 아이콘 위·이름표가 떠 있어도 (메뉴·폴더 판·창 고르기·끌기·peek 는 위에서 이미 빠짐)
         if (Mouse.LeftButton == MouseButtonState.Pressed || Mouse.RightButton == MouseButtonState.Pressed)
             _cursorIdle.NoteActivity(Environment.TickCount64); // 누른 채 가만히 있는 동안(끌기 시작 전 등)도 쓰는 중 (리뷰)
         if (_cursorIdle.ShouldHide(cursor, insideDock, Environment.TickCount64))
         {
-            Log.Info("독: 커서가 5초 동안 안 움직여 숨김");
+            Log.Info($"독: 커서가 {CursorIdle.IdleMs / 1000}초 동안 안 움직여 숨김");
             SetHidden(true, animate: true);
             return;
         }

@@ -12,7 +12,7 @@ namespace Mongdock.Views;
 internal sealed class CursorIdle
 {
     /// <summary>커서가 이만큼(ms) 안 움직이면 숨김.</summary>
-    public const long IdleMs = 5000;
+    public const long IdleMs = 3000; // 0.8.5: 5초 → 3초 (사용자 「더 짧게」)
 
     private Point? _last;
     private long _since;
@@ -59,7 +59,7 @@ internal sealed class CursorIdle
         return false;
     }
 
-    /// <summary>독이 나타날 때와 판정을 쉬는 동안 (메뉴·끌기·폴더 판·peek·둘러보기) — 지난 정지 기록을 버림. 닫힌 뒤엔 다시 5초를 기다림.</summary>
+    /// <summary>독이 나타날 때와 판정을 쉬는 동안 (메뉴·끌기·폴더 판·peek·둘러보기) — 지난 정지 기록을 버림. 닫힌 뒤엔 다시 IdleMs 를 기다림.</summary>
     public void Reset(long now)
     {
         _last = null;
