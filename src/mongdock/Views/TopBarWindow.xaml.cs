@@ -186,6 +186,7 @@ public partial class TopBarWindow : Window
         _services.DesktopWindows.FullscreenAppChanged += OnFullscreenChanged;
         _services.Status.Changed += OnStatusChanged;
         _services.VirtualDesktops.Changed += OnDesktopChanged;
+        DesktopPill.Shown += OnDesktopPillShown;
         RoutineService.Changed += OnRoutinesChanged;
         RoutineTriggers.Tick += OnRoutinesChanged;
         RoutineTriggers.FocusChanged += OnRoutinesChanged;
@@ -223,6 +224,7 @@ public partial class TopBarWindow : Window
             _services.DesktopWindows.FullscreenAppChanged -= OnFullscreenChanged;
             _services.Status.Changed -= OnStatusChanged;
             _services.VirtualDesktops.Changed -= OnDesktopChanged;
+            DesktopPill.Shown -= OnDesktopPillShown;
             RoutineService.Changed -= OnRoutinesChanged;
             RoutineTriggers.Tick -= OnRoutinesChanged;
             RoutineTriggers.FocusChanged -= OnRoutinesChanged;
@@ -1002,6 +1004,22 @@ public partial class TopBarWindow : Window
     private void OnRoutinesChanged() => UpdateDesktopIndex();
 
     /// <summary>"2 / 3" 표시, 첫 데스크톱이면 ‹ 흐리게. 마지막 데스크톱의 › 는 새 데스크톱 만들기.</summary>
+    /// <summary>데스크톱 이동 알약이 뜨면 데스크톱 묶음을 잠깐 강조 (#41) — 연보라 바탕이 1.2초 동안 떴다 사라짐.</summary>
+    private void OnDesktopPillShown(object? sender, EventArgs e)
+    {
+        if (!IsVisible || DesktopButtons.Visibility != Visibility.Visible) return;
+        var original = DesktopButtons.Background;
+        var flash = (UiTheme.Palette(_services.Settings.Current).SoftAccent as SolidColorBrush)?.Color is { } c ? new SolidColorBrush(c) { Opacity = 0 } : null;
+        if (flash is null) return;
+        DesktopButtons.Background = flash;
+        var a = new DoubleAnimationUsingKeyFrames();
+        a.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(150))));
+        a.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(900))));
+        a.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(1200))));
+        a.Completed += (_, _) => { if (DesktopButtons.Background == flash) DesktopButtons.Background = original; };
+        flash.BeginAnimation(Brush.OpacityProperty, a);
+    }
+
     private void UpdateDesktopIndex()
     {
         int index = 0, count = 0;

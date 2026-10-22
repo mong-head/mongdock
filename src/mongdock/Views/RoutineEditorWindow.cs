@@ -154,7 +154,8 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         nameRow.Children.Add(_name);
         Body.Children.Add(LabeledRow(Loc.T("이름"), nameRow));
 
-        // 데스크톱은 고르지 않음 — 루틴은 늘 새 데스크톱에서 열림 (못 만들면 지금 데스크톱 + 안내 한 줄)
+        // 열 곳 (#41 루틴 v2): 지금 데스크톱(기본) · 새 데스크톱(추천 표시) 둘뿐, 아래에 고른 쪽 설명 한 줄
+        Body.Children.Add(BuildDesktopRow());
 
         // 항목
         var items = new StackPanel();
@@ -229,6 +230,25 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
                 _r.Icon = icon;
                 RefreshIcon();
             }, iconFolder: IconFiles.Routines);
+    }
+
+    private FrameworkElement BuildDesktopRow()
+    {
+        var hint = Muted("", 11.5);
+        hint.Margin = new Thickness(0, 4, 0, 0);
+        void Describe() => hint.Text = _r.Desktop.Mode == RoutineDesktopMode.Current
+            ? Loc.T("지금 화면에 펼쳐요.")
+            : Loc.T("빈 화면에 펼쳐서 다른 작업과 안 섞여요.");
+        var labels = new[] { Loc.T("지금 데스크톱"), Loc.T("새 데스크톱") + " · " + Loc.T("추천") };
+        var col = new StackPanel();
+        col.Children.Add(Segments(labels, _r.Desktop.Mode == RoutineDesktopMode.Current ? 0 : 1, i =>
+        {
+            _r.Desktop.Mode = i == 0 ? RoutineDesktopMode.Current : RoutineDesktopMode.New;
+            Describe();
+        }));
+        col.Children.Add(hint);
+        Describe();
+        return LabeledRow(Loc.T("열 곳"), col);
     }
 
     private void BuildAddButtons()

@@ -88,6 +88,6 @@ internal static class RoutineIcons
         RoutinePlacementMode.Bottom => Loc.T("아래 반"),
         RoutinePlacementMode.Saved => Loc.T("저장한 위치"),
         RoutinePlacementMode.Min => Loc.T("최소화"),
-        _ => Loc.T("그대로"),
+        _ => Loc.T("창 자리 그대로"), // #41: 「그대로」를 "새 데스크톱을 안 만든다"로 읽는 테스터가 있어 바꿈
     };
 }

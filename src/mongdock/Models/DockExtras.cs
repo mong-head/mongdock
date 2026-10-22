@@ -50,8 +50,11 @@ public enum RoutineDesktopMode { Current, New, Index }
 
 public sealed class RoutineDesktop
 {
-    /// <summary>기본 = 새 데스크톱 (2026-10-10 사용자 결정 — 끝내기 때 그 데스크톱도 같이 닫음).</summary>
-    public RoutineDesktopMode Mode { get; set; } = RoutineDesktopMode.New;
+    /// <summary>
+    /// 열 곳 (#41 루틴 v2, 2026-10-22 사용자 결정): 지금 데스크톱(기본) / 새 데스크톱(끝내기 때 그 데스크톱도 닫음). Index(번호 고르기)는 없앰 — 옛 값은 새 데스크톱으로 봄.
+    /// 이미 만든 루틴은 저장해 둔 값 그대로 (예전 기본이 New 였으므로 옛 루틴은 새 데스크톱).
+    /// </summary>
+    public RoutineDesktopMode Mode { get; set; } = RoutineDesktopMode.Current;
     /// <summary>Mode=Index 일 때 데스크톱 번호 (1부터).</summary>
     public int Index { get; set; } = 1;
 }

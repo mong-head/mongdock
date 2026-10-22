@@ -1532,5 +1532,13 @@
  "마이크: {0}": "Micro : {0}",
  "스피커 고르기": "Choisir le haut-parleur",
  "마이크 고르기": "Choisir le micro",
- "독에 고정했거나 실행 중인 앱이 있으면 여기서 앱마다 고를 수 있어요.": "Les apps épinglées au dock ou ouvertes apparaissent ici pour choisir une par une."
+ "독에 고정했거나 실행 중인 앱이 있으면 여기서 앱마다 고를 수 있어요.": "Les apps épinglées au dock ou ouvertes apparaissent ici pour choisir une par une.",
+ "열 곳": "Ouvrir sur",
+ "지금 화면에 펼쳐요.": "S'ouvre sur l'écran actuel.",
+ "빈 화면에 펼쳐서 다른 작업과 안 섞여요.": "S'ouvre sur un écran vide, sans se mélanger au reste.",
+ "창 자리 그대로": "Garder la position",
+ "Ctrl + Win + ← → 로도 오가요": "Vous pouvez aussi passer avec Ctrl + Win + ← →",
+ "돌아가기": "Revenir",
+ "새 데스크톱에 열었어요 · {0}": "Ouvert sur un nouveau bureau · {0}",
+ "데스크톱 {0}로 이동했어요 · {1}": "Passé au bureau {0} · {1}"
 }

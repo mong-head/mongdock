@@ -525,11 +525,13 @@ internal static class RoutineService
     }
 
     /// <summary>
-    /// 루틴은 새 데스크톱에서 (2026-10-10 사용자 결정 — 데이터의 desktop 값은 무시). 못 만들면 지금 데스크톱에서 열고 안내 한 줄.
-    /// 단 지금 데스크톱에 보이는 앱 창이 하나도 없으면 그 자리를 루틴 데스크톱으로 (2026-10-13 결정, #25 §7) — 만든 데스크톱이 아니라 끝내기에서 닫지 않음.
+    /// 열 곳 (#41 루틴 v2, 2026-10-22): 「지금 데스크톱」(기본)이면 이 자리에서. 「새 데스크톱」(옛 Index 포함)이면 새 데스크톱을 만들어 옮기고 알약
+    /// "새 데스크톱에 열었어요 · 이름 [← 돌아가기]". 못 만들면 지금 데스크톱에서 열고 안내 한 줄.
+    /// 새 데스크톱이어도 지금 데스크톱에 보이는 앱 창이 하나도 없으면 그 자리를 루틴 데스크톱으로 (2026-10-13 결정, #25 §7) — 만든 데스크톱이 아니라 끝내기에서 닫지 않음.
     /// </summary>
     private static async Task PrepareDesktopAsync(AppServices services, RoutineDef routine, RunState state)
     {
+        var monitor = Monitors.FromCursor(); // 알약은 누른 순간의 모니터 (옮긴 뒤 전경 창 모니터가 아니라)
         var ids = VirtualDesktopService.ReadDesktopIds();
         if (state.CreatedDesktop && state.Desktop is { } mine && ids.IndexOf(mine) is var at && at >= 0)
         {
@@ -539,7 +541,8 @@ internal static class RoutineService
         var before = ids.ToHashSet();
         int cur = VirtualDesktopService.Read().Current;
         Guid? from = cur > 0 && cur <= ids.Count ? ids[cur - 1] : null;
-        if (from is not null && !HasAppWindowsHere(services))
+        bool here = routine.Desktop.Mode == RoutineDesktopMode.Current;
+        if (from is not null && (here || !HasAppWindowsHere(services)))
         {
             lock (Runs)
             {
@@ -547,7 +550,7 @@ internal static class RoutineService
                 state.CreatedDesktop = false;
                 state.ReturnTo = null;
             }
-            Log.Info("루틴: 지금 데스크톱에 앱 창이 없어 이 자리에서 엶");
+            Log.Info(here ? "루틴: 지금 데스크톱에서 엶 (열 곳 = 지금)" : "루틴: 지금 데스크톱에 앱 창이 없어 이 자리에서 엶");
             return;
         }
         bool sent = await VirtualDesktopService.NewAsync(); // Ctrl+Win+D — 새 데스크톱을 만들고 그리로 감
@@ -575,6 +578,8 @@ internal static class RoutineService
             return;
         }
         await Task.Delay(250); // 전환 애니메이션 뒤에 창을 열어야 새 데스크톱에 뜸
+        if (System.Windows.Application.Current?.Dispatcher is { } d)
+            _ = d.BeginInvoke(() => Views.DesktopPill.Show(services, monitor, Loc.F($"새 데스크톱에 열었어요 · {routine.Name}"), cur));
     }
 
     /// <summary>지금 데스크톱에 보이는 앱 창이 있음 (몽독·최소화한 창은 세지 않음 — 창 목록에는 바탕 화면·도구 창이 없음).</summary>
