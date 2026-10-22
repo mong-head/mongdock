@@ -370,7 +370,7 @@
  "루틴": "Routine",
  "루틴 {0}": "Routine {0}",
  "루틴 — 자주 쓰는 앱들을 한 번에 열어요. 예: '업무 시작'을 누르면 아웃룩·크롬·한글이 정해 둔 모니터와 자리에 한꺼번에 열려요.": "Les routines ouvrent vos apps habituelles d'un coup. Par exemple, cliquez sur « Début du travail » et Outlook, Chrome et Word s'ouvrent ensemble sur les écrans et aux places choisis.",
- "루틴 끝내기": "Terminer la routine",
+ "루틴 닫기": "Fermer la routine",
  "루틴 데스크톱에 있는 동안만": "Uniquement sur le bureau de la routine",
  "루틴 데스크톱을 보고 있는 동안만 세요. 잠금 중이거나 5분 넘게 입력이 없으면 멈춰요.": "Ne compte que lorsque vous êtes sur le bureau de la routine. S'arrête si la session est verrouillée ou après 5 minutes sans activité.",
  "루틴 만들기": "Créer une routine",

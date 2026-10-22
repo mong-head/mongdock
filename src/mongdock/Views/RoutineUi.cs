@@ -49,7 +49,7 @@ internal static class RoutineUi
     }
 
     /// <summary>루틴을 눌렀을 때 일어난 일 (독이 짧은 말풍선으로 알림).</summary>
-    public enum Click { Started, Opening, MovedToDesktop, AlreadyHere, NotStarted }
+    public enum Click { Started, Opening, MovedToDesktop, AlreadyHere, Minimized, NotStarted }
 
     /// <summary>
     /// 루틴 누름 (독·판·메뉴 "열기"·설정 공통): 이번 실행 창이 살아 있으면 새로 열지 않고 그 데스크톱으로 가서 창들을 앞으로,
@@ -59,7 +59,12 @@ internal static class RoutineUi
     {
         NewBadges.Used(Badge);
         if (RoutineService.IsRunning(routine.Id))
-            return await RoutineService.FocusRunningAsync(routine.Id) ? Click.AlreadyHere : Click.MovedToDesktop;
+            return await RoutineService.FocusRunningAsync(routine.Id) switch
+            {
+                RoutineService.FocusResult.Raised => Click.AlreadyHere,
+                RoutineService.FocusResult.Minimized => Click.Minimized,
+                _ => Click.MovedToDesktop,
+            };
         if (RoutineService.IsOpening(routine.Id)) return Click.Opening;
         // 기록은 없지만(몽독을 다시 켰음 등) 루틴 앱이 이 데스크톱에 다 켜져 있음: 창만 앞으로 + "이미 열려 있어요" (루틴 데스크톱으로 잡지는 않음)
         if (RoutineService.AllHere(routine) is { } here)
@@ -194,14 +199,14 @@ internal static class RoutineUi
     }
 
     /// <summary>
-    /// 루틴 메뉴 (독 아이콘·판 칸 공통): 열기 / 루틴 끝내기 / 루틴 편집… / 지금 화면으로 위치 다시 저장 / 이름 바꾸기 / 독에 고정·독에서 빼기 / 루틴 지우기….
+    /// 루틴 메뉴 (독 아이콘·판 칸 공통): 열기 / 루틴 닫기 / 루틴 편집… / 지금 화면으로 위치 다시 저장 / 이름 바꾸기 / 독에 고정·독에서 빼기 / 루틴 지우기….
     /// before = 메뉴 항목을 누르기 전(판 닫기 등).
     /// </summary>
     public static void FillMenu(ContextMenu menu, AppServices services, RoutineDef routine, Action? before = null)
     {
         void Do(Action a) { before?.Invoke(); a(); }
         menu.Items.Add(DockMenus.Item(Loc.T("열기"), () => Do(() => Run(services, routine)), enabled: routine.Items.Count > 0));
-        var end = DockMenus.Item(Loc.T("루틴 끝내기"), () => Do(() => AskEnd(services, routine)), enabled: EndDisabledReason(routine) is null);
+        var end = DockMenus.Item(Loc.T("루틴 닫기"), () => Do(() => AskEnd(services, routine)), enabled: EndDisabledReason(routine) is null);
         if (EndDisabledReason(routine) is { } why)
         {
             end.ToolTip = why;

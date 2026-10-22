@@ -20,7 +20,10 @@ namespace Mongdock.Services;
 /// </summary>
 internal static class RoutineService
 {
-    private const int GapMs = 150, FindTimeoutMs = 15_000, ReplaceAfterMs = 1000;
+    private const int GapMs = 150, FindTimeoutMs = 15_000, ReplaceAfterMs = 1000, ReadoptMs = 30_000;
+
+    /// <summary>루틴 창 하나의 정보 (앱이 다시 시작하면 새 창을 다시 잡으려고, #41). 프로세스 id 는 「다시 시작했는지」 판정용.</summary>
+    private sealed record WinMeta(string Exe, string Class, Guid Desktop, uint Pid);
 
     private sealed class RunState
     {
@@ -38,6 +41,10 @@ internal static class RoutineService
         public bool HadWindows;
         /// <summary>상단바 머문 시간 (초, 그 데스크톱을 보는 동안만).</summary>
         public double Seconds;
+        /// <summary>살아 있는 루틴 창의 정보 (#41 창 기억).</summary>
+        public readonly Dictionary<IntPtr, WinMeta> Meta = new();
+        /// <summary>닫힌 루틴 창 — 30초 안에 같은 자리에 다시 뜨면 다시 잡음. Before = 닫힐 때 이미 있던 창 (새 창만 후보).</summary>
+        public readonly List<(WinMeta Meta, long At, HashSet<IntPtr> Before)> Lost = new();
     }
 
     private static AppServices? _services;
@@ -56,16 +63,68 @@ internal static class RoutineService
         {
             bool any = false;
             var emptied = new List<string>();
+            var all = services.Windows.Windows;
+            var ids = VirtualDesktopService.ReadDesktopIds();
+            long now = Environment.TickCount64;
             lock (Runs)
+            {
+                var taken = Runs.Values.SelectMany(r => r.Windows).ToHashSet();
                 foreach (var (id, r) in Runs)
                 {
+                    Remember(r, all, ids);
+                    HashSet<IntPtr>? before = null;
+                    foreach (var h in r.Windows.Where(h => !Alive(h)).ToList())
+                        if (r.Meta.Remove(h, out var m) && !r.Running)
+                            r.Lost.Add((m, now, before ??= all.Select(w => w.Hwnd).ToHashSet()));
                     bool removed = r.Windows.RemoveAll(h => !Alive(h)) > 0; // 닫힘·트레이로 숨음
                     any |= removed;
+                    any |= Readopt(r, all, ids, taken, now);
                     if (removed && r.HadWindows && r.Windows.Count == 0 && !r.Running) emptied.Add(id);
                 }
+            }
             if (any) RaiseChanged();
             foreach (var id in emptied) _ = AllClosedLaterAsync(id);
         };
+    }
+
+    /// <summary>정보를 아직 모르는 루틴 창이면 기억 (앱·창 종류·데스크톱·프로세스). Runs 잠금 안에서.</summary>
+    private static void Remember(RunState r, IReadOnlyList<AppWindowInfo> all, IReadOnlyList<Guid> ids)
+    {
+        foreach (var h in r.Windows)
+        {
+            if (r.Meta.ContainsKey(h) || !Alive(h)) continue;
+            var w = all.FirstOrDefault(x => x.Hwnd == h);
+            if (w is null || ExeName(w.ProcessPath) is not { } exe || DesktopGuid(w, ids) is not { } d) continue;
+            TrayApi.GetWindowThreadProcessId(h, out uint pid);
+            r.Meta[h] = new WinMeta(exe, User32.GetClassNameOf(h), d, pid);
+        }
+    }
+
+    private static Guid? DesktopGuid(AppWindowInfo w, IReadOnlyList<Guid> ids) => w.DesktopIndex > 0 && w.DesktopIndex <= ids.Count ? ids[w.DesktopIndex - 1] : null;
+
+    /// <summary>
+    /// 루틴 앱이 다시 시작함(업데이트·튕김 등, #41 창 기억): 닫힌 지 30초 안에 같은 데스크톱에 같은 앱·같은 종류의 새 창이
+    /// 다른 프로세스로 딱 하나 뜨면 루틴 창으로 다시 잡음. 후보가 둘 이상이거나, 같은 프로세스의 새 창(사용자가 직접 연 창)이면 잡지 않음.
+    /// </summary>
+    private static bool Readopt(RunState r, IReadOnlyList<AppWindowInfo> all, IReadOnlyList<Guid> ids, HashSet<IntPtr> taken, long now)
+    {
+        r.Lost.RemoveAll(l => now - l.At > ReadoptMs);
+        bool any = false;
+        for (int i = r.Lost.Count - 1; i >= 0; i--)
+        {
+            var (m, _, before) = r.Lost[i];
+            var c = all.Where(w => !before.Contains(w.Hwnd) && !taken.Contains(w.Hwnd) && Alive(w.Hwnd) && ExeName(w.ProcessPath) == m.Exe && DesktopGuid(w, ids) == m.Desktop
+                && TrayApi.GetWindowThreadProcessId(w.Hwnd, out uint pid) != 0 && pid != m.Pid && User32.GetClassNameOf(w.Hwnd) == m.Class).Take(2).ToList();
+            if (c.Count != 1) continue;
+            var h = c[0].Hwnd;
+            r.Windows.Add(h);
+            r.Claimed.Add(h);
+            taken.Add(h);
+            r.Lost.RemoveAt(i);
+            Log.Info($"루틴 창 다시 잡음: {m.Exe} (앱이 다시 시작)");
+            any = true;
+        }
+        return any;
     }
 
     /// <summary>루틴이 열렸다 (새로 열기·"이 루틴인가요?"로 지정) — 함께 바꿀 것 적용. UI 스레드.</summary>
@@ -314,19 +373,24 @@ internal static class RoutineService
         lock (Runs) return Runs.TryGetValue(id, out var r) && r.Running;
     }
 
+    /// <summary>다시 누른 결과: 다른 데스크톱이라 그리로 감 / 이 데스크톱에서 창을 앞으로 / 다 앞에 있어서 한꺼번에 최소화.</summary>
+    public enum FocusResult { Moved, Raised, Minimized }
+
     /// <summary>
-    /// 이미 열린 루틴을 다시 누름: 새로 열지 않고 루틴 데스크톱(다른 데스크톱이면)으로 간 뒤 루틴 창들을 앞으로 (목록 첫 항목이 맨 위).
-    /// 이미 그 데스크톱이었으면 true (독은 "이미 열려 있어요"). UI 스레드에서 부름(COM).
+    /// 이미 열린 루틴을 다시 누름: 새로 열지 않고 루틴 데스크톱(다른 데스크톱이면)으로 간 뒤 루틴 창들을 앞으로 (목록 첫 항목이 맨 위) + 알약 (#41).
+    /// 이 데스크톱에서 루틴 창이 다 떠 있고(최소화 없음) 맨 앞 창이 루틴 창이면 한꺼번에 최소화 (#41 — 다시 누르면 내려감).
+    /// 실행 기록이 없으면 null. UI 스레드에서 부름(COM).
     /// </summary>
-    public static async Task<bool> FocusRunningAsync(string id)
+    public static async Task<FocusResult?> FocusRunningAsync(string id)
     {
         var services = _services;
         RunState? state;
         lock (Runs) Runs.TryGetValue(id, out state);
-        if (services is null || state is null) return false;
+        if (services is null || state is null) return null;
         List<IntPtr> windows;
         lock (Runs) windows = state.Windows.Where(Alive).ToList();
-        if (windows.Count == 0) return false;
+        if (windows.Count == 0) return null;
+        var monitor = Monitors.FromCursor(); // 알약은 누른 모니터에 (옮기기 전에)
         var ids = VirtualDesktopService.ReadDesktopIds();
         int cur = VirtualDesktopService.Read().Current;
         int index = state.CreatedDesktop && state.Desktop is { } g && ids.IndexOf(g) is var at && at >= 0
@@ -342,14 +406,35 @@ internal static class RoutineService
                 await VirtualDesktopService.MoveToAsync(index);
             await Task.Delay(150);
         }
+        else if (AllInFront(windows))
+        {
+            Log.Info($"루틴 다시 누름: 창 {windows.Count}개가 다 앞에 — 한꺼번에 최소화");
+            foreach (var w in windows)
+            {
+                AppLauncher.NoteBeforeMinimize(w);
+                User32.ShowWindowAsync(w, User32.SW_MINIMIZE);
+            }
+            return FocusResult.Minimized;
+        }
         else Log.Info("루틴 다시 누름: 이미 이 데스크톱 — 창을 앞으로");
         for (int i = windows.Count - 1; i >= 0; i--)
         {
             services.Launcher.Activate(windows[i]);
             if (i > 0) await Task.Delay(40);
         }
-        return here;
+        if (here) return FocusResult.Raised;
+        if (index > 0)
+        {
+            string? name = services.Settings.Current.Routines.FirstOrDefault(r => r.Id == id)?.Name;
+            Views.DesktopPill.Notify(monitor, name is { Length: > 0 } ? Loc.F($"데스크톱 {index}로 이동했어요 · {name}") : Loc.F($"데스크톱 {index}로 이동했어요"), cur);
+        }
+        return FocusResult.Moved;
     }
+
+    /// <summary>루틴 창이 모두 이 데스크톱에 최소화 없이 떠 있고 맨 앞 창이 그중 하나 (독은 포커스를 뺏지 않아 누른 뒤에도 그대로).</summary>
+    private static bool AllInFront(List<IntPtr> windows) =>
+        windows.Contains(User32.GetForegroundWindow())
+        && windows.All(w => !User32.IsIconic(w) && VirtualDesktopHelper.IsOnCurrentDesktop(w) != false);
 
     /// <summary>새로 열기 시작했으면 true (전체 화면·여는 중·빈 루틴이면 false).</summary>
     public static bool Run(RoutineDef routine)
@@ -389,7 +474,7 @@ internal static class RoutineService
         {
             Log.Info($"루틴 실행: 항목 {routine.Items.Count}개");
             var items = routine.Items.ToList();
-            lock (Runs) { state.Claimed.Clear(); state.Seconds = 0; }
+            lock (Runs) { state.Claimed.Clear(); state.Seconds = 0; state.Lost.Clear(); }
             // 열 것이 하나도 없으면(전부 이미 켜져 있음) 빈 데스크톱을 만들지 않음
             bool anyToOpen = items.Any(i => !(SkipsIfRunning(i) && services.Windows.Windows.Any(w => Matches(i, w))));
             try
@@ -853,6 +938,8 @@ internal static class RoutineService
                 && !(byHwnd.TryGetValue(h, out var w) && otherItems.Any(i => IsItemWindow(i, w)))).ToList();
             state.Claimed.Clear();
             state.Windows.Clear(); // 이 실행은 끝 (닫기를 거부한 창이 남아도 루틴 창으로 보지 않음)
+            state.Meta.Clear();
+            state.Lost.Clear(); // 닫은 앱을 곧 다시 켜도 끝낸 루틴 창으로 다시 잡지 않음
             state.HadWindows = false;
             state.Seconds = 0;
         }
