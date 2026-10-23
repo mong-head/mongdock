@@ -314,8 +314,8 @@ def sends_today() -> int:
 
 def issue_key(issue) -> str:
     """이슈 표기를 하나로: "#41"·"41"·"mong-head/mongdock-issues#41" → "41" (숫자가 없으면 그대로)."""
-    m = re.search(r"(\d+)\s*$", str(issue or "").strip())
-    return m.group(1) if m else str(issue or "").strip()
+    nums = re.findall(r"\d+", str(issue or ""))  # 마지막 숫자 ("41번"·".../issues/41" 도 41)
+    return nums[-1] if nums else str(issue or "").strip()
 
 
 def already_sent(template_id: str, uid: str, issue=None):
@@ -331,7 +331,7 @@ def already_sent(template_id: str, uid: str, issue=None):
                 e = json.loads(line)
             except ValueError:
                 continue
-            if e.get("template") != template_id:
+            if not isinstance(e, dict) or e.get("template") != template_id:
                 continue
             if str(e.get("uid")) == uid or (key and e.get("issue") and issue_key(e.get("issue")) == key):
                 return e

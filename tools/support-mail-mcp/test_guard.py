@@ -39,6 +39,6 @@ ok("같은 사람이라도 다른 이슈(#42)·다른 메일 → 통과", server
 ok("이슈를 안 알려 주고 다른 메일 → 통과 (이슈 판단 못 함)", server.already_sent("how_to_use", "36") is None)
 ok("기록 파일이 없으면 → 통과", (lambda: (os.rename(log, log + ".x"), server.already_sent("how_to_use", "34"))[1])() is None)
 os.rename(log + ".x", log)
-ok("issue_key: '#41'·'41'·'repo#41' 모두 '41'", {server.issue_key(x) for x in ("#41", "41", "mong-head/mongdock-issues#41")} == {"41"})
+ok("issue_key: '#41'·'41'·'repo#41'·'41번'·URL 모두 '41'", {server.issue_key(x) for x in ("#41", "41", "mong-head/mongdock-issues#41", "41번", "https://github.com/mong-head/mongdock-issues/issues/41")} == {"41"})
 print("  모두 통과" if bad == 0 else f"  실패 {bad}개")
 sys.exit(1 if bad else 0)
