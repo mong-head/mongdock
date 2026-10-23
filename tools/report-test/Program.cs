@@ -2497,6 +2497,26 @@ internal static class Program
             foreach (var scale in new[] { 1.0, 1.25 })
                 SaveScaled(sheet, sheet.DesiredSize, scale, Path.Combine(dir, $"{prefix}-pill-{theme}-{(int)(scale * 100)}.png"));
         }
+        // 화면 전체에서 자리 (PM 10-23 원격 접속): 실제 로그의 DisplayChanged 값 — 1920×1080 · 125% (작업 영역 위 32px, 상단바 26 DIP)
+        // 과 100% 를 DesktopPill.PlaceOn 과 같은 계산(위 = max(작업 영역 위, 상단바 아래) + 6, 가운데)으로
+        foreach (var (pxW, pxH, scale, workTopPx) in new[] { (1920, 1080, 1.25, 32), (1920, 1080, 1.0, 32) })
+        {
+            double w = pxW / scale, h = pxH / scale, barH = 26;
+            double top = Math.Max(workTopPx / scale, barH) + 6;
+            var screen = new System.Windows.Controls.Canvas { Width = w, Height = h, Background = new LinearGradientBrush(Color.FromRgb(0x9F, 0xB4, 0xD8), Color.FromRgb(0xC9, 0xBF, 0xE8), 90) };
+            var bar = new System.Windows.Controls.Border { Width = w, Height = barH, Background = new SolidColorBrush(Color.FromArgb(0xE6, 0xFA, 0xFA, 0xFD)) };
+            screen.Children.Add(bar);
+            var card = (FrameworkElement)build.Invoke(null, new object?[] { Mongdock.ViewModels.UiPalette.Light, cases[0].Text, true, 1, null })!;
+            card.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            System.Windows.Controls.Canvas.SetLeft(card, Math.Round((w - card.DesiredSize.Width) / 2));
+            System.Windows.Controls.Canvas.SetTop(card, Math.Round(top));
+            screen.Children.Add(card);
+            screen.Measure(new Size(w, h));
+            screen.Arrange(new Rect(0, 0, w, h));
+            screen.UpdateLayout();
+            SaveScaled(screen, new Size(w, h), scale, Path.Combine(dir, $"{prefix}-screen-{pxW}x{pxH}-{(int)(scale * 100)}.png"));
+            Console.WriteLine($"  {pxW}x{pxH} {(int)(scale * 100)}%: 알약 {card.DesiredSize.Width:0}x{card.DesiredSize.Height:0} DIP = {card.DesiredSize.Width * scale:0}x{card.DesiredSize.Height * scale:0} px, 위 {Math.Round(top)} DIP");
+        }
         // 독 ＋ — 크롬 아이콘에 ＋ 보이기 (보이는 끝 상태로)
         {
             var sheet = new System.Windows.Controls.Grid { Background = Brushes.White };
