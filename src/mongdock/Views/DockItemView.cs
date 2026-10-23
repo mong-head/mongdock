@@ -80,8 +80,8 @@ internal sealed class DockItemView : Grid
         catch (InvalidOperationException) { return Rect.Empty; }
     }
 
-    /// <summary>＋ 모양 시안 (사용자 10-23 「이상하게 생김」): '0' = 설치된 것(흰 동그라미 반쯤 걸침), 'A' = 보라 배지, 'B' = 작은 흰 동그라미 안쪽, 'C' = 바깥 반투명 둥근 사각. report-test --plusshot 이 바꿔 가며 그림.</summary>
-    internal static char PlusLook = '0';
+    /// <summary>＋ 모양 시안 (사용자 10-23 「이상하게 생김」): '0' = 5f649f5 판(흰 동그라미 반쯤 걸침), 'A' = 보라 배지, 'B' = 작은 흰 동그라미 안쪽(기본, 사용자 선택), 'C' = 바깥 반투명 둥근 사각. report-test --plusshot 이 바꿔 가며 그림.</summary>
+    internal static char PlusLook = 'B'; // 사용자 10-23 시안 B 선택
 
     /// <summary>
     /// ＋ 하나 만들기. size·margin = 칸 가장자리 기준 크기와 바깥(음수)/안쪽 여백 — PlusContains 가 같은 값으로 누름 원을 계산.
