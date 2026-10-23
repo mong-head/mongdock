@@ -79,11 +79,12 @@ public partial class DockWindow
         _plusView = null;
     }
 
-    private async Task OpenNewWindowHereAsync(DockItemView view)
+    private Task OpenNewWindowHereAsync(DockItemView view) => OpenNewWindowHereAsync(view.Item.Pin, view.Item.Windows);
+
+    private async Task OpenNewWindowHereAsync(PinItem? pin, IReadOnlyList<AppWindowInfo> windows)
     {
-        var item = view.Item;
         var monitor = Monitors.FromCursor();
-        bool ok = await NewWindowApps.OpenNewAsync(_services.Windows, item.Pin, item.Windows);
+        bool ok = await NewWindowApps.OpenNewAsync(_services.Windows, pin, windows);
         if (!ok)
             DesktopPill.Show(_services, monitor, Loc.T("새 창을 열 수 없는 앱이에요 · 아이콘을 누르면 그 창으로 가요"), 0);
     }

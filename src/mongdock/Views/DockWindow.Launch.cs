@@ -66,6 +66,13 @@ public partial class DockWindow
         });
     }
 
+    /// <summary>이 핀의 창 (모든 데스크톱 — 독 목록 설정과 상관없이).</summary>
+    private List<AppWindowInfo> WindowsAnywhere(PinItem pin)
+    {
+        try { return _services.Windows.Windows.Where(w => SafeMatches(pin, w)).ToList(); }
+        catch { return new List<AppWindowInfo>(); }
+    }
+
     private bool HasWindowAnywhere(PinItem pin)
     {
         try { return _services.Windows.Windows.Any(w => SafeMatches(pin, w)); }

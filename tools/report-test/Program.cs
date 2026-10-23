@@ -2709,6 +2709,16 @@ internal static class Program
             Ok($"천천히 훑음(250 DIP/초, 아이콘 4개) → ＋ {Shows(250, 10000, 1000)}번", Shows(250, 10000, 1000) == 0);
             Ok($"훑다가 한 아이콘에서 멈춤 → ＋ {Shows(600, 270, 1500)}번 (멈춘 뒤 0.1초)", Shows(600, 270, 1500) == 1);
         }
+        // 다른 데스크톱에만 창이 있는 앱 누름 (사용자 10-23)
+        {
+            var dw = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.DockWindow")!;
+            string C(bool all, int vis, int any, bool canNew) => dw.GetMethod("ClassifyElsewhere", Any)!.Invoke(null, new object[] { all, vis, any, canNew })!.ToString()!;
+            Ok("「지금 데스크톱 앱만」 켬 + 크롬 창이 다른 데스크톱에만 → 여기서 새 창", C(false, 0, 2, true) == "NewHere");
+            Ok("켬 + 카카오톡(한 개만) 다른 데스크톱에만 → 그 창으로 이동", C(false, 0, 1, false) == "MoveThere");
+            Ok("끔(모든 데스크톱 창 보임) → 지금처럼 이동 + 알약", C(true, 0, 2, true) == "Normal" && C(true, 2, 2, true) == "Normal");
+            Ok("켬 + 이 데스크톱에도 창 있음 → 지금처럼", C(false, 1, 3, true) == "Normal");
+            Ok("켬 + 어디에도 창 없음 → 실행", C(false, 0, 0, true) == "Normal");
+        }
         // 루틴 열 곳 (#41 리뷰 10-23): 설정을 읽을 때 저장한 값 그대로 — 예전엔 읽을 때마다 기본값으로 덮어씀
         Ok("루틴 열 곳: new·current 는 그대로, index 는 새 데스크톱, 없으면 기본(지금)", RoutineModesKept());
         Ok("기존 루틴 열 곳 새→지금 바꾸고 저장 → 다시 읽어도 지금 (0.8.5 회귀, 「PE」)", RoutineEditSaved("New", Mongdock.Models.RoutineDesktopMode.Current));

@@ -1184,6 +1184,16 @@ public partial class DockWindow : Window
 
     // ───────────────────────── 클릭 ─────────────────────────
 
+    internal enum ElsewhereClick { Normal, NewHere, MoveThere }
+
+    /// <summary>
+    /// 앱 아이콘 누름에서 「창이 다른 데스크톱에만 있음」 처리 (사용자 10-23). showAll = 「지금 데스크톱의 앱만 보이기」 꺼짐 → 늘 Normal(이동 + 알약).
+    /// 켜짐이고 독에 보이는 창이 없는데 다른 데스크톱에 창이 있으면: 여러 창 앱 = 여기서 새 창, 한 개만 켜지는 앱 = 그 창으로 이동. report-test --plusrule.
+    /// </summary>
+    internal static ElsewhereClick ClassifyElsewhere(bool showAll, int visibleWindows, int windowsAnywhere, bool canOpenNew) =>
+        showAll || visibleWindows > 0 || windowsAnywhere == 0 ? ElsewhereClick.Normal
+        : canOpenNew ? ElsewhereClick.NewHere : ElsewhereClick.MoveThere;
+
     private void OnItemClicked(object? sender, EventArgs e)
     {
         if (sender is not DockItemView { Item: var item } || item.IsSeparator) return;
@@ -1223,6 +1233,25 @@ public partial class DockWindow : Window
 
         try
         {
+            // 「지금 데스크톱의 앱만 보이기」가 켜져 있고 창이 다른 데스크톱에만 있음 (사용자 10-23):
+            // 여러 창 앱은 여기서 새 창(데스크톱을 안 옮김), 한 개만 켜지는 앱은 그 창으로 이동 + 알약. 꺼져 있으면 아래 그대로(이동 + 알약)
+            if (item.Pin is { } elsewherePin && WindowsAnywhere(elsewherePin) is var elsewhere
+                && ClassifyElsewhere(_services.Settings.Current.Dock.ShowWindowsFromAllDesktops, item.Windows.Count, elsewhere.Count, NewWindowApps.CanOpenNew(elsewherePin, elsewhere)) is var how
+                && how != ElsewhereClick.Normal)
+            {
+                if (how == ElsewhereClick.NewHere)
+                {
+                    Log.Info($"독 클릭: 창이 다른 데스크톱에만 있음 → 여기서 새 창");
+                    _ = OpenNewWindowHereAsync(elsewherePin, elsewhere);
+                }
+                else
+                {
+                    Log.Info($"독 클릭: 창이 다른 데스크톱에만 있음 (한 개만 켜지는 앱) → 그 창으로 이동");
+                    _services.Launcher.Activate(elsewhere.OrderByDescending(w => _lastActive.GetValueOrDefault(w.Hwnd)).First().Hwnd);
+                }
+                return;
+            }
+
             if (item.Windows.Count == 0)
             {
                 // 창이 하나도 없을 때만, 그리고 실행 대상이 있는 핀만 실행 (빈 경로 Launch 금지)
