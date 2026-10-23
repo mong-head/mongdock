@@ -273,7 +273,7 @@ internal static partial class TourScenes
             Window? w = null;
             try
             {
-                if (f == 2) w = new RoutineSaveWindow(_services, false, items);
+                if (f == 2) w = RoutineEditorWindow.ForScreen(_services, items, false); // 지금 화면 저장 = 편집 창과 같은 화면 (10-23)
                 else
                 {
                     var def = new RoutineDef { Id = "site-example", Name = Loc.T("업무 시작"), Icon = new PinIcon { Mode = PinIconMode.Glyph, Color = "blue", Glyph = "" } };

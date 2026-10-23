@@ -40,6 +40,36 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         Show(w);
     }
 
+    /// <summary>
+    /// 「지금 화면을 루틴으로 저장」 (사용자 10-23: 편집 창과 같은 화면): 지금 데스크톱의 창을 읽어 새 루틴 편집 창으로 — 열 곳, 항목마다 함께 열 것
+    /// (브라우저 = 보고 있는 탭 주소, VS Code·문서 = 열린 폴더·파일, 탐색기 = 폴더), 창 위치·모니터가 채워진 채. 뺄 항목은 ×.
+    /// </summary>
+    public static void OpenFromScreen(AppServices services, bool pinToDock)
+    {
+        _open?.Close();
+        if (!RoutineUi.CanAdd(services))
+        {
+            ConfirmCardWindow.Ask(services, Loc.T("루틴이 가득 찼어요"), Loc.F($"루틴은 {RoutineDef.MaxRoutines}개까지 만들 수 있어요. 안 쓰는 루틴을 지운 뒤 다시 해 주세요."), Loc.T("확인"), () => { });
+            return;
+        }
+        List<RoutineItem> items;
+        try { items = RoutineService.CaptureScreen(readTabs: true).Select(x => x.Item).ToList(); }
+        catch (Exception ex)
+        {
+            Log.Error("지금 화면 읽기 실패", ex);
+            items = new List<RoutineItem>();
+        }
+        Show(ForScreen(services, items, pinToDock));
+    }
+
+    /// <summary>지금 화면에서 읽은 항목으로 새 루틴 편집 창 (띄우지는 않음 — 시험 그림·둘러보기도 씀).</summary>
+    internal static RoutineEditorWindow ForScreen(AppServices services, List<RoutineItem> items, bool pinToDock)
+    {
+        var r = new RoutineDef { Name = RoutineUi.NextName(services), FromScreen = true };
+        r.Items.AddRange(items.Take(RoutineDef.MaxItems));
+        return new RoutineEditorWindow(services, null, r, focusName: true, heading: Loc.T("지금 화면을 루틴으로 저장")) { _pinToDock = pinToDock };
+    }
+
     /// <summary>새 루틴 (빈 목록, 또는 "루틴에 넣기 ▸ 새 루틴…"의 첫 항목).</summary>
     public static void OpenNew(AppServices services, RoutineItem? first = null, bool pinToDock = false)
     {
@@ -135,14 +165,14 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         Rebuild();
     }
 
-    internal RoutineEditorWindow(AppServices services, RoutineDef? original, RoutineDef working, bool focusName) : base(services, 600, "mongdock Routine")
+    internal RoutineEditorWindow(AppServices services, RoutineDef? original, RoutineDef working, bool focusName, string? heading = null) : base(services, 600, "mongdock Routine")
     {
         _original = original;
         _r = working;
         // 제목 + 「바뀐 내용 있음」 (저장 안 한 변경이 있을 때만, 기획서 h)
-        var heading = Heading(original is null ? Loc.T("새 루틴") : Loc.T("루틴 편집"));
+        var headingText = Heading(heading ?? (original is null ? Loc.T("새 루틴") : Loc.T("루틴 편집")));
         var headRow = new StackPanel { Orientation = Orientation.Horizontal };
-        headRow.Children.Add(heading);
+        headRow.Children.Add(headingText);
         _dirtyChip = Pill(Loc.T("바뀐 내용 있음"));
         _dirtyChip.Margin = new Thickness(10, 0, 0, 12);
         _dirtyChip.VerticalAlignment = VerticalAlignment.Center;
@@ -667,7 +697,17 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
                 field.TextChanged += (_, _) => { item.Open = string.IsNullOrWhiteSpace(field.Text) ? null : field.Text.Trim(); Changed(); };
                 pick.Click += (_, _) => { if (PickPath(kind == 2) is { } path) field.Text = path; };
                 string label = kind switch { 3 => Loc.T("웹 주소"), 2 => Loc.T("폴더"), _ => Loc.TC("one", "파일") };
-                box.Children.Add(LabeledRow(label, line, lw, 8));
+                if (BrowserTabs.TabsOf(item) is int tabCount && tabCount > 1)
+                {
+                    // 지금 화면 저장: 보고 있던 탭 1개만 읽을 수 있음 (나머지 탭 주소는 브라우저가 알려 주지 않음)
+                    var withNote = new StackPanel();
+                    withNote.Children.Add(line);
+                    var tabNote = Muted(Loc.F($"탭 {tabCount}개 중 보고 있던 1개만 저장됐어요 · 다른 탭은 [+ 링크]로 넣어 주세요"), 11.5);
+                    tabNote.Margin = new Thickness(0, 3, 0, 0);
+                    withNote.Children.Add(tabNote);
+                    box.Children.Add(LabeledRow(label, withNote, lw, 8));
+                }
+                else box.Children.Add(LabeledRow(label, line, lw, 8));
                 if (ProfileRow(item, lw) is { } accountRow) box.Children.Add(accountRow); // 계정은 밖 — 프로필 2개 이상일 때만 (ProfileRow 가 판단)
                 break;
             }

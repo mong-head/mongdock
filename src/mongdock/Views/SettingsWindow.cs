@@ -546,7 +546,7 @@ internal sealed partial class SettingsWindow : Window
         }
         var make = new StackPanel { Orientation = Orientation.Horizontal };
         bool canAdd = RoutineUi.CanAdd(_services);
-        var fromScreen = ActionButton(Loc.T("지금 화면 저장"), () => RoutineSaveWindow.Open(_services, pinToDock: false));
+        var fromScreen = ActionButton(Loc.T("지금 화면 저장"), () => RoutineEditorWindow.OpenFromScreen(_services, pinToDock: false));
         fromScreen.IsEnabled = canAdd;
         var blank = ActionButton(Loc.T("새 루틴"), () => RoutineEditorWindow.OpenNew(_services));
         blank.IsEnabled = canAdd;

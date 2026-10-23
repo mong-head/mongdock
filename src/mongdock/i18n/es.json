@@ -1556,5 +1556,6 @@
  "설정 파일이 없어져서 마지막 정상 설정으로 되돌렸어요": "Faltaba el archivo de ajustes; se restauraron los últimos ajustes válidos",
  "이 항목은 기본값으로: {0}": "Restablecido al valor predeterminado: {0}",
  "저장한 설정을 읽지 못했어요 — {0}번째 줄 근처": "No se pudieron leer los ajustes guardados: cerca de la línea {0}",
- "저장한 설정을 읽지 못했어요": "No se pudieron leer los ajustes guardados"
+ "저장한 설정을 읽지 못했어요": "No se pudieron leer los ajustes guardados",
+ "탭 {0}개 중 보고 있던 1개만 저장됐어요 · 다른 탭은 [+ 링크]로 넣어 주세요": "Solo se guardó la pestaña que estabas viendo (1 de {0}) · añade las demás con [+ Enlace]"
 }

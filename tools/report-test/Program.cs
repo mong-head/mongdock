@@ -3875,15 +3875,24 @@ internal static class Program
                 using (var fs = File.Create(path)) enc.Save(fs);
                 Console.WriteLine($"  저장  {path}");
             }
-            Window New(string type, params object?[] args) => (Window)T(type).GetConstructors(Any)[0].Invoke(args);
+            Window New(string type, params object?[] args)
+            {
+                // 선택 매개변수(예: 편집 창의 heading)는 기본값으로 채움
+                var ctor = T(type).GetConstructors(Any)[0];
+                var ps = ctor.GetParameters();
+                var full = args.Concat(ps.Skip(args.Length).Select(p => p.HasDefaultValue ? p.DefaultValue : null)).ToArray();
+                return (Window)ctor.Invoke(full);
+            }
 
             // 1) 지금 화면 저장 카드 (가짜로 읽은 창 4개, 카카오톡 줄은 체크 풀림)
             var captured = Work();
             captured.Insert(3, App(Exe(@"C:\Program Files (x86)\Kakao\KakaoTalk\KakaoTalk.exe", notepad), "카카오톡", RoutinePlacementMode.Saved, 2));
-            var save = New("Mongdock.Views.RoutineSaveWindow", services, false, captured);
-            var rows = (System.Collections.IList)save.GetType().GetField("_rows", Any)!.GetValue(save)!;
-            var last = rows[3]!;
-            ((System.Windows.Controls.CheckBox)last.GetType().GetField("Item2")!.GetValue(last)!).IsChecked = false;
+            // 10-23: 지금 화면 저장 = 편집 창 새 루틴 모드 (제목 「지금 화면을 루틴으로 저장」), 크롬 항목 펼침 + 「탭 N개 중 1개」 안내
+            var tabsT = T("Mongdock.Services.BrowserTabs");
+            var tabTable = tabsT.GetField("TabCounts", Any)!.GetValue(null)!;
+            tabTable.GetType().GetMethod("AddOrUpdate")!.Invoke(tabTable, new object[] { captured[1], new System.Runtime.CompilerServices.StrongBox<int>(5) });
+            var save = (Window)T("Mongdock.Views.RoutineEditorWindow").GetMethod("ForScreen", Any)!.Invoke(null, new object[] { services, captured, false })!;
+            save.GetType().GetMethod("ExpandForTest", Any)!.Invoke(save, new object[] { 1, false });
             Save((FrameworkElement)save.Content, "save");
             save.Close();
 

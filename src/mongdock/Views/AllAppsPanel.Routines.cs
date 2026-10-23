@@ -166,7 +166,7 @@ internal sealed partial class AllAppsPanel
     private void FillAddRoutineMenu(ContextMenu menu)
     {
         bool can = RoutineUi.CanAdd(Services);
-        menu.Items.Add(DockMenus.Item(Loc.T("지금 화면 그대로 저장"), () => { CloseAnimated(); RoutineSaveWindow.Open(Services, pinToDock: false); }, enabled: can));
+        menu.Items.Add(DockMenus.Item(Loc.T("지금 화면 그대로 저장"), () => { CloseAnimated(); RoutineEditorWindow.OpenFromScreen(Services, pinToDock: false); }, enabled: can));
         menu.Items.Add(DockMenus.Item(Loc.T("직접 만들기"), () => { CloseAnimated(); RoutineEditorWindow.OpenNew(Services); }, enabled: can));
         menu.Items.Add(new Separator());
         menu.Items.Add(DockMenus.Item(Loc.T("루틴이 뭔가요?"), () => { _routineHelp = true; Rebuild(); }));
@@ -215,7 +215,7 @@ internal sealed partial class AllAppsPanel
                 b.Click += (_, _) => run();
                 return b;
             }
-            buttons.Children.Add(B(Loc.T("지금 화면으로 만들기"), true, () => { CloseAnimated(); RoutineSaveWindow.Open(Services, pinToDock: false); }));
+            buttons.Children.Add(B(Loc.T("지금 화면으로 만들기"), true, () => { CloseAnimated(); RoutineEditorWindow.OpenFromScreen(Services, pinToDock: false); }));
             buttons.Children.Add(B(Loc.T("직접 만들기"), false, () => { CloseAnimated(); RoutineEditorWindow.OpenNew(Services); }));
             text.Children.Add(buttons);
         }

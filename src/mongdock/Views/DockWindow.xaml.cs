@@ -1886,7 +1886,7 @@ public partial class DockWindow : Window
     {
         var dock = _services.Settings.Current.Dock;
         bool canAddRoutine = RoutineUi.CanAdd(_services);
-        var saveRoutine = DockMenus.ItemNew(_services, Loc.T("지금 화면을 루틴으로 저장…"), RoutineUi.Badge, () => RoutineSaveWindow.Open(_services, pinToDock: true));
+        var saveRoutine = DockMenus.ItemNew(_services, Loc.T("지금 화면을 루틴으로 저장…"), RoutineUi.Badge, () => RoutineEditorWindow.OpenFromScreen(_services, pinToDock: true));
         saveRoutine.IsEnabled = canAddRoutine;
         menu.Items.Add(saveRoutine);
         menu.Items.Add(Item(Loc.T("새 루틴…"), () => RoutineEditorWindow.OpenNew(_services, pinToDock: true), enabled: canAddRoutine));

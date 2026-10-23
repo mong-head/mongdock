@@ -1016,7 +1016,7 @@ internal static class RoutineService
     /// 지금 데스크톱의 보이는 창 → 루틴 항목 (최대 15). 몽독·시스템 창은 뺌. 모니터(장치 이름), 위치(최대화/반쪽/저장한 위치 — 작업 영역 비율),
     /// 열 것(실행 인자에 있는 파일·폴더, 탐색기 창은 그 폴더)은 확실할 때만.
     /// </summary>
-    public static List<(RoutineItem Item, IntPtr Hwnd)> CaptureScreen(Func<AppWindowInfo, bool>? onDesktop = null)
+    public static List<(RoutineItem Item, IntPtr Hwnd)> CaptureScreen(Func<AppWindowInfo, bool>? onDesktop = null, bool readTabs = false)
     {
         var services = _services;
         var list = new List<(RoutineItem, IntPtr)>();
@@ -1061,6 +1061,8 @@ internal static class RoutineService
                     Profile = packaged ? null : RoutineProfiles.OfWindow(w.Hwnd, w.ProcessPath), // 크롬 창마다 계정 (같은 브라우저라도 계정별로 따로 항목)
                 };
                 if (item.Open is null && !packaged && !IsBrowserExe(exe)) item.Open = OpenFromRecent(w.Title, exe, recent ??= RecentDocuments());
+                // 브라우저: 보고 있는 탭 주소 1개 + 탭 수 (나머지 탭 주소는 알 수 없음 — 편집 창이 「탭 N개 중 1개 저장됨」)
+                if (item.Open is null && !packaged && IsBrowserExe(exe) && readTabs) BrowserTabs.Fill(w.Hwnd, item);
             }
             ReadPlacement(w.Hwnd, item);
             list.Add((item, w.Hwnd));

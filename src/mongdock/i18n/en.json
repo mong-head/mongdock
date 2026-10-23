@@ -1556,5 +1556,6 @@
  "설정 파일이 없어져서 마지막 정상 설정으로 되돌렸어요": "The settings file was missing, so mongdock went back to the last good settings",
  "이 항목은 기본값으로: {0}": "Reset to default: {0}",
  "저장한 설정을 읽지 못했어요 — {0}번째 줄 근처": "Couldn't read the saved settings — near line {0}",
- "저장한 설정을 읽지 못했어요": "Couldn't read the saved settings"
+ "저장한 설정을 읽지 못했어요": "Couldn't read the saved settings",
+ "탭 {0}개 중 보고 있던 1개만 저장됐어요 · 다른 탭은 [+ 링크]로 넣어 주세요": "Only the tab you were viewing was saved (1 of {0}) · add other tabs with [+ Link]"
 }
