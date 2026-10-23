@@ -17,6 +17,8 @@ internal abstract class RoutineCardWindow : Window
     protected readonly AppServices Services;
     protected readonly UiPalette P;
     protected readonly StackPanel Body = new();
+    /// <summary>스크롤 밖 아래에 고정되는 줄 (편집 창의 [루틴 지우기][취소][저장] — 세부를 펼쳐 길어져도 늘 보이게, QA 10-23 1080p·125%).</summary>
+    protected readonly StackPanel Footer = new();
 
     protected RoutineCardWindow(AppServices services, double width, string windowTitle)
     {
@@ -40,6 +42,11 @@ internal abstract class RoutineCardWindow : Window
         Body.Width = width;
         // 오른쪽 여백 20 중 12 를 스크롤 막대 자리로 (막대가 내용 위에 겹쳐 그려지는 스타일 — 스위치·[아이콘] 버튼 끝을 가리지 않게, QA)
         Body.Margin = new Thickness(0, 0, 12, 0);
+        Footer.Width = width;
+        Footer.Margin = new Thickness(0, 0, 12, 0);
+        var stack = new DockPanel { LastChildFill = true };
+        DockPanel.SetDock(Footer, Dock.Bottom);
+        stack.Children.Add(Footer);
         var card = new Border
         {
             CornerRadius = new CornerRadius(14),
@@ -47,16 +54,18 @@ internal abstract class RoutineCardWindow : Window
             BorderBrush = P.CardBorder,
             BorderThickness = new Thickness(0.75),
             Padding = new Thickness(20, 16, 8, 16),
-            Child = _scroll = new ScrollViewer
+            Child = stack,
+        };
+        stack.Children.Add(_scroll = new ScrollViewer
             {
                 Content = Body,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 Style = (Style)Application.Current.FindResource("OverlayScrollViewer"),
                 Focusable = false,
-                MaxHeight = Usable().Height - 80, // 카드 여백·그림자 자리
-            },
-        };
+                MaxHeight = Usable().Height - 80, // 카드 여백·그림자 자리 (아래 고정 줄이 생기면 그만큼 뺌)
+            });
+        Footer.SizeChanged += (_, _) => _scroll.MaxHeight = Math.Max(160, Usable().Height - 80 - Footer.ActualHeight);
         MongScroll.Apply(_scroll, P);
         var root = new Grid { Margin = new Thickness(24, 16, 24, 32) };
         root.Children.Add(new Border

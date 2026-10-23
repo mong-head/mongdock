@@ -213,7 +213,7 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         _dirtyNote.Margin = new Thickness(0, 10, 0, 0);
         _dirtyNote.HorizontalAlignment = HorizontalAlignment.Right;
         _dirtyNote.Visibility = Visibility.Collapsed;
-        Body.Children.Add(_dirtyNote);
+        Footer.Children.Add(_dirtyNote);
         var save = CardButton(Loc.T("저장"), primary: true);
         _saveButton = save;
         save.Margin = new Thickness(8, 0, 0, 0);
@@ -224,8 +224,8 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         DockPanel.SetDock(cancel, Dock.Right);
         bottom.Children.Add(save);
         bottom.Children.Add(cancel);
-        Body.Children.Add(bottom);
-        Body.Children.Add(Muted(Loc.F($"루틴 하나에 항목은 {RoutineDef.MaxItems}개까지예요."), 11));
+        Footer.Children.Add(bottom);
+        Footer.Children.Add(Muted(Loc.F($"루틴 하나에 항목은 {RoutineDef.MaxItems}개까지예요."), 11));
 
         BuildAddButtons();
         RefreshIcon();
@@ -385,8 +385,9 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
             string title = item.Kind == RoutineItemKind.Url && item.Target.Length == 0 ? Loc.T("링크") : RoutineService.ItemName(item);
             name.Inlines.Add(new System.Windows.Documents.Run(title));
             // 기본값에서 바꾼 항목은 이름 옆 작은 보라 점 (기획서 h)
+            // 글자 점(●) — 처음엔 InlineUIContainer 안 원이었는데 실제 화면에서 한 번 안 그려짐(QA 10-23, 줄 안 UI 요소 배치 시점) → 글자로
             if (Customized(item))
-                name.Inlines.Add(new System.Windows.Documents.InlineUIContainer(new System.Windows.Shapes.Ellipse { Width = 6, Height = 6, Fill = P.SoftAccentText, Margin = new Thickness(6, 0, 0, 1), ToolTip = Loc.T("기본값에서 바꾼 항목") }) { BaselineAlignment = BaselineAlignment.Center });
+                name.Inlines.Add(new System.Windows.Documents.Run(" ●") { Foreground = P.SoftAccentText, FontSize = 8, BaselineAlignment = BaselineAlignment.Center, ToolTip = Loc.T("기본값에서 바꾼 항목") });
             string? extra = item.Kind switch
             {
                 RoutineItemKind.Path => item.Target,
