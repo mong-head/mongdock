@@ -223,6 +223,8 @@ internal static class Program
         if (Array.IndexOf(args, "--appbarcheck") >= 0) return AppBarCheck(); // 0.6.2 모니터 여러 대 작업 표시줄 깜빡임 — 자리 같으면 안 알림·고리 끊김 (실제 AppBar 등록 없음)
         int volAt = Array.FindIndex(args, a => a == "--volumecheck");
         if (volAt >= 0) return VolumeCheck(volAt + 1 < args.Length ? args[volAt + 1] : null); // 0.8 앱별 볼륨·볼륨 표시 (#21) — 실제 볼륨은 안 바꿈
+        int pillAt = Array.IndexOf(args, "--pillshot"); // #41 데스크톱 알약·독 ＋ 를 화면 밖에서 그림으로 (창·입력 없음): --pillshot <폴더> [접두어]
+        if (pillAt >= 0 && pillAt + 1 < args.Length) return PillShot(args[pillAt + 1], pillAt + 2 < args.Length && !args[pillAt + 2].StartsWith("--") ? args[pillAt + 2] : "now");
         if (Array.IndexOf(args, "--plusrule") >= 0) return PlusRuleCheck(); // #41 독 ＋ 「지금 데스크톱에 새 창」 판정 (가짜 창 목록, 실행 없음)
         if (Array.IndexOf(args, "--idlehide") >= 0) return IdleHideCheck(); // #39 자동 숨김 독: 커서 정지 5초면 숨김 (가짜 커서·시각, 창·입력 없음)
         if (Array.IndexOf(args, "--clipcheck") >= 0) return ClipCheck(); // 0.6.3 문제 신고 영역 캡처·붙여넣기 (#13) — 실제 캡처 도구·클립보드는 안 건드림
@@ -2448,6 +2450,101 @@ internal static class Program
         var enc = new PngBitmapEncoder();
         enc.Frames.Add(BitmapFrame.Create(rtb));
         using (var fs = File.Create(path)) enc.Save(fs);
+        Console.WriteLine($"  저장  {path}");
+    }
+
+    /// <summary>
+    /// --pillshot (#41): 데스크톱 이동 알약(DesktopPill.BuildCard)과 독 아이콘 ＋ 를 화면 밖에서 그림으로 — 라이트·다크 × 100%·125%,
+    /// 첫 안내 두 줄 / 한 줄 / 긴 앱 이름 / 돌아가기 없음. 독 ＋ 는 아래·왼쪽·위 독 × 아이콘 36·52·72. 창을 띄우지 않고 설정도 저장하지 않음.
+    /// </summary>
+    private static int PillShot(string dir, string prefix)
+    {
+        Directory.CreateDirectory(dir);
+        var app = new Mongdock.App();
+        Mongdock.Loc.Init(_lang);
+        app.InitializeComponent();
+        app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        var st = new Mongdock.Models.Settings();
+        Mongdock.ViewModels.UiFonts.Apply(st);
+        var asm = typeof(Mongdock.App).Assembly;
+        var build = asm.GetType("Mongdock.Views.DesktopPill")!.GetMethod("BuildCard", Any)!;
+        var cases = new (string Text, bool First, int From)[]
+        {
+            (Mongdock.Loc.F($"새 데스크톱에 열었어요 · {Mongdock.Loc.T("업무 시작")}"), true, 1),
+            (Mongdock.Loc.F($"데스크톱 {2}로 이동했어요 · {"Claude"}"), false, 1),
+            (Mongdock.Loc.F($"데스크톱 {3}로 이동했어요 · {"Microsoft Visual Studio Code - Insiders — mongdock 프로젝트 설정"}"), false, 2),
+            (Mongdock.Loc.T("새 창을 열 수 없는 앱이에요 · 아이콘을 누르면 그 창으로 가요"), false, 0),
+        };
+        foreach (var theme in new[] { "light", "dark" })
+        {
+            var pal = theme == "dark" ? Mongdock.ViewModels.UiPalette.Dark : Mongdock.ViewModels.UiPalette.Light;
+            var sheet = new System.Windows.Controls.StackPanel { Background = new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x14, 0x16, 0x1C) : Color.FromRgb(0xE9, 0xEC, 0xF4)) };
+            foreach (var c in cases)
+            {
+                // 상단바 흉내(높이 30) 아래 가운데 — 실제 자리와 같은 간격
+                var stage = new System.Windows.Controls.Grid { Width = 760, Margin = new Thickness(0, 0, 0, 8) };
+                stage.Children.Add(new System.Windows.Controls.Border { Height = 30, VerticalAlignment = VerticalAlignment.Top, Background = new SolidColorBrush(theme == "dark" ? Color.FromArgb(0xE6, 0x22, 0x24, 0x2C) : Color.FromArgb(0xE6, 0xFA, 0xFA, 0xFD)) });
+                var card = (FrameworkElement)build.Invoke(null, new object?[] { pal, c.Text, c.First, c.From, null })!;
+                card.HorizontalAlignment = HorizontalAlignment.Center;
+                card.VerticalAlignment = VerticalAlignment.Top;
+                var holder = new System.Windows.Controls.Border { Margin = new Thickness(0, 36, 0, 0), Child = card, HorizontalAlignment = HorizontalAlignment.Center };
+                stage.Children.Add(holder);
+                sheet.Children.Add(stage);
+            }
+            sheet.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            sheet.Arrange(new Rect(sheet.DesiredSize));
+            sheet.UpdateLayout();
+            foreach (var scale in new[] { 1.0, 1.25 })
+                SaveScaled(sheet, sheet.DesiredSize, scale, Path.Combine(dir, $"{prefix}-pill-{theme}-{(int)(scale * 100)}.png"));
+        }
+        // 독 ＋ — 크롬 아이콘에 ＋ 보이기 (보이는 끝 상태로)
+        {
+            var sheet = new System.Windows.Controls.Grid { Background = Brushes.White };
+            int row = 0;
+            foreach (var theme in new[] { "light", "dark" })
+                foreach (var edge in new[] { DockEdge.Bottom, DockEdge.Left, DockEdge.Top })
+                {
+                    sheet.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = GridLength.Auto });
+                    int col = 0;
+                    foreach (var size in new[] { 36.0, 52.0, 72.0 })
+                    {
+                        if (row == 0) sheet.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = GridLength.Auto });
+                        var ds = new DockSettings { Theme = theme == "dark" ? DockTheme.Dark : DockTheme.Light, IconSize = size, Edge = edge };
+                        var layout = Mongdock.ViewModels.DockLayout.From(ds, theme == "light");
+                        var exe = @"C:\Windows\explorer.exe";
+                        var icon = new IconService().GetIcon(new PinItem { Kind = PinKind.Exe, Target = exe }, IconStyle.Mac);
+                        var vm = new Mongdock.ViewModels.DockItemViewModel("t" + exe, null, false, "app", icon) { IsRunning = true };
+                        var view = (FrameworkElement)Activator.CreateInstance(asm.GetType("Mongdock.Views.DockItemView")!, vm, layout)!;
+                        view.GetType().GetMethod("ShowPlus")!.Invoke(view, new object[] { true });
+                        if (view.GetType().GetField("_plus", Any)!.GetValue(view) is UIElement plus) { plus.BeginAnimation(UIElement.OpacityProperty, null); plus.Opacity = 1; }
+                        var cell = new System.Windows.Controls.Border
+                        {
+                            Padding = new Thickness(14), Margin = new Thickness(4), CornerRadius = new CornerRadius(14),
+                            Background = new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x2A, 0x2A, 0x30) : Color.FromRgb(0xEC, 0xEC, 0xF2)),
+                            Child = view, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
+                        };
+                        System.Windows.Controls.Grid.SetRow(cell, row);
+                        System.Windows.Controls.Grid.SetColumn(cell, col++);
+                        sheet.Children.Add(cell);
+                    }
+                    row++;
+                }
+            sheet.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            sheet.Arrange(new Rect(sheet.DesiredSize));
+            sheet.UpdateLayout();
+            SaveScaled(sheet, sheet.DesiredSize, 1.25, Path.Combine(dir, $"{prefix}-plus-125.png"));
+        }
+        return 0;
+    }
+
+    private static void SaveScaled(FrameworkElement el, Size size, double scale, string path)
+    {
+        var dv = new DrawingVisual();
+        using (var dc = dv.RenderOpen())
+            dc.DrawRectangle(new VisualBrush(el) { ViewboxUnits = BrushMappingMode.Absolute, Viewbox = new Rect(size), Stretch = Stretch.None }, null, new Rect(size));
+        var rtb = new RenderTargetBitmap((int)Math.Ceiling(size.Width * scale), (int)Math.Ceiling(size.Height * scale), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
+        rtb.Render(dv);
+        SavePng(rtb, path);
         Console.WriteLine($"  저장  {path}");
     }
 

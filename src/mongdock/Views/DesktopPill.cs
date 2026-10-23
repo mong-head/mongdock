@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -82,45 +83,12 @@ internal sealed class DesktopPill : Window
         Foreground = p.Text;
         TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
         SourceInitialized += (_, _) => services.DesktopWindows.MakeOverlay(this);
-
-        var lines = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        lines.Children.Add(new TextBlock { Text = text, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 420 });
-        if (first)
-            lines.Children.Add(new TextBlock { Text = Loc.T("Ctrl + Win + ← → 로도 오가요"), FontSize = 11.5, Foreground = p.SubText, Margin = new Thickness(0, 2, 0, 0) });
-        var row = new StackPanel { Orientation = Orientation.Horizontal };
-        row.Children.Add(lines);
-        if (from > 0)
+        Content = BuildCard(p, text, first, from, async () =>
         {
-            var back = new Border
-            {
-                Background = p.SoftAccent,
-                CornerRadius = new CornerRadius(999),
-                Padding = new Thickness(10, 3, 10, 4),
-                Margin = new Thickness(12, 0, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-                Cursor = Cursors.Hand,
-                Child = new TextBlock { Text = "← " + Loc.T("돌아가기"), Foreground = p.SoftAccentText, FontSize = 12.5 },
-            };
-            back.MouseLeftButtonUp += async (_, e) =>
-            {
-                e.Handled = true;
-                Close();
-                Log.Info($"데스크톱 알약: 돌아가기 → 데스크톱 {from}");
-                await VirtualDesktopService.MoveToAsync(from);
-            };
-            row.Children.Add(back);
-        }
-        Content = new Border
-        {
-            Background = p.CardBackground,
-            BorderBrush = p.CardBorder,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(999),
-            Padding = new Thickness(16, first ? 7 : 6, from > 0 ? 6 : 16, first ? 7 : 6),
-            Margin = new Thickness(12, 4, 12, 14),
-            Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 14, ShadowDepth = 2, Opacity = 0.18 },
-            Child = row,
-        };
+            Close();
+            Log.Info($"데스크톱 알약: 돌아가기 → 데스크톱 {from}");
+            await VirtualDesktopService.MoveToAsync(from);
+        });
         Opacity = 0;
 
         _life = new DispatcherTimer { Interval = TimeSpan.FromSeconds(first ? 5 : 2) };
@@ -132,6 +100,61 @@ internal sealed class DesktopPill : Window
             fade.Completed += (_, _) => Close();
             BeginAnimation(OpacityProperty, fade);
         };
+    }
+
+    /// <summary>알약 모양 (창 없이 — report-test --pillshot 이 화면 밖에서 그림으로 뜸). onBack = [← 돌아가기] 누름.</summary>
+    internal static FrameworkElement BuildCard(UiPalette p, string text, bool first, int from, Action? onBack)
+    {
+        // 기획서 모형 (10-22): 흰(다크는 카드색) 알약 + 얇은 테두리 + 아래로 퍼지는 그림자. 글자는 보통 굵기 13, 아랫줄 12 흐리게.
+        // 한 줄이면 양끝이 반원(높이의 반), 두 줄(첫 안내)이면 모서리 16. 오른쪽 [← 돌아가기]는 테두리 있는 작은 알약, 세로 가운데.
+        // CornerRadius 를 999 처럼 크게 주면 WPF 가 렌즈 모양으로 그림(10-23 사용자 「알약 형태 이상」) → 실제 높이의 반으로 맞춤.
+        var lines = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        lines.Children.Add(new TextBlock { Text = text, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 420 });
+        if (first)
+            lines.Children.Add(new TextBlock { Text = Loc.T("Ctrl + Win + ← → 로도 오가요"), FontSize = 12, Foreground = p.SubText, Margin = new Thickness(0, 1, 0, 0) });
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(lines);
+        if (from > 0)
+        {
+            var back = new Border
+            {
+                Background = p.CardBackground,
+                BorderBrush = p.CardBorder,
+                BorderThickness = new Thickness(1),
+                Padding = first ? new Thickness(12, 4, 12, 5) : new Thickness(10, 2, 10, 3),
+                Margin = new Thickness(first ? 14 : 10, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Cursor = Cursors.Hand,
+                Child = new TextBlock { Text = "← " + Loc.T("돌아가기"), Foreground = p.Text },
+            };
+            back.SizeChanged += (_, _) => back.CornerRadius = new CornerRadius(back.ActualHeight / 2);
+            back.MouseEnter += (_, _) => back.Background = p.SoftAccent;
+            back.MouseLeave += (_, _) => back.Background = p.CardBackground;
+            back.MouseLeftButtonUp += (_, e) =>
+            {
+                e.Handled = true;
+                onBack?.Invoke();
+            };
+            row.Children.Add(back);
+        }
+        var card = new Border
+        {
+            Background = p.CardBackground,
+            BorderBrush = p.CardBorder,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(16),
+            Padding = first ? new Thickness(14, 8, from > 0 ? 8 : 14, 8) : new Thickness(14, 5, from > 0 ? 6 : 14, 5),
+            Margin = new Thickness(20, 4, 20, 26), // 그림자 자리
+            Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 24, ShadowDepth = 6, Direction = 270, Opacity = p.ShadowOpacity + 0.06 },
+            Child = row,
+        };
+        if (!first) card.SizeChanged += (_, _) => card.CornerRadius = new CornerRadius(card.ActualHeight / 2);
+        // 글꼴·크기·글자색은 창에서 물려받지 않고 여기서 (창 없이 그릴 때도 같게)
+        card.SetResourceReference(TextElement.FontFamilyProperty, UiFonts.Key);
+        TextElement.SetFontSize(card, 13);
+        TextElement.SetForeground(card, p.Text);
+        TextOptions.SetTextFormattingMode(card, TextFormattingMode.Display);
+        return card;
     }
 
     /// <summary>그 모니터의 상단바 아래 가운데 (상단바가 없으면 작업 영역 위 가운데).</summary>
