@@ -14,7 +14,7 @@
 | `status` | 연결 상태, 오늘 보낸 답장 수 |
 | `list_messages` / `get_message` / `mark_read` | 받은 메일 보기 (Gmail 검색식 가능) |
 | `list_templates` / `preview_template_reply` | 답장 형식 목록, 보내기 전 미리 보기 |
-| `send_template_reply` | **`templates.json` 의 형식으로만**, 원래 보낸 사람에게만 답장 (하루 30통 한도, `C:\dev\mongdock-team\support-send-log.jsonl` 에 기록) |
+| `send_template_reply` | **`templates.json` 의 형식으로만**, 원래 보낸 사람에게만 답장 (하루 30통 한도, `C:\dev\mongdock-team\support-send-log.jsonl` 에 기록). 같은 건(같은 원 메일 uid, 또는 `issue` 로 알려 준 같은 이슈)에 같은 형식은 한 번만 — 두 번째는 거절. 시험: `python tools/support-mail-mcp/test_guard.py` |
 | `create_draft_reply` | 형식에 안 맞는 답장은 임시보관함에 초안만 (사람이 보냄) |
 
 자유 문장 보내기, 새 수신자에게 보내기, 삭제는 없다. 운영 규칙은 `.claude/agents/mongdock-support.md`.

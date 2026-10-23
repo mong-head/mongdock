@@ -312,6 +312,32 @@ def sends_today() -> int:
         return sum(1 for line in f if f'"day": "{today}"' in line)
 
 
+def issue_key(issue) -> str:
+    """이슈 표기를 하나로: "#41"·"41"·"mong-head/mongdock-issues#41" → "41" (숫자가 없으면 그대로)."""
+    m = re.search(r"(\d+)\s*$", str(issue or "").strip())
+    return m.group(1) if m else str(issue or "").strip()
+
+
+def already_sent(template_id: str, uid: str, issue=None):
+    """같은 형식을 같은 건에 이미 보냈으면 그 기록 (사용자 승인 2026-10-23).
+    같은 건 = 같은 원 메일 uid, 또는 (이슈를 알려 줬으면) 같은 이슈. 같은 사람이라도 다른 요청·다른 이슈면 통과
+    (예: 제안 두 개를 보낸 사람에게 각각 「반영됐어요」)."""
+    if not os.path.exists(LOG_PATH):
+        return None
+    key = issue_key(issue) if issue else ""
+    with open(LOG_PATH, encoding="utf-8") as f:
+        for line in f:
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if e.get("template") != template_id:
+                continue
+            if str(e.get("uid")) == uid or (key and e.get("issue") and issue_key(e.get("issue")) == key):
+                return e
+    return None
+
+
 def log_send(entry: dict) -> None:
     os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
     with open(LOG_PATH, "a", encoding="utf-8") as f:
@@ -342,6 +368,10 @@ def tool_send_template_reply(args: dict) -> dict:
     with SendLock():
         if sends_today() >= MAX_SENDS_PER_DAY:
             raise RuntimeError(f"오늘 보낼 수 있는 답장 수({MAX_SENDS_PER_DAY})를 넘었어요. PM 에게 알리세요.")
+        issue = args.get("issue")
+        if (dup := already_sent(args["template_id"], uid, issue)) is not None:
+            raise RuntimeError(f"같은 건(uid {dup.get('uid')}{', 이슈 ' + str(dup.get('issue')) if dup.get('issue') else ''})에 "
+                               f"'{args['template_id']}' 를 {dup.get('day')} 에 이미 보냈어요. 보내지 말고 초안 + PM.")
         m = imap()
         try:
             m.select("INBOX")
@@ -354,7 +384,7 @@ def tool_send_template_reply(args: dict) -> dict:
                 s.send_message(r)
             # 보낸 직후 바로 기록 (뒤 단계가 실패해도 한도·감사 기록에서 빠지지 않게)
             log_send({"day": datetime.now().strftime("%Y-%m-%d"), "at": datetime.now(timezone.utc).isoformat(),
-                      "uid": uid, "to": r["To"], "subject": r["Subject"], "template": args["template_id"],
+                      "uid": uid, "issue": issue_key(issue) if issue else None, "to": r["To"], "subject": r["Subject"], "template": args["template_id"],
                       "variables": args.get("variables", {})})
             try:
                 m.uid("store", uid, "+FLAGS", "(\\Seen \\Answered)")
@@ -409,8 +439,9 @@ TOOLS = {
                                {"uid": {"type": "string"}, "template_id": {"type": "string"},
                                 "variables": {"type": "object"}, "lang": {"type": "string", "enum": ["ko", "en"]}}),
     "send_template_reply": (tool_send_template_reply,
-                            "원래 보낸 사람에게 정해진 형식의 답장을 보냄. 형식에 맞지 않는 경우엔 쓰지 말고 PM 에게 넘길 것.",
-                            {"uid": {"type": "string"}, "template_id": {"type": "string"},
+                            "원래 보낸 사람에게 정해진 형식의 답장을 보냄. 형식에 맞지 않는 경우엔 쓰지 말고 PM 에게 넘길 것. "
+                            "같은 건(같은 원 메일 uid 또는 같은 issue)에 같은 형식은 한 번만 — 두 번째는 거절됨. 이슈가 있으면 issue 에 번호를 넣을 것.",
+                            {"uid": {"type": "string"}, "template_id": {"type": "string"}, "issue": {"type": "string"},
                              "variables": {"type": "object"}, "lang": {"type": "string", "enum": ["ko", "en"]}}),
     "create_draft_reply": (tool_create_draft_reply, "형식에 안 맞는 답장의 초안을 임시보관함에 저장 (보내지 않음, 사람이 확인 후 보냄).",
                            {"uid": {"type": "string"}, "body": {"type": "string"}}),
