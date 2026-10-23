@@ -2552,7 +2552,8 @@ internal static class Program
             sheet.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             sheet.Arrange(new Rect(sheet.DesiredSize));
             sheet.UpdateLayout();
-            SaveScaled(sheet, sheet.DesiredSize, 1.25, Path.Combine(dir, $"{prefix}-plus-125.png"));
+            foreach (var sc in new[] { 1.0, 1.25, 2.0 }) // 2.0 = 확대된 아이콘 크기 근처에서 선명한지
+                SaveScaled(sheet, sheet.DesiredSize, sc, Path.Combine(dir, $"{prefix}-plus-{(int)(sc * 100)}.png"));
         }
         return 0;
     }
@@ -2607,6 +2608,34 @@ internal static class Program
         Ok("스토어 앱(AUMID) → ＋ 없음", !Can(@"C:\Program Files\WindowsApps\x\app.exe", 2, "Pub.App_x!App"));
         Ok("크롬 창에 AUMID 가 붙어 있어도 → ＋ (스토어 앱만 뺌)", Can(@"C:\Program Files\Google\Chrome\Application\chrome.exe", 1, "Chrome"));
         Ok("엣지(MSEdge AUMID) → ＋", Can(@"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe", 1, "MSEdge"));
+        // ＋ 나오는 때 (사용자 10-23 「0.2초 땡겨」 → 0.1초): 독을 훑고 지나가면 안 나옴(깜빡임 없음), 멈추면 0.1초 뒤 한 번
+        {
+            var ph = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.PlusHover")!;
+            int delay = (int)ph.GetField("DelayMs")!.GetValue(null)!;
+            bool Rest(Point a, Point b) => (bool)ph.GetMethod("Resting")!.Invoke(null, new object[] { a, b })!;
+            // 아이콘 칸 60 DIP, speed DIP/초로 x 를 지나가다 restAt 에서 멈춤 → ＋ 가 몇 번 뜨는지 (DockWindow 와 같은 규칙: 칸에 들어가면 대기 시작, 매 대기 끝에 움직였으면 다시)
+            int Shows(double speed, double restAt, double totalMs)
+            {
+                int shows = 0, slot = -1; Point armed = default; double due = 0; bool shown = false;
+                for (double t = 0; t <= totalMs; t += 10)
+                {
+                    double x = Math.Min(speed * t / 1000, restAt);
+                    int s2 = (int)(x / 60);
+                    var now = new Point(x, 20);
+                    if (s2 != slot) { slot = s2; armed = now; due = t + delay; shown = false; continue; }
+                    if (!shown && t >= due)
+                    {
+                        if (Rest(armed, now)) { shown = true; shows++; }
+                        else { armed = now; due = t + delay; }
+                    }
+                }
+                return shows;
+            }
+            Ok($"＋ 대기 {delay}ms", delay == 100);
+            Ok($"독을 빠르게 훑음(1500 DIP/초, 아이콘 10개) → ＋ {Shows(1500, 10000, 400)}번", Shows(1500, 10000, 400) == 0);
+            Ok($"천천히 훑음(250 DIP/초, 아이콘 4개) → ＋ {Shows(250, 10000, 1000)}번", Shows(250, 10000, 1000) == 0);
+            Ok($"훑다가 한 아이콘에서 멈춤 → ＋ {Shows(600, 270, 1500)}번 (멈춘 뒤 0.1초)", Shows(600, 270, 1500) == 1);
+        }
         // 루틴 열 곳 (#41 리뷰 10-23): 설정을 읽을 때 저장한 값 그대로 — 예전엔 읽을 때마다 기본값으로 덮어씀
         Ok("루틴 열 곳: new·current 는 그대로, index 는 새 데스크톱, 없으면 기본(지금)", RoutineModesKept());
         Console.WriteLine(bad == 0 ? "  모두 통과" : $"  실패 {bad}개");

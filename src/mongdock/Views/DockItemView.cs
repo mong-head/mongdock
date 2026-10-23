@@ -28,7 +28,7 @@ internal sealed class DockItemView : Grid
     private readonly ScaleTransform? _scale;
     private readonly Ellipse? _runningDot;
     private readonly Ellipse? _notifyDot;
-    private readonly Border? _plus;
+    private readonly Grid? _plus;
     private double _plusSize, _plusMargin;
     /// <summary>재생 진행 막대 (#22) 바탕·채움.</summary>
     private readonly System.Windows.Shapes.Path? _soundMark;
@@ -196,39 +196,44 @@ internal sealed class DockItemView : Grid
         };
         iconHost.Children.Add(_notifyDot);
 
-        // ＋ 「지금 데스크톱에 새 창」 (#41): 0.3초 호버하면 보임. 화면 안쪽이면서 알림 점 반대쪽 모서리 (PM 10-22) —
+        // ＋ 「지금 데스크톱에 새 창」 (#41): 아이콘 위에서 0.1초 멈추면 보임. 화면 안쪽이면서 알림 점 반대쪽 모서리 (PM 10-22) —
         // 아래·오른쪽 독 = 위-왼쪽, 왼쪽 독 = 위-오른쪽, 위 독 = 아래-왼쪽. 아이콘과 함께 확대·튀기. 클릭 판정은 DockWindow 가 PlusContains 로.
         // 모양은 기획서 모형 (10-22): 아이콘 그림 모서리에 반쯤 걸친 동그라미(52px 아이콘에 20px), 흰(다크는 카드색) 바탕 + 얇은 테두리 + 작은 그림자,
         // 연보라 ＋ 는 글자 대신 선 두 개로 (글꼴마다 ＋ 가 위·왼쪽으로 치우쳐 보임 — 10-23 그림 확인).
-        _plusSize = Math.Clamp(icon * 0.38, 14, 24);
-        _plusMargin = -icon * 0.05; // 맥 스타일 아이콘은 그림이 칸 안쪽 약 10% 에서 시작 → 그림 모서리에 걸치게
-        double arm = Math.Round(_plusSize * 0.22) + 0.5;
+        // 선명하게 (사용자 10-23 「흐릿·계단」): 그림자 효과(DropShadowEffect)는 붙은 요소를 비트맵으로 굽고 확대 때 그 비트맵을 늘려서 흐려짐 →
+        // 그림자는 따로 뒤에 깐 흐린 동그라미에만, 동그라미·＋ 는 벡터 그대로. ＋ 는 가운데 정렬한 막대 두 개(선 Path 는 펜 두께 반만큼 위·왼쪽으로 밀림),
+        // 크기는 짝수 DIP + UseLayoutRounding 으로 화소에 맞춤.
+        _plusSize = Math.Round(Math.Clamp(icon * 0.38, 14, 24) / 2) * 2;
+        _plusMargin = -Math.Round(icon * 0.05); // 맥 스타일 아이콘은 그림이 칸 안쪽 약 10% 에서 시작 → 그림 모서리에 걸치게
+        double bar = Math.Round(_plusSize * 0.23) * 2, thick = _plusSize >= 18 ? 2 : 1.5;
         var accent = new SolidColorBrush(layout.IsLight ? Color.FromRgb(0x8A, 0x7C, 0xE0) : Color.FromRgb(0xB4, 0xA8, 0xFF));
-        _plus = new Border
+        _plus = new Grid
         {
             Width = _plusSize,
             Height = _plusSize,
-            CornerRadius = new CornerRadius(_plusSize / 2),
-            Background = new SolidColorBrush(layout.IsLight ? Colors.White : Color.FromRgb(0x1B, 0x1D, 0x27)),
-            BorderBrush = new SolidColorBrush(layout.IsLight ? Color.FromRgb(0xDF, 0xE2, 0xEE) : Color.FromRgb(0x3A, 0x3D, 0x4E)),
-            BorderThickness = new Thickness(1),
+            UseLayoutRounding = true,
+            SnapsToDevicePixels = true,
             VerticalAlignment = layout.Edge == DockEdge.Top ? VerticalAlignment.Bottom : VerticalAlignment.Top,
             HorizontalAlignment = layout.Edge == DockEdge.Left ? HorizontalAlignment.Right : HorizontalAlignment.Left,
             Margin = new Thickness(_plusMargin),
             Visibility = Visibility.Collapsed,
             Opacity = 0,
-            Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 6, ShadowDepth = 1.5, Direction = 270, Opacity = layout.IsLight ? 0.22 : 0.5 },
-            Child = new Path
-            {
-                Data = Geometry.Parse(FormattableString.Invariant($"M 0,{arm} L {2 * arm},{arm} M {arm},0 L {arm},{2 * arm}")),
-                Stroke = accent,
-                StrokeThickness = Math.Max(1.5, _plusSize * 0.09),
-                StrokeStartLineCap = PenLineCap.Round,
-                StrokeEndLineCap = PenLineCap.Round,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            },
         };
+        _plus.Children.Add(new Ellipse
+        {
+            Fill = Brushes.Black,
+            Opacity = layout.IsLight ? 0.16 : 0.45,
+            Margin = new Thickness(0, 1.5, 0, -1.5),
+            Effect = new System.Windows.Media.Effects.BlurEffect { Radius = 4 },
+        });
+        _plus.Children.Add(new Ellipse
+        {
+            Fill = new SolidColorBrush(layout.IsLight ? Colors.White : Color.FromRgb(0x1B, 0x1D, 0x27)),
+            Stroke = new SolidColorBrush(layout.IsLight ? Color.FromRgb(0xDF, 0xE2, 0xEE) : Color.FromRgb(0x3A, 0x3D, 0x4E)),
+            StrokeThickness = 1,
+        });
+        _plus.Children.Add(new Rectangle { Width = bar, Height = thick, RadiusX = thick / 2, RadiusY = thick / 2, Fill = accent, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
+        _plus.Children.Add(new Rectangle { Width = thick, Height = bar, RadiusX = thick / 2, RadiusY = thick / 2, Fill = accent, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
         iconHost.Children.Add(_plus);
         Children.Add(iconHost);
 
