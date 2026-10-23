@@ -102,8 +102,13 @@ $screen = @(
     "검색 창 열기·실제 입력 결과·속도 (#31)",
     "탐색기 최대화 재현 (#29) — 시험용 가상 데스크톱"
 )
+# 사용자 화면에 남은 시험 창 (PM 10-23): 시험 폴더 탐색기 창·시험 프로그램·시험 데이터 몽독을 닫고 개수를 남김
+Start-Sleep 2
+$left = @(& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "tools\leftover-check.ps1") -Close)
+$leftLine = if ($left.Count -gt 0) { $left[-1] } else { "남은 시험 창 확인 못 함" }
 $sum = @()
 $sum += "regress-all $head  $(Get-Date -Format 'yyyy-MM-dd HH:mm')  결과 폴더 $Out"
+$sum += "사용자 화면: $leftLine$(if ($left.Count -gt 1) { ' — ' + (($left | Select-Object -SkipLast 1) -join ' / ') })"
 $sum += "합계: 항목 $($rows.Count)개 중 통과 $(@($rows | Where-Object { $_.결과 -eq '통과' }).Count), 실패 $(@($rows | Where-Object { $_.결과 -eq '실패' }).Count) / 통과 줄 $(($rows | Measure-Object 통과줄 -Sum).Sum), 실패 줄 $(($rows | Measure-Object 실패줄 -Sum).Sum)"
 $sum += ($rows | Format-Table -AutoSize | Out-String).TrimEnd()
 $sum += ""
