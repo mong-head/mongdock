@@ -584,7 +584,7 @@ public sealed class NotificationService : INotificationService, IDisposable
         if (c is null) return null;
         DateTime local = row.ArrivalUtc == DateTime.MinValue ? DateTime.Now : row.ArrivalUtc.ToLocalTime();
         return new NotificationItem(row.Id, row.Aumid, AppName(row.Aumid), c.Title, c.Lines, local, c.Attribution,
-            c.AppLogoPath, c.AppLogoCircle, c.ImagePath);
+            c.AppLogoPath, c.AppLogoCircle, c.ImagePath, c.Launch, c.ActivationType);
     }
 
     /// <summary>AUMID → 표시 이름 (shell:AppsFolder, UI 스레드에서 캐시). 못 찾으면 AUMID 로 짐작.</summary>
@@ -619,6 +619,27 @@ public sealed class NotificationService : INotificationService, IDisposable
         if (item is null) return;
         try
         {
+            // 윈도우 알림처럼 그 알림의 화면으로 (protocol 주소·앱 알림 활성화, #34). 못 하면(늦게 알게 되면 UI 스레드에서) 앱 창을 앞으로/실행
+            var ui = System.Windows.Application.Current?.Dispatcher;
+            if (ToastActivation.TryActivate(item, () => { if (ui is null) OpenWindowOrLaunch(item); else ui.BeginInvoke(() => OpenWindowOrLaunch(item)); }))
+            {
+                Hide(item);
+                return;
+            }
+            OpenWindowOrLaunch(item);
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"알림 앱 열기 실패: {item.Aumid}", ex);
+        }
+        Hide(item);
+    }
+
+    /// <summary>알림 앱의 창을 앞으로 (없으면 앱 실행) — 알림 내용으로 갈 방법이 없을 때.</summary>
+    private void OpenWindowOrLaunch(NotificationItem item)
+    {
+        try
+        {
             var windows = _tracker.Windows;
             var match = windows.Where(w => string.Equals(w.Aumid, item.Aumid, StringComparison.OrdinalIgnoreCase)).ToList();
             if (match.Count == 0 && item.Aumid.Contains('!'))
@@ -646,7 +667,6 @@ public sealed class NotificationService : INotificationService, IDisposable
         {
             Log.Error($"알림 앱 열기 실패: {item.Aumid}", ex);
         }
-        Hide(item);
     }
 
     public void Hide(NotificationItem item)

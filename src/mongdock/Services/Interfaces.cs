@@ -386,7 +386,10 @@ public sealed record NotificationItem(
     string? Attribution,
     string? AppLogoPath,
     bool AppLogoCircle,
-    string? ImagePath)
+    string? ImagePath,
+    // 누르면 앱에 넘길 토스트 launch 값과 활성화 방식 (#34 — 개인 정보가 있을 수 있어 로그에 남기지 않음)
+    string? Launch = null,
+    string? ActivationType = null)
 {
     /// <summary>앱 아이콘·실행용 핀 (Kind=Aumid).</summary>
     public PinItem ToPin() => new() { Name = AppName, Kind = PinKind.Aumid, Target = Aumid };

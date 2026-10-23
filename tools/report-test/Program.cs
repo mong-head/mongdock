@@ -227,7 +227,8 @@ internal static class Program
         if (pillAt >= 0 && pillAt + 1 < args.Length) return PillShot(args[pillAt + 1], pillAt + 2 < args.Length && !args[pillAt + 2].StartsWith("--") ? args[pillAt + 2] : "now");
         int plusShotAt = Array.IndexOf(args, "--plusshot"); // 독 ＋ 모양 시안 A·B·C (+ 설치된 것) 그림: --plusshot <폴더>
         if (plusShotAt >= 0 && plusShotAt + 1 < args.Length) return PlusShot(args[plusShotAt + 1]);
-        if (Array.IndexOf(args, "--settingsguard") >= 0) return SettingsGuardCheck(); // #33 설정 파일 보호 (임시 폴더만)
+        if (Array.IndexOf(args, "--settingsguard") >= 0) return SettingsGuardCheck();
+        if (Array.IndexOf(args, "--toastclick") >= 0) return ToastClickCheck(); // #34 알림 클릭 → 알림 내용으로 (분석만, 실행 없음) // #33 설정 파일 보호 (임시 폴더만)
         if (Array.IndexOf(args, "--plusrule") >= 0) return PlusRuleCheck(); // #41 독 ＋ 「지금 데스크톱에 새 창」 판정 (가짜 창 목록, 실행 없음)
         if (Array.IndexOf(args, "--idlehide") >= 0) return IdleHideCheck(); // #39 자동 숨김 독: 커서 정지 5초면 숨김 (가짜 커서·시각, 창·입력 없음)
         if (Array.IndexOf(args, "--clipcheck") >= 0) return ClipCheck(); // 0.6.3 문제 신고 영역 캡처·붙여넣기 (#13) — 실제 캡처 도구·클립보드는 안 건드림
@@ -2707,6 +2708,32 @@ internal static class Program
             notice.SetValue(null, null);
             try { Directory.Delete(dir, true); } catch { }
         }
+        Console.WriteLine(bad == 0 ? "  모두 통과" : $"  실패 {bad}개");
+        return bad == 0 ? 0 : 1;
+    }
+
+    /// <summary>--toastclick (#34): 토스트 XML 의 launch·activationType 읽기, 열어도 되는 주소 판정, 활성화 서버 찾기(읽기만). 아무것도 실행하지 않음.</summary>
+    private static int ToastClickCheck()
+    {
+        int bad = 0;
+        void Ok(string what, bool ok) { Console.WriteLine($"  {(ok ? "통과" : "실패")}  {what}"); if (!ok) bad++; }
+        var asm = typeof(Mongdock.App).Assembly;
+        var tp = asm.GetType("Mongdock.Services.ToastPayload")!;
+        object? Parse(string xml) => tp.GetMethod("Parse", Any)!.Invoke(null, new object?[] { System.Text.Encoding.UTF8.GetBytes(xml), null });
+        string? Prop(object? c, string n) => c is null ? null : (string?)c.GetType().GetProperty(n)!.GetValue(c);
+        var proto = Parse("<toast launch=\"ms-screensketch:edit?source=x\" activationType=\"protocol\"><visual><binding template=\"ToastGeneric\"><text>캡처</text></binding></visual></toast>");
+        Ok("protocol 토스트 → activationType·launch 읽음", Prop(proto, "ActivationType") == "protocol" && Prop(proto, "Launch") == "ms-screensketch:edit?source=x");
+        var fg = Parse("<toast launch=\"action=open&amp;id=42\"><visual><binding template=\"ToastGeneric\"><text>t</text></binding></visual></toast>");
+        Ok("foreground 토스트 → launch 인자 (activationType 없음 = 기본)", Prop(fg, "ActivationType") is null && Prop(fg, "Launch") == "action=open&id=42");
+        var none = Parse("<toast><visual><binding template=\"ToastGeneric\"><text>Claude</text><text>세션 완료</text></binding></visual></toast>");
+        Ok("launch 없는 토스트(Claude 데스크톱 알림 모양) → 넘길 것 없음 = 지금처럼 앱 열기", none is not null && Prop(none, "Launch") is null);
+        var ta = asm.GetType("Mongdock.Services.ToastActivation")!;
+        bool Safe(string? u) => (bool)ta.GetMethod("SafeProtocol", Any)!.Invoke(null, new object?[] { u })!;
+        Ok("열어도 되는 주소: ms-screensketch:·windowsdefender:·https:", Safe("ms-screensketch:edit") && Safe("windowsdefender://threat") && Safe("https://example.com/x"));
+        Ok("안 여는 주소: file:·C:\\·셸·진단·스크립트·줄바꿈", !Safe("file:///C:/Windows/notepad.exe") && !Safe(@"C:\Windows\notepad.exe") && !Safe("shell:startup")
+            && !Safe("ms-msdt:/id x") && !Safe("search-ms:query=x") && !Safe("javascript:alert(1)") && !Safe("https://a\r\nb") && !Safe("") && !Safe(null));
+        Guid? Find(string aumid) => (Guid?)ta.GetMethod("FindActivator", Any)!.Invoke(null, new object[] { aumid });
+        Ok("없는 앱 → 활성화 서버 없음 (예외 없이)", Find("Nope.NotAnApp_0000000000000!App") is null && Find("") is null);
         Console.WriteLine(bad == 0 ? "  모두 통과" : $"  실패 {bad}개");
         return bad == 0 ? 0 : 1;
     }

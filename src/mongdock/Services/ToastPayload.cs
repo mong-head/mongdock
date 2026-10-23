@@ -13,7 +13,9 @@ internal sealed record ToastContent(
     string? AppLogoPath,
     bool AppLogoCircle,
     string? ImagePath,
-    string? Scenario = null)
+    string? Scenario = null,
+    string? Launch = null,
+    string? ActivationType = null)
 {
     /// <summary>사용자 조작이 필요한 토스트 (알람·미리 알림·전화·긴급) — 윈도우 팝업을 숨기면 안 됨.</summary>
     public bool IsInteractiveScenario => Scenario is { } s &&
@@ -93,8 +95,12 @@ internal static class ToastPayload
             if (texts.Count == 0 && attribution is null) return null;
             string? title = texts.Count > 0 ? texts[0] : null;
             string? scenario = ((string?)root.Attribute("scenario"))?.Trim();
+            // 누르면 앱에 넘길 것 (#34): <toast launch="…" activationType="protocol|foreground|background">
+            string? launch = (string?)root.Attribute("launch");
+            string? activation = ((string?)root.Attribute("activationType"))?.Trim();
             return new ToastContent(title, texts.Skip(1).ToList(), attribution, logo, circle, image,
-                string.IsNullOrEmpty(scenario) ? null : scenario);
+                string.IsNullOrEmpty(scenario) ? null : scenario,
+                string.IsNullOrEmpty(launch) ? null : launch, string.IsNullOrEmpty(activation) ? null : activation);
         }
         catch
         {
