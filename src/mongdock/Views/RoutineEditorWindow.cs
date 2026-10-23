@@ -423,12 +423,13 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         row.MouseLeftButtonUp += (_, e) =>
         {
             if (e.Handled) return;
+            if (_expanded != index) _advancedOpen = false; // 항목 더 보기는 펼친 항목마다 처음엔 접힘
             _expanded = _expanded == index ? -1 : index;
             Rebuild();
         };
         row.KeyDown += (_, e) =>
         {
-            if (e.Key is Key.Enter or Key.Space) { e.Handled = true; _expanded = _expanded == index ? -1 : index; Rebuild(); }
+            if (e.Key is Key.Enter or Key.Space) { e.Handled = true; if (_expanded != index) _advancedOpen = false; _expanded = _expanded == index ? -1 : index; Rebuild(); }
             else if (e.Key == Key.Delete) { e.Handled = true; RemoveAt(index); }
             else if (e.Key == Key.Up && Keyboard.Modifiers == ModifierKeys.Alt) { e.Handled = true; Move(index, index - 1); }
             else if (e.Key == Key.Down && Keyboard.Modifiers == ModifierKeys.Alt) { e.Handled = true; Move(index, index + 1); }
@@ -650,6 +651,8 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
             {
                 int natural = NaturalOpenKind(item);
                 int kind = OpenKind(item.Open) is var k && k > 0 ? k : natural;
+                // 브라우저에 「mail.google.com」처럼 앞부분 없이 적은 주소 → 파일이 아니라 웹 주소로 보임 (리뷰 10-23)
+                if (natural == 3 && kind == 1 && item.Open is { } o && o.IndexOfAny(new[] { '\\', ':' }) < 0 && o.Contains('.')) kind = 3;
                 var field = Field(item.Open ?? "");
                 var pick = CardButton(Loc.T("고르기…"));
                 pick.Height = 28;

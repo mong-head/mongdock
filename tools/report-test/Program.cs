@@ -2712,9 +2712,10 @@ internal static class Program
         // 다른 데스크톱에만 창이 있는 앱 누름 (사용자 10-23)
         {
             var dw = typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.DockWindow")!;
-            string C(bool all, int vis, int any, bool canNew) => dw.GetMethod("ClassifyElsewhere", Any)!.Invoke(null, new object[] { all, vis, any, canNew })!.ToString()!;
+            string C(bool all, int vis, int any, bool canNew, bool single = false) => dw.GetMethod("ClassifyElsewhere", Any)!.Invoke(null, new object[] { all, vis, any, canNew, single })!.ToString()!;
             Ok("「지금 데스크톱 앱만」 켬 + 크롬 창이 다른 데스크톱에만 → 여기서 새 창", C(false, 0, 2, true) == "NewHere");
-            Ok("켬 + 카카오톡(한 개만) 다른 데스크톱에만 → 그 창으로 이동", C(false, 0, 1, false) == "MoveThere");
+            Ok("켬 + 카카오톡(한 개만) 다른 데스크톱에만 → 그 창으로 이동", C(false, 0, 1, false, true) == "MoveThere");
+            Ok("켬 + 모르는 앱(워드 창 1개·스토어 앱) 다른 데스크톱에만 → 예전처럼 실행", C(false, 0, 1, false, false) == "Normal");
             Ok("끔(모든 데스크톱 창 보임) → 지금처럼 이동 + 알약", C(true, 0, 2, true) == "Normal" && C(true, 2, 2, true) == "Normal");
             Ok("켬 + 이 데스크톱에도 창 있음 → 지금처럼", C(false, 1, 3, true) == "Normal");
             Ok("켬 + 어디에도 창 없음 → 실행", C(false, 0, 0, true) == "Normal");

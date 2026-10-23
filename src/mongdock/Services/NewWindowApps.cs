@@ -48,6 +48,14 @@ internal static class NewWindowApps
         return w.ProcessPath;
     }
 
+    /// <summary>한 개만 켜지는 앱으로 아는 앱 (고정 목록 또는 배움). 모르는 앱·스토어 앱은 false — 독 클릭은 예전처럼 실행에 맡김.</summary>
+    internal static bool KnownSingle(PinItem? pin, IReadOnlyList<AppWindowInfo> windows)
+    {
+        if (ExeOf(pin, windows) is not { } exe) return false;
+        string name = ExeName(exe);
+        return Single.Contains(name) || NewWindowArg(exe) is null && Learned(name) == "single";
+    }
+
     /// <summary>＋를 보일지: 실행 중이고(창이 있음) 여러 창 앱일 때.</summary>
     internal static bool CanOpenNew(PinItem? pin, IReadOnlyList<AppWindowInfo> windows)
     {
