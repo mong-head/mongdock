@@ -121,8 +121,8 @@ internal sealed class DesktopPill : Window
                 Background = p.CardBackground,
                 BorderBrush = p.CardBorder,
                 BorderThickness = new Thickness(1),
-                Padding = first ? new Thickness(12, 4, 12, 5) : new Thickness(10, 2, 10, 3),
-                Margin = new Thickness(first ? 14 : 10, 0, 0, 0),
+                Padding = first ? new Thickness(14, 5, 14, 6) : new Thickness(12, 3, 12, 4), // 사용자 10-23 「안쪽 여백 더」
+                Margin = new Thickness(first ? 18 : 13, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 Cursor = Cursors.Hand,
                 Child = new TextBlock { Text = "← " + Loc.T("돌아가기"), Foreground = p.Text },
@@ -143,7 +143,7 @@ internal sealed class DesktopPill : Window
             BorderBrush = p.CardBorder,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(16),
-            Padding = first ? new Thickness(14, 8, from > 0 ? 8 : 14, 8) : new Thickness(14, 5, from > 0 ? 6 : 14, 5),
+            Padding = first ? new Thickness(20, 12, from > 0 ? 12 : 20, 12) : new Thickness(20, 8, from > 0 ? 9 : 20, 8), // 사용자 10-23 「양옆 더, 위아래 조금」— 한 줄은 높이 비례
             Margin = new Thickness(20, 4, 20, 26), // 그림자 자리
             Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 24, ShadowDepth = 6, Direction = 270, Opacity = p.ShadowOpacity + 0.06 },
             Child = row,
