@@ -1557,5 +1557,8 @@
  "이 항목은 기본값으로: {0}": "Reset to default: {0}",
  "저장한 설정을 읽지 못했어요 — {0}번째 줄 근처": "Couldn't read the saved settings — near line {0}",
  "저장한 설정을 읽지 못했어요": "Couldn't read the saved settings",
- "탭 {0}개 중 보고 있던 1개만 저장됐어요 · 다른 탭은 [+ 링크]로 넣어 주세요": "Only the tab you were viewing was saved (1 of {0}) · add other tabs with [+ Link]"
+ "탭 {0}개 중 보고 있던 1개만 저장됐어요 · 다른 탭은 [+ 링크]로 넣어 주세요": "Only the tab you were viewing was saved (1 of {0}) · add other tabs with [+ Link]",
+ "처음 설정으로": "Start fresh",
+ "처음 설정으로 되돌릴까요?": "Start fresh with default settings?",
+ "독·루틴·설정이 새로 설치한 것처럼 돼요. 지금 설정은 백업 파일로 남겨 두고 몽독이 다시 시작해요.": "The dock, routines and settings will be like a new install. Your current settings are kept in a backup file, and mongdock restarts."
 }

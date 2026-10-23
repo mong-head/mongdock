@@ -416,7 +416,7 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
             name.Inlines.Add(new System.Windows.Documents.Run(title));
             // 기본값에서 바꾼 항목은 이름 옆 작은 보라 점 (기획서 h)
             // 글자 점(●) — 처음엔 InlineUIContainer 안 원이었는데 실제 화면에서 한 번 안 그려짐(QA 10-23, 줄 안 UI 요소 배치 시점) → 글자로
-            if (Customized(item))
+            if (_original is not null && Customized(item)) // 새로 만들 때(지금 화면 저장·새 루틴)는 숨김 — 다 바꾼 것처럼 보임 (사용자 10-23)
                 name.Inlines.Add(new System.Windows.Documents.Run(" ●") { Foreground = P.SoftAccentText, FontSize = 8, BaselineAlignment = BaselineAlignment.Center, ToolTip = Loc.T("기본값에서 바꾼 항목") });
             string? extra = item.Kind switch
             {

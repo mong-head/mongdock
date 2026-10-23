@@ -21,6 +21,7 @@ internal static class SettingsFileNotice
         if (SettingsService.StartupNotice is { } startup)
         {
             SettingsService.StartupNotice = null;
+            bool restored = SettingsService.StartupRestored;
             // 독·상단바가 뜬 뒤에 (시작 직후 배너는 놓치기 쉬움)
             // 전체 화면·일시 정지라 못 띄우면 30초 뒤 다시 (최대 10번)
             int tries = 0;
@@ -28,27 +29,37 @@ internal static class SettingsFileNotice
             t.Tick += (_, _) =>
             {
                 t.Interval = TimeSpan.FromSeconds(30);
-                if (Show(startup) || ++tries >= 10) t.Stop();
+                if (Show(startup, restored) || ++tries >= 10) t.Stop();
             };
             t.Start();
         }
     }
 
     /// <summary>띄웠으면 true (같은 문구 1분 안 다시는 true 로 봄).</summary>
-    private static bool Show(string text)
+    private static bool Show(string text, bool offerReset = false)
     {
         if (_services is not { } services) return true;
         if (text == _lastText && DateTime.Now - _lastAt < TimeSpan.FromMinutes(1)) return true;
         try
         {
             var item = new NotificationItem(0, "", AppInfo.Name, Loc.T("설정"), new[] { text }, DateTime.Now, null, null, false, null);
-            var buttons = new[] { new NotificationBannerWindow.BannerButton(Loc.T("파일 열기"), () => OpenFile(services), Primary: true) };
+            var buttons = new List<NotificationBannerWindow.BannerButton> { new(Loc.T("파일 열기"), () => OpenFile(services), Primary: true) };
+            // 되돌렸을 때만: 일부러 지웠거나 처음부터 하고 싶으면 (사용자 10-23)
+            if (offerReset) buttons.Add(new(Loc.T("처음 설정으로"), () => _ = AskResetAsync(services)));
             if (!NotificationBannerWindow.ShowQuestion(item, null, buttons, TimeSpan.FromSeconds(12), () => { })) return false;
             _lastText = text;
             _lastAt = DateTime.Now;
             return true;
         }
         catch (Exception ex) { Log.Warn($"설정 파일 알림 실패: {ex.GetType().Name}"); return true; }
+    }
+
+    private static async Task AskResetAsync(AppServices services)
+    {
+        if (!await ConfirmCardWindow.AskAsync(services, Loc.T("처음 설정으로 되돌릴까요?"),
+                Loc.T("독·루틴·설정이 새로 설치한 것처럼 돼요. 지금 설정은 백업 파일로 남겨 두고 몽독이 다시 시작해요."), Loc.T("처음 설정으로")))
+            return;
+        if (services.Settings is SettingsService s && s.ResetToFirstRun()) App.Relaunch();
     }
 
     private static void OpenFile(AppServices services)

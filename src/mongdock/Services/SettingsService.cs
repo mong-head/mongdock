@@ -111,6 +111,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
             RecoveredFromCorrupt = true; // 되돌린 실행에서는 안 쓰는 그림 정리를 건너뜀 (되돌린 설정 뒤에 넣은 그림을 지우지 않게, 리뷰 10-23)
             Loc.Init(kept.Language); // 언어는 시작 때 settings.json 에서 읽는데 파일이 없었음
             StartupNotice = Loc.T("설정 파일이 없어져서 마지막 정상 설정으로 되돌렸어요");
+            StartupRestored = true;
             Current = kept;
             Save();
             return kept;
@@ -181,6 +182,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
                 // RecoveredFromCorrupt 는 true 그대로 — 되돌린 설정 뒤에 넣은 루틴·폴더 그림을 정리가 지우지 않게 (리뷰 10-23)
                 Loc.Init(restored.Language); // 언어는 시작 때 깨진 settings.json 에서 못 읽었음
                 StartupNotice = Loc.T("설정 파일에 고칠 수 없는 부분이 있어 마지막 정상 설정으로 되돌렸어요");
+                StartupRestored = true;
                 Current = restored;
                 Save();
                 return restored;
@@ -195,6 +197,41 @@ public sealed class SettingsService : ISettingsService, IDisposable
 
     /// <summary>시작할 때 사용자에게 한 줄로 알릴 것 (되돌림·기본값으로 바꾼 항목). App 이 배너로 보여 주고 지움.</summary>
     public static string? StartupNotice { get; set; }
+
+    /// <summary>이번 시작이 마지막 정상본으로 되돌린 것 (배너에 [처음 설정으로]).</summary>
+    public static bool StartupRestored { get; set; }
+
+    private bool _resetting;
+
+    /// <summary>
+    /// [처음 설정으로] (사용자 10-23): 지금 설정을 settings.json.reset-시각 으로 보관하고 settings.json·마지막 정상본을 치움 →
+    /// 호출한 쪽이 다시 시작하면 새 설치처럼 시작 (기본 설정·둘러보기). 그 뒤로 이 실행에서는 저장하지 않음 (끄면서 다시 만들지 않게). 성공하면 true.
+    /// </summary>
+    public bool ResetToFirstRun()
+    {
+        if (_memoryOnly) return false;
+        lock (_gate)
+        {
+            try
+            {
+                string keep = SettingsPath + ".reset-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                if (File.Exists(SettingsPath)) File.Copy(SettingsPath, keep, overwrite: true);
+                else File.WriteAllText(keep, JsonSerializer.Serialize(Current, JsonOptions)); // 파일이 없으면 지금 설정을 그대로
+                _resetting = true;
+                if (_watcher is not null) _watcher.EnableRaisingEvents = false;
+                File.Delete(SettingsPath);
+                if (File.Exists(LastGoodPath)) File.Delete(LastGoodPath);
+                Log.Warn($"처음 설정으로: 지금 설정은 {Path.GetFileName(keep)} 으로 보관, settings.json·마지막 정상본 치움 → 다시 시작");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("처음 설정으로 되돌리기 실패", ex);
+                _resetting = false;
+                return false;
+            }
+        }
+    }
 
     /// <summary>켜져 있을 때 직접 편집한 settings.json 을 못 읽었거나 일부만 읽음 — 한 줄 문구. UI 스레드.</summary>
     public event Action<string>? Problem;
@@ -582,6 +619,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
     public void Save()
     {
         if (_memoryOnly) return; // 둘러보기 장면 같은 메모리 전용 설정은 저장하지 않음
+        if (_resetting) return; // [처음 설정으로] 뒤 다시 시작하는 중 — 파일을 다시 만들지 않음
         bool saved = false;
         ImportTaskbarPinsIfRequested();
         lock (_gate)

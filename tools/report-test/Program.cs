@@ -2702,6 +2702,17 @@ internal static class Program
                 for (int i = 0; i < 40 && problems.Count == 0; i++) Thread.Sleep(100);
                 Ok($"값 하나만 틀림 → 「{problems.FirstOrDefault()}」", problems.Count > 0 && problems[0].StartsWith(Mongdock.Loc.T("이 항목은 기본값으로: {0}").Split(':')[0]));
             }
+
+            // [처음 설정으로] (사용자 10-23): 지금 설정은 .reset-시각 으로 보관, settings.json·마지막 정상본 치움, 그 뒤 저장 안 함 → 다시 시작하면 새 설치
+            using (var s5 = Open())
+            {
+                bool ok = s5.ResetToFirstRun();
+                s5.Save();
+                Ok("처음 설정으로 → 보관 파일 있음 · settings.json·lastgood 없음 · 그 뒤 저장해도 안 생김",
+                    ok && Directory.GetFiles(dir, "settings.json.reset-*").Length == 1 && !File.Exists(path) && !File.Exists(good));
+            }
+            using (var s6 = Open())
+                Ok("다시 시작하면 새 설치처럼 (기본 설정·둘러보기)", s6.CreatedThisRun && s6.Current.FirstRunTourPending);
         }
         finally
         {
@@ -4069,6 +4080,7 @@ internal static class Program
                     ("askend", "게임 루틴을 끝낼까요?", "헤드셋 (Galaxy Buds) 연결이 끊겼어요.", new[] { Btn("끝내기", true), Btn("계속") }),
                     ("similar", "업무 시작 루틴인가요?", "맞으면 함께 바꿀 것을 적용하고 끝내기도 쓸 수 있어요.", new[] { Btn("맞아요", true), Btn("아니요") }),
                     ("group", "헤드셋 (Galaxy Buds) 연결됐어요", "어떤 루틴을 열까요?", new[] { Btn("게임", true), Btn("음악"), Btn("안 열기"), Btn("다시 묻지 않기 ▸", small: true) }), // 같은 사건에 루틴 여럿 (§14-1)
+                    ("settings-restored", "설정", "설정 파일에 고칠 수 없는 부분이 있어 마지막 정상 설정으로 되돌렸어요", new[] { Btn("파일 열기", true), Btn("처음 설정으로") }), // #33 + 사용자 10-23 [처음 설정으로]
                     ("suggest", "루틴으로 만들어 둘까요?", (string)T("Mongdock.Services.RoutineSuggest").GetMethod("AskBody", Any)!.Invoke(null, new object[] { "평일 아침", "Outlook·Chrome·한글" })!, new[] { Btn("만들기", true), Btn("괜찮아요") }), // 루틴 추천 (§15)
                 })
                 {
