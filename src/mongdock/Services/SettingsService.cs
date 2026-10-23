@@ -110,7 +110,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
             Log.Warn("settings.json 없음 → 마지막 정상 설정(settings.lastgood.json)으로 되돌림 (처음부터 하려면 settings.lastgood.json 도 지우기)");
             RecoveredFromCorrupt = true; // 되돌린 실행에서는 안 쓰는 그림 정리를 건너뜀 (되돌린 설정 뒤에 넣은 그림을 지우지 않게, 리뷰 10-23)
             Loc.Init(kept.Language); // 언어는 시작 때 settings.json 에서 읽는데 파일이 없었음
-            StartupNotice = Loc.T("설정 파일이 없어져서 마지막 정상 설정으로 되돌렸어요");
+            StartupNotice = Loc.T("설정 파일이 없어 마지막 정상본으로 되돌렸어요");
             StartupRestored = true;
             Current = kept;
             Save();
@@ -181,7 +181,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
                 Log.Warn("settings.json 손상 → 마지막 정상 설정(settings.lastgood.json)으로 되돌림");
                 // RecoveredFromCorrupt 는 true 그대로 — 되돌린 설정 뒤에 넣은 루틴·폴더 그림을 정리가 지우지 않게 (리뷰 10-23)
                 Loc.Init(restored.Language); // 언어는 시작 때 깨진 settings.json 에서 못 읽었음
-                StartupNotice = Loc.T("설정 파일에 고칠 수 없는 부분이 있어 마지막 정상 설정으로 되돌렸어요");
+                StartupNotice = Loc.T("설정을 마지막 정상본으로 되돌렸어요");
                 StartupRestored = true;
                 Current = restored;
                 Save();

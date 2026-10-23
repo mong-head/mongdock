@@ -2674,7 +2674,7 @@ internal static class Program
             {
                 Ok($"깨진 파일 → 마지막 정상본으로 (핀 {s2.Current.Pins.Count}개, 루틴 {s2.Current.Routines.Count}개)", s2.Current.Pins.Count == 2 && s2.Current.Routines.Count == 1 && !s2.CreatedThisRun);
                 Ok("깨진 원본은 .corrupt-시각 으로 보관", Directory.GetFiles(dir, "settings.json.corrupt-*").Length == 1);
-                Ok($"한 줄 알림: 「{notice.GetValue(null)}」", (string?)notice.GetValue(null) == Mongdock.Loc.T("설정 파일에 고칠 수 없는 부분이 있어 마지막 정상 설정으로 되돌렸어요"));
+                Ok($"한 줄 알림: 「{notice.GetValue(null)}」", (string?)notice.GetValue(null) == Mongdock.Loc.T("설정을 마지막 정상본으로 되돌렸어요"));
                 Ok("되돌린 뒤 settings.json 은 다시 읽히는 정상 파일", File.ReadAllText(path).Contains("calc.exe"));
             }
 
@@ -2682,7 +2682,7 @@ internal static class Program
             notice.SetValue(null, null);
             using (var s3 = Open())
                 Ok("settings.json 없어짐 → 새 설치가 아니라 마지막 정상본 (둘러보기 안 탐)", s3.Current.Pins.Count == 2 && !s3.CreatedThisRun && !s3.Current.FirstRunTourPending
-                    && (string?)notice.GetValue(null) == Mongdock.Loc.T("설정 파일이 없어져서 마지막 정상 설정으로 되돌렸어요"));
+                    && (string?)notice.GetValue(null) == Mongdock.Loc.T("설정 파일이 없어 마지막 정상본으로 되돌렸어요"));
 
             // 켜져 있을 때 직접 고친 파일이 깨짐 → 알림(줄 번호) + 다음 저장 전에 .edited 보관
             notice.SetValue(null, null);
@@ -4080,7 +4080,7 @@ internal static class Program
                     ("askend", "게임 루틴을 끝낼까요?", "헤드셋 (Galaxy Buds) 연결이 끊겼어요.", new[] { Btn("끝내기", true), Btn("계속") }),
                     ("similar", "업무 시작 루틴인가요?", "맞으면 함께 바꿀 것을 적용하고 끝내기도 쓸 수 있어요.", new[] { Btn("맞아요", true), Btn("아니요") }),
                     ("group", "헤드셋 (Galaxy Buds) 연결됐어요", "어떤 루틴을 열까요?", new[] { Btn("게임", true), Btn("음악"), Btn("안 열기"), Btn("다시 묻지 않기 ▸", small: true) }), // 같은 사건에 루틴 여럿 (§14-1)
-                    ("settings-restored", "설정", "설정 파일에 고칠 수 없는 부분이 있어 마지막 정상 설정으로 되돌렸어요", new[] { Btn("파일 열기", true), Btn("처음 설정으로") }), // #33 + 사용자 10-23 [처음 설정으로]
+                    ("settings-restored", "설정", "설정을 마지막 정상본으로 되돌렸어요", new[] { Btn("파일 열기", true), Btn("처음 설정으로") }), // #33 + 사용자 10-23 [처음 설정으로]
                     ("suggest", "루틴으로 만들어 둘까요?", (string)T("Mongdock.Services.RoutineSuggest").GetMethod("AskBody", Any)!.Invoke(null, new object[] { "평일 아침", "Outlook·Chrome·한글" })!, new[] { Btn("만들기", true), Btn("괜찮아요") }), // 루틴 추천 (§15)
                 })
                 {
