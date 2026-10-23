@@ -80,6 +80,86 @@ internal sealed class DockItemView : Grid
         catch (InvalidOperationException) { return Rect.Empty; }
     }
 
+    /// <summary>＋ 모양 시안 (사용자 10-23 「이상하게 생김」): '0' = 설치된 것(흰 동그라미 반쯤 걸침), 'A' = 보라 배지, 'B' = 작은 흰 동그라미 안쪽, 'C' = 바깥 반투명 둥근 사각. report-test --plusshot 이 바꿔 가며 그림.</summary>
+    internal static char PlusLook = '0';
+
+    /// <summary>
+    /// ＋ 하나 만들기. size·margin = 칸 가장자리 기준 크기와 바깥(음수)/안쪽 여백 — PlusContains 가 같은 값으로 누름 원을 계산.
+    /// 맥 스타일 아이콘은 그림이 칸 안쪽 약 10% 에서 시작(art). 모두 벡터(효과는 뒤 그림자에만), 짝수 DIP + 화소 맞춤.
+    /// </summary>
+    private static Grid BuildPlus(DockLayout layout, double icon, char look, out double size, out double margin)
+    {
+        double art = Math.Round(icon * 0.1);
+        bool light = layout.IsLight;
+        var accent = new SolidColorBrush(light ? Color.FromRgb(0x8A, 0x7C, 0xE0) : Color.FromRgb(0xB4, 0xA8, 0xFF));
+        Brush plusBrush;
+        double bar, thick;
+        var g = new Grid { UseLayoutRounding = true, SnapsToDevicePixels = true };
+        void Shadow(double opacity, double blur, double drop) => g.Children.Add(new Ellipse
+        {
+            Fill = Brushes.Black, Opacity = opacity, Margin = new Thickness(0, drop, 0, -drop),
+            Effect = new System.Windows.Media.Effects.BlurEffect { Radius = blur },
+        });
+        switch (look)
+        {
+            case 'A': // 보라로 채운 배지 + 흰 ＋ 굵게, 1/3 만 아이콘 그림 안쪽
+                size = Math.Round(Math.Clamp(icon * 0.28, 12, 20) / 2) * 2;
+                margin = art - Math.Round(size * 2 / 3);
+                Shadow(light ? 0.18 : 0.4, 2, 1);
+                g.Children.Add(new Ellipse { Fill = new SolidColorBrush(light ? Color.FromRgb(0x8A, 0x7C, 0xE0) : Color.FromRgb(0x9C, 0x8E, 0xF2)), Stroke = Brushes.White, StrokeThickness = light ? 1.5 : 0 });
+                bar = Math.Round(size * 0.27) * 2; thick = Math.Max(2, Math.Round(size * 0.15));
+                plusBrush = Brushes.White;
+                break;
+            case 'B': // 흰 동그라미 작게, ＋ 굵고 크게, 2/3 가 아이콘 그림 안쪽, 그림자 약하게
+                size = Math.Round(Math.Clamp(icon * 0.30, 12, 22) / 2) * 2;
+                margin = art - Math.Round(size / 3);
+                Shadow(light ? 0.10 : 0.30, 2, 0.5);
+                g.Children.Add(new Ellipse
+                {
+                    Fill = new SolidColorBrush(light ? Colors.White : Color.FromRgb(0x2A, 0x2C, 0x38)),
+                    Stroke = new SolidColorBrush(light ? Color.FromRgb(0xDF, 0xE2, 0xEE) : Color.FromRgb(0x44, 0x47, 0x5A)),
+                    StrokeThickness = 1,
+                });
+                bar = Math.Round(size * 0.30) * 2; thick = Math.Max(2, Math.Round(size * 0.14));
+                plusBrush = accent;
+                break;
+            case 'C': // 동그라미 없이 아이콘 그림 바깥 빈 칸에 반투명 둥근 사각 (런치패드 삭제 배지 느낌)
+                size = Math.Round(Math.Clamp(icon * 0.30, 12, 22) / 2) * 2;
+                margin = art - size - 1;
+                g.Children.Add(new Border
+                {
+                    CornerRadius = new CornerRadius(Math.Round(size * 0.3)),
+                    Background = new SolidColorBrush(light ? Color.FromArgb(0x8C, 0x3A, 0x3D, 0x4C) : Color.FromArgb(0x59, 0xFF, 0xFF, 0xFF)),
+                });
+                bar = Math.Round(size * 0.27) * 2; thick = Math.Max(2, Math.Round(size * 0.13));
+                plusBrush = Brushes.White;
+                break;
+            default: // 설치된 것 (5f649f5)
+                size = Math.Round(Math.Clamp(icon * 0.38, 14, 24) / 2) * 2;
+                margin = -Math.Round(icon * 0.05);
+                Shadow(light ? 0.16 : 0.45, 4, 1.5);
+                g.Children.Add(new Ellipse
+                {
+                    Fill = new SolidColorBrush(light ? Colors.White : Color.FromRgb(0x1B, 0x1D, 0x27)),
+                    Stroke = new SolidColorBrush(light ? Color.FromRgb(0xDF, 0xE2, 0xEE) : Color.FromRgb(0x3A, 0x3D, 0x4E)),
+                    StrokeThickness = 1,
+                });
+                bar = Math.Round(size * 0.23) * 2; thick = size >= 18 ? 2 : 1.5;
+                plusBrush = accent;
+                break;
+        }
+        g.Width = size;
+        g.Height = size;
+        g.VerticalAlignment = layout.Edge == DockEdge.Top ? VerticalAlignment.Bottom : VerticalAlignment.Top;
+        g.HorizontalAlignment = layout.Edge == DockEdge.Left ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+        g.Margin = new Thickness(margin);
+        g.Visibility = Visibility.Collapsed;
+        g.Opacity = 0;
+        g.Children.Add(new Rectangle { Width = bar, Height = thick, RadiusX = thick / 2, RadiusY = thick / 2, Fill = plusBrush, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
+        g.Children.Add(new Rectangle { Width = thick, Height = bar, RadiusX = thick / 2, RadiusY = thick / 2, Fill = plusBrush, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
+        return g;
+    }
+
     /// <summary>＋가 보이는 중인지.</summary>
     public bool PlusVisible => _plusShown;
     private bool _plusShown;
@@ -203,37 +283,7 @@ internal sealed class DockItemView : Grid
         // 선명하게 (사용자 10-23 「흐릿·계단」): 그림자 효과(DropShadowEffect)는 붙은 요소를 비트맵으로 굽고 확대 때 그 비트맵을 늘려서 흐려짐 →
         // 그림자는 따로 뒤에 깐 흐린 동그라미에만, 동그라미·＋ 는 벡터 그대로. ＋ 는 가운데 정렬한 막대 두 개(선 Path 는 펜 두께 반만큼 위·왼쪽으로 밀림),
         // 크기는 짝수 DIP + UseLayoutRounding 으로 화소에 맞춤.
-        _plusSize = Math.Round(Math.Clamp(icon * 0.38, 14, 24) / 2) * 2;
-        _plusMargin = -Math.Round(icon * 0.05); // 맥 스타일 아이콘은 그림이 칸 안쪽 약 10% 에서 시작 → 그림 모서리에 걸치게
-        double bar = Math.Round(_plusSize * 0.23) * 2, thick = _plusSize >= 18 ? 2 : 1.5;
-        var accent = new SolidColorBrush(layout.IsLight ? Color.FromRgb(0x8A, 0x7C, 0xE0) : Color.FromRgb(0xB4, 0xA8, 0xFF));
-        _plus = new Grid
-        {
-            Width = _plusSize,
-            Height = _plusSize,
-            UseLayoutRounding = true,
-            SnapsToDevicePixels = true,
-            VerticalAlignment = layout.Edge == DockEdge.Top ? VerticalAlignment.Bottom : VerticalAlignment.Top,
-            HorizontalAlignment = layout.Edge == DockEdge.Left ? HorizontalAlignment.Right : HorizontalAlignment.Left,
-            Margin = new Thickness(_plusMargin),
-            Visibility = Visibility.Collapsed,
-            Opacity = 0,
-        };
-        _plus.Children.Add(new Ellipse
-        {
-            Fill = Brushes.Black,
-            Opacity = layout.IsLight ? 0.16 : 0.45,
-            Margin = new Thickness(0, 1.5, 0, -1.5),
-            Effect = new System.Windows.Media.Effects.BlurEffect { Radius = 4 },
-        });
-        _plus.Children.Add(new Ellipse
-        {
-            Fill = new SolidColorBrush(layout.IsLight ? Colors.White : Color.FromRgb(0x1B, 0x1D, 0x27)),
-            Stroke = new SolidColorBrush(layout.IsLight ? Color.FromRgb(0xDF, 0xE2, 0xEE) : Color.FromRgb(0x3A, 0x3D, 0x4E)),
-            StrokeThickness = 1,
-        });
-        _plus.Children.Add(new Rectangle { Width = bar, Height = thick, RadiusX = thick / 2, RadiusY = thick / 2, Fill = accent, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
-        _plus.Children.Add(new Rectangle { Width = thick, Height = bar, RadiusX = thick / 2, RadiusY = thick / 2, Fill = accent, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
+        _plus = BuildPlus(layout, icon, PlusLook, out _plusSize, out _plusMargin);
         iconHost.Children.Add(_plus);
         Children.Add(iconHost);
 

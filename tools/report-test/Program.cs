@@ -225,6 +225,8 @@ internal static class Program
         if (volAt >= 0) return VolumeCheck(volAt + 1 < args.Length ? args[volAt + 1] : null); // 0.8 앱별 볼륨·볼륨 표시 (#21) — 실제 볼륨은 안 바꿈
         int pillAt = Array.IndexOf(args, "--pillshot"); // #41 데스크톱 알약·독 ＋ 를 화면 밖에서 그림으로 (창·입력 없음): --pillshot <폴더> [접두어]
         if (pillAt >= 0 && pillAt + 1 < args.Length) return PillShot(args[pillAt + 1], pillAt + 2 < args.Length && !args[pillAt + 2].StartsWith("--") ? args[pillAt + 2] : "now");
+        int plusShotAt = Array.IndexOf(args, "--plusshot"); // 독 ＋ 모양 시안 A·B·C (+ 설치된 것) 그림: --plusshot <폴더>
+        if (plusShotAt >= 0 && plusShotAt + 1 < args.Length) return PlusShot(args[plusShotAt + 1]);
         if (Array.IndexOf(args, "--plusrule") >= 0) return PlusRuleCheck(); // #41 독 ＋ 「지금 데스크톱에 새 창」 판정 (가짜 창 목록, 실행 없음)
         if (Array.IndexOf(args, "--idlehide") >= 0) return IdleHideCheck(); // #39 자동 숨김 독: 커서 정지 5초면 숨김 (가짜 커서·시각, 창·입력 없음)
         if (Array.IndexOf(args, "--clipcheck") >= 0) return ClipCheck(); // 0.6.3 문제 신고 영역 캡처·붙여넣기 (#13) — 실제 캡처 도구·클립보드는 안 건드림
@@ -2555,6 +2557,59 @@ internal static class Program
             foreach (var sc in new[] { 1.0, 1.25, 2.0 }) // 2.0 = 확대된 아이콘 크기 근처에서 선명한지
                 SaveScaled(sheet, sheet.DesiredSize, sc, Path.Combine(dir, $"{prefix}-plus-{(int)(sc * 100)}.png"));
         }
+        return 0;
+    }
+
+    /// <summary>--plusshot (사용자 10-23 ＋ 「이상하게 생김」): DockItemView.PlusLook 시안마다 아래·오른쪽 독 × 아이콘 52·72 × 라이트·다크, 크롬 아이콘, 125%. 창·입력 없음.</summary>
+    private static int PlusShot(string dir)
+    {
+        Directory.CreateDirectory(dir);
+        var app = new Mongdock.App();
+        Mongdock.Loc.Init(_lang);
+        app.InitializeComponent();
+        app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        var asm = typeof(Mongdock.App).Assembly;
+        var viewType = asm.GetType("Mongdock.Views.DockItemView")!;
+        var lookField = viewType.GetField("PlusLook", Any)!;
+        string exe = File.Exists(@"C:\Program Files\Google\Chrome\Application\chrome.exe") ? @"C:\Program Files\Google\Chrome\Application\chrome.exe" : @"C:\Windows\explorer.exe";
+        foreach (var look in new[] { '0', 'A', 'B', 'C' })
+        {
+            lookField.SetValue(null, look);
+            var sheet = new System.Windows.Controls.Grid { Background = Brushes.White };
+            int row = 0;
+            foreach (var theme in new[] { "light", "dark" })
+                foreach (var edge in new[] { DockEdge.Bottom, DockEdge.Right })
+                {
+                    sheet.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = GridLength.Auto });
+                    int col = 0;
+                    foreach (var size in new[] { 52.0, 72.0 })
+                    {
+                        if (row == 0) sheet.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = GridLength.Auto });
+                        var ds = new DockSettings { Theme = theme == "dark" ? DockTheme.Dark : DockTheme.Light, IconSize = size, Edge = edge };
+                        var layout = Mongdock.ViewModels.DockLayout.From(ds, theme == "light");
+                        var icon = new IconService().GetIcon(new PinItem { Kind = PinKind.Exe, Target = exe }, IconStyle.Mac);
+                        var vm = new Mongdock.ViewModels.DockItemViewModel("t" + exe, null, false, "app", icon) { IsRunning = true };
+                        var view = (FrameworkElement)Activator.CreateInstance(viewType, vm, layout)!;
+                        viewType.GetMethod("ShowPlus")!.Invoke(view, new object[] { true });
+                        if (viewType.GetField("_plus", Any)!.GetValue(view) is UIElement plus) { plus.BeginAnimation(UIElement.OpacityProperty, null); plus.Opacity = 1; }
+                        var cell = new System.Windows.Controls.Border
+                        {
+                            Padding = new Thickness(22), Margin = new Thickness(4), CornerRadius = new CornerRadius(16),
+                            Background = new SolidColorBrush(theme == "dark" ? Color.FromRgb(0x2A, 0x2A, 0x30) : Color.FromRgb(0xEC, 0xEC, 0xF2)),
+                            Child = view, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top,
+                        };
+                        System.Windows.Controls.Grid.SetRow(cell, row);
+                        System.Windows.Controls.Grid.SetColumn(cell, col++);
+                        sheet.Children.Add(cell);
+                    }
+                    row++;
+                }
+            sheet.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            sheet.Arrange(new Rect(sheet.DesiredSize));
+            sheet.UpdateLayout();
+            SaveScaled(sheet, sheet.DesiredSize, 1.25, Path.Combine(dir, $"plus3-{(look == '0' ? "now" : look.ToString())}.png"));
+        }
+        lookField.SetValue(null, '0');
         return 0;
     }
 
