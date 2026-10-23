@@ -621,12 +621,12 @@ public sealed class NotificationService : INotificationService, IDisposable
         {
             // 윈도우 알림처럼 그 알림의 화면으로 (protocol 주소·앱 알림 활성화, #34). 못 하면(늦게 알게 되면 UI 스레드에서) 앱 창을 앞으로/실행
             var ui = System.Windows.Application.Current?.Dispatcher;
-            if (ToastActivation.TryActivate(item, () => { if (ui is null) OpenWindowOrLaunch(item); else ui.BeginInvoke(() => OpenWindowOrLaunch(item)); }))
+            if (ToastActivation.TryActivate(item, allowLaunch => { if (ui is null) OpenWindowOrLaunch(item, allowLaunch); else ui.BeginInvoke(() => OpenWindowOrLaunch(item, allowLaunch)); }))
             {
                 Hide(item);
                 return;
             }
-            OpenWindowOrLaunch(item);
+            OpenWindowOrLaunch(item, allowLaunch: true);
         }
         catch (Exception ex)
         {
@@ -636,7 +636,7 @@ public sealed class NotificationService : INotificationService, IDisposable
     }
 
     /// <summary>알림 앱의 창을 앞으로 (없으면 앱 실행) — 알림 내용으로 갈 방법이 없을 때.</summary>
-    private void OpenWindowOrLaunch(NotificationItem item)
+    private void OpenWindowOrLaunch(NotificationItem item, bool allowLaunch)
     {
         try
         {
@@ -652,6 +652,10 @@ public sealed class NotificationService : INotificationService, IDisposable
                 var w = match.FirstOrDefault(x => x.OnCurrentDesktop) ?? match[0];
                 _launcher.Activate(w.Hwnd);
                 Log.Info($"알림 클릭 → 창 활성화: {item.Aumid}");
+            }
+            else if (!allowLaunch)
+            {
+                Log.Info($"알림 클릭: 창이 아직 없음 — 앱이 뜨는 중일 수 있어 다시 실행하지 않음: {item.Aumid}");
             }
             else if (AppsFolder.RestoreAumidCase(item.Aumid) is { } real)
             {

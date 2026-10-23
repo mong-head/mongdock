@@ -21,6 +21,7 @@ internal static class ToastActivation
     private static readonly HashSet<string> BlockedSchemes = new(StringComparer.OrdinalIgnoreCase)
     {
         "file", "javascript", "vbscript", "data", "shell", "ms-msdt", "search-ms", "search", "ms-search", "ms-officecmd", "ms-cxh", "ms-cxh-full", "res", "mk",
+        "ms-appinstaller", "mhtml", "its", "ms-its", "hcp", "ms-word", "ms-excel", "ms-powerpoint", "ms-visio", "ms-access", "ms-project", "ms-publisher", "ms-spd", "ms-infopath",
     };
 
     /// <summary>protocol 활성화로 열어도 되는 주소인지 (스킴이 있고 막힌 스킴이 아님, 한 줄).</summary>
@@ -30,22 +31,34 @@ internal static class ToastActivation
         int colon = launch.IndexOf(':');
         if (colon < 2) return false; // "C:\…" 같은 드라이브 경로도 막음
         string scheme = launch[..colon];
-        if (!scheme.All(c => char.IsAsciiLetterOrDigit(c) || c is '+' or '-' or '.') || !char.IsAsciiLetter(scheme[0])) return false;
+        if (!scheme.All(c => char.IsAsciiLetterOrDigit(c) || c is '+' or '-') || !char.IsAsciiLetter(scheme[0])) return false; // 「.」 없음 — exefile 같은 ProgID 이름 막기
         return !BlockedSchemes.Contains(scheme);
+    }
+
+    /// <summary>윈도우 LaunchUri 처럼 등록된 URL 프로토콜(HKCR\스킴 의 "URL Protocol" 값)만. http·https 는 늘 됨.</summary>
+    private static bool IsUrlProtocol(string scheme)
+    {
+        if (scheme.Equals("http", StringComparison.OrdinalIgnoreCase) || scheme.Equals("https", StringComparison.OrdinalIgnoreCase)) return true;
+        try
+        {
+            using var key = Registry.ClassesRoot.OpenSubKey(scheme);
+            return key?.GetValue("URL Protocol") is not null;
+        }
+        catch { return false; }
     }
 
     /// <summary>
     /// 알림의 화면으로 보내는 일을 맡았으면 true (protocol 은 바로, launch 인자는 별도 STA 스레드에서 활성화 서버를 찾아 부름 —
     /// 못 찾거나 실패하면 그 스레드에서 fallback 을 부름. UI 스레드를 막지 않음). 맡을 수 없으면 false → 호출한 쪽이 지금처럼.
     /// </summary>
-    public static bool TryActivate(NotificationItem item, Action fallback)
+    public static bool TryActivate(NotificationItem item, Action<bool> fallback)
     {
         try
         {
             string? launch = item.Launch;
             if (string.Equals(item.ActivationType, "protocol", StringComparison.OrdinalIgnoreCase))
             {
-                if (!SafeProtocol(launch))
+                if (launch is null || !SafeProtocol(launch) || !IsUrlProtocol(launch[..launch.IndexOf(':')]))
                 {
                     Log.Warn($"알림 클릭: 열지 않는 주소 형식 ({item.Aumid})");
                     return false;
@@ -69,19 +82,20 @@ internal static class ToastActivation
                 bool ok = FindActivator(item.Aumid) is { } clsid && CallActivator(clsid, item.Aumid, launch);
                 if (ok) Log.Info($"알림 클릭 → 앱 알림 활성화 (인자 {launch.Length}자): {item.Aumid}");
                 else Log.Info($"알림 클릭: 알림 활성화 서버 없음·실패 → 앱 열기: {item.Aumid}");
-                if (!ok) Fallback();
+                if (!ok) Fallback(allowLaunch: true);
                 else Interlocked.Exchange(ref settled, 1);
             }) { IsBackground = true, Name = "mongdock-toast-activate" };
             th.SetApartmentState(ApartmentState.STA);
             th.Start();
             // 앱의 활성화 서버가 응답하지 않으면(멈춘 앱) 3초 뒤 앱 창이라도 앞으로 — 한 번만
-            _ = Task.Delay(3000).ContinueWith(_ => { if (Volatile.Read(ref settled) == 0) { Log.Warn("알림 활성화: 앱이 3초 안에 답하지 않음 → 앱 열기"); Fallback(); } });
+            // 늦게 뜨는 앱(활성화 서버가 앱을 띄우는 중)일 수 있어 새로 실행하지 않고 이미 있는 창만 앞으로 (두 번 실행 방지, 리뷰 10-23)
+            _ = Task.Delay(3000).ContinueWith(_ => { if (Volatile.Read(ref settled) == 0) { Log.Warn("알림 활성화: 앱이 3초 안에 답하지 않음 → 있는 창만 앞으로"); Fallback(allowLaunch: false); } });
             return true;
 
-            void Fallback()
+            void Fallback(bool allowLaunch)
             {
                 if (Interlocked.Exchange(ref settled, 1) != 0) return;
-                try { fallback(); } catch (Exception ex) { Log.Warn($"알림 앱 열기 실패: {ex.GetType().Name}"); }
+                try { fallback(allowLaunch); } catch (Exception ex) { Log.Warn($"알림 앱 열기 실패: {ex.GetType().Name}"); }
             }
         }
         catch (Exception ex)
@@ -111,7 +125,9 @@ internal static class ToastActivation
                 var doc = XDocument.Load(manifest);
                 string app = aumid[(aumid.IndexOf('!') + 1)..];
                 var appEl = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "Application" && string.Equals((string?)e.Attribute("Id"), app, StringComparison.OrdinalIgnoreCase));
-                var attr = (appEl ?? doc.Root)?.Descendants().Select(e => e.Attribute("ToastActivatorCLSID")).FirstOrDefault(a => a is not null);
+                // 그 앱 항목 안에서만 (못 찾으면 앱이 하나뿐인 패키지일 때만 전체에서)
+                bool single = doc.Descendants().Count(e => e.Name.LocalName == "Application") == 1;
+                var attr = (appEl ?? (single ? doc.Root : null))?.Descendants().Select(e => e.Attribute("ToastActivatorCLSID")).FirstOrDefault(a => a is not null);
                 if (attr is not null && Guid.TryParse(attr.Value, out var g)) return g;
             }
             catch (Exception ex) { Log.Warn($"패키지 매니페스트 읽기 실패: {ex.GetType().Name}"); }

@@ -107,7 +107,9 @@ public sealed class SettingsService : ISettingsService, IDisposable
         // #33 ① 파일이 없어졌는데 마지막 정상본이 있으면 새 설치가 아니라 그걸로 (둘러보기·새 설치 기본값 안 탐)
         if (!File.Exists(SettingsPath) && TryLastGood() is { } kept)
         {
-            Log.Warn("settings.json 없음 → 마지막 정상 설정(settings.lastgood.json)으로 되돌림");
+            Log.Warn("settings.json 없음 → 마지막 정상 설정(settings.lastgood.json)으로 되돌림 (처음부터 하려면 settings.lastgood.json 도 지우기)");
+            RecoveredFromCorrupt = true; // 되돌린 실행에서는 안 쓰는 그림 정리를 건너뜀 (되돌린 설정 뒤에 넣은 그림을 지우지 않게, 리뷰 10-23)
+            Loc.Init(kept.Language); // 언어는 시작 때 settings.json 에서 읽는데 파일이 없었음
             StartupNotice = Loc.T("설정 파일이 없어져서 마지막 정상 설정으로 되돌렸어요");
             Current = kept;
             Save();
@@ -176,7 +178,8 @@ public sealed class SettingsService : ISettingsService, IDisposable
             if (TryLastGood() is { } restored)
             {
                 Log.Warn("settings.json 손상 → 마지막 정상 설정(settings.lastgood.json)으로 되돌림");
-                RecoveredFromCorrupt = false; // 진짜 설정으로 시작 — 그림 정리 등 그대로
+                // RecoveredFromCorrupt 는 true 그대로 — 되돌린 설정 뒤에 넣은 루틴·폴더 그림을 정리가 지우지 않게 (리뷰 10-23)
+                Loc.Init(restored.Language); // 언어는 시작 때 깨진 settings.json 에서 못 읽었음
                 StartupNotice = Loc.T("설정 파일에 고칠 수 없는 부분이 있어 마지막 정상 설정으로 되돌렸어요");
                 Current = restored;
                 Save();
@@ -199,6 +202,7 @@ public sealed class SettingsService : ISettingsService, IDisposable
     private void WriteLastGood(string text)
     {
         if (_memoryOnly || _dir.Length == 0) return;
+        if (text.Length < 200) return; // 「{}」 같은 사실상 빈 파일로 정상본을 덮지 않음 (보통 수 KB)
         try { AtomicFile.WriteAllText(LastGoodPath, text); }
         catch (Exception ex) { Log.Warn($"마지막 정상 설정 보관 실패: {ex.GetType().Name}"); }
     }
@@ -208,8 +212,9 @@ public sealed class SettingsService : ISettingsService, IDisposable
         try
         {
             if (!File.Exists(LastGoodPath)) return null;
-            var s = Deserialize(ReadAllTextShared(LastGoodPath), out _, out var fixes);
+            var s = Deserialize(ReadAllTextShared(LastGoodPath), out string repaired, out var fixes);
             if (fixes.Count > 0) return null; // 정상본이 아니면 쓰지 않음
+            Migrate(repaired, s); // 옛 버전 때 보관한 것이면 지금 형식으로
             s.LastRunVersion = WhatsNew.CurrentText;
             return s;
         }
@@ -619,6 +624,8 @@ public sealed class SettingsService : ISettingsService, IDisposable
             }
         }
 
+        // 몽독이 저장한 내용 = 정상본 (재부팅 없이 며칠 켜 둬도 마지막 정상본이 오래되지 않게, 리뷰 10-23)
+        if (saved && _lastText is { } savedText) WriteLastGood(savedText);
         // 독 ↔ 상단바처럼 UI 안에서 바꾼 설정도 다른 창에 반영되게 알림.
         if (saved) RunOnUi(() => SettingsChanged?.Invoke(this, EventArgs.Empty));
     }
