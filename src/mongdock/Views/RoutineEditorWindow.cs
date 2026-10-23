@@ -112,6 +112,19 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         w.Activate();
     }
 
+    /// <summary>
+    /// 편집 창에서 고칠 수 있는 것을 원본 루틴에 (이름·아이콘·열 곳·항목·더 보기). id·단축키·마지막 실행 등 편집 창 밖의 값은 그대로.
+    /// 0.8.5 회귀: 「열 곳」을 고를 수 있게 한 뒤에도 여기서 옮기지 않아 기존 루틴의 열 곳이 저장되지 않았음 (사용자 10-23 「PE」) — report-test --plusrule 이 확인.
+    /// </summary>
+    internal static void ApplyEdits(RoutineDef original, RoutineDef edited)
+    {
+        original.Name = edited.Name;
+        original.Icon = edited.Icon;
+        original.Desktop = edited.Desktop;
+        original.Items = edited.Items;
+        original.More = edited.More;
+    }
+
     private static RoutineDef Copy(RoutineDef r) => JsonSerializer.Deserialize<RoutineDef>(JsonSerializer.Serialize(r)) ?? new RoutineDef();
 
     /// <summary>시험 그림에서만: 이 항목의 세부를 펼친 채로.</summary>
@@ -1041,10 +1054,7 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         }
         else
         {
-            _original.Name = _r.Name;
-            _original.Icon = _r.Icon;
-            _original.Items = _r.Items;
-            _original.More = _r.More;
+            ApplyEdits(_original, _r);
             foreach (var pin in Services.Settings.Current.Pins.Where(p => p.Kind == PinKind.Routine && p.Target == _original.Id)) pin.Name = _r.Name;
             Services.Settings.Save();
             Log.Info($"루틴 편집 저장: 항목 {_r.Items.Count}개");

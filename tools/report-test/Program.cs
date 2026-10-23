@@ -2624,6 +2624,24 @@ internal static class Program
         Console.WriteLine($"  저장  {path}");
     }
 
+    /// <summary>편집 창 저장 흉내: 저장된 설정 읽기 → 편집 복사본에서 열 곳만 바꿈 → RoutineEditorWindow.ApplyEdits → 설정 쓰기 → 다시 읽기.</summary>
+    private static bool RoutineEditSaved(string savedMode, Mongdock.Models.RoutineDesktopMode to)
+    {
+        string json = "{ \"settingsVersion\": 4, \"routines\": [ { \"id\": \"pe\", \"name\": \"PE\", \"items\": [ { \"kind\": \"App\", \"target\": \"notepad.exe\" } ], \"desktop\": { \"mode\": \"" + savedMode + "\" } } ] }";
+        var t = typeof(Mongdock.App).Assembly.GetType("Mongdock.Services.SettingsService")!;
+        var deser = t.GetMethod("Deserialize", Any)!;
+        var opts = (System.Text.Json.JsonSerializerOptions)t.GetField("JsonOptions", Any)!.GetValue(null)!;
+        var s1 = (Mongdock.Models.Settings)deser.Invoke(null, new object?[] { json, null, null })!;
+        var original = s1.Routines[0];
+        var working = System.Text.Json.JsonSerializer.Deserialize<Mongdock.Models.RoutineDef>(System.Text.Json.JsonSerializer.Serialize(original))!; // 편집 창과 같은 복사
+        working.Desktop.Mode = to;
+        typeof(Mongdock.App).Assembly.GetType("Mongdock.Views.RoutineEditorWindow")!.GetMethod("ApplyEdits", Any)!.Invoke(null, new object[] { original, working });
+        string saved = System.Text.Json.JsonSerializer.Serialize(s1, opts);
+        var s2 = (Mongdock.Models.Settings)deser.Invoke(null, new object?[] { saved, null, null })!;
+        Console.WriteLine($"        저장 {savedMode} → {to}: 다시 읽은 값 {s2.Routines[0].Desktop.Mode}");
+        return s2.Routines[0].Desktop.Mode == to;
+    }
+
     private static bool RoutineModesKept()
     {
         const string json = """
@@ -2693,6 +2711,8 @@ internal static class Program
         }
         // 루틴 열 곳 (#41 리뷰 10-23): 설정을 읽을 때 저장한 값 그대로 — 예전엔 읽을 때마다 기본값으로 덮어씀
         Ok("루틴 열 곳: new·current 는 그대로, index 는 새 데스크톱, 없으면 기본(지금)", RoutineModesKept());
+        Ok("기존 루틴 열 곳 새→지금 바꾸고 저장 → 다시 읽어도 지금 (0.8.5 회귀, 「PE」)", RoutineEditSaved("New", Mongdock.Models.RoutineDesktopMode.Current));
+        Ok("기존 루틴 열 곳 지금→새 바꾸고 저장 → 다시 읽어도 새", RoutineEditSaved("Current", Mongdock.Models.RoutineDesktopMode.New));
         Console.WriteLine(bad == 0 ? "  모두 통과" : $"  실패 {bad}개");
         return bad == 0 ? 0 : 1;
     }
