@@ -3,8 +3,28 @@
   "versions": [
     {
       "version": "0.8.5",
-      "date": "2026-10-22",
+      "date": "2026-10-23",
       "entries": [
+        {
+          "kind": "improvement",
+          "text": "루틴을 이제 기본으로 지금 데스크톱에 열어요. 루틴 편집에서 「새 데스크톱」을 고르면 빈 화면에 따로 펼쳐요. 위치 선택지 「그대로」는 「창 자리 그대로」로 이름을 바꿨어요.",
+          "text_en": "Routines now open on the current desktop by default. Pick \"New desktop\" in the routine editor to spread them on a fresh desktop. The position option \"As is\" is now \"Keep window position\"."
+        },
+        {
+          "kind": "improvement",
+          "text": "몽독이 다른 데스크톱으로 옮겨 갈 때 화면 위에 「데스크톱 2로 이동했어요」가 잠깐 떠요. [← 돌아가기]를 누르면 원래 데스크톱으로 돌아가요.",
+          "text_en": "When mongdock switches you to another desktop, a short \"Moved to desktop 2\" note appears at the top. Press [← Back] to return."
+        },
+        {
+          "kind": "feature",
+          "text": "독의 크롬·탐색기처럼 창을 여러 개 띄울 수 있는 앱 아이콘에 마우스를 잠깐 멈추면 ＋가 나와요. 누르면 지금 데스크톱에 새 창이 떠요.",
+          "text_en": "Rest the mouse on a dock icon of an app that can open several windows (Chrome, File Explorer…) and a ＋ appears. Click it to open a new window on the current desktop."
+        },
+        {
+          "kind": "improvement",
+          "text": "열린 루틴을 독에서 다시 누르면, 창이 다 보일 땐 한꺼번에 최소화하고 다른 데스크톱에 있으면 그리로 가요. 「루틴 끝내기」는 「루틴 닫기」로 이름을 바꿨어요.",
+          "text_en": "Clicking an open routine in the dock again minimizes all its windows when they are all showing, or takes you to its desktop. \"End routine\" is now \"Close routine\"."
+        },
         {
           "kind": "improvement",
           "text": "자동 숨김 독을 꺼낸 채 마우스를 3초 동안 움직이지 않으면 독이 다시 숨어요(전에는 5초).",
