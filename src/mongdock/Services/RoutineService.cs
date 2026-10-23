@@ -1072,7 +1072,7 @@ internal static class RoutineService
     internal static void ReadPlacement(IntPtr hwnd, RoutineItem item)
     {
         var monitor = ResolveMonitor(null, hwnd);
-        item.Monitor = new RoutineMonitor { Mode = RoutineMonitorMode.Index, Index = monitor.Number, DeviceName = monitor.DeviceName };
+        item.Monitor = RoutineMonitors.ForSave(monitor, Monitors.GetAll().Count); // 모니터가 하나면 「주 모니터」 (원격 가상 화면 DISPLAY21 등을 남기지 않음)
         if (WindowPosApi.IsZoomed(hwnd))
         {
             item.Placement = new RoutinePlacement { Mode = RoutinePlacementMode.Max };

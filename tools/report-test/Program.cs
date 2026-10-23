@@ -2719,6 +2719,45 @@ internal static class Program
             Ok("켬 + 이 데스크톱에도 창 있음 → 지금처럼", C(false, 1, 3, true) == "Normal");
             Ok("켬 + 어디에도 창 없음 → 실행", C(false, 0, 0, true) == "Normal");
         }
+        // 루틴 편집 화면 (기획서 h, 사용자 10-23)
+        {
+            var asm2 = typeof(Mongdock.App).Assembly;
+            var rectT = asm2.GetType("Mongdock.Native.RECT")!;
+            var miT = asm2.GetType("Mongdock.Services.MonitorInfo")!;
+            object Mon(string dev, int left, int width, bool primary, int number)
+            {
+                var r = Activator.CreateInstance(rectT, left, 0, left + width, 1080)!;
+                return miT.GetConstructors(Any).First().Invoke(new object[] { dev, r, r, 1.0, primary, number });
+            }
+            var listT = typeof(List<>).MakeGenericType(miT);
+            System.Collections.IList Mons(params object[] ms) { var l = (System.Collections.IList)Activator.CreateInstance(listT)!; foreach (var m in ms) l.Add(m); return l; }
+            var rm = asm2.GetType("Mongdock.Services.RoutineMonitors")!;
+            var right = Mon(@"\\.\DISPLAY1", 0, 1920, true, 1);      // 주 모니터 (왼쪽)
+            var left2 = Mon(@"\\.\DISPLAY2", 1920, 2560, false, 2);  // 오른쪽
+            var two = Mons(right, left2);
+            string Label(object m, System.Collections.IList all) => (string)rm.GetMethod("Label", Any)!.Invoke(null, new object[] { m, all })!;
+            object? Target(RoutineMonitor? m, System.Collections.IList all) => rm.GetMethod("Target", Any)!.Invoke(null, new object?[] { m, all });
+            bool Missing(RoutineMonitor? m, System.Collections.IList all) => (bool)rm.GetMethod("Missing", Any)!.Invoke(null, new object?[] { m, all })!;
+            RoutineMonitor ForSave(object m, int count) => (RoutineMonitor)rm.GetMethod("ForSave", Any)!.Invoke(null, new object[] { m, count })!;
+            string Dev(object? m) => m is null ? "(없음)" : (string)miT.GetProperty("DeviceName")!.GetValue(m)!;
+            Ok($"모니터 이름: 「{Label(right, two)}」·「{Label(left2, two)}」 (장치 번호 대신 배치 순서, 주 모니터 표시)", Label(right, two) == Mongdock.Loc.F($"모니터 {1}") + " " + Mongdock.Loc.T("(주)") && Label(left2, two) == Mongdock.Loc.F($"모니터 {2}"));
+            var remote = new RoutineMonitor { Mode = RoutineMonitorMode.Index, Index = 21, DeviceName = @"\\.\DISPLAY21" };
+            Ok($"원격에서 저장한 「21」 → 지금 없음, 주 모니터로 ({Dev(Target(remote, two))})", Missing(remote, two) && Dev(Target(remote, two)) == @"\\.\DISPLAY1");
+            Ok("모니터 하나일 때 저장 → 「주 모니터」 (장치 이름 안 남김)", ForSave(Mon(@"\\.\DISPLAY21", 0, 1920, true, 21), 1) is { Mode: RoutineMonitorMode.Primary, DeviceName: null });
+            Ok("모니터 둘일 때 저장 → 그 모니터", ForSave(left2, 2) is { Mode: RoutineMonitorMode.Index, Index: 2, DeviceName: @"\\.\DISPLAY2" });
+            Ok("그대로 → 대상 없음", Target(null, two) is null);
+            var rew = asm2.GetType("Mongdock.Views.RoutineEditorWindow")!;
+            int Natural(RoutineItem i) => (int)rew.GetMethod("NaturalOpenKind", Any)!.Invoke(null, new object[] { i })!;
+            Ok("함께 열 것: 크롬 = 웹 주소, 탐색기·VS Code = 폴더, 한글 = 파일",
+                Natural(new RoutineItem { Target = @"C:\x\chrome.exe" }) == 3 && Natural(new RoutineItem { Target = @"C:\Windows\explorer.exe" }) == 2
+                && Natural(new RoutineItem { Target = @"C:\x\Code.exe" }) == 2 && Natural(new RoutineItem { Target = @"C:\x\Hwp.exe" }) == 1);
+            string Chip(RoutineItem i) => (string)rew.GetMethod("Chip", Any)!.Invoke(null, new object[] { i })!;
+            bool Custom(RoutineItem i) => (bool)rew.GetMethod("Customized", Any)!.Invoke(null, new object[] { i })!;
+            var plain = new RoutineItem { Kind = RoutineItemKind.App, Target = @"C:\x\chrome.exe" };
+            var maxMail = new RoutineItem { Kind = RoutineItemKind.App, Target = @"C:\x\chrome.exe", Placement = new RoutinePlacement { Mode = RoutinePlacementMode.Max }, Open = "https://www.mail.google.com/x" };
+            Ok($"요약 칩: 바꾼 것만 「{Chip(maxMail)}」, 기본이면 칩 없음", Chip(plain) == "" && Chip(maxMail) == Mongdock.Loc.T("최대화") + " · mail.google.com");
+            Ok("보라 점: 기본 항목 없음, 바꾼 항목 있음", !Custom(plain) && Custom(maxMail) && Custom(new RoutineItem { Kind = RoutineItemKind.App, Target = "a.exe", DelayMs = 2000 }));
+        }
         // 루틴 열 곳 (#41 리뷰 10-23): 설정을 읽을 때 저장한 값 그대로 — 예전엔 읽을 때마다 기본값으로 덮어씀
         Ok("루틴 열 곳: new·current 는 그대로, index 는 새 데스크톱, 없으면 기본(지금)", RoutineModesKept());
         Ok("기존 루틴 열 곳 새→지금 바꾸고 저장 → 다시 읽어도 지금 (0.8.5 회귀, 「PE」)", RoutineEditSaved("New", Mongdock.Models.RoutineDesktopMode.Current));
@@ -2980,6 +3019,13 @@ internal static class Program
             Check($"크롬 (안 켜진 줄 앎) → {Args(web, false)}", Args(web, false) == "--profile-directory=\"Profile 1\" --new-window https://mail.company.com");
             web.Args = "--new-window";
             Check($"실행 옵션에 이미 --new-window → 한 번만 ({Args(web, true)})", Args(web, true) == "--profile-directory=\"Profile 1\" --new-window https://mail.company.com");
+            // 계정 (사용자 10-23 필수 시험): 안 고름·고른 계정이 없어짐 → 실행 인자에 --profile-directory 없음 = 크롬이 기본(마지막에 쓴) 계정으로
+            web.Args = null; web.Profile = null;
+            Check($"계정 안 고름 → 기본 계정 ({Args(web, false)})", Args(web, false) == "--new-window https://mail.company.com");
+            web.Profile = "Profile 9";
+            Check($"저장한 계정이 사라짐 → 기본 계정 ({Args(web, false)})", Args(web, false) == "--new-window https://mail.company.com");
+            var link = new RoutineItem { Kind = RoutineItemKind.Url, Target = "https://mail.company.com", Profile = "Profile 9" };
+            Check("링크 항목도 사라진 계정 → 인자 없음", Arg(link) is null);
             var code = new RoutineItem { Kind = RoutineItemKind.App, Target = @"C:\x\Code.exe", Open = @"C:\dev\mongdock" };
             Check($"VS Code 안 켜짐 → -n 없음 ({Args(code, false)})", Args(code, false) == @"C:\dev\mongdock");
             Check($"VS Code 켜짐 → -n ({Args(code, true)})", Args(code, true) == @"-n C:\dev\mongdock");
@@ -3834,6 +3880,20 @@ internal static class Program
                 var editor = New("Mongdock.Views.RoutineEditorWindow", services, work, work, false);
                 if (expand >= 0) editor.GetType().GetMethod("ExpandForTest", Any)!.Invoke(editor, new object[] { expand, true });
                 Save((FrameworkElement)editor.Content, expand < 0 ? "editor" : "editor-detail");
+                editor.Close();
+            }
+
+            // 2-0) 기획서 h (10-23): 세부 3줄 + 「▸ 더 보기」 접힘, 바꾼 뒤 「바뀐 내용 있음」·[저장] 강조·「저장하면 항목 설정도 함께 저장돼요」
+            {
+                var editor = New("Mongdock.Views.RoutineEditorWindow", services, work, work, false);
+                var et = editor.GetType();
+                et.GetMethod("ExpandForTest", Any)!.Invoke(editor, new object[] { 1, false });
+                Save((FrameworkElement)editor.Content, "editor-detail-h");
+                var wr = (RoutineDef)et.GetField("_r", Any)!.GetValue(editor)!;
+                wr.Items[1].Placement = new RoutinePlacement { Mode = RoutinePlacementMode.Max };
+                et.GetMethod("Rebuild", Any)!.Invoke(editor, null);
+                et.GetMethod("UpdateDirty", Any)!.Invoke(editor, null);
+                Save((FrameworkElement)editor.Content, "editor-dirty");
                 editor.Close();
             }
 

@@ -1542,5 +1542,14 @@
  "새 데스크톱에 열었어요 · {0}": "Auf neuem Desktop geöffnet · {0}",
  "데스크톱 {0}로 이동했어요 · {1}": "Zu Desktop {0} gewechselt · {1}",
  "데스크톱 {0}로 이동했어요": "Zu Desktop {0} gewechselt",
- "새 창을 열 수 없는 앱이에요 · 아이콘을 누르면 그 창으로 가요": "Diese App kann kein weiteres Fenster öffnen · Klick aufs Symbol bringt dich zum Fenster"
+ "새 창을 열 수 없는 앱이에요 · 아이콘을 누르면 그 창으로 가요": "Diese App kann kein weiteres Fenster öffnen · Klick aufs Symbol bringt dich zum Fenster",
+ "바뀐 내용 있음": "Ungespeicherte Änderungen",
+ "저장하면 항목 설정도 함께 저장돼요": "Beim Speichern werden auch die Elementeinstellungen gespeichert",
+ "파일 경로": "Dateipfad",
+ "폴더 경로": "Ordnerpfad",
+ "저장한 모니터가 지금 없어요 · 주 모니터에 열려요": "Der gespeicherte Monitor ist nicht verbunden · öffnet auf dem Hauptmonitor",
+ "다른 창 위치": "Weitere Positionen",
+ "실행 옵션": "Startoptionen",
+ "기본값에서 바꾼 항목": "Gegenüber Standard geändert",
+ "(주)": "(Haupt)"
 }

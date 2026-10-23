@@ -69,12 +69,8 @@ internal static class RoutineIcons
     /// <summary>위치 요약 "모니터 2 · 왼쪽 반".</summary>
     public static string PlacementText(RoutineItem item)
     {
-        string? monitor = (item.Monitor?.Mode ?? RoutineMonitorMode.Keep) switch
-        {
-            RoutineMonitorMode.Primary => Loc.T("주 모니터"),
-            RoutineMonitorMode.Index => Loc.F($"모니터 {item.Monitor!.Index}"),
-            _ => null,
-        };
+        // 모니터는 「모니터 1·2 (주)」 배치 순서 이름, 모니터가 하나면 안 씀 (장치 번호 「21」 안 보임 — 사용자 10-23)
+        string? monitor = RoutineMonitors.Summary(item.Monitor);
         string place = PlacementName(item.Placement?.Mode ?? RoutinePlacementMode.Keep);
         return monitor is null ? place : $"{monitor} · {place}";
     }

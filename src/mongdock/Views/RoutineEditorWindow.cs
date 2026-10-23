@@ -139,7 +139,16 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
     {
         _original = original;
         _r = working;
-        Body.Children.Add(Heading(original is null ? Loc.T("새 루틴") : Loc.T("루틴 편집")));
+        // 제목 + 「바뀐 내용 있음」 (저장 안 한 변경이 있을 때만, 기획서 h)
+        var heading = Heading(original is null ? Loc.T("새 루틴") : Loc.T("루틴 편집"));
+        var headRow = new StackPanel { Orientation = Orientation.Horizontal };
+        headRow.Children.Add(heading);
+        _dirtyChip = Pill(Loc.T("바뀐 내용 있음"));
+        _dirtyChip.Margin = new Thickness(10, 0, 0, 12);
+        _dirtyChip.VerticalAlignment = VerticalAlignment.Center;
+        _dirtyChip.Visibility = Visibility.Collapsed;
+        headRow.Children.Add(_dirtyChip);
+        Body.Children.Add(headRow);
 
         // 이름 + 아이콘
         _name = Field(_r.Name);
@@ -199,7 +208,14 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
             DockPanel.SetDock(delete, Dock.Left);
             bottom.Children.Add(delete);
         }
+        // 「저장하면 항목 설정도 함께 저장돼요」 — 바뀐 게 있을 때만 (항목 세부를 바꾼 뒤 [저장] 을 안 누르고 닫는 일이 없게)
+        _dirtyNote = Muted(Loc.T("저장하면 항목 설정도 함께 저장돼요"), 11.5);
+        _dirtyNote.Margin = new Thickness(0, 10, 0, 0);
+        _dirtyNote.HorizontalAlignment = HorizontalAlignment.Right;
+        _dirtyNote.Visibility = Visibility.Collapsed;
+        Body.Children.Add(_dirtyNote);
         var save = CardButton(Loc.T("저장"), primary: true);
+        _saveButton = save;
         save.Margin = new Thickness(8, 0, 0, 0);
         save.Click += (_, _) => Save();
         var cancel = CardButton(Loc.T("취소"));
@@ -215,6 +231,12 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         RefreshIcon();
         Rebuild();
         Closed += (_, _) => IconFiles.Cleanup(Services.Settings); // 취소했거나 바꾼 뒤 안 쓰게 된 루틴 그림
+        // 바뀐 내용 표시: 열 때 모습과 지금 모습(이름 칸 포함)을 0.4초마다 비교 — 항목 세부·더 보기·열 곳 어디서 바꿔도 같은 방법
+        _baseline = Snapshot();
+        _dirtyTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+        _dirtyTimer.Tick += (_, _) => UpdateDirty();
+        _dirtyTimer.Start();
+        Closed += (_, _) => _dirtyTimer.Stop();
         Loaded += (_, _) =>
         {
             if (!focusName) return;
@@ -222,6 +244,25 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
             Keyboard.Focus(_name);
             _name.SelectAll();
         };
+    }
+
+    private readonly Border _dirtyChip;
+    private readonly TextBlock _dirtyNote;
+    private readonly Button _saveButton;
+    private readonly System.Windows.Threading.DispatcherTimer _dirtyTimer;
+    private string _baseline = "";
+    private bool _dirty;
+
+    private string Snapshot() => _name.Text.Trim() + "|" + JsonSerializer.Serialize(_r);
+
+    private void UpdateDirty()
+    {
+        // 새 루틴은 처음부터 「저장해야 생김」 이라 표시하지 않음
+        bool dirty = _original is not null && Snapshot() != _baseline;
+        if (dirty == _dirty) return;
+        _dirty = dirty;
+        _dirtyChip.Visibility = _dirtyNote.Visibility = dirty ? Visibility.Visible : Visibility.Collapsed;
+        _saveButton.Effect = dirty ? new System.Windows.Media.Effects.DropShadowEffect { Color = ((SolidColorBrush)P.SoftAccentText).Color, BlurRadius = 12, ShadowDepth = 0, Opacity = 0.55 } : null;
     }
 
     // ───────────────────────── 위쪽 ─────────────────────────
@@ -343,16 +384,21 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
             name.Inlines.Clear();
             string title = item.Kind == RoutineItemKind.Url && item.Target.Length == 0 ? Loc.T("링크") : RoutineService.ItemName(item);
             name.Inlines.Add(new System.Windows.Documents.Run(title));
+            // 기본값에서 바꾼 항목은 이름 옆 작은 보라 점 (기획서 h)
+            if (Customized(item))
+                name.Inlines.Add(new System.Windows.Documents.InlineUIContainer(new System.Windows.Shapes.Ellipse { Width = 6, Height = 6, Fill = P.SoftAccentText, Margin = new Thickness(6, 0, 0, 1), ToolTip = Loc.T("기본값에서 바꾼 항목") }) { BaselineAlignment = BaselineAlignment.Center });
             string? extra = item.Kind switch
             {
-                RoutineItemKind.App => item.Open,
                 RoutineItemKind.Path => item.Target,
                 RoutineItemKind.Url => RoutineLinks.Summary(item), // "Chrome — mail.company.com 외 2개 탭"
                 _ => null,
             };
             if (missing) extra = Loc.T("이 PC에 없음 — 건너뛰어요");
             if (!string.IsNullOrEmpty(extra)) name.Inlines.Add(new System.Windows.Documents.Run("  " + extra) { Foreground = P.SubText, FontSize = 11.5 });
-            ((TextBlock)pill.Child).Text = RoutineIcons.PlacementText(item);
+            // 요약 칩: 바꾼 것만 「모니터 2 · 최대화 · mail.google.com」, 없으면 칩 없음
+            string chip = Chip(item);
+            ((TextBlock)pill.Child).Text = chip;
+            pill.Visibility = chip.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
         Header();
         name.Tag = (Action)Header;
@@ -579,6 +625,11 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         return root;
     }
 
+    /// <summary>
+    /// 항목 세부 (기획서 h, 사용자 10-23): 펼치면 자주 쓰는 줄만 — 함께 열 것(그 앱에 맞는 것 하나: 브라우저 = 웹 주소, 탐색기·VS Code = 폴더, 그 밖 = 파일),
+    /// 계정(크롬 계열 프로필이 2개 이상일 때만), 창 위치 4개(창 자리 그대로·최대화·왼쪽 반·오른쪽 반), 모니터(2대 이상일 때만, 「모니터 1·2 (주)」).
+    /// 나머지(기다리기·켜져 있으면·다른 창 위치·고급 실행 옵션)는 항목 안 「▸ 더 보기」.
+    /// </summary>
     private UIElement Detail(RoutineItem item)
     {
         var box = new StackPanel();
@@ -597,58 +648,29 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         {
             case RoutineItemKind.App:
             {
-                int kind = OpenKind(item.Open);
+                int natural = NaturalOpenKind(item);
+                int kind = OpenKind(item.Open) is var k && k > 0 ? k : natural;
                 var field = Field(item.Open ?? "");
                 var pick = CardButton(Loc.T("고르기…"));
                 pick.Height = 28;
                 pick.MinWidth = 0;
                 pick.Margin = new Thickness(6, 0, 0, 0);
-                var line = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
+                pick.Visibility = kind is 1 or 2 ? Visibility.Visible : Visibility.Collapsed;
+                var line = new DockPanel();
                 DockPanel.SetDock(pick, Dock.Right);
                 line.Children.Add(pick);
-                line.Children.Add(Hinted(field, Loc.T("파일·폴더 경로 또는 웹 주소")));
-                void ShowField() { line.Visibility = kind == 0 ? Visibility.Collapsed : Visibility.Visible; pick.Visibility = kind is 1 or 2 ? Visibility.Visible : Visibility.Collapsed; }
+                line.Children.Add(Hinted(field, kind == 3 ? "https://…" : kind == 2 ? Loc.T("폴더 경로") : Loc.T("파일 경로")));
                 field.TextChanged += (_, _) => { item.Open = string.IsNullOrWhiteSpace(field.Text) ? null : field.Text.Trim(); Changed(); };
-                pick.Click += (_, _) =>
-                {
-                    if (PickPath(kind == 2) is { } path) field.Text = path;
-                };
-                var open = new StackPanel();
-                open.Children.Add(Segments(new[] { Loc.T("없음"), Loc.TC("one", "파일"), Loc.T("폴더"), Loc.T("웹 주소") }, kind, i =>
-                {
-                    kind = i;
-                    if (i == 0) field.Text = "";
-                    ShowField();
-                }));
-                open.Children.Add(line);
-                ShowField();
-                // 고급: 실행 옵션 (접힘)
-                var argsField = Field(item.Args ?? "");
-                argsField.FontFamily = new FontFamily("Consolas");
-                argsField.TextChanged += (_, _) => item.Args = string.IsNullOrWhiteSpace(argsField.Text) ? null : argsField.Text.Trim();
-                argsField.Visibility = _advancedOpen ? Visibility.Visible : Visibility.Collapsed;
-                var advanced = new TextBlock { Text = Loc.T("고급: 실행 옵션") + (_advancedOpen ? " ▾" : " ▸"), FontSize = 12, Foreground = P.SubText, Cursor = Cursors.Hand, Margin = new Thickness(0, 0, 0, 4) };
-                advanced.MouseLeftButtonUp += (_, _) =>
-                {
-                    _advancedOpen = !_advancedOpen;
-                    argsField.Visibility = _advancedOpen ? Visibility.Visible : Visibility.Collapsed;
-                    advanced.Text = Loc.T("고급: 실행 옵션") + (_advancedOpen ? " ▾" : " ▸");
-                };
-                var advancedLine = new StackPanel { Orientation = Orientation.Horizontal };
-                advancedLine.Children.Add(advanced);
-                var argsHelp = HelpBubble(Loc.T("앱이 받는 실행 옵션을 그대로 넘겨요."), new[] { "--new-window", "--profile-directory=\"Profile 1\"" }, HelpUrl("routine-options"));
-                argsHelp.Margin = new Thickness(6, 0, 0, 4);
-                advancedLine.Children.Add(argsHelp);
-                open.Children.Add(advancedLine);
-                open.Children.Add(argsField);
-                box.Children.Add(LabeledRow(Loc.T("함께 열 것"), open, lw, 6));
-                if (ProfileRow(item, lw) is { } accountRow) box.Children.Add(accountRow);
+                pick.Click += (_, _) => { if (PickPath(kind == 2) is { } path) field.Text = path; };
+                string label = kind switch { 3 => Loc.T("웹 주소"), 2 => Loc.T("폴더"), _ => Loc.TC("one", "파일") };
+                box.Children.Add(LabeledRow(label, line, lw, 8));
+                if (ProfileRow(item, lw) is { } accountRow) box.Children.Add(accountRow); // 계정은 밖 — 프로필 2개 이상일 때만 (ProfileRow 가 판단)
                 break;
             }
             case RoutineItemKind.Url:
             {
                 box.Children.Add(LinkDetail(item, Changed, lw));
-                if (ProfileRow(item, lw) is { } accountRow) box.Children.Add(accountRow); // 기본 브라우저가 크로미움 계열일 때만
+                if (ProfileRow(item, lw) is { } accountRow) box.Children.Add(accountRow); // 기본 브라우저가 크로미움 계열이고 프로필 2개 이상일 때만
                 break;
             }
             default:
@@ -669,51 +691,127 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
             }
         }
 
-        // 모니터: 그대로 / 주 모니터 / 1, 2, …
-        var monitors = Monitors.GetAll().Select(m => m.Number).Where(n => n > 0).OrderBy(n => n).ToList();
-        if (item.Monitor is { Mode: RoutineMonitorMode.Index } saved && !monitors.Contains(saved.Index)) monitors.Add(saved.Index);
-        var monitorLabels = new List<string> { Loc.T("그대로"), Loc.T("주 모니터") };
-        monitorLabels.AddRange(monitors.Select(n => n.ToString()));
-        int monitorAt = (item.Monitor?.Mode ?? RoutineMonitorMode.Keep) switch
-        {
-            RoutineMonitorMode.Primary => 1,
-            RoutineMonitorMode.Index => 2 + Math.Max(0, monitors.IndexOf(item.Monitor!.Index)),
-            _ => 0,
-        };
-        box.Children.Add(LabeledRow(Loc.T("모니터"), Segments(monitorLabels, monitorAt, i =>
-        {
-            item.Monitor = i switch
-            {
-                0 => null,
-                1 => new RoutineMonitor { Mode = RoutineMonitorMode.Primary },
-                _ => new RoutineMonitor { Mode = RoutineMonitorMode.Index, Index = monitors[i - 2], DeviceName = Monitors.GetAll().FirstOrDefault(m => m.Number == monitors[i - 2])?.DeviceName },
-            };
-            Changed();
-        }), lw, 2));
-
-        // 창 위치
-        var modes = new[] { RoutinePlacementMode.Keep, RoutinePlacementMode.Max, RoutinePlacementMode.Left, RoutinePlacementMode.Right, RoutinePlacementMode.Top, RoutinePlacementMode.Bottom, RoutinePlacementMode.Saved, RoutinePlacementMode.Min };
-        int placeAt = Array.IndexOf(modes, item.Placement?.Mode ?? RoutinePlacementMode.Keep);
-        box.Children.Add(LabeledRow(Loc.T("창 위치"), Segments(modes.Select(RoutineIcons.PlacementName).ToList(), Math.Max(0, placeAt), i =>
+        // 창 위치 — 자주 쓰는 4개 (위 반·아래 반·저장한 위치·최소화는 더 보기). 한쪽에서 고르면 다른 쪽은 꺼진 채로 다시 그림
+        var mainModes = new[] { RoutinePlacementMode.Keep, RoutinePlacementMode.Max, RoutinePlacementMode.Left, RoutinePlacementMode.Right };
+        var otherModes = new[] { RoutinePlacementMode.Top, RoutinePlacementMode.Bottom, RoutinePlacementMode.Saved, RoutinePlacementMode.Min };
+        var mode = item.Placement?.Mode ?? RoutinePlacementMode.Keep;
+        void SetPlacement(RoutinePlacementMode m)
         {
             var rect = item.Placement?.Rect;
-            item.Placement = modes[i] == RoutinePlacementMode.Keep ? null : new RoutinePlacement { Mode = modes[i], Rect = modes[i] == RoutinePlacementMode.Saved ? rect ?? new[] { 0.1, 0.1, 0.8, 0.8 } : null };
+            item.Placement = m == RoutinePlacementMode.Keep ? null : new RoutinePlacement { Mode = m, Rect = m == RoutinePlacementMode.Saved ? rect ?? new[] { 0.1, 0.1, 0.8, 0.8 } : null };
             Changed();
-        }), lw, 2));
+            Rebuild();
+        }
+        box.Children.Add(LabeledRow(Loc.T("창 위치"), Segments(mainModes.Select(RoutineIcons.PlacementName).ToList(), Array.IndexOf(mainModes, mode), i => SetPlacement(mainModes[i])), lw, 2));
+
+        // 모니터 — 2대 이상일 때만 (하나면 줄 없음, 열 때도 주 모니터)
+        var ordered = RoutineMonitors.Ordered();
+        if (ordered.Count >= 2)
+        {
+            var target = RoutineMonitors.Target(item.Monitor, ordered);
+            var labels = new List<string> { Loc.T("그대로") };
+            labels.AddRange(ordered.Select(m => RoutineMonitors.Label(m, ordered)));
+            int at = target is null ? 0 : 1 + ordered.FindIndex(m => string.Equals(m.DeviceName, target.DeviceName, StringComparison.OrdinalIgnoreCase));
+            var col = new StackPanel();
+            col.Children.Add(Segments(labels, at, i =>
+            {
+                item.Monitor = i == 0 ? null : new RoutineMonitor { Mode = RoutineMonitorMode.Index, Index = ordered[i - 1].Number, DeviceName = ordered[i - 1].DeviceName };
+                Changed();
+            }));
+            if (RoutineMonitors.Missing(item.Monitor, ordered))
+            {
+                var note = Muted(Loc.T("저장한 모니터가 지금 없어요 · 주 모니터에 열려요"), 11.5);
+                note.Margin = new Thickness(0, 0, 0, 4);
+                col.Children.Add(note);
+            }
+            box.Children.Add(LabeledRow(Loc.T("모니터"), col, lw, 2));
+        }
+
+        // ▸ 더 보기 (항목): 기다리기 · 켜져 있으면 · 다른 창 위치 · 고급 실행 옵션
+        var more = new StackPanel { Visibility = _advancedOpen ? Visibility.Visible : Visibility.Collapsed, Margin = new Thickness(0, 6, 0, 0) };
+        var moreParts = new List<string> { Loc.T("기다리기") };
+        if (item.Kind == RoutineItemKind.App) moreParts.Add(Loc.T("켜져 있으면"));
+        moreParts.Add(Loc.T("다른 창 위치"));
+        if (item.Kind == RoutineItemKind.App) moreParts.Add(Loc.T("실행 옵션"));
+        var moreHead = new TextBlock { FontSize = 12, Foreground = P.SubText, Cursor = Cursors.Hand, Margin = new Thickness(0, 4, 0, 0), Focusable = true };
+        void PaintHead()
+        {
+            moreHead.Inlines.Clear();
+            moreHead.Inlines.Add(new System.Windows.Documents.Run((_advancedOpen ? "▾ " : "▸ ") + Loc.T("더 보기")));
+            if (!_advancedOpen) moreHead.Inlines.Add(new System.Windows.Documents.Run("  " + string.Join(" · ", moreParts)) { FontSize = 11.5 });
+        }
+        PaintHead();
+        void ToggleMore() { _advancedOpen = !_advancedOpen; more.Visibility = _advancedOpen ? Visibility.Visible : Visibility.Collapsed; PaintHead(); }
+        moreHead.MouseLeftButtonUp += (_, e) => { e.Handled = true; ToggleMore(); };
+        moreHead.KeyDown += (_, e) => { if (e.Key is Key.Enter or Key.Space) { e.Handled = true; ToggleMore(); } };
+        box.Children.Add(moreHead);
+        box.Children.Add(more);
 
         // 다음 항목까지 기다리기 0~10초
-        var wait = MenuPicker(Enumerable.Range(0, 11).Select(s => Loc.F($"{s}초")).ToList(), Math.Clamp((int)Math.Round(item.DelayMs / 1000.0), 0, 10), i => item.DelayMs = i * 1000);
+        var wait = MenuPicker(Enumerable.Range(0, 11).Select(s => Loc.F($"{s}초")).ToList(), Math.Clamp((int)Math.Round(item.DelayMs / 1000.0), 0, 10), i => { item.DelayMs = i * 1000; Changed(); });
         var waitRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
         waitRow.Children.Add(wait);
         waitRow.Children.Add(new TextBlock { Text = Loc.T("다음 항목까지 · 무거운 앱 뒤에 써요"), Foreground = P.SubText, FontSize = 12, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) });
-        box.Children.Add(LabeledRow(Loc.T("기다리기"), waitRow, lw, 4));
+        more.Children.Add(LabeledRow(Loc.T("기다리기"), waitRow, lw, 4));
 
-        // 이미 켜져 있으면 (앱만)
+        // 이미 켜져 있으면 (앱만) — 기본 「앞으로 가져오기」
         if (item.Kind == RoutineItemKind.App)
-            box.Children.Add(LabeledRow(Loc.T("켜져 있으면"), Segments(new[] { Loc.T("앞으로 가져오기"), Loc.T("하나 더 열기") }, item.IfRunning == RoutineIfRunning.New ? 1 : 0,
-                i => item.IfRunning = i == 1 ? RoutineIfRunning.New : RoutineIfRunning.Focus), lw, 0));
+            more.Children.Add(LabeledRow(Loc.T("켜져 있으면"), Segments(new[] { Loc.T("앞으로 가져오기"), Loc.T("하나 더 열기") }, item.IfRunning == RoutineIfRunning.New ? 1 : 0,
+                i => { item.IfRunning = i == 1 ? RoutineIfRunning.New : RoutineIfRunning.Focus; Changed(); }), lw, 4));
+
+        // 다른 창 위치
+        more.Children.Add(LabeledRow(Loc.T("다른 창 위치"), Segments(otherModes.Select(RoutineIcons.PlacementName).ToList(), Array.IndexOf(otherModes, mode), i => SetPlacement(otherModes[i])), lw, 2));
+
+        // 고급 실행 옵션 (앱만)
+        if (item.Kind == RoutineItemKind.App)
+        {
+            var argsField = Field(item.Args ?? "");
+            argsField.FontFamily = new FontFamily("Consolas");
+            argsField.TextChanged += (_, _) => { item.Args = string.IsNullOrWhiteSpace(argsField.Text) ? null : argsField.Text.Trim(); Changed(); };
+            var argsLine = new DockPanel();
+            var argsHelp = HelpBubble(Loc.T("앱이 받는 실행 옵션을 그대로 넘겨요."), new[] { "--new-window", "--profile-directory=\"Profile 1\"" }, HelpUrl("routine-options"));
+            argsHelp.Margin = new Thickness(6, 0, 0, 0);
+            DockPanel.SetDock(argsHelp, Dock.Right);
+            argsLine.Children.Add(argsHelp);
+            argsLine.Children.Add(argsField);
+            more.Children.Add(LabeledRow(Loc.T("실행 옵션"), argsLine, lw, 2));
+        }
         return frame;
     }
+
+    /// <summary>접힌 줄 요약 칩: 모니터(2대 이상)·창 위치(그대로가 아니면)·함께 열 것(짧게). 바꾼 게 없으면 "".</summary>
+    internal static string Chip(RoutineItem item)
+    {
+        var parts = new List<string>();
+        if (RoutineMonitors.Summary(item.Monitor) is { } monitor) parts.Add(monitor);
+        if (item.Placement is { } placement && placement.Mode != RoutinePlacementMode.Keep) parts.Add(RoutineIcons.PlacementName(placement.Mode));
+        if (item.Kind == RoutineItemKind.App && !string.IsNullOrWhiteSpace(item.Open)) parts.Add(ShortOpen(item.Open));
+        return string.Join(" · ", parts);
+    }
+
+    /// <summary>함께 열 것을 짧게: 웹 주소는 호스트, 파일·폴더는 이름만.</summary>
+    private static string ShortOpen(string open)
+    {
+        string o = open.Trim();
+        if (Uri.TryCreate(o.StartsWith("www.", StringComparison.OrdinalIgnoreCase) ? "https://" + o : o, UriKind.Absolute, out var u) && !u.IsFile && u.Host.Length > 0)
+            return u.Host.StartsWith("www.", StringComparison.OrdinalIgnoreCase) ? u.Host[4..] : u.Host;
+        try { return Path.GetFileName(o.TrimEnd('\\', '/')) is { Length: > 0 } n ? n : o; }
+        catch (ArgumentException) { return o; }
+    }
+
+    /// <summary>그 앱에 맞는 「함께 열 것」: 브라우저 = 웹 주소(3), 탐색기·VS Code·Cursor = 폴더(2), 그 밖 = 파일(1).</summary>
+    internal static int NaturalOpenKind(RoutineItem item)
+    {
+        string exe = string.IsNullOrWhiteSpace(item.Target) ? "" : Path.GetFileNameWithoutExtension(Environment.ExpandEnvironmentVariables(item.Target.Trim().Trim('"'))).ToLowerInvariant();
+        if (RoutineService.IsBrowserExe(exe)) return 3;
+        return exe is "explorer" or "code" or "cursor" ? 2 : 1;
+    }
+
+    /// <summary>항목을 기본값에서 바꿨는지 (접힌 줄 이름 옆 보라 점).</summary>
+    internal static bool Customized(RoutineItem item) =>
+        item.Placement is not null || item.Monitor is { Mode: not RoutineMonitorMode.Keep } && RoutineMonitors.Summary(item.Monitor) is not null
+        || !string.IsNullOrEmpty(item.Kind == RoutineItemKind.App ? item.Open : null) || !string.IsNullOrEmpty(item.Args) || item.DelayMs > 0
+        || item.IfRunning == RoutineIfRunning.New || !string.IsNullOrEmpty(item.Profile);
 
     /// <summary>
     /// 브라우저 계정 고르기 (0.6.1): 크로미움 계열(크롬·엣지·웨일) 앱 항목, 또는 기본 브라우저가 크로미움인 링크 항목.
