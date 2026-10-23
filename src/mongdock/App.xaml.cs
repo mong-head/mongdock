@@ -256,6 +256,7 @@ public partial class App : Application
         _minimize = new MinimizeEffectController(_services, h => _dock?.IconScreenRectFor(h), () => _dock?.EdgeForEffects ?? Models.DockEdge.Bottom);
         _banners = NotificationBannerWindow.Attach(_services);
         DesktopPill.Attach(_services); // 데스크톱 이동 알약 (#41)
+        SettingsFileNotice.Attach(_services); // 설정 파일을 되돌렸거나 못 읽었을 때 한 줄 + [파일 열기] (#33)
         if (_updates is not null) _updateUi = UpdateUi.Attach(_services, _updates);
         else if (_storeUpdates is not null) _updateUi = UpdateUi.Attach(_services, _storeUpdates);
         _lowBattery = LowBatteryBanner.Attach(_services); // 배터리 20·10·5% 알림 (배너 호스트 다음)

@@ -1551,5 +1551,10 @@
  "다른 창 위치": "Autres positions",
  "실행 옵션": "Options de lancement",
  "기본값에서 바꾼 항목": "Modifié par rapport à la valeur par défaut",
- "(주)": "(principal)"
+ "(주)": "(principal)",
+ "설정 파일에 고칠 수 없는 부분이 있어 마지막 정상 설정으로 되돌렸어요": "Une partie du fichier de réglages était irréparable : retour aux derniers réglages valides",
+ "설정 파일이 없어져서 마지막 정상 설정으로 되돌렸어요": "Le fichier de réglages avait disparu : retour aux derniers réglages valides",
+ "이 항목은 기본값으로: {0}": "Remis par défaut : {0}",
+ "저장한 설정을 읽지 못했어요 — {0}번째 줄 근처": "Impossible de lire les réglages enregistrés — vers la ligne {0}",
+ "저장한 설정을 읽지 못했어요": "Impossible de lire les réglages enregistrés"
 }

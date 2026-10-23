@@ -104,6 +104,15 @@ public sealed class SettingsService : ISettingsService, IDisposable
 
     private Settings LoadInitial()
     {
+        // #33 ① 파일이 없어졌는데 마지막 정상본이 있으면 새 설치가 아니라 그걸로 (둘러보기·새 설치 기본값 안 탐)
+        if (!File.Exists(SettingsPath) && TryLastGood() is { } kept)
+        {
+            Log.Warn("settings.json 없음 → 마지막 정상 설정(settings.lastgood.json)으로 되돌림");
+            StartupNotice = Loc.T("설정 파일이 없어져서 마지막 정상 설정으로 되돌렸어요");
+            Current = kept;
+            Save();
+            return kept;
+        }
         if (!File.Exists(SettingsPath))
         {
             var s = new Settings { FirstRunTourPending = true, FirstUseHintsPending = true, LastRunVersion = WhatsNew.CurrentText };
@@ -132,8 +141,10 @@ public sealed class SettingsService : ISettingsService, IDisposable
             {
                 // 값 몇 개만 틀림 → 그 항목만 기본값, 나머지는 살림. 원본은 .bad-시각 으로 보관하고 고친 내용을 저장
                 KeepBadOriginal(text, fixes);
+                StartupNotice = FixesText(fixes);
                 changed = true;
             }
+            else WriteLastGood(text); // #33 ① 문제없이 읽은 파일 = 마지막 정상본
             if (s.LastRunVersion != WhatsNew.CurrentText)
             {
                 s.LastRunVersion = WhatsNew.CurrentText;
@@ -161,9 +172,69 @@ public sealed class SettingsService : ISettingsService, IDisposable
             {
                 Log.Error("손상된 설정 백업 실패", bex);
             }
+            // #33 ① 마지막 정상본이 있으면 기본값 대신 그걸로 (깨진 파일은 위에서 .corrupt-시각 으로 보관)
+            if (TryLastGood() is { } restored)
+            {
+                Log.Warn("settings.json 손상 → 마지막 정상 설정(settings.lastgood.json)으로 되돌림");
+                RecoveredFromCorrupt = false; // 진짜 설정으로 시작 — 그림 정리 등 그대로
+                StartupNotice = Loc.T("설정 파일에 고칠 수 없는 부분이 있어 마지막 정상 설정으로 되돌렸어요");
+                Current = restored;
+                Save();
+                return restored;
+            }
             return new Settings();
         }
     }
+
+    // ───────────────────────── 마지막 정상본 (#33, 사용자 승인 2026-10-18) ─────────────────────────
+
+    private string LastGoodPath => Path.Combine(_dir, "settings.lastgood.json");
+
+    /// <summary>시작할 때 사용자에게 한 줄로 알릴 것 (되돌림·기본값으로 바꾼 항목). App 이 배너로 보여 주고 지움.</summary>
+    public static string? StartupNotice { get; set; }
+
+    /// <summary>켜져 있을 때 직접 편집한 settings.json 을 못 읽었거나 일부만 읽음 — 한 줄 문구. UI 스레드.</summary>
+    public event Action<string>? Problem;
+
+    private void WriteLastGood(string text)
+    {
+        if (_memoryOnly || _dir.Length == 0) return;
+        try { AtomicFile.WriteAllText(LastGoodPath, text); }
+        catch (Exception ex) { Log.Warn($"마지막 정상 설정 보관 실패: {ex.GetType().Name}"); }
+    }
+
+    private Settings? TryLastGood()
+    {
+        try
+        {
+            if (!File.Exists(LastGoodPath)) return null;
+            var s = Deserialize(ReadAllTextShared(LastGoodPath), out _, out var fixes);
+            if (fixes.Count > 0) return null; // 정상본이 아니면 쓰지 않음
+            s.LastRunVersion = WhatsNew.CurrentText;
+            return s;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"마지막 정상 설정도 못 읽음: {ex.GetType().Name}");
+            return null;
+        }
+    }
+
+    /// <summary>「이 항목은 기본값으로: a, b, c 외 n개」.</summary>
+    internal static string FixesText(List<string> fixes) =>
+        Loc.F($"이 항목은 기본값으로: {string.Join(", ", fixes.Take(3)) + (fixes.Count > 3 ? " " + Loc.F($"외 {fixes.Count - 3}개") : "")}");
+
+    /// <summary>「저장한 설정을 읽지 못했어요 — n번째 줄 근처」 (줄을 모르면 줄 없이).</summary>
+    internal static string ParseFailText(Exception ex)
+    {
+        long? line = (ex as JsonException ?? ex.InnerException as JsonException)?.LineNumber;
+        return line is { } l ? Loc.F($"저장한 설정을 읽지 못했어요 — {l + 1}번째 줄 근처") : Loc.T("저장한 설정을 읽지 못했어요");
+    }
+
+    /// <summary>
+    /// #33 ③ 사용자가 직접 고쳤는데 못 읽은(또는 일부만 읽은) 파일 — 몽독이 다음에 저장해 덮기 전에 settings.json.edited-시각 으로 보관.
+    /// </summary>
+    private string? _editedPending;
 
     /// <summary>
     /// 이번 실행이 손상된 settings.json 대신 기본값으로 시작했는지. 그러면 "안 쓰는 그림 정리" 등 설정을 기준으로 지우는 일은 건너뜀
@@ -510,6 +581,13 @@ public sealed class SettingsService : ISettingsService, IDisposable
         ImportTaskbarPinsIfRequested();
         lock (_gate)
         {
+            if (_editedPending is { } edited)
+            {
+                _editedPending = null;
+                string keep = SettingsPath + ".edited-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                try { File.WriteAllText(keep, edited); Log.Warn($"직접 고친 설정을 덮기 전에 보관: {Path.GetFileName(keep)}"); }
+                catch (Exception ex) { Log.Warn($"직접 고친 설정 보관 실패: {ex.GetType().Name}"); }
+            }
             string text = JsonSerializer.Serialize(Current, JsonOptions);
             string tmp = SettingsPath + ".tmp";
             try
@@ -596,7 +674,18 @@ public sealed class SettingsService : ISettingsService, IDisposable
             try
             {
                 loaded = Deserialize(text, out _, out var fixes);
-                if (fixes.Count > 0) Log.Warn($"외부에서 편집된 settings.json 에 잘못된 값 {fixes.Count}개 → 그 항목만 기본값: {string.Join(", ", fixes)} (파일은 그대로)");
+                if (fixes.Count > 0)
+                {
+                    Log.Warn($"외부에서 편집된 settings.json 에 잘못된 값 {fixes.Count}개 → 그 항목만 기본값: {string.Join(", ", fixes)} (파일은 그대로)");
+                    _editedPending = text; // 다음 저장이 고친 값으로 덮기 전에 보관 (#33 ③)
+                    string msg = FixesText(fixes);
+                    RunOnUi(() => Problem?.Invoke(msg));
+                }
+                else
+                {
+                    _editedPending = null;
+                    WriteLastGood(text);
+                }
                 // 직접 편집으로 삭제된 "공간 차지"를 고른 경우 → 항상 보이기 (저장은 하지 않음 — 파일은 사용자 것)
                 if (loaded.Dock.Mode == DockMode.Reserve) loaded.Dock.Mode = DockMode.Overlay;
             }
@@ -604,6 +693,9 @@ public sealed class SettingsService : ISettingsService, IDisposable
             {
                 Log.Error("외부에서 편집된 settings.json 파싱 실패 → 기존 값 유지", ex);
                 _lastText = text; // 같은 손상 내용으로 반복 로그 방지
+                _editedPending = text; // 다음 저장이 지금 설정으로 덮기 전에 보관 (#33 ③)
+                string msg = ParseFailText(ex);
+                RunOnUi(() => Problem?.Invoke(msg));
                 return;
             }
             _lastText = text;

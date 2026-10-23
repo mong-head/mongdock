@@ -227,6 +227,7 @@ internal static class Program
         if (pillAt >= 0 && pillAt + 1 < args.Length) return PillShot(args[pillAt + 1], pillAt + 2 < args.Length && !args[pillAt + 2].StartsWith("--") ? args[pillAt + 2] : "now");
         int plusShotAt = Array.IndexOf(args, "--plusshot"); // 독 ＋ 모양 시안 A·B·C (+ 설치된 것) 그림: --plusshot <폴더>
         if (plusShotAt >= 0 && plusShotAt + 1 < args.Length) return PlusShot(args[plusShotAt + 1]);
+        if (Array.IndexOf(args, "--settingsguard") >= 0) return SettingsGuardCheck(); // #33 설정 파일 보호 (임시 폴더만)
         if (Array.IndexOf(args, "--plusrule") >= 0) return PlusRuleCheck(); // #41 독 ＋ 「지금 데스크톱에 새 창」 판정 (가짜 창 목록, 실행 없음)
         if (Array.IndexOf(args, "--idlehide") >= 0) return IdleHideCheck(); // #39 자동 숨김 독: 커서 정지 5초면 숨김 (가짜 커서·시각, 창·입력 없음)
         if (Array.IndexOf(args, "--clipcheck") >= 0) return ClipCheck(); // 0.6.3 문제 신고 영역 캡처·붙여넣기 (#13) — 실제 캡처 도구·클립보드는 안 건드림
@@ -2640,6 +2641,74 @@ internal static class Program
         var s2 = (Mongdock.Models.Settings)deser.Invoke(null, new object?[] { saved, null, null })!;
         Console.WriteLine($"        저장 {savedMode} → {to}: 다시 읽은 값 {s2.Routines[0].Desktop.Mode}");
         return s2.Routines[0].Desktop.Mode == to;
+    }
+
+    /// <summary>
+    /// --settingsguard (#33): 임시 폴더의 settings.json 으로 — 정상 읽기 → settings.lastgood.json, 깨진 파일 → 마지막 정상본으로 되돌림(+ .corrupt 보관·한 줄 알림),
+    /// 파일 없어짐 → 새 설치가 아니라 되돌림, 켜져 있을 때 깨진 편집 → 알림(n번째 줄) + 다음 저장 전에 .edited 보관, 값 몇 개만 틀림 → 「이 항목은 기본값으로」.
+    /// 실제 설정·창·입력 없음.
+    /// </summary>
+    private static int SettingsGuardCheck()
+    {
+        int bad = 0;
+        void Ok(string what, bool ok) { Console.WriteLine($"  {(ok ? "통과" : "실패")}  {what}"); if (!ok) bad++; }
+        string dir = Path.Combine(Path.GetTempPath(), "mongdock-guard-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        string path = Path.Combine(dir, "settings.json"), good = Path.Combine(dir, "settings.lastgood.json");
+        var t = typeof(Mongdock.App).Assembly.GetType("Mongdock.Services.SettingsService")!;
+        var notice = t.GetProperty("StartupNotice", Any)!;
+        SettingsService Open() => (SettingsService)t.GetConstructor(Any, new[] { typeof(string) })!.Invoke(new object[] { dir });
+        try
+        {
+            const string json = """
+                { "settingsVersion": 4, "language": "ko", "pins": [ { "name": "메모장", "kind": "Exe", "target": "notepad.exe" }, { "name": "계산기", "kind": "Exe", "target": "calc.exe" } ],
+                  "routines": [ { "id": "pe", "name": "PE", "items": [ { "kind": "App", "target": "notepad.exe" } ], "desktop": { "mode": "Current" } } ] }
+                """;
+            File.WriteAllText(path, json);
+            using (var s1 = Open()) Ok("정상 읽기 → settings.lastgood.json 보관", File.Exists(good) && s1.Current.Pins.Count == 2);
+
+            File.WriteAllText(path, "{ \"pins\": [ { \"name\": \"메모장\", "); // 잘린 파일 (고칠 수 없음)
+            notice.SetValue(null, null);
+            using (var s2 = Open())
+            {
+                Ok($"깨진 파일 → 마지막 정상본으로 (핀 {s2.Current.Pins.Count}개, 루틴 {s2.Current.Routines.Count}개)", s2.Current.Pins.Count == 2 && s2.Current.Routines.Count == 1 && !s2.CreatedThisRun);
+                Ok("깨진 원본은 .corrupt-시각 으로 보관", Directory.GetFiles(dir, "settings.json.corrupt-*").Length == 1);
+                Ok($"한 줄 알림: 「{notice.GetValue(null)}」", (string?)notice.GetValue(null) == Mongdock.Loc.T("설정 파일에 고칠 수 없는 부분이 있어 마지막 정상 설정으로 되돌렸어요"));
+                Ok("되돌린 뒤 settings.json 은 다시 읽히는 정상 파일", File.ReadAllText(path).Contains("calc.exe"));
+            }
+
+            File.Delete(path);
+            notice.SetValue(null, null);
+            using (var s3 = Open())
+                Ok("settings.json 없어짐 → 새 설치가 아니라 마지막 정상본 (둘러보기 안 탐)", s3.Current.Pins.Count == 2 && !s3.CreatedThisRun && !s3.Current.FirstRunTourPending
+                    && (string?)notice.GetValue(null) == Mongdock.Loc.T("설정 파일이 없어져서 마지막 정상 설정으로 되돌렸어요"));
+
+            // 켜져 있을 때 직접 고친 파일이 깨짐 → 알림(줄 번호) + 다음 저장 전에 .edited 보관
+            notice.SetValue(null, null);
+            using (var s4 = Open())
+            {
+                var problems = new List<string>();
+                s4.Problem += m => problems.Add(m);
+                File.WriteAllText(path, "{\n  \"pins\": [\n    { \"name\": \"메모장\" \n    { \"name\": \"x\" }\n  ]\n}");
+                for (int i = 0; i < 40 && problems.Count == 0; i++) Thread.Sleep(100);
+                Ok($"켜져 있을 때 깨진 편집 → 「{problems.FirstOrDefault()}」", problems.Count > 0 && problems[0].StartsWith(Mongdock.Loc.T("저장한 설정을 읽지 못했어요").Split(' ')[0]) && problems[0].Any(char.IsDigit));
+                Ok("기존 설정은 그대로 (핀 2개)", s4.Current.Pins.Count == 2);
+                s4.Save();
+                Ok("몽독이 덮기 전에 사용자 편집을 .edited-시각 으로 보관", Directory.GetFiles(dir, "settings.json.edited-*").Length == 1);
+
+                problems.Clear();
+                File.WriteAllText(path, json.Replace("\"kind\": \"Exe\", \"target\": \"calc.exe\"", "\"kind\": \"Exe\", \"target\": \"calc.exe\" }, { \"name\": \"y\", \"kind\": \"Banana\", \"target\": \"y.exe\""));
+                for (int i = 0; i < 40 && problems.Count == 0; i++) Thread.Sleep(100);
+                Ok($"값 하나만 틀림 → 「{problems.FirstOrDefault()}」", problems.Count > 0 && problems[0].StartsWith(Mongdock.Loc.T("이 항목은 기본값으로: {0}").Split(':')[0]));
+            }
+        }
+        finally
+        {
+            notice.SetValue(null, null);
+            try { Directory.Delete(dir, true); } catch { }
+        }
+        Console.WriteLine(bad == 0 ? "  모두 통과" : $"  실패 {bad}개");
+        return bad == 0 ? 0 : 1;
     }
 
     private static bool RoutineModesKept()

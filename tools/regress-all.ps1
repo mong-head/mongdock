@@ -31,6 +31,7 @@ $items = @(
     @("단축키", $rt, @("--hotkeycheck")),
     @("자동 숨김 독 커서 정지 (#39)", $rt, @("--idlehide")),
     @("독 ＋ 새 창 판정 (#41)", $rt, @("--plusrule")),
+    @("설정 파일 보호 (#33, 임시 폴더)", $rt, @("--settingsguard")),
     @("라이선스·스토어", $rt, @("--license")),
     @("검색 줄 자리", $rt, @("--spotrows")),
     @("검색 순서", $rt, @("--searchrank")),
