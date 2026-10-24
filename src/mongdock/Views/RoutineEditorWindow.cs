@@ -412,7 +412,7 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
         void Header()
         {
             name.Inlines.Clear();
-            string title = item.Kind == RoutineItemKind.Url && item.Target.Length == 0 ? Loc.T("링크") : RoutineService.ItemName(item);
+            string title = item.Kind == RoutineItemKind.Url && item.Target.Length == 0 ? LinkTitle(item) : RoutineService.ItemName(item);
             name.Inlines.Add(new System.Windows.Documents.Run(title));
             // 기본값에서 바꾼 항목은 이름 옆 작은 보라 점 (기획서 h)
             // 글자 점(●) — 처음엔 InlineUIContainer 안 원이었는데 실제 화면에서 한 번 안 그려짐(QA 10-23, 줄 안 UI 요소 배치 시점) → 글자로
@@ -584,13 +584,14 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
             {
                 int at = i;
                 var line = new DockPanel { Margin = new Thickness(0, 0, 0, 4), Tag = at };
-                var handle = new TextBlock { Text = "\uE700", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 11, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0), Cursor = Cursors.SizeNS, ToolTip = Loc.T("끌어서 탭 순서 바꾸기"), Visibility = links.Count > 1 ? Visibility.Visible : Visibility.Hidden };
-                DockPanel.SetDock(handle, Dock.Left);
-                line.Children.Add(handle);
-                var remove = new TextBlock { Text = "\uE711", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 10, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0), Cursor = Cursors.Hand, ToolTip = Loc.T("빼기"), Visibility = links.Count > 1 ? Visibility.Visible : Visibility.Hidden };
+                var handle = new TextBlock { Text = "\uE700", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 11, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0), Cursor = Cursors.SizeNS, ToolTip = Loc.T("끌어서 탭 순서 바꾸기"), Visibility = links.Count > 1 ? Visibility.Visible : Visibility.Collapsed }; // 하나면 자리도 안 차지 — 「이름」 칸과 줄 맞춤 (사용자 10-25)
+                // ≡ 는 오른쪽(× 옆) — 탭이 여러 개여도 주소 칸이 「이름」 칸과 같은 자리에서 시작 (사용자 10-25 줄 맞춤)
+                var remove = new TextBlock { Text = "\uE711", FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 10, Foreground = P.SubText, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(6, 0, 0, 0), Cursor = Cursors.Hand, ToolTip = Loc.T("빼기"), Visibility = links.Count > 1 ? Visibility.Visible : Visibility.Collapsed };
                 remove.MouseLeftButtonUp += (_, e) => { e.Handled = true; links.RemoveAt(at); Save(); Fill(); };
                 DockPanel.SetDock(remove, Dock.Right);
                 line.Children.Add(remove);
+                DockPanel.SetDock(handle, Dock.Right);
+                line.Children.Add(handle);
                 var field = Field(links[at]);
                 field.TextChanged += (_, _) => { links[at] = field.Text; Save(); };
                 // 주소 여러 개(여러 줄·공백·쉼표)를 붙여 넣으면 탭 줄로 나눠 넣음 (0.6.1) — 한 줄 칸이라 그냥 두면 첫 줄만 남음
@@ -714,7 +715,8 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
             case RoutineItemKind.Url:
             {
                 box.Children.Add(LinkDetail(item, Changed, lw));
-                if (ProfileRow(item, lw) is { } accountRow) box.Children.Add(accountRow); // 기본 브라우저가 크로미움 계열이고 프로필 2개 이상일 때만
+                if (BrowserRow(item, lw, Changed) is { } browserRow) box.Children.Add(browserRow); // 브라우저가 2개 이상 깔렸을 때만
+                if (ProfileRow(item, lw) is { } accountRow) box.Children.Add(accountRow); // 고른 브라우저가 크로미움 계열이고 프로필 2개 이상일 때만
                 break;
             }
             default:
@@ -855,7 +857,54 @@ internal sealed partial class RoutineEditorWindow : RoutineCardWindow
     internal static bool Customized(RoutineItem item) =>
         item.Placement is not null || item.Monitor is { Mode: not RoutineMonitorMode.Keep } && RoutineMonitors.Summary(item.Monitor) is not null
         || !string.IsNullOrEmpty(item.Kind == RoutineItemKind.App ? item.Open : null) || !string.IsNullOrEmpty(item.Args) || item.DelayMs > 0
-        || item.IfRunning == RoutineIfRunning.New || !string.IsNullOrEmpty(item.Profile);
+        || item.IfRunning == RoutineIfRunning.New || !string.IsNullOrEmpty(item.Profile) || !string.IsNullOrEmpty(item.Browser);
+
+    /// <summary>링크 항목 제목: 「링크 · Chrome」 (웹 링크를 열 브라우저 — 고른 것 또는 기본, 사용자 10-25). 브라우저를 모르면 「링크」.</summary>
+    internal static string LinkTitle(RoutineItem item)
+    {
+        var first = RoutineLinks.Urls(item).Select(RoutineLinks.Parse).FirstOrDefault(u => u is not null);
+        if (first is not null && !RoutineLinks.IsWeb(first)) return Loc.T("링크");
+        return Browsers.For(item) is { } exe ? Loc.T("링크") + " · " + Browsers.NameOf(exe) : Loc.T("링크");
+    }
+
+    /// <summary>
+    /// 링크를 열 브라우저 (사용자 10-25): [기본 브라우저 (Chrome) ▾] + 이 PC 에 깔린 브라우저. 깔린 브라우저가 하나뿐이거나 앱 링크면 줄 없음.
+    /// 고른 브라우저가 지워졌으면 「기본」으로 보이고 그렇게 열림. 바꾸면 계정은 비움(그 브라우저의 계정이 아님).
+    /// </summary>
+    private UIElement? BrowserRow(RoutineItem item, double lw, Action changed)
+    {
+        var first = RoutineLinks.Urls(item).Select(RoutineLinks.Parse).FirstOrDefault(u => u is not null);
+        if (first is not null && !RoutineLinks.IsWeb(first)) return null;
+        List<Browsers.Browser> installed;
+        try { installed = Browsers.Installed(); }
+        catch (Exception ex) { Log.Warn($"브라우저 목록 실패: {ex.GetType().Name}"); return null; }
+        if (installed.Count <= 1) return null;
+        string? def = RoutineService.DefaultBrowser();
+        var labels = new List<string> { def is null ? Loc.T("기본 브라우저") : Loc.F($"기본 브라우저 ({Browsers.NameOf(def)})") };
+        labels.AddRange(installed.Select(b => b.Name));
+        int at = string.IsNullOrEmpty(item.Browser) ? 0
+            : 1 + installed.FindIndex(b => string.Equals(b.Exe, Environment.ExpandEnvironmentVariables(item.Browser), StringComparison.OrdinalIgnoreCase));
+        bool missing = !string.IsNullOrEmpty(item.Browser) && at == 0;
+        var col = new StackPanel();
+        var picker = MenuPicker(labels, at, i =>
+        {
+            string? pick = i == 0 ? null : installed[i - 1].Exe;
+            if (string.Equals(pick, item.Browser, StringComparison.OrdinalIgnoreCase)) return;
+            item.Browser = pick;
+            item.Profile = null; // 계정은 브라우저마다 다름
+            changed();
+            Rebuild(); // 계정 줄·제목·아이콘을 고른 브라우저로
+        }, width: 220);
+        picker.HorizontalAlignment = HorizontalAlignment.Left;
+        col.Children.Add(picker);
+        if (missing)
+        {
+            var note = Muted(Loc.T("고른 브라우저가 없어 기본 브라우저로 열려요"), 11.5);
+            note.Margin = new Thickness(0, 3, 0, 0);
+            col.Children.Add(note);
+        }
+        return LabeledRow(Loc.T("브라우저"), col, lw, 6);
+    }
 
     /// <summary>
     /// 브라우저 계정 고르기 (0.6.1): 크로미움 계열(크롬·엣지·웨일) 앱 항목, 또는 기본 브라우저가 크로미움인 링크 항목.

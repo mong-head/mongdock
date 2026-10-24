@@ -738,7 +738,7 @@ internal static class RoutineService
                     // 브라우저 계정을 골랐으면 그 계정 창으로
                     if (RoutineProfiles.Arg(item) is { } profileArg && RoutineProfiles.BrowserExe(item) is { } chromium)
                         Start(chromium, profileArg + " " + RoutineLinks.TabArgs(RoutineLinks.Browser.Chromium, web));
-                    else if (DefaultBrowser() is { } browser && RoutineLinks.Kind(browser) is var kind && kind != RoutineLinks.Browser.Unknown)
+                    else if (Browsers.For(item) is { } browser && RoutineLinks.Kind(browser) is var kind && kind != RoutineLinks.Browser.Unknown) // 고른 브라우저(없으면 기본)
                         Start(browser, RoutineLinks.TabArgs(kind, web));
                     else
                         foreach (var u in web) Start(u.AbsoluteUri, null); // 모르는 브라우저는 하나씩
@@ -1222,7 +1222,7 @@ internal static class RoutineService
         return null;
     }
 
-    private static IEnumerable<string> SplitArgs(string cmd)
+    internal static IEnumerable<string> SplitArgs(string cmd)
     {
         var sb = new StringBuilder();
         bool quoted = false;

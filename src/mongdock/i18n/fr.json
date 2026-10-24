@@ -1560,5 +1560,7 @@
  "탭 {0}개 중 보고 있던 1개만 저장됐어요 · 다른 탭은 [+ 링크]로 넣어 주세요": "Seul l’onglet affiché a été enregistré (1 sur {0}) · ajoutez les autres avec [+ Lien]",
  "처음 설정으로": "Repartir de zéro",
  "처음 설정으로 되돌릴까요?": "Repartir de zéro avec les réglages par défaut ?",
- "독·루틴·설정이 새로 설치한 것처럼 돼요. 지금 설정은 백업 파일로 남겨 두고 몽독이 다시 시작해요.": "Le dock, les routines et les réglages seront comme après une nouvelle installation. Les réglages actuels sont gardés dans un fichier de sauvegarde, puis mongdock redémarre."
+ "독·루틴·설정이 새로 설치한 것처럼 돼요. 지금 설정은 백업 파일로 남겨 두고 몽독이 다시 시작해요.": "Le dock, les routines et les réglages seront comme après une nouvelle installation. Les réglages actuels sont gardés dans un fichier de sauvegarde, puis mongdock redémarre.",
+ "기본 브라우저 ({0})": "Navigateur par défaut ({0})",
+ "고른 브라우저가 없어 기본 브라우저로 열려요": "Le navigateur choisi est absent : ouverture avec le navigateur par défaut"
 }

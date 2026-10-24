@@ -3134,6 +3134,27 @@ internal static class Program
             Check($"저장한 계정이 사라짐 → 기본 계정 ({Args(web, false)})", Args(web, false) == "--new-window https://mail.company.com");
             var link = new RoutineItem { Kind = RoutineItemKind.Url, Target = "https://mail.company.com", Profile = "Profile 9" };
             Check("링크 항목도 사라진 계정 → 인자 없음", Arg(link) is null);
+            // 링크 항목 브라우저 고르기 (사용자 10-25): 고른 브라우저가 있으면 그것, 지워졌으면 기본 브라우저 (실행 없음 — 고르는 판단만)
+            {
+                var br = asm.GetType("Mongdock.Services.Browsers")!;
+                string? For(RoutineItem i) => (string?)br.GetMethod("For", Any)!.Invoke(null, new object[] { i });
+                string? def = (string?)rs.GetMethod("DefaultBrowser", Any)!.Invoke(null, null);
+                string real = Environment.ExpandEnvironmentVariables(@"%SystemRoot%\System32\notepad.exe"); // 있는 exe 아무거나 (실행 안 함)
+                var picked = new RoutineItem { Kind = RoutineItemKind.Url, Target = "https://mail.company.com", Browser = real };
+                Check("고른 브라우저가 있으면 → 그 브라우저", string.Equals(For(picked), real, StringComparison.OrdinalIgnoreCase));
+                picked.Browser = @"C:\Program Files\Gone\gonebrowser.exe";
+                Check($"고른 브라우저가 지워짐 → 기본 브라우저 ({(def is null ? "없음" : Path.GetFileNameWithoutExtension(def))})", For(picked) == def);
+                picked.Browser = null;
+                Check("안 고름 → 기본 브라우저", For(picked) == def);
+                var opts2 = new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase };
+                Check("안 고르면 저장 안 함 (옛 판 그대로)", !System.Text.Json.JsonSerializer.Serialize(picked, opts2).Contains("browser"));
+                var inst = (System.Collections.IList)br.GetMethod("Installed", Any)!.Invoke(null, null)!;
+                Console.WriteLine($"        이 PC 에 깔린 브라우저 {inst.Count}개 (2개 이상이면 편집 창에 「브라우저」 줄)");
+                string title = (string)asm.GetType("Mongdock.Views.RoutineEditorWindow")!.GetMethod("LinkTitle", Any)!.Invoke(null, new object[] { new RoutineItem { Kind = RoutineItemKind.Url, Target = "" } })!;
+                Check($"빈 링크 항목 제목 → 「{title}」", def is null ? title == Mongdock.Loc.T("링크") : title.StartsWith(Mongdock.Loc.T("링크") + " · "));
+                string appTitle = (string)asm.GetType("Mongdock.Views.RoutineEditorWindow")!.GetMethod("LinkTitle", Any)!.Invoke(null, new object[] { new RoutineItem { Kind = RoutineItemKind.Url, Target = "spotify:playlist:x" } })!;
+                Check("앱 링크(spotify:) 제목은 「링크」만", appTitle == Mongdock.Loc.T("링크"));
+            }
             var code = new RoutineItem { Kind = RoutineItemKind.App, Target = @"C:\x\Code.exe", Open = @"C:\dev\mongdock" };
             Check($"VS Code 안 켜짐 → -n 없음 ({Args(code, false)})", Args(code, false) == @"C:\dev\mongdock");
             Check($"VS Code 켜짐 → -n ({Args(code, true)})", Args(code, true) == @"-n C:\dev\mongdock");
@@ -4031,10 +4052,14 @@ internal static class Program
                 {
                     new() { Kind = RoutineItemKind.Url, Target = "https://mail.company.com", Tabs = new() { "https://calendar.company.com", "https://notion.so/team" } },
                     new() { Kind = RoutineItemKind.Url, Target = "spotify:playlist:37i9dQZF1DXcBWIGoYBM5M" },
+                    new() { Kind = RoutineItemKind.Url, Target = "https://calendar.company.com", Name = "calendar.company.com" },
+                    new() { Kind = RoutineItemKind.Url, Target = "" }, // 빈 링크 → 제목 「링크 · Chrome」 (10-25)
                 } };
                 var le = New("Mongdock.Views.RoutineEditorWindow", services, links, links, false);
                 le.GetType().GetMethod("ExpandForTest", Any)!.Invoke(le, new object[] { 0, false });
                 Save((FrameworkElement)le.Content, "editor-links");
+                le.GetType().GetMethod("ExpandForTest", Any)!.Invoke(le, new object[] { 2, false }); // 탭 하나 → 「링크」 칸이 「이름」 칸과 줄 맞춤 + 「브라우저」 줄
+                Save((FrameworkElement)le.Content, "editor-link-single");
                 le.Close();
             }
 

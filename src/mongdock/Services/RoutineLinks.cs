@@ -83,7 +83,7 @@ internal static class RoutineLinks
     public static string? HandlerExe(RoutineItem item)
     {
         var first = Urls(item).Select(Parse).FirstOrDefault(u => u is not null);
-        if (first is null || IsWeb(first)) return RoutineService.DefaultBrowser();
+        if (first is null || IsWeb(first)) return Browsers.For(item); // 고른 브라우저 (없으면 기본)
         return AppFor(first.Scheme) is { Length: > 0 } exe ? exe : null;
     }
 
@@ -152,7 +152,7 @@ internal static class RoutineLinks
         if (urls.Count == 0) return null;
         if (!IsWeb(urls[0])) return null;
         string host = urls[0].Host.StartsWith("www.", StringComparison.OrdinalIgnoreCase) ? urls[0].Host[4..] : urls[0].Host;
-        string browser = RoutineService.DefaultBrowser() is { } b ? BrowserName(b) : Loc.T("브라우저");
+        string browser = Browsers.For(item) is { } b ? Browsers.NameOf(b) : Loc.T("브라우저");
         return urls.Count > 1 ? Loc.F($"{browser} — {host} 외 {urls.Count - 1}개 탭") : $"{browser} — {host}";
     }
 

@@ -20,7 +20,7 @@ internal static class RoutineProfiles
             string? exe = item.Kind switch
             {
                 RoutineItemKind.App when string.IsNullOrEmpty(item.Aumid) => Environment.ExpandEnvironmentVariables(item.Target.Trim().Trim('"')),
-                RoutineItemKind.Url when item.GameExe is not { Length: > 0 } => RoutineService.DefaultBrowser(),
+                RoutineItemKind.Url when item.GameExe is not { Length: > 0 } => Browsers.For(item), // 링크: 고른 브라우저(없으면 기본) 의 계정
                 _ => null,
             };
             if (ProfilesForTest is not null && exe is not null) return exe;

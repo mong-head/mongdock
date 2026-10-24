@@ -1560,5 +1560,7 @@
  "탭 {0}개 중 보고 있던 1개만 저장됐어요 · 다른 탭은 [+ 링크]로 넣어 주세요": "Only the tab you were viewing was saved (1 of {0}) · add other tabs with [+ Link]",
  "처음 설정으로": "Start fresh",
  "처음 설정으로 되돌릴까요?": "Start fresh with default settings?",
- "독·루틴·설정이 새로 설치한 것처럼 돼요. 지금 설정은 백업 파일로 남겨 두고 몽독이 다시 시작해요.": "The dock, routines and settings will be like a new install. Your current settings are kept in a backup file, and mongdock restarts."
+ "독·루틴·설정이 새로 설치한 것처럼 돼요. 지금 설정은 백업 파일로 남겨 두고 몽독이 다시 시작해요.": "The dock, routines and settings will be like a new install. Your current settings are kept in a backup file, and mongdock restarts.",
+ "기본 브라우저 ({0})": "Default browser ({0})",
+ "고른 브라우저가 없어 기본 브라우저로 열려요": "The chosen browser isn't installed, so the default browser opens it"
 }
