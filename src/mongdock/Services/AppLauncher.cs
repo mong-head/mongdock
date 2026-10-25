@@ -71,6 +71,12 @@ public sealed class AppLauncher : IAppLauncher
             Log.Warn($"실행할 경로가 없는 핀 → 무시: '{pin.Name}'");
             return;
         }
+        // 스스로 업데이트하는 앱(Discord 등 Squirrel)이 버전 폴더를 옮겼으면 새 버전으로 (#43 — 독이 핀도 고쳐 저장함)
+        if (Path.IsPathFullyQualified(target) && !File.Exists(target) && SquirrelPaths.Heal(target) is { } healed)
+        {
+            Log.Info($"실행(exe): 옛 버전 경로 → 새 버전 {Path.GetFileName(Path.GetDirectoryName(healed))}");
+            target = healed;
+        }
         // 전체 경로인데 없으면 실행하지 않음 (파일명만이면 ShellExecute 가 PATH/App Paths 에서 찾게 둠)
         if (Path.IsPathFullyQualified(target) && !File.Exists(target) && !Directory.Exists(target))
         {

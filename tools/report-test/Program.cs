@@ -228,7 +228,8 @@ internal static class Program
         int plusShotAt = Array.IndexOf(args, "--plusshot"); // 독 ＋ 모양 시안 A·B·C (+ 설치된 것) 그림: --plusshot <폴더>
         if (plusShotAt >= 0 && plusShotAt + 1 < args.Length) return PlusShot(args[plusShotAt + 1]);
         if (Array.IndexOf(args, "--settingsguard") >= 0) return SettingsGuardCheck();
-        if (Array.IndexOf(args, "--toastclick") >= 0) return ToastClickCheck(); // #34 알림 클릭 → 알림 내용으로 (분석만, 실행 없음) // #33 설정 파일 보호 (임시 폴더만)
+        if (Array.IndexOf(args, "--toastclick") >= 0) return ToastClickCheck();
+        if (Array.IndexOf(args, "--squirrel") >= 0) return SquirrelCheck(); // #43 스스로 업데이트하는 앱 핀 경로 (임시 폴더만) // #34 알림 클릭 → 알림 내용으로 (분석만, 실행 없음) // #33 설정 파일 보호 (임시 폴더만)
         if (Array.IndexOf(args, "--plusrule") >= 0) return PlusRuleCheck(); // #41 독 ＋ 「지금 데스크톱에 새 창」 판정 (가짜 창 목록, 실행 없음)
         if (Array.IndexOf(args, "--idlehide") >= 0) return IdleHideCheck(); // #39 자동 숨김 독: 커서 정지 5초면 숨김 (가짜 커서·시각, 창·입력 없음)
         if (Array.IndexOf(args, "--clipcheck") >= 0) return ClipCheck(); // 0.6.3 문제 신고 영역 캡처·붙여넣기 (#13) — 실제 캡처 도구·클립보드는 안 건드림
@@ -2751,6 +2752,37 @@ internal static class Program
         Ok("세션 id 가 오면 → 그 세션", Claude("Claude_pzs8sxrjxfjjc!Claude", "open?session=local_abc-123") == "claude://code/needs-input?source=desktop_action&session=local_abc-123");
         Ok("설치 파일판 Claude 도 같게", Claude("com.squirrel.AnthropicClaude.claude", null) is not null);
         Ok("다른 앱·모르는 launch → 원래 길", Claude("Microsoft.ScreenSketch_8wekyb3d8bbwe!App", null) is null && Claude("Claude_pzs8sxrjxfjjc!Claude", "something-else") is null);
+        Console.WriteLine(bad == 0 ? "  모두 통과" : $"  실패 {bad}개");
+        return bad == 0 ? 0 : 1;
+    }
+
+    /// <summary>--squirrel (#43): Discord 처럼 app-버전 폴더를 옮기는 앱의 옛 경로 핀 → 가장 새 버전 exe (임시 폴더의 가짜 앱, 실행 없음).</summary>
+    private static int SquirrelCheck()
+    {
+        int bad = 0;
+        void Ok(string what, bool ok) { Console.WriteLine($"  {(ok ? "통과" : "실패")}  {what}"); if (!ok) bad++; }
+        string root = Path.Combine(Path.GetTempPath(), "mongdock-squirrel-" + Guid.NewGuid().ToString("N")[..8]);
+        try
+        {
+            string app = Path.Combine(root, "Discord");
+            Directory.CreateDirectory(app);
+            File.WriteAllText(Path.Combine(app, "Update.exe"), "");
+            foreach (var v in new[] { "1.0.9", "1.0.10", "1.0.11" }) Directory.CreateDirectory(Path.Combine(app, "app-" + v));
+            foreach (var v in new[] { "1.0.9", "1.0.10" }) File.WriteAllText(Path.Combine(app, "app-" + v, "Discord.exe"), ""); // 1.0.11 은 아직 받는 중(exe 없음)
+            var sp = typeof(Mongdock.App).Assembly.GetType("Mongdock.Services.SquirrelPaths")!;
+            string? Heal(string t) => (string?)sp.GetMethod("Heal", Any)!.Invoke(null, new object?[] { t });
+            string old = Path.Combine(app, "app-1.0.8", "Discord.exe");
+            Ok("지워진 옛 버전 경로 → exe 가 있는 가장 새 버전 (1.0.10 > 1.0.9, 숫자 비교)", Heal(old) == Path.Combine(app, "app-1.0.10", "Discord.exe"));
+            Ok("경로가 그대로 있으면 → 안 바꿈", Heal(Path.Combine(app, "app-1.0.9", "Discord.exe")) is null);
+            Ok("Squirrel 앱이 아니면(Update.exe 없음) → 안 바꿈", Heal(Path.Combine(root, "Other", "app-1.0.1", "x.exe")) is null);
+            Ok("app-* 폴더가 아니면 → 안 바꿈", Heal(Path.Combine(app, "bin", "Discord.exe")) is null);
+            Ok("다른 exe 이름은 없으면 → 안 바꿈", Heal(Path.Combine(app, "app-1.0.8", "Slack.exe")) is null);
+            var pins = new List<PinItem> { new() { Kind = PinKind.Exe, Name = "Discord", Target = old }, new() { Kind = PinKind.Exe, Name = "메모장", Target = "notepad.exe" } };
+            bool changed = (bool)sp.GetMethod("HealPins", Any)!.Invoke(null, new object[] { pins, true })!;
+            Ok("독 핀 고치기 → Discord 핀만 새 경로, 메모장 그대로", changed && pins[0].Target == Path.Combine(app, "app-1.0.10", "Discord.exe") && pins[1].Target == "notepad.exe");
+            Ok("다시 확인하면 바꿀 것 없음", !(bool)sp.GetMethod("HealPins", Any)!.Invoke(null, new object[] { pins, true })!);
+        }
+        finally { try { Directory.Delete(root, true); } catch { } }
         Console.WriteLine(bad == 0 ? "  모두 통과" : $"  실패 {bad}개");
         return bad == 0 ? 0 : 1;
     }
