@@ -37,4 +37,4 @@ foreach ($p in @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.P
 }
 
 $found
-"남은 시험 창 $($found.Count)개 (닫음 $closed개)"
+"남은 시험 창 $($found.Count)개 (닫음 $($closed)개)"
