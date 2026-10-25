@@ -2781,6 +2781,10 @@ internal static class Program
             bool changed = (bool)sp.GetMethod("HealPins", Any)!.Invoke(null, new object[] { pins, true })!;
             Ok("독 핀 고치기 → Discord 핀만 새 경로, 메모장 그대로", changed && pins[0].Target == Path.Combine(app, "app-1.0.10", "Discord.exe") && pins[1].Target == "notepad.exe");
             Ok("다시 확인하면 바꿀 것 없음", !(bool)sp.GetMethod("HealPins", Any)!.Invoke(null, new object[] { pins, true })!);
+            string Keep(string o, string h) => (string)sp.GetMethod("KeepVariable", Any)!.Invoke(null, new object[] { o, h })!;
+            string la = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            Ok("%LOCALAPPDATA% 로 저장된 핀은 고친 뒤에도 %LOCALAPPDATA% 모양으로", Keep(@"%LOCALAPPDATA%\Discord\app-1.0.8\Discord.exe", la + @"\Discord\app-1.0.10\Discord.exe") == @"%LOCALAPPDATA%\Discord\app-1.0.10\Discord.exe");
+            Ok("네트워크 경로는 보지 않음", Heal(@"\\server\share\app-1.0.1\x.exe") is null);
         }
         finally { try { Directory.Delete(root, true); } catch { } }
         Console.WriteLine(bad == 0 ? "  모두 통과" : $"  실패 {bad}개");

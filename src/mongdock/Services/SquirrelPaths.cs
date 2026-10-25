@@ -18,12 +18,16 @@ internal static class SquirrelPaths
         {
             if (string.IsNullOrWhiteSpace(target)) return null;
             string path = Environment.ExpandEnvironmentVariables(target.Trim().Trim('"'));
-            if (!Path.IsPathFullyQualified(path) || File.Exists(path)) return null;
+            if (!Path.IsPathFullyQualified(path) || path.StartsWith(@"\\")) return null; // 네트워크 경로는 보지 않음 (끊겼을 때 독이 멈추지 않게)
+            // Squirrel 앱은 늘 사용자 앱 데이터 아래 — 그 밖은 파일 확인도 하지 않음
+            string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (local.Length == 0 || !path.StartsWith(local + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return null;
+            if (File.Exists(path)) return null;
             string? versionDir = Path.GetDirectoryName(path);
             string? appDir = versionDir is null ? null : Path.GetDirectoryName(versionDir);
             if (versionDir is null || appDir is null) return null;
             if (!Path.GetFileName(versionDir).StartsWith("app-", StringComparison.OrdinalIgnoreCase)) return null;
-            if (!File.Exists(Path.Combine(appDir, "Update.exe")) || !Directory.Exists(appDir)) return null;
+            if (!File.Exists(Path.Combine(appDir, "Update.exe"))) return null;
             string exe = Path.GetFileName(path);
             return Directory.EnumerateDirectories(appDir, "app-*")
                 .Select(d => (Dir: d, Ver: Version.TryParse(Path.GetFileName(d)[4..], out var v) ? v : null))
@@ -37,6 +41,18 @@ internal static class SquirrelPaths
 
     private static long _lastCheck;
 
+    /// <summary>원래 경로가 %LOCALAPPDATA% 처럼 변수로 시작했으면 고친 경로도 그 모양으로 (설정 옮기기·사용자 이름 노출 방지).</summary>
+    internal static string KeepVariable(string original, string healed)
+    {
+        string o = original.Trim().Trim('"');
+        if (!o.StartsWith('%')) return healed;
+        int end = o.IndexOf('%', 1);
+        if (end < 0) return healed;
+        string variable = o[..(end + 1)];
+        string expanded = Environment.ExpandEnvironmentVariables(variable);
+        return expanded != variable && healed.StartsWith(expanded, StringComparison.OrdinalIgnoreCase) ? variable + healed[expanded.Length..] : healed;
+    }
+
     /// <summary>독 핀 중 옛 버전 경로를 가리키는 Squirrel 앱 핀을 새 경로로 (30초에 한 번까지). 바꿨으면 true — 부른 쪽이 저장·아이콘 다시.</summary>
     public static bool HealPins(IList<PinItem> pins, bool force = false)
     {
@@ -48,7 +64,7 @@ internal static class SquirrelPaths
         {
             if (pin.Kind != PinKind.Exe || Heal(pin.Target) is not { } healed) continue;
             Log.Info($"독 핀 경로 고침 (앱이 스스로 업데이트함): {Path.GetFileName(healed)} → {Path.GetFileName(Path.GetDirectoryName(healed))}");
-            pin.Target = healed;
+            pin.Target = KeepVariable(pin.Target, healed);
             changed = true;
         }
         return changed;

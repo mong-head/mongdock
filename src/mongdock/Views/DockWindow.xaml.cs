@@ -957,7 +957,7 @@ public partial class DockWindow : Window
     private void RefreshItems(bool rebuildViews = false, bool place = true)
     {
         // 스스로 업데이트한 앱(Discord 등)의 핀이 옛 버전 경로면 새 경로로 고쳐 저장하고 아이콘을 다시 (#43 — 기본 그림·눌러도 안 열림). 30초에 한 번까지
-        if (SquirrelPaths.HealPins(_services.Settings.Current.Pins))
+        if (!AnyItemDrag && SquirrelPaths.HealPins(_services.Settings.Current.Pins)) // 끄는 중에는 다음 번에 (저장이 끌기를 끊지 않게)
         {
             _services.Settings.Save();
             rebuildViews = true;
