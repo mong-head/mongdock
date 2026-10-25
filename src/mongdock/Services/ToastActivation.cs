@@ -35,6 +35,22 @@ internal static class ToastActivation
         return !BlockedSchemes.Contains(scheme);
     }
 
+    /// <summary>
+    /// Claude 데스크톱 알림이면 열 주소: 지금은 알림에 세션 id 가 없어 claude://code/needs-input (「Sessions Waiting for You」).
+    /// 나중에 launch 에 Code 세션 id(local_…)가 들어오면 그 세션으로 바로. 다른 앱·launch 가 따로 있는 알림은 null (원래 길).
+    /// </summary>
+    internal static string? ClaudeLink(NotificationItem item)
+    {
+        string aumid = item.Aumid ?? "";
+        bool claude = aumid.StartsWith("Claude_pzs8sxrjxfjjc!", StringComparison.OrdinalIgnoreCase) // 스토어(MSIX)판
+            || aumid.StartsWith("com.squirrel.AnthropicClaude", StringComparison.OrdinalIgnoreCase); // 설치 파일판
+        if (!claude) return null;
+        const string Base = "claude://code/needs-input?source=desktop_action";
+        if (string.IsNullOrEmpty(item.Launch)) return Base;
+        var m = System.Text.RegularExpressions.Regex.Match(item.Launch, @"(?:^|[?&=/])(local_[A-Za-z0-9-]{1,64})(?:$|[&/])");
+        return m.Success ? Base + "&session=" + m.Groups[1].Value : null; // 세션 id 를 모르는 launch 는 원래 길(활성화 서버)로
+    }
+
     /// <summary>윈도우 LaunchUri 처럼 등록된 URL 프로토콜(HKCR\스킴 의 "URL Protocol" 값)만. http·https 는 늘 됨.</summary>
     private static bool IsUrlProtocol(string scheme)
     {
@@ -56,6 +72,19 @@ internal static class ToastActivation
         try
         {
             string? launch = item.Launch;
+            // Claude 데스크톱 (사용자 10-25 A안): 알림에 넘길 값이 없음(클릭을 앱 안에서만 받음) → 「기다리는 세션 목록」으로
+            if (ClaudeLink(item) is { } claude && IsUrlProtocol("claude"))
+            {
+                var ct = new Thread(() =>
+                {
+                    try { Process.Start(new ProcessStartInfo(claude) { UseShellExecute = true })?.Dispose(); }
+                    catch (Exception ex) { Log.Warn($"Claude 세션 목록 열기 실패: {ex.GetType().Name}"); fallback(true); }
+                }) { IsBackground = true, Name = "mongdock-toast-claude" };
+                ct.SetApartmentState(ApartmentState.STA);
+                ct.Start();
+                Log.Info($"알림 클릭 → Claude {(claude.Contains("session=") ? "그 세션" : "기다리는 세션 목록")}");
+                return true;
+            }
             if (string.Equals(item.ActivationType, "protocol", StringComparison.OrdinalIgnoreCase))
             {
                 if (launch is null || !SafeProtocol(launch) || !IsUrlProtocol(launch[..launch.IndexOf(':')]))

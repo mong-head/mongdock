@@ -2745,6 +2745,12 @@ internal static class Program
             && !Safe("ms-msdt:/id x") && !Safe("search-ms:query=x") && !Safe("javascript:alert(1)") && !Safe("https://a\r\nb") && !Safe("") && !Safe(null));
         Guid? Find(string aumid) => (Guid?)ta.GetMethod("FindActivator", Any)!.Invoke(null, new object[] { aumid });
         Ok("없는 앱 → 활성화 서버 없음 (예외 없이)", Find("Nope.NotAnApp_0000000000000!App") is null && Find("") is null);
+        // Claude 데스크톱 (사용자 10-25 A안): launch 없음 → 기다리는 세션 목록, 세션 id 가 오면 그 세션, 다른 앱은 원래 길
+        string? Claude(string aumid, string? launch) => (string?)ta.GetMethod("ClaudeLink", Any)!.Invoke(null, new object[] { new NotificationItem(1, aumid, "Claude", "t", new[] { "b" }, DateTime.Now, null, null, false, null, launch, null) });
+        Ok("Claude 알림(launch 없음) → claude://code/needs-input", Claude("Claude_pzs8sxrjxfjjc!Claude", null) == "claude://code/needs-input?source=desktop_action");
+        Ok("세션 id 가 오면 → 그 세션", Claude("Claude_pzs8sxrjxfjjc!Claude", "open?session=local_abc-123") == "claude://code/needs-input?source=desktop_action&session=local_abc-123");
+        Ok("설치 파일판 Claude 도 같게", Claude("com.squirrel.AnthropicClaude.claude", null) is not null);
+        Ok("다른 앱·모르는 launch → 원래 길", Claude("Microsoft.ScreenSketch_8wekyb3d8bbwe!App", null) is null && Claude("Claude_pzs8sxrjxfjjc!Claude", "something-else") is null);
         Console.WriteLine(bad == 0 ? "  모두 통과" : $"  실패 {bad}개");
         return bad == 0 ? 0 : 1;
     }
