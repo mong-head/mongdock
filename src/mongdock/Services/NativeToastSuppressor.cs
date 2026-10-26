@@ -215,6 +215,14 @@ public sealed class NativeToastSuppressor : IDisposable
             if (eventType is WinEventApi.EVENT_OBJECT_UNCLOAKED or WinEventApi.EVENT_OBJECT_SHOW)
             {
                 HookHost(pid);
+                // 이미 숨긴 같은 토스트 창이 다시 클로킹 해제됨 (셸이 다시 그리거나 다음 토스트를 쌓을 때) → 새 토스트로 보지 않고 계속 숨김.
+                // 예전엔 여기서 새로 「확인 대기」를 시작했는데 배너는 이미 이 창 몫으로 써서 1.5초 뒤 「몽독 배너 없음」으로 복원 → 팝업이 한 번씩 보임
+                // (사용자 10-27, 로그: 숨김 직후 1.5초에 「그대로 둠」 11번). 새 토스트가 쌓였는지는 DB 의 새 행(OnToastActivity)이 판단.
+                if (KeepHiddenOnReshow(_state, hwnd, _toastHwnd))
+                {
+                    MoveOffscreen(hwnd);
+                    return;
+                }
                 BeginSession(hwnd);
                 return;
             }
@@ -269,6 +277,10 @@ public sealed class NativeToastSuppressor : IDisposable
     }
 
     // ───────────────────────── 토스트 한 번 (뜸 → 확인 → 숨김/복원) ─────────────────────────
+
+    /// <summary>클로킹 해제가 「이미 숨긴 그 토스트 창」의 다시 그리기인지 (그러면 새 확인 없이 계속 숨김). report-test --toastclick.</summary>
+    internal static bool KeepHiddenOnReshow(object state, IntPtr hwnd, IntPtr toastHwnd) =>
+        state is State.Hidden && hwnd != IntPtr.Zero && hwnd == toastHwnd;
 
     /// <summary>토스트가 새로 뜸: 일단 화면 밖으로 옮기고 배너 확인 대기.</summary>
     private void BeginSession(IntPtr hwnd)

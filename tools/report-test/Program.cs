@@ -2778,6 +2778,17 @@ internal static class Program
                 try { Directory.Delete(sdir, true); } catch { }
             }
         }
+        // 기본 알림 팝업 (사용자 10-27): 이미 숨긴 같은 창이 다시 클로킹 해제되면 새 확인 없이 계속 숨김 → 1.5초 뒤 복원되던 것 막음
+        {
+            var nts = typeof(Mongdock.App).Assembly.GetType("Mongdock.Services.NativeToastSuppressor")!;
+            var st = nts.GetNestedType("State", Any)!;
+            bool Keep(string state, long hwnd, long toast) => (bool)nts.GetMethod("KeepHiddenOnReshow", Any)!.Invoke(null, new object[] { Enum.Parse(st, state), new IntPtr(hwnd), new IntPtr(toast) })!;
+            Ok("숨긴 같은 팝업 창이 다시 보이려 함 → 계속 숨김", Keep("Hidden", 100, 100));
+            Ok("다른 팝업 창 → 새로 확인", !Keep("Hidden", 200, 100));
+            foreach (string s in Enum.GetNames(st).Where(n => n != "Hidden"))
+                Ok($"상태 {s} → 새로 확인", !Keep(s, 100, 100));
+            Ok("창 없음(0) → 새로 확인", !Keep("Hidden", 0, 0));
+        }
         Console.WriteLine(bad == 0 ? "  모두 통과" : $"  실패 {bad}개");
         return bad == 0 ? 0 : 1;
     }
