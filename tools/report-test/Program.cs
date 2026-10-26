@@ -2748,6 +2748,7 @@ internal static class Program
         Ok("없는 앱 → 활성화 서버 없음 (예외 없이)", Find("Nope.NotAnApp_0000000000000!App") is null && Find("") is null);
         // Claude 데스크톱 (사용자 10-25 A안): launch 없음 → 기다리는 세션 목록, 세션 id 가 오면 그 세션, 다른 앱은 원래 길
         string? Claude(string aumid, string? launch) => (string?)ta.GetMethod("ClaudeLink", Any)!.Invoke(null, new object[] { new NotificationItem(1, aumid, "Claude", "t", new[] { "b" }, DateTime.Now, null, null, false, null, launch, null) });
+        Ok("Claude 알림 클릭은 지금은 창만 앞으로 (claude:// 꺼 둠, 사용자 10-26)", (bool)ta.GetField("ClaudeWaitingList", Any)!.GetValue(null)! == false);
         Ok("Claude 알림(launch 없음) → claude://code/needs-input", Claude("Claude_pzs8sxrjxfjjc!Claude", null) == "claude://code/needs-input?source=desktop_action");
         Ok("세션 id 가 오면 → 그 세션", Claude("Claude_pzs8sxrjxfjjc!Claude", "open?session=local_abc-123") == "claude://code/needs-input?source=desktop_action&session=local_abc-123");
         Ok("설치 파일판 Claude 도 같게", Claude("com.squirrel.AnthropicClaude.claude", null) is not null);

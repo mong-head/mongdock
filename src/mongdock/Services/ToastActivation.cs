@@ -39,6 +39,9 @@ internal static class ToastActivation
     /// Claude 데스크톱 알림이면 열 주소: 지금은 알림에 세션 id 가 없어 claude://code/needs-input (「Sessions Waiting for You」).
     /// 나중에 launch 에 Code 세션 id(local_…)가 들어오면 그 세션으로 바로. 다른 앱·launch 가 따로 있는 알림은 null (원래 길).
     /// </summary>
+    /// <summary>Claude 알림 클릭을 claude:// 로 보낼지 (10-26 사용자 확인: 기다리는 세션 목록이 아니라 새 대화로 감 → 꺼 둠).</summary>
+    internal static bool ClaudeWaitingList = false;
+
     internal static string? ClaudeLink(NotificationItem item)
     {
         string aumid = item.Aumid ?? "";
@@ -72,8 +75,9 @@ internal static class ToastActivation
         try
         {
             string? launch = item.Launch;
-            // Claude 데스크톱 (사용자 10-25 A안): 알림에 넘길 값이 없음(클릭을 앱 안에서만 받음) → 「기다리는 세션 목록」으로
-            if (ClaudeLink(item) is { } claude && IsUrlProtocol("claude"))
+            // Claude 데스크톱 (사용자 10-25 A안 → 10-26 되돌림): claude://code/needs-input 이 실제로는 새 대화로 가서 꺼 둠 — 지금처럼 Claude 창만 앞으로.
+            // 알림에 세션 id 가 들어오게 되면 ClaudeWaitingList 를 켜고 확인
+            if (ClaudeWaitingList && ClaudeLink(item) is { } claude && IsUrlProtocol("claude"))
             {
                 var ct = new Thread(() =>
                 {
