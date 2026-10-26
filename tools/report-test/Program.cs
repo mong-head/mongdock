@@ -2782,8 +2782,9 @@ internal static class Program
         {
             var nts = typeof(Mongdock.App).Assembly.GetType("Mongdock.Services.NativeToastSuppressor")!;
             var st = nts.GetNestedType("State", Any)!;
-            bool Keep(string state, long hwnd, long toast) => (bool)nts.GetMethod("KeepHiddenOnReshow", Any)!.Invoke(null, new object[] { Enum.Parse(st, state), new IntPtr(hwnd), new IntPtr(toast) })!;
-            Ok("숨긴 같은 팝업 창이 다시 보이려 함 → 계속 숨김", Keep("Hidden", 100, 100));
+            bool Keep(string state, long hwnd, long toast, long since = 1500) => (bool)nts.GetMethod("KeepHiddenOnReshow", Any)!.Invoke(null, new object[] { Enum.Parse(st, state), new IntPtr(hwnd), new IntPtr(toast), since })!;
+            Ok("숨긴 같은 팝업 창이 1.5초 뒤 다시 보이려 함 → 계속 숨김", Keep("Hidden", 100, 100));
+            Ok("숨긴 지 오래(20초) → 끝을 놓쳤을 수 있어 새로 확인", !Keep("Hidden", 100, 100, 20000));
             Ok("다른 팝업 창 → 새로 확인", !Keep("Hidden", 200, 100));
             foreach (string s in Enum.GetNames(st).Where(n => n != "Hidden"))
                 Ok($"상태 {s} → 새로 확인", !Keep(s, 100, 100));

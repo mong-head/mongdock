@@ -48,6 +48,8 @@ public sealed class NativeToastSuppressor : IDisposable
     /// 디스코드·Claude 등은 DB 반영이 셸 창보다 ~700ms 늦으므로 여유 있게 (그동안 팝업은 화면 밖이라 보이지 않음).
     /// </summary>
     private const long ConfirmTimeoutMs = 1500;
+    /// <summary>숨긴 뒤 이 시간 안에 같은 창이 다시 보이려 하면 새 확인 없이 계속 숨김. 넘으면 예전처럼 새 토스트로 확인(놓친 끝 이벤트 복구).</summary>
+    private const long KeepHiddenMs = 8000;
 
     // SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_ASYNCWINDOWPOS (셸 스레드가 바빠도 몽독이 막히지 않게)
     private const uint MoveFlags = 0x0001 | 0x0004 | 0x0010 | 0x0200 | 0x4000;
@@ -89,6 +91,7 @@ public sealed class NativeToastSuppressor : IDisposable
     private long _sessionTick;
     /// <summary>마지막으로 숨김을 확정할 때 쓴 배너 시각 — 배너 하나로 토스트 둘을 숨기지 않게.</summary>
     private long _usedBannerTick;
+    private long _hiddenTick; // 마지막으로 숨김을 확정(또는 새 배너·생략 행으로 연장)한 시각
     /// <summary>마지막으로 "배너 일부러 생략" 신호로 숨김을 유지할 때 쓴 시각 (같은 신호를 두 번 쓰지 않게).</summary>
     private long _usedSkippedTick;
     private int _hiddenCount, _shownCount;
@@ -218,7 +221,8 @@ public sealed class NativeToastSuppressor : IDisposable
                 // 이미 숨긴 같은 토스트 창이 다시 클로킹 해제됨 (셸이 다시 그리거나 다음 토스트를 쌓을 때) → 새 토스트로 보지 않고 계속 숨김.
                 // 예전엔 여기서 새로 「확인 대기」를 시작했는데 배너는 이미 이 창 몫으로 써서 1.5초 뒤 「몽독 배너 없음」으로 복원 → 팝업이 한 번씩 보임
                 // (사용자 10-27, 로그: 숨김 직후 1.5초에 「그대로 둠」 11번). 새 토스트가 쌓였는지는 DB 의 새 행(OnToastActivity)이 판단.
-                if (KeepHiddenOnReshow(_state, hwnd, _toastHwnd))
+                // 숨긴 지 KeepHiddenMs 가 지났으면 끝 이벤트를 놓친 것일 수 있어 예전처럼 새로 확인 (새 토스트가 계속 숨는 것 방지)
+                if (KeepHiddenOnReshow(_state, hwnd, _toastHwnd, Environment.TickCount64 - _hiddenTick))
                 {
                     MoveOffscreen(hwnd);
                     return;
@@ -279,8 +283,8 @@ public sealed class NativeToastSuppressor : IDisposable
     // ───────────────────────── 토스트 한 번 (뜸 → 확인 → 숨김/복원) ─────────────────────────
 
     /// <summary>클로킹 해제가 「이미 숨긴 그 토스트 창」의 다시 그리기인지 (그러면 새 확인 없이 계속 숨김). report-test --toastclick.</summary>
-    internal static bool KeepHiddenOnReshow(object state, IntPtr hwnd, IntPtr toastHwnd) =>
-        state is State.Hidden && hwnd != IntPtr.Zero && hwnd == toastHwnd;
+    internal static bool KeepHiddenOnReshow(object state, IntPtr hwnd, IntPtr toastHwnd, long sinceHiddenMs) =>
+        state is State.Hidden && hwnd != IntPtr.Zero && hwnd == toastHwnd && sinceHiddenMs >= 0 && sinceHiddenMs <= KeepHiddenMs;
 
     /// <summary>토스트가 새로 뜸: 일단 화면 밖으로 옮기고 배너 확인 대기.</summary>
     private void BeginSession(IntPtr hwnd)
@@ -362,11 +366,13 @@ public sealed class NativeToastSuppressor : IDisposable
             {
                 // 새 배너가 나감 → 그 배너는 이 창 몫으로 소비, 계속 숨김
                 _usedBannerTick = banner;
+                _hiddenTick = Environment.TickCount64;
             }
             else if (skipped > _usedSkippedTick)
             {
                 // 같은 태그 갱신(디스코드 등)·SuppressPopup — 배너를 일부러 생략한 행 → 계속 숨김
                 _usedSkippedTick = skipped;
+                _hiddenTick = Environment.TickCount64;
             }
             else
             {
@@ -402,6 +408,7 @@ public sealed class NativeToastSuppressor : IDisposable
             _usedBannerTick = banner;
             _usedSkippedTick = _notifications.LastSkippedBannerTick; // 지난 생략 신호는 이후 판단에 쓰지 않음
             _state = State.Hidden;
+            _hiddenTick = Environment.TickCount64;
             _hiddenCount++;
             Log.Info($"윈도우 기본 알림 팝업 숨김 (몽독 배너 확인 {Environment.TickCount64 - _sessionTick}ms)");
             return true;
