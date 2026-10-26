@@ -35,23 +35,30 @@ internal static class ToastActivation
         return !BlockedSchemes.Contains(scheme);
     }
 
-    /// <summary>
-    /// Claude 데스크톱 알림이면 열 주소: 지금은 알림에 세션 id 가 없어 claude://code/needs-input (「Sessions Waiting for You」).
-    /// 나중에 launch 에 Code 세션 id(local_…)가 들어오면 그 세션으로 바로. 다른 앱·launch 가 따로 있는 알림은 null (원래 길).
-    /// </summary>
-    /// <summary>Claude 알림 클릭을 claude:// 로 보낼지 (10-26 사용자 확인: 기다리는 세션 목록이 아니라 새 대화로 감 → 꺼 둠).</summary>
-    internal static bool ClaudeWaitingList = false;
-
-    internal static string? ClaudeLink(NotificationItem item)
+    /// <summary>Claude 데스크톱 알림인지 (스토어판·설치 파일판).</summary>
+    internal static bool IsClaude(NotificationItem item)
     {
         string aumid = item.Aumid ?? "";
-        bool claude = aumid.StartsWith("Claude_pzs8sxrjxfjjc!", StringComparison.OrdinalIgnoreCase) // 스토어(MSIX)판
+        return aumid.StartsWith("Claude_pzs8sxrjxfjjc!", StringComparison.OrdinalIgnoreCase) // 스토어(MSIX)판
             || aumid.StartsWith("com.squirrel.AnthropicClaude", StringComparison.OrdinalIgnoreCase); // 설치 파일판
-        if (!claude) return null;
-        const string Base = "claude://code/needs-input?source=desktop_action";
-        if (string.IsNullOrEmpty(item.Launch)) return Base;
-        var m = System.Text.RegularExpressions.Regex.Match(item.Launch, @"(?:^|[?&=/])(local_[A-Za-z0-9-]{1,64})(?:$|[&/])");
-        return m.Success ? Base + "&session=" + m.Groups[1].Value : null; // 세션 id 를 모르는 launch 는 원래 길(활성화 서버)로
+    }
+
+    /// <summary>
+    /// Claude 알림을 누르면 열 그 세션의 링크 (사용자 10-26 — claude://claude.ai/epitaxy/local_… 가 그 세션을 여는 것 확인).
+    /// 알림에 id 가 있으면(launch 에 local_…) 그것, 없으면 알림 제목으로 실행 중 세션을 찾음(ClaudeSessions). 못 찾으면 null → 창만 앞으로.
+    /// 파일을 읽으므로 UI 스레드 밖에서 부를 것.
+    /// </summary>
+    internal static string? ClaudeLink(NotificationItem item)
+    {
+        if (!IsClaude(item)) return null;
+        string? id = null;
+        if (!string.IsNullOrEmpty(item.Launch))
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(item.Launch, @"(?:^|[?&=/])(local_[A-Za-z0-9-]{1,64})(?:$|[&/])");
+            id = m.Success ? m.Groups[1].Value : null;
+        }
+        id ??= ClaudeSessions.Find(item.Title);
+        return id is not null && ClaudeSessions.IsSessionId(id) ? "claude://claude.ai/epitaxy/" + id : null;
     }
 
     /// <summary>윈도우 LaunchUri 처럼 등록된 URL 프로토콜(HKCR\스킴 의 "URL Protocol" 값)만. http·https 는 늘 됨.</summary>
@@ -75,18 +82,29 @@ internal static class ToastActivation
         try
         {
             string? launch = item.Launch;
-            // Claude 데스크톱 (사용자 10-25 A안 → 10-26 되돌림): claude://code/needs-input 이 실제로는 새 대화로 가서 꺼 둠 — 지금처럼 Claude 창만 앞으로.
-            // 알림에 세션 id 가 들어오게 되면 ClaudeWaitingList 를 켜고 확인
-            if (ClaudeWaitingList && ClaudeLink(item) is { } claude && IsUrlProtocol("claude"))
+            // Claude 데스크톱 (사용자 10-26): 알림 제목으로 실행 중 세션을 찾아 그 세션 링크로, 못 찾거나 여럿이면 지금처럼 창만 앞으로.
+            // 세션 파일을 읽으므로 별도 스레드에서 (UI 를 막지 않음)
+            if (IsClaude(item) && IsUrlProtocol("claude"))
             {
                 var ct = new Thread(() =>
                 {
-                    try { Process.Start(new ProcessStartInfo(claude) { UseShellExecute = true })?.Dispose(); }
-                    catch (Exception ex) { Log.Warn($"Claude 세션 목록 열기 실패: {ex.GetType().Name}"); fallback(true); }
+                    string? link = null;
+                    try { link = ClaudeLink(item); } catch (Exception ex) { Log.Warn($"Claude 세션 찾기 실패: {ex.GetType().Name}"); }
+                    if (link is null)
+                    {
+                        Log.Info("알림 클릭: Claude 세션을 못 찾음(또는 여럿) → 창만 앞으로");
+                        fallback(true);
+                        return;
+                    }
+                    try
+                    {
+                        Process.Start(new ProcessStartInfo(link) { UseShellExecute = true })?.Dispose();
+                        Log.Info("알림 클릭 → Claude 그 세션"); // id·제목은 남기지 않음
+                    }
+                    catch (Exception ex) { Log.Warn($"Claude 세션 열기 실패: {ex.GetType().Name}"); fallback(true); }
                 }) { IsBackground = true, Name = "mongdock-toast-claude" };
                 ct.SetApartmentState(ApartmentState.STA);
                 ct.Start();
-                Log.Info($"알림 클릭 → Claude {(claude.Contains("session=") ? "그 세션" : "기다리는 세션 목록")}");
                 return true;
             }
             if (string.Equals(item.ActivationType, "protocol", StringComparison.OrdinalIgnoreCase))
